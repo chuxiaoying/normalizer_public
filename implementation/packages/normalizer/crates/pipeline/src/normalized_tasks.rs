@@ -92,13 +92,6 @@ impl Engine<'_> {
                 site,
                 args,
             } => {
-                need(
-                    self.project
-                        .ports
-                        .get(port)
-                        .is_some_and(|p| p.heap_effect == "none"),
-                    "async port must have no hidden heap mutation",
-                )?;
                 let (args, ty) = self.invocation_arguments(port, site, args, env)?;
                 let spec = self.project.ports[port].completion_spec(self.project)?;
                 let bind = self.fresh_binding();

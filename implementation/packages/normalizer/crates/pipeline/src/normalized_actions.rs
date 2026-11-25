@@ -2,6 +2,13 @@
 //! simulator as pure definitions. Only the effect carrier lives in the executor.
 use super::*;
 
+/// Adapters may declare only the runtime contract actually executed.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PortHeapEffect {
+    None,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Port {
@@ -10,11 +17,10 @@ pub(super) struct Port {
     params: Vec<Parameter>,
     returns: String,
     throws: Vec<String>,
-    pub(super) heap_effect: String,
+    #[serde(rename = "heap_effect")]
+    _heap_effect: PortHeapEffect,
     argument_observation: String,
     effect: String,
-    #[serde(default)]
-    mutations: BTreeMap<String, Vec<String>>,
 }
 
 impl Port {
@@ -31,10 +37,9 @@ impl Port {
             params,
             returns,
             throws,
-            heap_effect: "none".into(),
+            _heap_effect: PortHeapEffect::None,
             argument_observation: "immutable_value".into(),
             effect: "sync".into(),
-            mutations: BTreeMap::new(),
         }
     }
 
@@ -147,27 +152,6 @@ impl Project {
                 matches!(p.effect.as_str(), "sync" | "async-barrier"),
                 "unsupported port effect; declare sync or async-barrier",
             )?;
-            match p.heap_effect.as_str() {
-                "none" => need(p.mutations.is_empty(), "read-only port cannot declare mutations")?,
-                "argument_fields" => {
-                    need(p.argument_observation == "reference_value",
-                        "argument field effects require reference_value")?;
-                    need(!p.mutations.is_empty(), "mutable port requires explicit argument/field frames")?;
-                    for (argument, fields) in &p.mutations {
-                        let parameter = p.params.iter().find(|a| &a.name == argument)
-                            .ok_or_else(|| fail("mutation root is not a port parameter"))?;
-                        need(Ty::parse(&parameter.typ)? == Ty::Ref,
-                            "mutation root must be a direct object reference")?;
-                        let mut seen = BTreeSet::new();
-                        need(!fields.is_empty(), "mutation frame cannot be empty")?;
-                        for field in fields {
-                            need(self.heap_fields.contains_key(field) && seen.insert(field),
-                                "mutation field must be declared and unique")?;
-                        }
-                    }
-                }
-                _ => return Err(fail("unsupported port heap effect; declare argument_fields or preprocess the implementation; callbacks and retained references are not implicit")),
-            }
             let validate = |ty: &Ty| -> Result<()> {
                 match p.argument_observation.as_str() {
                     "immutable_value" =>
@@ -344,7 +328,7 @@ impl Engine<'_> {
         let contract = self.project.ports.get(id).ok_or_else(|| fail("missing sync call contract"))?;
         let spec = contract.completion_spec(self.project)?;
         need(identifier(site) && contract.endpoint == target && contract.effect == "sync"
-            && contract.heap_effect == "none" && contract.params.is_empty()
+            && contract.params.is_empty()
             && spec.returns == Ty::Unit && !spec.throwing(),
             "listener call requires a declared normal zero-argument void sync port")?;
         let binding = self.fresh_binding();
