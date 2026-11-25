@@ -16,3 +16,56 @@
     - from: 'int first = checkpoints.read(code);'
       to: 'int first = code; if (code > 0) first = checkpoints.read(code);'
   reject: ['member choices with effects require unconditional nonthrowing integer receipts']
+- name: receipt-and-choice-order-by-public-structural-keys
+  edits:
+    - from: 'return selected;'
+      to: 'return selected + second;'
+  expect:
+    - path: [R]
+      value: '$e_1 + $t_0'
+- name: receipt-first-source-spelling-yields-same-mixed-form
+  edits:
+    - from: 'return selected;'
+      to: 'return second + selected;'
+  expect:
+    - path: [R]
+      value: '$e_1 + $t_0'
+- name: receipt-and-choice-subtraction-is-not-exchangeable
+  edits:
+    - from: 'return selected;'
+      to: 'return selected - second;'
+  expect:
+    - path: [R]
+      value: '$t_0 - $e_1'
+- name: double-digit-receipt-numbers-stay-numeric-next-to-t
+  edits:
+    - from: 'int selected;'
+      to: |-
+        int r2 = checkpoints.read(second);
+        int r3 = checkpoints.read(r2);
+        int r4 = checkpoints.read(r3);
+        int r5 = checkpoints.read(r4);
+        int r6 = checkpoints.read(r5);
+        int r7 = checkpoints.read(r6);
+        int r8 = checkpoints.read(r7);
+        int r9 = checkpoints.read(r8);
+        int r10 = checkpoints.read(r9);
+        int selected;
+    - from: 'return selected;'
+      to: 'return r10 + r2 + selected;'
+  expect:
+    - path: [R]
+      value: '$e_2 + $e_10 + $t_0'
+    - path: [S]
+      value:
+        - call: { external: checkpoints.read, args: [code], returns: number, result: '$e_0' }
+        - call: { external: checkpoints.read, args: ['$e_0'], returns: number, result: '$e_1' }
+        - call: { external: checkpoints.read, args: ['$e_1'], returns: number, result: '$e_2' }
+        - call: { external: checkpoints.read, args: ['$e_2'], returns: number, result: '$e_3' }
+        - call: { external: checkpoints.read, args: ['$e_3'], returns: number, result: '$e_4' }
+        - call: { external: checkpoints.read, args: ['$e_4'], returns: number, result: '$e_5' }
+        - call: { external: checkpoints.read, args: ['$e_5'], returns: number, result: '$e_6' }
+        - call: { external: checkpoints.read, args: ['$e_6'], returns: number, result: '$e_7' }
+        - call: { external: checkpoints.read, args: ['$e_7'], returns: number, result: '$e_8' }
+        - call: { external: checkpoints.read, args: ['$e_8'], returns: number, result: '$e_9' }
+        - call: { external: checkpoints.read, args: ['$e_9'], returns: number, result: '$e_10' }

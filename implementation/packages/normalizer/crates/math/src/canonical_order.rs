@@ -273,7 +273,8 @@ fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortCo
         crate::symvar::SymVarOrigin::External {
             binding_id, path, ..
         } => {
-            let root = ctx.external_names().and_then(|names| names.get(binding_id)).cloned()
+            let root = ctx.external_names().and_then(|names| names.get(binding_id))
+                .map(|name| numbered_public_path(name, "$e_"))
                 .unwrap_or_else(|| format!("$e_{binding_id:020}"));
             if path.is_empty() {
                 format!("01|{root}")
@@ -297,11 +298,19 @@ fn heap_subject_key(id: i64, ctx: &dyn SortContext) -> String {
     format!("99|heap:{id:020}")
 }
 
+fn numbered_public_path(name: &str, prefix: &str) -> String {
+    let Some(rest) = name.strip_prefix(prefix) else { return name.into(); };
+    let (root, suffix) = rest.split_once('.').map_or((rest, String::new()),
+        |(root, path)| (root, format!(".{path}")));
+    root.parse::<u64>().map_or_else(|_| name.into(),
+        |slot| format!("{prefix}{slot:020}{suffix}"))
+}
+
 fn public_display_name_subject_key(name: &str) -> String {
-    if let Some(rest) = name.strip_prefix("$e_") {
-        format!("01|$e_{rest}")
-    } else if let Some(rest) = name.strip_prefix("$t_") {
-        format!("02|$t_{rest}")
+    if name.starts_with("$e_") {
+        format!("01|{}", numbered_public_path(name, "$e_"))
+    } else if name.starts_with("$t_") {
+        format!("02|{}", numbered_public_path(name, "$t_"))
     } else if name.starts_with("$h_") {
         format!("99|{name}")
     } else {

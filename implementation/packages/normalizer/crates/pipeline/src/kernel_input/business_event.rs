@@ -262,6 +262,16 @@ pub(super) fn observations(
         .value_on_normal_exit()
         .ok_or_else(|| fail("no normal settled return"))?;
     validate_ids(&returned, &issued, Some(&temporal_names))?;
+    let returned = if temporal_names.is_empty() {
+        returned
+    } else {
+        let external_names = ctx.published_external_names();
+        math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
+            heap: &BTreeMap::new(),
+            external: Some(&external_names),
+            temporals: Some(&temporal_names),
+        }).map_err(|error| fail(error.to_string()))?
+    };
     ctx.set_temporal_names(temporal_names);
     ctx.protect_business_return();
     let returned = if entry.return_type() == "void" {

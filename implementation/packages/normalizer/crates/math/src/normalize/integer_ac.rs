@@ -55,7 +55,7 @@ fn total_with_temporal_names(value: &Expr, folds: Option<&std::collections::BTre
 
 /// Strict numeric operators preserve the domain of both operands when swapped;
 /// a guarded external result does not justify eliminating or duplicating it.
-fn exact_business_integer(value: &Expr) -> bool {
+fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
     if value.as_lit().and_then(Lit::as_integer).is_some() {
         return true;
     }
@@ -65,15 +65,17 @@ fn exact_business_integer(value: &Expr) -> bool {
                 SymVarOrigin::Parameter { primitive_type, .. }
                 | SymVarOrigin::External { primitive_type, .. },
         } => primitive_type == "integer",
+        ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
+            primitive_type == "integer" && ctx.temporal_aliases().is_some_and(|names| names.contains_key(binding_id)),
         ExprKind::BinOp {
             op: B::Add | B::Sub | B::Mul,
             left,
             right,
-        } => exact_business_integer(left) && exact_business_integer(right),
+        } => exact_business_integer(left, ctx) && exact_business_integer(right, ctx),
         ExprKind::UnaryOp {
             op: UnaryOpKind::Neg,
             operand,
-        } => exact_business_integer(operand),
+        } => exact_business_integer(operand, ctx),
         _ => false,
     }
 }
@@ -118,7 +120,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         return expr.clone();
     }
     if !total_with_temporal_names(expr, ctx.temporal_aliases()) {
-        if exact_business_integer(expr) && crate::canonical_order_compare(left, right, ctx).is_gt() {
+        if exact_business_integer(expr, ctx) && crate::canonical_order_compare(left, right, ctx).is_gt() {
             return b::binop_public(*op, right.clone(), left.clone());
         }
         return expr.clone();

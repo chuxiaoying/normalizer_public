@@ -132,3 +132,6 @@ T:
   - { id: $t_0, op: member_choice, when: 'true', members: values, empty: '$e_1' }
 R: $t_0
 ```
+
+
+结果公式中严格整数加法可按公开的 E、T 结构键交换，`selected + second` 与 `second + selected` 都发布 `$e_1 + $t_0`；减法保留源码左右。若有 11 个真实回执，`$e_2` 在 `$e_10` 前，引用的公式排序不能重排 S 的调用链。
