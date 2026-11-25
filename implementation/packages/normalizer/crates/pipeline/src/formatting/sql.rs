@@ -196,11 +196,6 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some(rendered) = business_value::format_guarded_boolean(op, left, right, ctx) {
             return rendered;
         }
-        if op == BinOpKind::And {
-            if let Some(rendered) = try_format_and_ordered_peers(expr, ctx) {
-                return rendered;
-            }
-        }
         if let Some((display_op, flip)) =
             math::canonical_order_ordered_comparison(op, left, right, &CanonicalHeapNames(&ctx.business_identities))
         {
@@ -212,10 +207,10 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
 
         let l = format_binop_child_with_precedence(op, left, false, ctx);
         let r = format_binop_child_with_precedence(op, right, true, ctx);
-        let token = if op == BinOpKind::Or && ctx.business_inputs.is_some() {
-            "OR"
-        } else {
-            binop_display_token(op)
+        let token = match (op, ctx.business_inputs.is_some()) {
+            (BinOpKind::And, true) => "AND",
+            (BinOpKind::Or, true) => "OR",
+            _ => binop_display_token(op),
         };
         return format!("{l} {token} {r}");
     }
@@ -430,41 +425,6 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     }
     parts.push("END".to_string());
     parts.join("\n")
-}
-
-fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {
-    let mut factors = Vec::new();
-    collect_and_peer_terms(expr, &mut factors);
-    if factors.len() <= 1 {
-        return None;
-    }
-
-    let sort_names = CanonicalHeapNames(&ctx.business_identities);
-    factors.sort_by_cached_key(|factor| math::canonical_order_key(factor, &sort_names));
-
-    let rendered: Vec<String> = factors
-        .into_iter()
-        .map(|factor| {
-            let rendered = format_expr_with_ctx(&factor, ctx);
-            if matches!(factor.as_binop(), Some((BinOpKind::Or, _, _))) {
-                format!("({})", rendered)
-            } else {
-                rendered
-            }
-        })
-        .collect();
-    Some(rendered.join(if ctx.business_inputs.is_some() { " AND " } else { " && " }))
-}
-
-fn collect_and_peer_terms(expr: &Expr, out: &mut Vec<Expr>) {
-    if let Some((op, left, right)) = expr.as_binop() {
-        if op == BinOpKind::And {
-            collect_and_peer_terms(left, out);
-            collect_and_peer_terms(right, out);
-            return;
-        }
-    }
-    out.push(expr.clone());
 }
 
 fn format_lit(lit: &Lit) -> String {
