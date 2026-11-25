@@ -5,3 +5,16 @@
   expect:
     - path: [R]
       value: left != right
+- name: reverse-identity-operands
+  edits:
+    - from: 'return left == right;'
+      to: 'return right == left;'
+- name: public-names-before-allocation-order
+  edits:
+    - from: 'static boolean sameIdentity(Box left, Box right) {'
+      to: 'static boolean sameIdentity(Box right, Box left) {'
+  expect:
+    - path: [P, parameters, left, position]
+      value: 1
+    - path: [P, parameters, right, position]
+      value: 0

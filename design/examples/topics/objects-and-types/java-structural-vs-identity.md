@@ -82,6 +82,8 @@ class Identity {
 
 ## 引用身份的归一化最终结果
 
+交换比较两端或改变两个命名参数的声明先后，不改变身份关系与 R 中的唯一排序。声明变化仍要在 P 的 position 中体现。比如从左到右的形参变成 `(Box right, Box left)`，R 仍按公开路径写为 `left == right`，不能按内部引用的构造顺序写成反向。
+
 ```yaml
 schema: normalizer.pers/1
 

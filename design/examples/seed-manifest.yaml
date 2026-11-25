@@ -82,7 +82,7 @@ seeds:
   expr-case-when-let-extraction: { kind: topic, topic: expression-simplification, related: [control-flow] }
   object-nested-record: { kind: topic, topic: objects-and-types, related: [] }
   object-optional-field: { kind: topic, topic: objects-and-types, related: [basic-contracts] }
-  object-structural-vs-identity: { kind: topic, topic: objects-and-types, related: [state-and-aliasing] }
+  object-structural-vs-identity: { kind: topic, topic: objects-and-types, related: [state-and-aliasing, unified-canonical-form] }
   object-polymorphic-dispatch: { kind: topic, topic: objects-and-types, related: [language-entries] }
   object-collection-records: { kind: topic, topic: objects-and-types, related: [collections] }
   control-try-catch-finally: { kind: topic, topic: control-flow, related: [external-boundaries, state-and-aliasing] }

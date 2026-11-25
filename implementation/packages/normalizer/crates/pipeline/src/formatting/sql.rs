@@ -13,6 +13,7 @@
 mod relation_query;
 pub(crate) mod business_value;
 
+use crate::canonical_names::CanonicalHeapNames;
 use std::collections::{HashMap, HashSet};
 
 use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKind};
@@ -206,7 +207,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
             }
         }
         if let Some((display_op, flip)) =
-            math::canonical_order_ordered_comparison(op, left, right, &math::DefaultSortContext)
+            math::canonical_order_ordered_comparison(op, left, right, &CanonicalHeapNames(&ctx.business_identities))
         {
             let (lhs, rhs) = if flip { (right, left) } else { (left, right) };
             let l = format_expr_with_ctx(lhs, ctx);
@@ -435,10 +436,6 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     parts.join("\n")
 }
 
-fn canonical_order_key_for_expr(expr: &Expr, _ctx: &FormatCtx) -> String {
-    math::canonical_order_key(expr, &math::DefaultSortContext)
-}
-
 fn stable_dedup_strings(items: &mut Vec<String>) {
     let mut seen = HashSet::new();
     items.retain(|item| seen.insert(item.clone()));
@@ -451,7 +448,8 @@ fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<Stri
         return None;
     }
 
-    factors.sort_by_cached_key(|factor| canonical_order_key_for_expr(factor, ctx));
+    let sort_names = CanonicalHeapNames(&ctx.business_identities);
+    factors.sort_by_cached_key(|factor| math::canonical_order_key(factor, &sort_names));
 
     let mut rendered: Vec<String> = factors
         .into_iter()

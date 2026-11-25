@@ -1,5 +1,6 @@
 //! Source loading, symbolic entry execution and business PERS projection.
 
+mod canonical_names;
 pub mod error;
 pub mod formatting;
 pub mod kernel_input;
