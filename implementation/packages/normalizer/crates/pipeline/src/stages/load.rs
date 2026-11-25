@@ -5,8 +5,9 @@ use simulator_parser::{parse, JavaProgram, ParseOptions};
 use std::{fs, path::{Path, PathBuf}};
 
 fn collect_java_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), PipelineError> {
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
+    let path_error = |error| PipelineError::Io(format!("[SOURCE-WALK-FAILED] {}: {error}", dir.display()));
+    for entry in fs::read_dir(dir).map_err(path_error)? {
+        let path = entry.map_err(path_error)?.path();
         if path.is_dir() {
             collect_java_paths(&path, paths)?;
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("java") {
@@ -26,10 +27,12 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
     let mut program = JavaProgram::new();
     let options = ParseOptions::default();
     for path in paths {
-        let file = path.to_str().unwrap_or_else(|| {
-            panic!("[PIPELINE-NON-UTF8-PATH] source path is not valid UTF-8")
-        });
-        let bytes = fs::read(&path)?;
+        let file = path.to_str().ok_or_else(|| PipelineError::Io(
+            format!("[SOURCE-PATH-FAILED] source path is not valid UTF-8: {}", path.display()),
+        ))?;
+        let bytes = fs::read(&path).map_err(|error| PipelineError::Io(
+            format!("[SOURCE-READ-FAILED] {file}: {error}"),
+        ))?;
         let content = std::str::from_utf8(&bytes).map_err(|_| {
             PipelineError::Io(format!("[SOURCE-DECODE-FAILED] failed to decode {file} as UTF-8"))
         })?;

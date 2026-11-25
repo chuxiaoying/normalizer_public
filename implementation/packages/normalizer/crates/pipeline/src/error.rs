@@ -21,9 +21,3 @@ impl std::fmt::Display for PipelineError {
 }
 
 impl std::error::Error for PipelineError {}
-
-impl From<std::io::Error> for PipelineError {
-    fn from(e: std::io::Error) -> Self {
-        PipelineError::Io(e.to_string())
-    }
-}

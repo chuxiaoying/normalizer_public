@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyVariant } from './business_example_series.mjs';
@@ -63,4 +63,35 @@ for (const { seedId, entry, scene, fixture, variants, reject } of loadSeedEntrie
       checkExample(project, scene, entry, fixture, variant, reject);
     });
   }
+}
+
+
+// These are CLI ingress contracts, not Java business seeds. The failure must
+// be diagnosed before normalizing or publishing any PERS.
+for (const [name, setup, diagnostic] of [
+  ['missing-root', project => join(project, 'does-not-exist'), '[NORM-SOURCE] expected existing directory'],
+  ['empty-source-root', project => project, '[SOURCE-EMPTY]'],
+  ['malformed-source-utf8', project => {
+    writeFileSync(join(project, 'Bad.java'), Buffer.from([0xff]));
+    return project;
+  }, '[SOURCE-DECODE-FAILED]'],
+  ['read-failure-keeps-source-name', project => {
+    symlinkSync(join(project, 'missing.java'), join(project, 'Dangling.java'));
+    return project;
+  }, /\[SOURCE-READ-FAILED\].*Dangling\.java/],
+  ['non-utf8-source-name-is-a-diagnostic-not-a-panic', project => {
+    writeFileSync(Buffer.concat([Buffer.from(project + '/'), Buffer.from([0xff]), Buffer.from('.java')]), '');
+    return project;
+  }, '[SOURCE-PATH-FAILED]'],
+]) {
+  test('source CLI ingress / ' + name, t => {
+    const project = mkdtempSync(join(tmpdir(), 'normalizer-ingress-'));
+    t.after(() => rmSync(project, { recursive: true, force: true }));
+    const { status, stdout, stderr } = invoke(
+      join(root, 'implementation/tools/normalizer'), ['source', setup(project), 'Probe.run'], root);
+    assert.notEqual(status, 0);
+    assert.equal(stdout, '');
+    assert.ok(typeof diagnostic === 'string' ? stderr.includes(diagnostic) : diagnostic.test(stderr), stderr);
+    assert.ok(!stderr.includes('panicked'), stderr);
+  });
 }
