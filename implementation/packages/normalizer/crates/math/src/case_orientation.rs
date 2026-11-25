@@ -135,11 +135,10 @@ fn candidate_precedes(
     if left_policy != right_policy {
         return left_policy < right_policy;
     }
-    let left_cost = (!left_no.is_null(), left_condition.size());
-    let right_cost = (!right_no.is_null(), right_condition.size());
-    left_cost < right_cost
-        || (left_cost == right_cost
-            && crate::canonical_order_compare(left_condition, right_condition, context).is_lt())
+    crate::canonical_order_compare(left_condition, right_condition, context)
+        .then_with(|| crate::canonical_order_compare(left_yes, right_yes, context))
+        .then_with(|| crate::canonical_order_compare(left_no, right_no, context))
+        .is_lt()
 }
 
 /// Return the preferred complement if the existing binary CASE direction
