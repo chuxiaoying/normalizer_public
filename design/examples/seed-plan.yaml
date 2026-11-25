@@ -30,43 +30,36 @@ topics:
         surface: java/javascript/typescript
         focus: 常量折叠与恒等值传播
         test_status: covered
-        review_status: cli-passed
       - id: expr-associative-commutative-normal-form
         status: seeded
         surface: java/javascript/typescript
         focus: 加法乘法的结合律、交换律和唯一排序
         test_status: covered
-        review_status: cli-passed
       - id: expr-boolean-algebra
         status: seeded
         surface: java/javascript/typescript
         focus: 短路条件、德摩根律和冗余谓词消除
         test_status: covered
-        review_status: cli-passed
       - id: expr-equation-normal-form
         status: seeded
         surface: java/javascript/typescript
         focus: 等式两侧方向和唯一规范形式
         test_status: covered
-        review_status: cli-passed
       - id: expr-equation-inequality-normal-form
         status: seeded
         surface: java/javascript/typescript
         focus: 等式与不等式联合约束规范化
         test_status: covered
-        review_status: proposed
       - id: expr-case-when-let-extraction
         status: seeded
         surface: pers
         focus: 被绑定表达式本身含 CASE WHEN 且重复引用才允许 LET
         test_status: covered
-        review_status: proposed
       - id: expr-unknown-condition-preservation
         status: seeded
         surface: java/javascript/typescript
         focus: 无法判定的条件保留为路径约束
         test_status: covered
-        review_status: cli-passed
   collections:
     title: 集合
     scope: 数组、Collection、Tuple 的元素、顺序、重复、空值和集合操作
@@ -96,47 +89,39 @@ topics:
         surface: java/javascript/typescript
         focus: 空集合、单元素和多元素的统一结果
         test_status: covered
-        review_status: proposed
       - id: collection-filter
         status: seeded
         surface: java/javascript/typescript
         focus: 筛选条件和元素保留顺序
         test_status: covered
-        review_status: cli-passed
       - id: collection-map
         status: seeded
         surface: java/javascript/typescript
         focus: 逐元素映射和元素类型变化
         test_status: covered
-        review_status: proposed
       - id: collection-reduce
         status: seeded
         surface: java/javascript/typescript
         focus: 空值、初始值和聚合顺序
         test_status: covered
-        review_status: proposed
       - id: collection-find-first
         status: seeded
         surface: java/javascript/typescript
         focus: 首个匹配、无匹配和提前终止
         test_status: covered
-        review_status: cli-passed
       - id: collection-order-and-duplicates
         status: seeded
         surface: java/javascript/typescript
         focus: 重复元素、稳定顺序和去重
         test_status: covered
-        review_status: proposed
       - id: collection-nested
         status: seeded
         surface: java/javascript/typescript
         focus: 嵌套集合的展开、映射和聚合
         test_status: covered
-        review_status: proposed
       - id: collection-alias-and-mutation
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: java/javascript/typescript
         focus: 集合别名、原地修改和读取时点
   control-flow:
@@ -153,37 +138,31 @@ topics:
         surface: java/javascript/typescript
         focus: 二路分支和公共出口
         test_status: covered
-        review_status: cli-passed
       - id: control-switch-branch
         status: seeded
         surface: java/javascript/typescript
         focus: switch 或 match 的互斥分支
         test_status: covered
-        review_status: cli-passed
       - id: control-short-circuit
         status: seeded
         surface: java/javascript/typescript
         focus: "&&、|| 和短路副作用顺序"
         test_status: covered
-        review_status: cli-passed
       - id: control-early-return
         status: seeded
         surface: java/javascript/typescript
         focus: 多处 return 与未完成路径
         test_status: covered
-        review_status: cli-passed
       - id: control-exception-path
         status: seeded
         surface: java/javascript/typescript
         focus: 正常路径和异常路径分离
         test_status: covered
-        review_status: cli-passed
       - id: control-try-catch-finally
         status: seeded
         surface: java/javascript/typescript
         focus: 捕获、重新抛出和 finally 观察
         test_status: covered
-        review_status: proposed
   objects-and-types:
     title: 对象与类型
     scope: 自定义类型、字段投影、对象结构和 PERS types
@@ -198,29 +177,24 @@ topics:
         surface: java/javascript/typescript
         focus: 嵌套自定义类型和字段投影
         test_status: covered
-        review_status: proposed
       - id: object-optional-field
         status: seeded
         surface: java/javascript/typescript
         focus: 可空字段和显式类型合同
         test_status: covered
-        review_status: proposed
       - id: object-external-return-type
         status: seeded
         surface: java/javascript/typescript
         focus: 外部接口返回自定义对象
         test_status: covered
-        review_status: cli-passed
       - id: object-structural-vs-identity
         status: seeded
         surface: java/javascript/typescript
         focus: 对象结构相等与引用身份的区别
         test_status: covered
-        review_status: proposed
       - id: object-polymorphic-dispatch
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: java/javascript/typescript
         focus: 接口、继承和动态实现选择
       - id: object-collection-records
@@ -228,7 +202,6 @@ topics:
         surface: java/javascript/typescript
         focus: 集合中的记录类型和字段访问
         test_status: covered
-        review_status: proposed
   state-and-aliasing:
     title: 状态与别名
     scope: 主动标记的状态、对象身份、别名和写入读取顺序
@@ -248,35 +221,29 @@ topics:
         surface: java/javascript/vue
         focus: 只有显式 state 标记的字段才进入 E
         test_status: covered
-        review_status: cli-passed
       - id: state-multi-write-read-order
         status: seeded
         surface: java/javascript/vue
         focus: 多次写入和不同读取时点
         test_status: covered
-        review_status: proposed
       - id: state-call-to-call
         status: seeded
         surface: java/javascript/vue
         focus: 跨入口调用的状态保留和重置
         test_status: covered
-        review_status: proposed
       - id: state-nested-alias
         status: seeded
         surface: java/javascript/typescript
         focus: 嵌套对象别名和局部引用
         test_status: covered
-        review_status: cli-passed
       - id: state-collection-mutation
         status: seeded
         surface: java/javascript/typescript
         focus: 集合修改对别名观察的影响
         test_status: covered
-        review_status: proposed
       - id: state-cycle-and-observable-output
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: java/javascript/typescript
         focus: 内部循环引用和最终出口投影
   loops-and-termination:
@@ -308,23 +275,19 @@ topics:
         surface: java/javascript/typescript
         focus: 常量边界循环由内核直接支持
         test_status: covered
-        review_status: cli-passed
       - id: loop-variable-finite-bound
         status: seeded
         surface: java/javascript/typescript
         focus: 可证明有限的变量边界循环
         test_status: covered
-        review_status: proposed
       - id: loop-break-continue
         status: seeded
         surface: java/javascript/typescript
         focus: break、continue 和循环后状态
         test_status: covered
-        review_status: proposed
       - id: loop-nested
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: java/javascript/typescript
         focus: 嵌套循环的有限性和聚合
       - id: loop-recursive
@@ -332,7 +295,6 @@ topics:
         surface: java/javascript/typescript
         focus: 递归调用的终止条件和拒绝边界
         test_status: covered
-        review_status: proposed
   external-boundaries:
     title: 外部边界
     scope: 外部库、端口、回调、成功失败、异常和重试
@@ -352,35 +314,29 @@ topics:
         surface: java/javascript/typescript
         focus: 外部标量成功返回和失败分支
         test_status: covered
-        review_status: cli-passed
       - id: external-object-success-failure
         status: seeded
         surface: java/javascript/typescript
         focus: 外部对象返回和类型投影
         test_status: covered
-        review_status: cli-passed
       - id: external-exception-propagation
         status: seeded
         surface: java/javascript/typescript
         focus: 外部异常传播、捕获和替换
         test_status: covered
-        review_status: cli-passed
       - id: external-nondeterministic-result
         status: seeded
         surface: java/javascript/typescript
         focus: 外部结果未知但同次引用一致
         test_status: covered
-        review_status: cli-passed
       - id: external-timeout
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: java/javascript/typescript
         focus: 超时、取消和观察范围
       - id: external-callback-order
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: java/javascript/typescript
         focus: 回调注册、触发和调用顺序
   relational-data:
@@ -402,35 +358,29 @@ topics:
         surface: sql/java
         focus: 连接条件、匹配和未匹配行
         test_status: covered
-        review_status: proposed
       - id: relation-group-aggregate
         status: seeded
         surface: sql/java
         focus: 分组、聚合和空组
         test_status: covered
-        review_status: proposed
       - id: relation-order-limit
         status: seeded
         surface: sql/java
         focus: 排序、limit 和稳定顺序
         test_status: covered
-        review_status: proposed
       - id: relation-null-semantics
         status: seeded
         surface: sql/java
         focus: SQL NULL 与业务可空值
         test_status: covered
-        review_status: proposed
       - id: relation-delete
         status: seeded
         surface: sql/java
         focus: 删除条件和受影响行数
         test_status: covered
-        review_status: proposed
       - id: relation-batch-write
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: sql/java
         focus: 批量插入、更新和部分失败
   number-domain:
@@ -442,37 +392,31 @@ topics:
         test_status: covered
         surface: java
         focus: 源码显式规定的业务流水号回卷
-        review_status: cli-passed
       - id: number-business-unbounded
         status: seeded
         surface: java/javascript/typescript
         focus: 业务 number 不受 Java 位宽限制
         test_status: covered
-        review_status: cli-passed
       - id: number-money-precision
         status: seeded
         surface: java/javascript/typescript
         focus: 金额运算的精度合同
         test_status: covered
-        review_status: cli-passed
       - id: number-decimal-rounding
         status: seeded
         surface: java/javascript/typescript
         focus: 小数舍入和显示边界
         test_status: covered
-        review_status: proposed
       - id: number-division-zero
         status: seeded
         surface: java/javascript/typescript
         focus: 除零的业务异常与拒绝边界
         test_status: covered
-        review_status: cli-passed
       - id: number-compare-boundaries
         status: seeded
         surface: java/javascript/typescript
         focus: 数值比较和极值条件
         test_status: covered
-        review_status: cli-passed
   language-entries:
     title: 语言入口
     scope: Java、JavaScript、TypeScript、Vue 的入口识别和入口级预处理
@@ -492,11 +436,9 @@ topics:
         surface: java
         focus: Java 实例方法入口和 receiver
         test_status: covered
-        review_status: cli-passed
       - id: entry-javascript-module
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: javascript
         focus: JavaScript 模块函数入口
       - id: entry-typescript-function
@@ -506,7 +448,6 @@ topics:
       - id: entry-async-await
         status: seeded
         test_status: covered
-        review_status: proposed
         surface: javascript/typescript
         focus: 异步入口和 await 后状态
       - id: entry-event-handler
@@ -536,25 +477,21 @@ topics:
         surface: java/javascript/typescript
         focus: 普通输入默认非空
         test_status: covered
-        review_status: cli-passed
       - id: basic-nullable-input
         status: seeded
         surface: java/javascript/typescript
         focus: 可空输入显式声明并分裂异常路径
         test_status: covered
-        review_status: cli-passed
       - id: basic-return-shape
         status: seeded
         surface: java/javascript/typescript
         focus: 入口返回标量、对象和异常的基本合同
         test_status: covered
-        review_status: cli-passed
       - id: basic-unsupported-source-boundary
         status: seeded
         surface: java/javascript/typescript
         focus: 语言源码无法表达时的明确拒绝
         test_status: covered
-        review_status: cli-passed
 compositions:
   loops-and-collections:
     topics:

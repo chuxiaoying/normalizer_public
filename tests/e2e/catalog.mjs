@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
+import { vueScenario } from '../../implementation/tools/scenarios/registry.mjs';
 
 function record(value, name) {
   assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Expected a mapping: ' + name);
@@ -107,13 +108,9 @@ export function loadSeedPlan(root, seeds = loadSeeds(root), seedMetadata = loadS
       assert.ok(['seeded', 'planned'].includes(item.status), 'Invalid seed plan status: ' + item.id);
       assert.ok(typeof item.focus === 'string' && item.focus.length > 0, 'Seed plan entry needs a focus: ' + item.id);
       if (item.status === 'seeded') assert.ok(['covered', 'pending'].includes(item.test_status), 'Seeded entry needs test status: ' + item.id);
-      else assert.ok(item.test_status === undefined && item.review_status === undefined, 'Planned entry cannot have test or review status: ' + item.id);
-      if (item.review_status !== undefined) {
-        assert.ok(item.status === 'seeded', 'Planned entry cannot have review status: ' + item.id);
-        assert.ok(['proposed', 'challenged', 'revised', 'accepted', 'cli-passed'].includes(item.review_status), 'Invalid seed review status: ' + item.id);
-        if (item.review_status === 'cli-passed') assert.equal(item.test_status, 'covered', 'CLI-passed seed must be covered: ' + item.id);
-      }
-      records.set(item.id, { kind, topic, status: item.status, testStatus: item.test_status, reviewStatus: item.review_status, focus: item.focus });
+      else assert.ok(item.test_status === undefined, 'Planned entry cannot have test status: ' + item.id);
+      assert.ok(!Object.hasOwn(item, 'review_status'), 'Review evidence belongs outside the seed plan: ' + item.id);
+      records.set(item.id, { kind, topic, status: item.status, testStatus: item.test_status, focus: item.focus });
     }
   };
   for (const [topic, group] of record(plan.topics, 'seed plan topics')) addGroup(topic === 'basic-contracts' ? 'basic' : 'topic', topic, group);
@@ -143,7 +140,6 @@ export function loadCases(root, seeds = loadSeeds(root)) {
   const catalog = readYaml(root, 'tests/e2e/catalog.yaml');
   assert.deepEqual(Object.keys(catalog).sort(), ['groups', 'pending', 'version'], 'Unknown or missing test catalog section');
   assert.equal(catalog.version, 1, 'Unsupported test catalog version');
-  const { scenes } = readYaml(root, 'implementation/tools/scenarios/registry.yaml');
   const assigned = new Set();
   const series = new Set();
   const cases = [];
@@ -159,7 +155,7 @@ export function loadCases(root, seeds = loadSeeds(root)) {
       if (group.split('/')[0] === 'vue') {
         assert.deepEqual(Object.keys(binding ?? {}).sort(), ['entries', 'scene'], 'Vue seed requires explicit entries and scene: ' + seedId);
         ({ entries, scene } = binding);
-        assert.ok(typeof scene === 'string' && Object.hasOwn(scenes, scene) && scenes[scene].input === 'vue-component-and-prepared-module',
+        assert.ok(vueScenario(scene),
           'Unknown or incompatible Vue CLI scene: ' + scene);
       }
       assert.ok(Array.isArray(entries) && entries.length, 'No test entry for seed: ' + seedId);
@@ -169,7 +165,10 @@ export function loadCases(root, seeds = loadSeeds(root)) {
         assert.match(entry, javascript
           ? /^[\w-]+\.js#[\w$]+$/
           : /^[\w$]+(?:[.#][\w$]+)*$/, 'Invalid seed entry');
-        const filename = group + '/' + (javascript ? entry.split('#')[0].slice(0, -3) : entry.replaceAll('#', '-')) + '.yaml';
+        const [language] = group.split('/');
+        const primaryTopic = seedMetadata.get(seedId).topic;
+        const directory = group === language + '/' + primaryTopic ? group + '/' + seedId : group;
+        const filename = directory + '/' + (javascript ? entry.split('#')[0].slice(0, -3) : entry.replaceAll('#', '-')) + '.yaml';
         register(series, filename, 'variant series');
         cases.push({
           seedId, document, entry, group, scene, seriesFile: variants + '/' + filename,

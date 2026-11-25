@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -112,68 +113,91 @@ def _maintenance_contract(root: Path) -> dict:
     return {"violations": violations, "documents": documents}
 
 
-def _kernel_input_contract(root: Path) -> dict:
-    """Keep active protocol names canonical and current."""
-    violations = []
-    examples = root / "design/examples"
-    active_files = [path for path in examples.rglob("*") if path.is_file()]
-    obsolete_active = []
+# The protocol guard covers first-party material, not dependencies, caches, or
+# build products. The scanner itself necessarily contains the forbidden names.
+PROTOCOL_ROOTS = (
+    "AGENTS.md", "README.md", "design", "implementation/contracts",
+    "implementation/docs", "implementation/tools", "implementation/skills",
+    "implementation/apps", "implementation/packages/normalizer/crates",
+    "tests", "usage",
+)
+PROTOCOL_EXCLUDED_DIRS = {
+    ".audit-npm-cache", ".cache", ".git", ".venv", "__pycache__", "evidence",
+    "node_modules", "target", "venv",
+}
+PROTOCOL_TEXT_EXTENSIONS = {
+    "", ".command", ".css", ".html", ".java", ".js", ".json", ".md", ".mjs",
+    ".py", ".rs", ".sh", ".sql", ".toml", ".ts", ".tsx", ".txt", ".vue",
+    ".yaml", ".yml",
+}
+PROTOCOL_SCANNER = Path("implementation/tools/architecture/health.py")
+OBSOLETE_PROTOCOL = re.compile(r"normalizer\.normalized-(pure-result|behavior-result|pure)/1(?![0-9])")
+OBSOLETE_TERM = re.compile(r"normalized[_-]pure", re.IGNORECASE)
+
+
+def _protocol_files(root: Path) -> list[Path]:
+    paths: set[Path] = set()
+    for relative in PROTOCOL_ROOTS:
+        location = root / relative
+        if location.is_file():
+            paths.add(location)
+        if not location.is_dir():
+            continue
+        for directory, children, filenames in os.walk(location):
+            children[:] = sorted(name for name in children if name not in PROTOCOL_EXCLUDED_DIRS)
+            for name in filenames:
+                path = Path(directory) / name
+                if path.suffix in PROTOCOL_TEXT_EXTENSIONS and not path.is_symlink():
+                    paths.add(path)
+    return sorted(path for path in paths if path.relative_to(root) != PROTOCOL_SCANNER)
+
+
+def _protocol_usage(root: Path) -> tuple[list[Path], list[str], list[dict]]:
+    active_files = _protocol_files(root)
+    obsolete_active: list[str] = []
+    violations: list[dict] = []
     for path in active_files:
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        if any(term in text for term in (
-            "normalizer.normalized-pure/1",
-            "normalizer.normalized-pure-result/1",
-            "normalizer.normalized-behavior-result/1",
-        )):
-            obsolete_active.append(str(path.relative_to(root)))
-    for path in obsolete_active:
-        violations.append({
-            "path": path,
-            "expected": CANONICAL_KERNEL_INPUT_SCHEMA,
-            "reason": "active input or scenario material still uses an obsolete protocol name",
-        })
+        relative = str(path.relative_to(root))
+        schemas = {match[1] for match in OBSOLETE_PROTOCOL.finditer(text)}
+        if schemas:
+            obsolete_active.append(relative)
+            expected = []
+            if "pure" in schemas:
+                expected.append(CANONICAL_KERNEL_INPUT_SCHEMA)
+            if schemas - {"pure"}:
+                expected.append(CANONICAL_PERS_SCHEMA)
+            violations.append({
+                "path": relative,
+                "expected": " or ".join(expected),
+                "reason": "active material still uses an obsolete protocol name",
+            })
+        if OBSOLETE_TERM.search(OBSOLETE_PROTOCOL.sub("", text)):
+            violations.append({
+                "path": relative,
+                "expected": "kernel_input or kernel-input terminology",
+                "reason": "active material still uses an obsolete protocol term",
+            })
+    return active_files, obsolete_active, violations
+
+
+def _kernel_input_contract(root: Path) -> dict:
+    """Keep active protocol names canonical and current."""
+    active_files, obsolete_active, violations = _protocol_usage(root)
 
     kernel_input = root / "implementation/packages/normalizer/crates/pipeline/src/kernel_input.rs"
     kernel_text = kernel_input.read_text(encoding="utf-8") if kernel_input.is_file() else ""
     if f'KERNEL_INPUT_SCHEMA: &str = "{CANONICAL_KERNEL_INPUT_SCHEMA}"' not in kernel_text:
         violations.append({"path": str(kernel_input.relative_to(root)), "reason": "canonical input schema constant is missing"})
-    if "normalizer.normalized-pure/1" in kernel_text:
-        violations.append({"path": str(kernel_input.relative_to(root)), "reason": "input loader still accepts an obsolete protocol name"})
 
     adapter = root / "implementation/tools/scenarios/module-project.mjs"
     adapter_text = adapter.read_text(encoding="utf-8") if adapter.is_file() else ""
     if f"schema: '{CANONICAL_KERNEL_INPUT_SCHEMA}'" not in adapter_text:
         violations.append({"path": str(adapter.relative_to(root)), "reason": "scenario adapter does not emit canonical input schema"})
 
-    # Obsolete protocol names and module terms must not leak into current
-    # documentation, source, adapters, or executable test material.
-    terminology_roots = [
-        root / "design",
-        root / "implementation/contracts",
-        root / "usage/scenarios",
-        root / "implementation/packages/normalizer/crates/pipeline/src",
-    ]
-    legacy_schema_text = re.compile(r"normalizer\.normalized-(?:pure|pure-result|behavior-result)/1")
-    bare_term = re.compile(r"normalized[_-]pure", re.IGNORECASE)
-    for terminology_root in terminology_roots:
-        if not terminology_root.is_dir():
-            continue
-        for path in terminology_root.rglob("*"):
-            if not path.is_file():
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
-            if bare_term.search(legacy_schema_text.sub("", text)):
-                violations.append({
-                    "path": str(path.relative_to(root)),
-                    "expected": "kernel_input or kernel-input terminology",
-                    "reason": "current material still uses an obsolete protocol term",
-                })
     if (
         "kernel_input.stage" not in kernel_text
         or "normalized_pure.stage" in kernel_text

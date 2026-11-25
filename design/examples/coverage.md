@@ -1,6 +1,6 @@
 # 种子分母与覆盖模型
 
-`seed-plan.yaml` 是设计种子的分母计划。它枚举当前认为需要独立人机对齐的语义场景。`seeded` 表示已经有设计种子，`planned` 表示只占分母位置。已实现种子的 `test_status` 只表示 CLI 覆盖状态，取 `pending` 或 `covered`。种子审核阶段由独立的 `review_status` 表示，取 `proposed`、`challenged`、`revised`、`accepted` 或 `cli-passed`。
+`seed-plan.yaml` 是设计种子的分母计划。它枚举当前认为需要独立人机对齐的语义场景。`seeded` 表示已经有设计种子，`planned` 表示只占分母位置。已实现种子的 `test_status` 只表示 CLI 覆盖状态，取 `pending` 或 `covered`。审核过程和实跑证据记录在相应的审阅与验收记录中，不写入分母计划。
 
 种子位置与各主题的覆盖数量以 [分母计划](seed-plan.yaml) 为准。每个种子应覆盖一个可独立判断的业务语义；已有合同下的语法变化由派生测试覆盖。
 

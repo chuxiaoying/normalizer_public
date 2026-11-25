@@ -4,6 +4,7 @@ import { accessSync, constants, readFileSync, statSync, writeFileSync } from 'no
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { readModuleEvent } from '../frontend/module-event.mjs';
 import { readModuleProjection } from '../frontend/module-projection.mjs';
+import { vueScenario } from './registry.mjs';
 
 const carriers = {
   bool: ['boolean', 'bool'], text: ['String', 'text?'],
@@ -171,8 +172,8 @@ export function buildModuleProject({ scene, root, file, name, original, director
   accessSync(originalPath, constants.R_OK);
   const modulePath = join(root, file);
   const moduleText = readFileSync(modulePath, 'utf8');
-  const build = scene === 'frontend-vo-production' ? eventContract : projectionContract;
-  if (!['frontend-vo-production', 'frontend-vo-consumption'].includes(scene)) throw new Error('SCENARIO_MODULE_INPUT: unsupported component scenario');
+  const build = {event: eventContract, projection: projectionContract}[vueScenario(scene)];
+  if (!build) throw new Error('SCENARIO_MODULE_INPUT: unsupported component scenario');
   const project = build(modulePath, moduleText, name, original);
   const [entry] = project.entries;
   const source = project.source_text;

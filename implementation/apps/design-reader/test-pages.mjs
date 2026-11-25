@@ -1,4 +1,5 @@
 import YAML from '../../tools/frontend/node_modules/yaml/dist/index.js';
+import { applyExpectedChanges } from '../../../tests/e2e/business_example_series.mjs';
 
 function escape(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -67,7 +68,7 @@ function renderOutcome(test, original, entry, codeBlock) {
   if (test.reject) {
     const fragments = '<ul>' + test.reject.map(fragment => '<li><code>' + escape(fragment) + '</code></li>').join('') + '</ul>';
     const outcome = test.inheritsRejection ? '沿用原例的拒绝预期。' : '预期拒绝。';
-    const explanation = outcome + 'CLI 非零退出，标准输出为空，标准错误须包含以下全部片段。';
+    const explanation = outcome + 'CLI 非零退出，标准输出为空，首条诊断必须匹配下面的错误标记，标准错误还须包含具体原因。';
     const identity = (isOriginal || test.inheritsRejection) && test.rejection ?
       '<p>诊断还须包含入口 <code>' + escape(entry) + '</code>，并以独立词标明 <code>kind=' +
         escape(test.rejection.split('\n', 1)[0]) + '</code>。</p>' : '';
@@ -78,11 +79,17 @@ function renderOutcome(test, original, entry, codeBlock) {
 
   let differences = '';
   if (test.changes.length) {
-    const changes = test.changes.map(({path, value, absent}) => {
-      const previous = path.reduce((object, field) => object[field], original.expected);
-      const after = absent ? '' : yaml(value).replace(/\n$/, '');
-      const label = '<p><code>' + escape(fieldName(path)) + '</code>' + (absent ? '：该字段不存在' : '') + '</p>';
-      return label + codeBlock(diffSnippet(yaml(previous).replace(/\n$/, ''), after), 'diff');
+    let snapshot = original.expected;
+    const changes = test.changes.map(change => {
+      const { path, absent } = change;
+      const addition = Object.hasOwn(change, 'add');
+      const lookup = object => path.reduce((node, field) => node?.[field], object);
+      const before = addition ? '' : yaml(lookup(snapshot)).replace(/\n$/, '');
+      snapshot = applyExpectedChanges(snapshot, [change]);
+      const after = absent ? '' : yaml(lookup(snapshot)).replace(/\n$/, '');
+      const label = '<p><code>' + escape(fieldName(path)) + '</code>' +
+        (absent ? '：该字段不存在' : addition ? '：新增字段' : '') + '</p>';
+      return label + codeBlock(diffSnippet(before, after), 'diff');
     });
     differences = '<h3>预期 PERS 变更</h3>' + changes.join('');
   } else if (!isOriginal) {

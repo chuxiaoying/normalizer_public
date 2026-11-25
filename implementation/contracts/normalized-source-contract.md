@@ -143,7 +143,7 @@ TypeScript parser: ts_fetch
 
 同理，Java Stream 的 `filter`、TypeScript Array 的 `filter` 和场景规范源码的关系过滤，都必须在语义等价时降低为同一个关系过滤节点。方法名属于宿主语言表面，过滤语义属于共享扩展层。
 
-上文的 `external.profileClient.fetchProfile` 是共享边界语义的示意。首批规范源码在 Java 字段声明上使用 `@External`，在前端端口声明上使用 `@external`，调用处保留原生的 `profileClient.fetchProfile(...)`。解析器根据声明绑定端口并保留调用路径。完整的标记与注释验收范围见[业务 PERS 设计](business-pers.md)。如果预处理确实把源码调用映射到稳定的服务端点，映射必须同时保留原始 callee、目标端点和可复核的来源依据；没有依据时不得生成新的命名空间。
+上文的 `external.profileClient.fetchProfile` 是共享边界语义的示意。规范源码在 Java 字段声明上使用 `@External`，在前端端口声明上使用 `@external`，调用处保留原生的 `profileClient.fetchProfile(...)`。解析器根据声明绑定端口并保留调用路径。完整的标记与注释验收范围见[业务 PERS 设计](business-pers.md)。如果预处理确实把源码调用映射到稳定的服务端点，映射必须同时保留原始 callee、目标端点和可复核的来源依据；没有依据时不得生成新的命名空间。
 
 预处理结果和最终 PERS 使用同一套 P/E 来源定义。`P` 用入口签名、参数位置或 props 名称逐项定义输入，`E` 用状态根、字段路径、数据库表命名空间、表名和列名定义已有来源。PERS 的公共 YAML 形态见[PERS 符号定义与源码绑定](pers-source-linked.md)。S 中的 external 调用显式绑定 `result` 完成值，不需要在 E 区重复声明。
 
