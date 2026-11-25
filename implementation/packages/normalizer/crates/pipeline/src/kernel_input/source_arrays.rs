@@ -72,7 +72,7 @@ fn original_slot(root: &str, index: i64) -> Expr {
 }
 
 impl Engine<'_> {
-    fn fail_source_array(&mut self, path: Expr, exception: &str) {
+    pub(super) fn fail_source_array(&mut self, path: Expr, exception: &str) {
         let path = self.normal_path(path);
         if path.as_bool() != Some(false) {
             self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
@@ -138,6 +138,11 @@ impl Engine<'_> {
 
     pub(super) fn source_array_read(&mut self, array: Value, index: Value, path: Expr) -> Result<Value> {
         need(self.project.direct_source, "source array index requires direct source")?;
+        if let Value::EagerIntProjection { base, selected } = array {
+            need(index_value(index)? == 0, "eager record projection currently supports only its first element")?;
+            self.fail_source_array(b::and(path, b::not(r::relation_exists(base.clone()))), OUT_OF_BOUNDS);
+            return Ok(Value::Term(Ty::Integer, r::relation_first_value(base, selected, b::lit_null())));
+        }
         if let Value::LocalIntArray(local) = array {
             let index = exact_java_int(index)?;
             let Some(value) = local.get(index) else {

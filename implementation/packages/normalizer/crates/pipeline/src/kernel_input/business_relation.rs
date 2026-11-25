@@ -249,6 +249,37 @@ impl Engine<'_> {
             need(!self.source_array_writes.contains_key(name),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
+        if let (Kind::Rows, Projection::Value(Scalar::Path(parts))) = (&query.kind, &query.projection) {
+            if matches!(decl, Some(JavaType::Array(item)) if crate::normalized::integral(item)) {
+                let [alias, link, leaf] = parts.as_slice() else {
+                    return Err(fail("eager record projection requires one nullable member hop"));
+                };
+                need(alias == &query.alias && query.clauses.is_empty() && !query.accumulate,
+                    "eager record projection requires an unfiltered source-order path")?;
+                let Some(Value::Sequence { item: Ty::Ref, relation: RelationExpr::Base { name, .. }, .. }) =
+                    env.get(&query.source) else { return Err(fail("eager projection requires a directly bound record array")); };
+                let root = name.clone();
+                let row = self.source_relations.record_inputs.get(&root).and_then(|owner| self.program.find_class(owner))
+                    .ok_or_else(|| fail("eager projection requires its declared record element"))?;
+                let member = row.fields().iter().find(|field| field.name() == link)
+                    .ok_or_else(|| fail("undeclared eager projection member"))?;
+                need(crate::normalized::source_nullable_field(row, member),
+                    "eager projection member requires an explicit nullable record declaration")?;
+                let child = self.project.source_owner(member.java_type()).and_then(|owner| self.program.find_class(owner))
+                    .ok_or_else(|| fail("eager projection member must be a declared record"))?;
+                need(child.fields().iter().any(|field| field.name() == leaf && crate::normalized::integral(field.java_type())),
+                    "eager projection leaf must be a declared integer")?;
+                let base = RelationExpr::base(&root, "r");
+                let missing = b::eq(b::row_value(format!("r.{link}")), b::lit_null());
+                // This is the completion of the entire projection, not of a single selected row.
+                let exception = r::relation_exists(RelationExpr::select(missing, base.clone()));
+                self.fail_source_array(b::and(guard.clone(), exception), "java.lang.NullPointerException");
+                env.insert(query.binding.clone(), Value::EagerIntProjection {
+                    base, selected: b::row_value(format!("r.{link}.{leaf}")),
+                });
+                return Ok(());
+            }
+        }
         if let Kind::FirstScalar(offset) = query.kind {
             let Some(Value::Sequence { item: Ty::Integer, relation: RelationExpr::Base { name, .. }, .. }) =
                 env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };

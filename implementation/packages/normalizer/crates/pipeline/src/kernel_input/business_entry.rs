@@ -120,7 +120,7 @@ impl Loaded {
             let mut fields = BTreeMap::new();
             for field in declaration.fields().iter().filter(|f| !f.is_static()) {
                 let mut domain = source_type(field.java_type())?.to_owned();
-                if crate::normalized::nullable_text_field(declaration, field) {
+                if crate::normalized::source_nullable_field(declaration, field) {
                     domain.push('?');
                 }
                 fields.insert(field.name().to_owned(), domain);
@@ -248,6 +248,11 @@ impl EntryContext {
         }
         self.state_field(root, fields)?;
         Ok(format!("{}.{}",self.qualified("E",root),fields.join(".")))
+    }
+
+    pub(super) fn record_array_symbols(&self) -> std::collections::BTreeSet<String> {
+        self.parameters.iter().filter_map(|(name, param)|
+            self.types.contains_key(param.ty.strip_suffix("[]")?).then(|| name.clone())).collect()
     }
 
     pub(super) fn scalar_array_symbols(&self) -> std::collections::BTreeSet<String> {

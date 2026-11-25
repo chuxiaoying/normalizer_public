@@ -172,6 +172,22 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     relation_cardinality_input_matches(left_relation, right_relation)
 }
 
+/// Emptiness of an identical input implies emptiness of any strict chain
+/// of selections over that input. Do not infer row identity from aliases.
+pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
+    use crate::domains::relation::RelationExpr;
+    fn absent(expr: &Expr) -> Option<&RelationExpr> {
+        let (UnaryOpKind::Not, exists) = expr.as_unary_op()? else { return None; };
+        relation_exists_true_relation(exists)
+    }
+    let (Some(source), Some(mut candidate)) = (absent(left), absent(right)) else { return false; };
+    while let RelationExpr::Select { input, .. } = candidate {
+        if input.as_ref() == source { return true; }
+        candidate = input;
+    }
+    false
+}
+
 /// A positive exact cardinality bound implies existence, but existence does
 /// NOT imply that stronger bound. Keep this separate from the bidirectional
 /// nonzero matcher used by the reverse implication and zero contradictions.

@@ -641,19 +641,21 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     //   Count(R) > 0  <=>  Exists(R)
     //
     // In AND contexts keep the stronger/arithmetic Count fact and remove the
-    // duplicate Exists observer for the same relation. This is relation
+    // duplicate Exists observer for the same relation. A proven empty input
+    // likewise absorbs emptiness of a strict filtered subset. This is relation
     // cardinality semantics, not broad peer implication.
     let before_cardinality_absorb_len = out.len();
-    let absorbed_by_count_nonzero: Vec<bool> = (0..out.len())
+    let absorbed_by_cardinality: Vec<bool> = (0..out.len())
         .map(|i| {
             (0..out.len())
-                .any(|j| i != j && relation_count_nonzero_implies_exists(&out[j], &out[i]))
+                .any(|j| i != j && (relation_count_nonzero_implies_exists(&out[j], &out[i])
+                    || empty_input_implies_empty_selection(&out[j], &out[i])))
         })
         .collect();
-    if absorbed_by_count_nonzero.iter().any(|absorbed| *absorbed) {
+    if absorbed_by_cardinality.iter().any(|absorbed| *absorbed) {
         out = out
             .into_iter()
-            .zip(absorbed_by_count_nonzero.iter())
+            .zip(absorbed_by_cardinality.iter())
             .filter_map(|(expr, absorbed)| if *absorbed { None } else { Some(expr) })
             .collect();
         if out.is_empty() {

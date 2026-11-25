@@ -306,7 +306,8 @@ fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<S
     use math::domains::relation::RelationExpr::Base;
     let (RelationAggregateKind::Exists, Base { name, .. }, select, None) =
         expr.as_relation_aggregate()? else { return None };
-    (ctx.scalar_arrays.contains(name) && select.is_none_or(|value| value.as_bool() == Some(true)))
+    ((ctx.scalar_arrays.contains(name) || ctx.record_arrays.contains(name))
+        && select.is_none_or(|value| value.as_bool() == Some(true)))
         .then(|| format!("LENGTH({}) == 0", array_name(name, ctx)))
 }
 
@@ -359,7 +360,8 @@ fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<S
         return None;
     };
     if !ctx.scalar_arrays.contains(name) {
-        return None;
+        return (ctx.record_arrays.contains(name) && matches!((kind, select, default), (Count, None, None)))
+            .then(|| format!("LENGTH({})", array_name(name, ctx)));
     }
     let array = array_name(name, ctx).to_owned();
     match (kind, select, default) {

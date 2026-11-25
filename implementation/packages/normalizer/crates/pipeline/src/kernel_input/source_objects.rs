@@ -188,10 +188,12 @@ impl Engine<'_> {
         let (id, owner, origin) = reference.as_heap_ref()
             .and_then(|id| self.source_objects.objects.get(&id).map(|(owner, origin)| (id, owner, origin)))
             .ok_or_else(|| fail("unknown source receiver"))?;
-        let Some(child_owner) = self.program.find_class(owner)
-            .and_then(|class| class.fields().iter().find(|field| field.name() == name))
-            .and_then(|field| self.project.source_owner(field.java_type()))
+        let Some((class, field, child_owner)) = self.program.find_class(owner)
+            .and_then(|class| class.fields().iter().find(|field| field.name() == name)
+                .and_then(|field| self.project.source_owner(field.java_type()).map(|child| (class, field, child))))
         else { return self.read_source_field_on_path(reference, name, path); };
+        need(!crate::normalized::source_nullable_field(class, field),
+            "ordinary object field read has no nullable member acquisition proof")?;
         let child = match origin {
             Origin::Allocation => return self.read_source_field_on_path(reference, name, path),
             Origin::Parameter(root) => Origin::Parameter(format!("{root}.{name}")),

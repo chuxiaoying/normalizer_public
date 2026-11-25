@@ -87,7 +87,7 @@ pub(crate) fn source_layouts(
             if source_ports::marked(class, field) {
                 continue;
             }
-            let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || nullable_text_field(class, field);
+            let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || source_nullable_field(class, field);
             if field.is_static()
                 || field.is_final()
                 || field.is_volatile()
@@ -141,14 +141,21 @@ pub(crate) fn entry_state(
                     .iter()
                     .any(|name| name == "normalizer.annotations.EntryState")))
 }
-pub(crate) fn nullable_text_field(
+pub(crate) fn source_nullable_field(
     class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
 ) -> bool {
     let [annotation] = field.annotations() else { return false; };
-    matches!(field.java_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
+    matches!(field.java_type(), JavaType::Class(_))
         && annotation.args().is_empty()
         && (annotation.name() == "normalizer.annotations.Nullable"
             || (annotation.name() == "Nullable" && class.imports().iter().any(|name| name == "normalizer.annotations.Nullable")))
+}
+
+pub(crate) fn nullable_text_field(
+    class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
+) -> bool {
+    matches!(field.java_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
+        && source_nullable_field(class, field)
 }
 pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> bool {
     class.imports().iter().all(|name| {
@@ -502,7 +509,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
                 java_type,
                 initializer: None,
                 ..
-            } if scalar(java_type) || matches!(java_type,JavaType::Generic(_,_)|JavaType::Class(_)) => {}
+            } if scalar(java_type) || numeric_array(java_type) || matches!(java_type,JavaType::Generic(_,_)|JavaType::Class(_)) => {}
             S::VarDecl {
                 java_type,
                 initializer: Some(e),

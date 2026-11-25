@@ -131,7 +131,7 @@ topics:
     seeds:
       - id: java-eager-first
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 完整取数后读取首项的空集合边界
       - id: java-independent-choice
