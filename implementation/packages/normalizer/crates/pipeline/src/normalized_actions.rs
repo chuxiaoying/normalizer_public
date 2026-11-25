@@ -12,7 +12,6 @@ pub(super) struct Port {
     throws: Vec<String>,
     pub(super) heap_effect: String,
     argument_observation: String,
-    #[serde(default = "default_port_effect")]
     effect: String,
     #[serde(default)]
     mutations: BTreeMap<String, Vec<String>>,
@@ -66,9 +65,6 @@ impl Port {
 
 }
 
-fn default_port_effect() -> String {
-    "sync".into()
-}
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum Action {
@@ -142,20 +138,8 @@ impl Project {
                 "invalid port/endpoint",
             )?;
             need(
-                matches!(
-                    p.effect.as_str(),
-                    "sync"
-                        | "async-barrier"
-                        | "async-resolve"
-                        | "async-read"
-                        | "async-write"
-                        | "read-http"
-                        | "container-ui"
-                        | "shared-state-update"
-                        | "telemetry"
-                        | "cross-entry-dispatch"
-                ),
-                "unsupported port effect; declare sync, async-barrier, async-read, async-write or async-resolve",
+                matches!(p.effect.as_str(), "sync" | "async-barrier"),
+                "unsupported port effect; declare sync or async-barrier",
             )?;
             match p.heap_effect.as_str() {
                 "none" => need(p.mutations.is_empty(), "read-only port cannot declare mutations")?,
@@ -180,7 +164,6 @@ impl Project {
             }
             let validate = |ty: &Ty| -> Result<()> {
                 match p.argument_observation.as_str() {
-                    "scalar_value" => { primitive(ty)?; Ok(()) }
                     "immutable_value" =>
                         need(ty.port_value(), "immutable port values cannot contain object references or source sequences"),
                     "reference_value" =>
@@ -218,17 +201,6 @@ impl Project {
         self.exceptions
             .get(name)
             .map_or_else(|| builtin_exception(name), |ty| ty == "unit")
-    }
-}
-fn primitive(ty: &Ty) -> Result<&'static str> {
-    match ty {
-        Ty::Bool => Ok("boolean"),
-        Ty::Integer => Ok("integer"),
-        Ty::I32 => Ok("int"),
-        Ty::I64 => Ok("long"),
-        _ => Err(fail(
-            "this scalar contract requires bool/i32/i64; text fields/results have a separate value contract",
-        )),
     }
 }
 pub(super) fn builtin_exception(name: &str) -> bool {
