@@ -94,3 +94,27 @@
     - path: [P, parameters]
       value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
     - { path: [R], value: 'NOT (replace)' }
+- name: two-replacements-on-the-same-guard-are-distinct-allocations
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box a = left; if (replace) { a = new Box(); } Box b = left; if (replace) { b = new Box(); } return a == b;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: 'NOT (replace)' }
+- name: two-acquired-identity-partitions-use-stable-guard-order
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB)' }
+    - { from: 'return left == right;', to: 'Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return a == b;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, chooseA: { position: 2, type: bool }, chooseB: { position: 3, type: bool } }
+    - { path: [R], value: 'chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)' }
+- name: swapping-complete-identity-partitions-keeps-the-exact-formula
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB)' }
+    - { from: 'return left == right;', to: 'Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return b == a;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, chooseA: { position: 2, type: bool }, chooseB: { position: 3, type: bool } }
+    - { path: [R], value: 'chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)' }

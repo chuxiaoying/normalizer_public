@@ -351,22 +351,43 @@ impl Engine<'_> {
         Ok(())
     }
 
-    pub(super) fn source_reference_equality(&mut self, left: Expr, right: Expr, different: bool) -> Result<Expr> {
-        // Both operands have been evaluated. A complete conditional local
-        // identity can be compared branchwise with an already acquired root
-        // without re-running a branch or comparing its object's contents.
+    pub(super) fn source_reference_equality(&mut self, mut left: Expr, mut right: Expr, different: bool) -> Result<Expr> {
+        // Both operands have been evaluated. Ordering the two comparison
+        // partitions by their guard keys never changes source evaluation
+        // order or the first-match order within either partition.
+        let left_partition = self.source_objects.has_complete_identity_partition(&left);
+        let right_partition = self.source_objects.has_complete_identity_partition(&right);
+        if left_partition && right_partition {
+            let mut names = self.source_objects.compared_parameters.clone();
+            for (identity, binding) in &self.source_objects.compared_states {
+                if let Some(root) = self.source_objects.state_bindings.get(binding) {
+                    names.insert(*identity, format!("E.{root}"));
+                }
+            }
+            let order = crate::canonical_names::CanonicalNames {
+                heap: &names, external: None, total_temporals: None, temporals: None,
+            };
+            let key = |(guard, _): &(Expr, Expr)| math::canonical_order_key(guard, &order);
+            let a = left.as_case_when().unwrap().iter().map(key);
+            let z = right.as_case_when().unwrap().iter().map(key);
+            if a.cmp(z).is_gt() { std::mem::swap(&mut left, &mut right); }
+        }
         let selected = match (left.as_case_when(), right.as_case_when()) {
-            (Some(arms), None) if self.source_objects.knows_identity(&right)
-                && self.source_objects.has_complete_identity_partition(&left) => Some((arms, &right, true)),
-            (None, Some(arms)) if self.source_objects.knows_identity(&left)
-                && self.source_objects.has_complete_identity_partition(&right) => Some((arms, &left, false)),
+            (Some(arms), _) if left_partition && (self.source_objects.knows_identity(&right) || right_partition) =>
+                Some((arms, &right, true)),
+            (None, Some(arms)) if right_partition && self.source_objects.knows_identity(&left) =>
+                Some((arms, &left, false)),
             _ => None,
         };
         if let Some((arms, other, selected_left)) = selected {
+            // A certified partition has only atomic identity arms. Two
+            // partitions therefore recurse at most twice, with each pair
+            // subject to the ordinary execution-work budget.
             let mut result = Vec::with_capacity(arms.len());
             for (guard, value) in arms {
+                self.budget()?;
                 let (a, z) = if selected_left { (value, other) } else { (other, value) };
-                result.push((guard.clone(), self.compare_reference_roots(a.clone(), z.clone(), different)?));
+                result.push((guard.clone(), self.source_reference_equality(a.clone(), z.clone(), different)?));
             }
             return Ok(math::normalize(b::case_when(result)));
         }
