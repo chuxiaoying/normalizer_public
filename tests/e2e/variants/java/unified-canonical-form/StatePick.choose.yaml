@@ -1,0 +1,19 @@
+- name: private-local-rename-does-not-move-the-acquired-field
+  edits:
+    - from: 'int fallback ='
+      to: 'int checkpoint ='
+    - from: 'else fallback'
+      to: 'else checkpoint'
+- name: no-shadow-allows-unqualified-public-state-label
+  edits:
+    - from: 'int[] values, int seed'
+      to: 'int[] values, int ignored'
+    - from: 'this.seed.value'
+      to: 'seed.value'
+  expect:
+    - path: [P, parameters]
+      value:
+        values: { position: 0, type: 'number[]' }
+        ignored: { position: 1, type: number }
+    - path: [T, 0, empty]
+      value: seed.value

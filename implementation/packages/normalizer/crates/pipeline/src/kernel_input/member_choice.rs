@@ -77,6 +77,7 @@ impl Engine<'_> {
 
 pub(super) fn publish(
     choices: &[Occurrence], arrays: &BTreeSet<String>, names: &BTreeMap<String, String>,
+    state_path: impl Fn(u64, &[String]) -> Option<String>,
 ) -> Result<(BTreeMap<u64, usize>, Vec<serde_json::Value>)> {
     let mut aliases = BTreeMap::new();
     let mut definitions = Vec::new();
@@ -91,8 +92,12 @@ pub(super) fn publish(
         } else if let Some(SymVarOrigin::Parameter { name, primitive_type }) = occurrence.empty.as_sym_var() {
             need(primitive_type == "integer", "member choice empty fallback must be a published exact integer")?;
             names.get(name).cloned().ok_or_else(|| fail("unbound published member choice fallback"))?
+        } else if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = occurrence.empty.as_sym_var() {
+            need(primitive_type == "integer", "member choice state fallback must be a declared integer")?;
+            state_path(*binding_id, path)
+                .ok_or_else(|| fail("member choice fallback requires an acquired declared state field"))?
         } else {
-            return Err(fail("member choice empty fallback must be a published integer or constant"));
+            return Err(fail("member choice fallback must be a constant, acquired integer parameter or state field"));
         };
         aliases.insert(position as u64, position);
         definitions.push(json!({

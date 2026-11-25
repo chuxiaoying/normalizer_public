@@ -59,3 +59,37 @@ R: '$t_0 + $t_1'
 ### 已知候选先执行常量语义
 
 空的本地数组直接得到缺省值，单元素或所有元素相等的本地数组直接得到该元素，不生成虚构的 T。长度已知的零填充分配无需实际复制出每个零。已知但含不同值的数组仍有多种合法成员：例如 `[2, 7]` 可作为两个独立 T 的候选，不能把“常量数组”误写成“只选择某一个常量”。数组元素先按原顺序求值；之后选择合同只观察可能值的集合而无概率承诺。因此已知候选 `[7, 2, 7]` 和 `[2, 7]` 采用同一升序去重支持集，仍然保留两次选择。
+
+## 空候选使用已取得的入口 E 字段
+
+```java
+import normalizer.annotations.EntryState;
+class ChoiceBase { int value; }
+class StatePick {
+    @EntryState ChoiceBase seed;
+    int choose(int[] values, int seed) {
+        int fallback = this.seed.value;
+        int selected;
+        /* @normalizer-ir selected = choose from values else fallback */
+        return selected;
+    }
+}
+```
+
+**原样通过。** 状态字段是已取得的整数，入口参数虽也叫 seed，但不是缺省值。发布 T 时必须保留 E 的真实取得路径；不生成调用或额外 P。
+
+```yaml
+schema: normalizer.pers/1
+types:
+  ChoiceBase: { fields: { value: number } }
+entry: { function: src/StatePick.java#StatePick.choose, returns: number }
+P:
+  parameters:
+    values: { position: 0, type: 'number[]' }
+    seed: { position: 1, type: number }
+E:
+  seed: { kind: state, source: src/StatePick.java#StatePick.seed, type: ChoiceBase }
+T:
+  - { id: $t_0, op: member_choice, when: 'true', members: values, empty: E.seed.value }
+R: $t_0
+```
