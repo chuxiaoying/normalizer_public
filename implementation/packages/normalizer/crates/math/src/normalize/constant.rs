@@ -49,9 +49,6 @@ fn fold_call(
     func_key: crate::domains::primitive::registry::FuncKey,
     args: &[Expr],
 ) -> Option<Expr> {
-    if let Some(value) = crate::domains::completion::reduce(func_key, args) {
-        return Some(value);
-    }
     if let Some(value) = crate::domains::composite::reduce(func_key, args) {
         return Some(value);
     }
