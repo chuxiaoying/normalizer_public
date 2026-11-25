@@ -435,7 +435,7 @@ impl Engine<'_> {
                     ..
                 } => {
                     need(
-                        java_name_not_reserved(name),
+                        !simulator_parser::is_reserved_identifier(name),
                         "reserved Java local name; rename during preprocessing",
                     )?;
                     need(!env.contains_key(name), "duplicate local")?;

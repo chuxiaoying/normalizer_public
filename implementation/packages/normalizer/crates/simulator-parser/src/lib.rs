@@ -29,5 +29,5 @@ pub use ast::{
     AnnotationRef, CatchClause, JavaBinOp, JavaClass, JavaExpr, JavaField, JavaLit, JavaMethod,
     JavaProgram, JavaStatement, JavaType, JavaUnaryOp,
 };
-pub use parser::{parse, ParseError, ParseOptions};
+pub use parser::{is_reserved_identifier, parse, ParseError, ParseOptions};
 pub(crate) mod body_parser;

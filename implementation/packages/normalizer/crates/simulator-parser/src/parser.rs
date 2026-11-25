@@ -669,9 +669,9 @@ fn parse_throws(p: &mut Parser<'_>) -> Result<Vec<String>, ParseError> {
     Ok(names)
 }
 
-// Contextual keywords are not blanket reserved identifiers. Literal tokens
-// and the single underscore are also not permitted as ordinary method names.
-fn reserved_method_identifier(name: &str) -> bool {
+/// Whether a token cannot serve as an ordinary Java identifier. Contextual
+/// keywords are not blanket reserved; literals and the single underscore are.
+pub fn is_reserved_identifier(name: &str) -> bool {
     matches!(name,
         "_" | "abstract" | "assert" | "boolean" | "break" | "byte" | "case" | "catch" |
         "char" | "class" | "const" | "continue" | "default" | "do" | "double" | "else" |
@@ -868,7 +868,7 @@ fn parse_class_body(
 
         p.skip_ws();
         if p.peek() == Some(b'(') {
-            if reserved_method_identifier(&member_name) {
+            if is_reserved_identifier(&member_name) {
                 return Err(p.err(&format!("[JAVA-RESERVED-METHOD-NAME] {}.{}: reserved keyword used as a Java method name", class.full_name(), member_name)));
             }
             if is_native && class.is_interface() {

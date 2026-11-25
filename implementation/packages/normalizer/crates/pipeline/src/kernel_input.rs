@@ -572,7 +572,7 @@ impl Loaded {
         let mut classes = BTreeSet::new();
         for c in self.program.classes() {
             need(
-                java_name_not_reserved(c.simple_name()),
+                !simulator_parser::is_reserved_identifier(c.simple_name()),
                 "reserved Java class name; rename during preprocessing",
             )?;
             need(classes.insert(c.full_name()), "duplicate class")?;
@@ -614,7 +614,7 @@ impl Loaded {
             }
             for m in c.methods() {
                 need(
-                    java_name_not_reserved(m.name()),
+                    !simulator_parser::is_reserved_identifier(m.name()),
                     "reserved Java method name; rename during preprocessing",
                 )?;
                 need(
@@ -628,7 +628,7 @@ impl Loaded {
                 self.project.result_type(m.return_type())?;
                 for (t, name) in m.params() {
                     need(
-                        java_name_not_reserved(name),
+                        !simulator_parser::is_reserved_identifier(name),
                         "reserved Java parameter name; rename during preprocessing",
                     )?;
                     self.project.parameter_type(t)?;
@@ -780,68 +780,6 @@ fn identifier(s: &str) -> bool {
         && s.bytes()
             .enumerate()
             .all(|(i, c)| c == b'_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
-}
-// The shared historical parser accepts some keywords as declaration names.
-// The closed Java entrance must reject them before publishing an expression.
-// Contextual names such as `record`, `var` and `yield` are not blanket keywords.
-fn java_name_not_reserved(s: &str) -> bool {
-    !matches!(
-        s,
-        "abstract"
-            | "assert"
-            | "boolean"
-            | "break"
-            | "byte"
-            | "case"
-            | "catch"
-            | "char"
-            | "class"
-            | "const"
-            | "continue"
-            | "default"
-            | "do"
-            | "double"
-            | "else"
-            | "enum"
-            | "extends"
-            | "final"
-            | "finally"
-            | "float"
-            | "for"
-            | "goto"
-            | "if"
-            | "implements"
-            | "import"
-            | "instanceof"
-            | "int"
-            | "interface"
-            | "long"
-            | "native"
-            | "new"
-            | "package"
-            | "private"
-            | "protected"
-            | "public"
-            | "return"
-            | "short"
-            | "static"
-            | "strictfp"
-            | "super"
-            | "switch"
-            | "synchronized"
-            | "this"
-            | "throw"
-            | "throws"
-            | "transient"
-            | "try"
-            | "void"
-            | "volatile"
-            | "while"
-            | "true"
-            | "false"
-            | "null"
-            | "_"
-    )
 }
 fn java_type_text(t: &JavaType) -> Result<String> {
     match t {
