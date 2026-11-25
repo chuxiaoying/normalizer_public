@@ -95,4 +95,4 @@
     - from: 'reduce left from initial'
       to: 'reduce left from initial + 1'
   reject:
-    - pure fold initial must be an integer, numeric parameter, or prior pure fold
+    - pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold

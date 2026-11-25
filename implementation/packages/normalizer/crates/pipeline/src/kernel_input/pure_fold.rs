@@ -55,12 +55,14 @@ pub(super) fn fold_id(expr: &Expr) -> Option<u64> {
 enum InitialKey {
     Integer(math::Integer),
     Parameter(String),
+    AcquiredState(String),
     Prior(usize),
 }
 
 pub(super) fn publish(
     folds: &[Definition], expression: &Expr, arrays: &BTreeSet<String>,
     numbers: &BTreeSet<String>, names: &BTreeMap<String, String>,
+    state_path: impl Fn(u64, &[String]) -> Option<String>,
 ) -> Result<(BTreeMap<u64, usize>, Vec<serde_json::Value>)> {
     let mut pending = BTreeSet::new();
     expression.walk(&mut |node| { if let Some(id) = fold_id(node) { pending.insert(id); } });
@@ -87,8 +89,12 @@ pub(super) fn publish(
             } else if let Some(SymVarOrigin::Parameter { name, primitive_type }) = def.initial.as_sym_var() {
                 need(primitive_type == "integer" && numbers.contains(name), "pure fold initial parameter must be a declared number")?;
                 InitialKey::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid fold input name"))?)
+            } else if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = def.initial.as_sym_var() {
+                need(primitive_type == "integer", "pure fold state initializer must be a declared number")?;
+                InitialKey::AcquiredState(state_path(*binding_id, path)
+                    .ok_or_else(|| fail("pure fold state initializer requires an acquired declared state field"))?)
             } else {
-                return Err(fail("pure fold initial must be an integer, numeric parameter, or prior pure fold"));
+                return Err(fail("pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold"));
             };
             let source = names.get(&def.source).cloned().ok_or_else(|| fail("invalid fold source name"))?;
             let body = math::canonical_order_key(&def.body, &math::DefaultSortContext);
@@ -99,7 +105,7 @@ pub(super) fn publish(
         let slot = output.len();
         let initial = match &key.1 {
             InitialKey::Integer(n) => n.to_string(),
-            InitialKey::Parameter(name) => name.clone(),
+            InitialKey::Parameter(name) | InitialKey::AcquiredState(name) => name.clone(),
             InitialKey::Prior(slot) => format!("$t_{slot}"),
         };
         let mut ctx = crate::FormatCtx::for_business(BTreeMap::new(), BTreeMap::new());

@@ -321,7 +321,15 @@ impl EntryContext {
             (BTreeMap::new(), Vec::new())
         } else {
             let numbers = self.parameters.iter().filter(|(_, p)| p.ty == "number").map(|(n, _)| n.clone()).collect();
-            super::pure_fold::publish(&result.pure_folds, &result.business_return()?, &arrays, &numbers, &names)?
+            super::pure_fold::publish(&result.pure_folds, &result.business_return()?, &arrays, &numbers, &names,
+                |id, path| {
+                    let root = result.source_state_bindings.get(&id)?;
+                    if !self.source_state_path(root, path) {
+                        return None;
+                    }
+                    let label = states.get(&id)?;
+                    Some(std::iter::once(label.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join("."))
+                })?
         };
         let render_value = |expression: &Expr| -> Result<String> {
             let mut closed = true;
