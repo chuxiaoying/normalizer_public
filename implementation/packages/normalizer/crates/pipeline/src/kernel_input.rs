@@ -123,12 +123,34 @@ enum Value {
     EagerIntProjection { base: RelationExpr, selected: Expr },
     Sequence {
         item: Ty,
+        java_component: Option<String>,
         relation: RelationExpr,
         value: Expr,
         null: Expr,
     },
 }
+fn primitive_array_component(ty: &JavaType) -> Option<&str> {
+    let JavaType::Array(component) = ty else { return None; };
+    let JavaType::Primitive(name) = component.as_ref() else { return None; };
+    Some(name)
+}
+
 impl Value {
+    fn java_array_component(&self) -> Option<&str> {
+        match self {
+            Self::LocalIntArray(_) => Some("int"),
+            Self::Sequence { java_component, .. } => java_component.as_deref(),
+            _ => None,
+        }
+    }
+
+    fn check_java_array_component(&self, expected: Option<&str>) -> Result<()> {
+        need(
+            expected.zip(self.java_array_component()).is_none_or(|(expected, actual)| expected == actual),
+            "Java array element type differs from the declared array",
+        )
+    }
+
     fn ty(&self) -> Ty {
         match self {
             Self::Term(t, _) => t.clone(),
@@ -816,7 +838,7 @@ fn integer_definition_id(expr: &Expr) -> Option<u64> {
     }
 }
 
-fn symbolic(name: &str, t: &Ty, heap: &mut Heap) -> Result<Value> {
+fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) -> Result<Value> {
     Ok(match t {
         Ty::Unit => Value::Term(Ty::Unit, b::lit_null()),
         Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) => Value::Term(
@@ -830,6 +852,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap) -> Result<Value> {
         ),
         Ty::Seq(item) => Value::Sequence {
             item: *item.clone(),
+            java_component: declared.and_then(primitive_array_component).map(str::to_owned),
             relation: RelationExpr::base(name, format!("{name}.item")),
             value: b::row_value(format!("{name}.item")),
             null: b::eq(

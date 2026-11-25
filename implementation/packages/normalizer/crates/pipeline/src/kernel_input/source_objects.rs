@@ -82,7 +82,7 @@ impl Engine<'_> {
             );
             Ok(Value::Term(Ty::Ref, b::heap_ref(reference.id())))
         } else {
-            symbolic(name, ty, &mut self.heap)
+            symbolic(name, ty, &mut self.heap, Some(declared))
         }
     }
 
@@ -109,7 +109,7 @@ impl Engine<'_> {
                 let binding = self.fresh_binding();
                 self.source_objects.state_bindings.insert(binding, name.into());
             }
-            return symbolic(&symbol, &ty, &mut self.heap);
+            return symbolic(&symbol, &ty, &mut self.heap, Some(field.java_type()));
         }
         let key = (owner.to_string(), name.to_string());
         if let Some(value) = self.source_objects.states.get(&key) {

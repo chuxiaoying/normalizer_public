@@ -29,3 +29,9 @@
   edits:
     - { from: 'int[] values = {2, 7}', to: 'int first = 2, values[ = {first, 7}' }
   reject: ['[SOURCE-PARSE-FAILED]', "expected ']' in array declarator"]
+
+- name: business-number-type-does-not-widen-explicit-java-array-elements
+  edits:
+    - { from: 'int[] values = {2, 7}', to: 'long[] values = new int[]{2, 7}' }
+    - { from: 'return values[0] * 10 + values[1];', to: 'return values.length;' }
+  reject: ['Java array element type differs from the declared array']

@@ -440,6 +440,7 @@ impl Engine<'_> {
                     need(!env.contains_key(name), "duplicate local")?;
                     self.source_reference_assignment(java_type, expr, id)?;
                     let v = self.java_expr(expr, id, env, path.clone())?;
+                    v.check_java_array_component(primitive_array_component(java_type))?;
                     need(v.ty() != Ty::LocalRelation, "local relation requires a typed query, not a Java scalar binding")?;
                     need(
                         v.ty() == self.project.result_type(java_type)?
@@ -460,7 +461,9 @@ impl Engine<'_> {
                     if let Some(local) = env.get(name) {
                         let ty = local.ty();
                         need(ty != Ty::LocalTextMap, "local map binding cannot be reassigned as a Java alias")?;
+                        let java_component = local.java_array_component().map(str::to_owned);
                         let value = self.java_expr(value,id,env,path)?;
+                        value.check_java_array_component(java_component.as_deref())?;
                         need(value.ty() == ty,"local assignment type mismatch")?;
                         env.insert(name.clone(),value);
                     } else if !self.methods[id].is_static() && !env.contains_key("this")

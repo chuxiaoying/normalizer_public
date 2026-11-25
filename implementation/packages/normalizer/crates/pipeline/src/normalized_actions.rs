@@ -345,7 +345,7 @@ impl Engine<'_> {
         };
         // P represents the entry snapshot, not a fresh host observation.
         // Reading it again aliases the same symbol even after an await.
-        let value = symbolic(&host_input_symbol(input), &ty, &mut self.heap)?;
+        let value = symbolic(&host_input_symbol(input), &ty, &mut self.heap, None)?;
         Self::bind_local(env, name, value)
     }
 
