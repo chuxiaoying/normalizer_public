@@ -24,3 +24,22 @@
   edits:
     - { from: 'return value;', to: 'return booleanValue();' }
   reject: ['panicked', '[NORM-OUT-OF-SOURCE]', 'target=TicketCode.booleanValue']
+- name: missing-parameter-name-is-not-a-zero-argument-method
+  edits:
+    - { from: 'static int readValid(int value) { return value; }', to: 'static int readValid(int) { return 7; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-PARAMETER]', 'expected a parameter name']
+- name: trailing-comma-does-not-disappear-from-a-parameter-list
+  edits:
+    - { from: 'int readValid(int value)', to: 'int readValid(int value,)' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-PARAMETER]', 'expected a parameter type']
+- name: varargs-cannot-precede-another-parameter
+  edits:
+    - { from: 'int readValid(int value)', to: 'int readValid(int... values, int value)' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-PARAMETER]', 'varargs must be the final parameter']
+- name: duplicate-names-do-not-create-one-parameter
+  edits:
+    - { from: 'int readValid(int value)', to: 'int readValid(int value, int value)' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-PARAMETER]', 'reserved or duplicate parameter name']
+- name: each-named-parameter-survives-a-comment-and-final
+  edits:
+    - { from: 'int readValid(int value)', to: 'int readValid(final /* input */ int value)' }

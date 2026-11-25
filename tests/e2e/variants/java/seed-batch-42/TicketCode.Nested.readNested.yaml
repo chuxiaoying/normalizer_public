@@ -10,3 +10,7 @@
                 static int readNested(int value) { return value + 1; }
       to: 'class TicketCode { static class Nested { static int return(int value) { return value + 1; }'
   reject: ['[SOURCE-PARSE-FAILED]', 'src/TicketCode.java:1:53:', 'TicketCode.Nested.return']
+- name: a-constructor-with-a-missing-parameter-name-is-not-ignored
+  edits:
+    - { from: 'static class Nested {', to: 'static class Nested { Nested(int) {}' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-PARAMETER]', 'expected a parameter name']

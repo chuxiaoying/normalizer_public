@@ -834,8 +834,7 @@ fn parse_class_body(
                 && !first.contains('.')
             {
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
-                let params_text = p.skip_balanced_parens()?;
-                let (params, is_varargs, param_annotations) = parse_params(&params_text)?;
+                let (params, is_varargs, param_annotations) = parse_params(&mut p)?;
                 p.skip_ws();
                 let throws = parse_throws(&mut p)?;
                 p.skip_ws();
@@ -899,8 +898,7 @@ fn parse_class_body(
             if is_native && (native_modifier_conflict || is_volatile) {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] incompatible native method modifier"));
             }
-            let params_text = p.skip_balanced_parens()?;
-            let (params, is_varargs, param_annotations) = parse_params(&params_text)?;
+            let (params, is_varargs, param_annotations) = parse_params(&mut p)?;
             p.skip_ws();
             let throws = parse_throws(&mut p)?;
             p.skip_ws();
@@ -1034,21 +1032,13 @@ pub(crate) fn parse_type(p: &mut Parser) -> Option<JavaType> {
             if p.peek() == Some(b'?') {
                 p.pos += 1;
                 p.skip_ws();
-                if p.eat_keyword("extends") || p.eat_keyword("super") {
-                    let _ = parse_type(p);
-                }
+                if p.eat_keyword("extends") || p.eat_keyword("super") { parse_type(p)?; }
                 args.push(JavaType::Class("?".to_string()));
-            } else if let Some(inner) = parse_type(p) {
-                args.push(inner);
+            } else {
+                args.push(parse_type(p)?);
             }
-            p.skip_ws();
-            if p.eat_char(b',') {
-                continue;
-            }
-            if p.peek() == Some(b'>') {
-                p.pos += 1;
-                break;
-            }
+            if p.eat_char(b',') { continue; }
+            if !p.eat_char(b'>') { return None; }
             break;
         }
         let class_name = if let JavaType::Class(n) = t {
@@ -1078,106 +1068,40 @@ pub(crate) fn parse_type(p: &mut Parser) -> Option<JavaType> {
 /// 但同时返回 is_varargs 位以供下游（JavaMethod / MethodSignature）使用。
 type ParsedParameters = (Vec<(JavaType, String)>, bool, std::collections::BTreeMap<String, Vec<AnnotationRef>>);
 
-fn parse_params(inner: &str) -> Result<ParsedParameters, ParseError> {
+fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
+    let invalid = |p: &Parser<'_>, reason: &str| p.err(&format!("[JAVA-PARAMETER] {reason}"));
+    if !p.eat_char(b'(') { return Err(invalid(p, "expected opening parenthesis")); }
+    let mut params = Vec::new();
     let mut annotations = std::collections::BTreeMap::new();
-    let parts = split_top_level_commas(inner);
-    let mut out = Vec::new();
-    let mut last_is_varargs = false;
-    let total_parts = parts.len();
-    for (idx, part) in parts.iter().enumerate() {
-        let trimmed = part.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let cleaned = strip_leading_annotations(trimmed);
-        let cleaned = cleaned.trim_start_matches("final ").trim().to_string();
-        if let Some((type_str, name)) = split_type_and_name(&cleaned) {
-            let is_varargs = type_str.contains("...");
-            let base_type_str = type_str.replace("...", "").trim().to_string();
-            let mut pp = Parser::new(&base_type_str, "<params>");
-            if let Some(mut t) = parse_type(&mut pp) {
-                if is_varargs {
-                    t = JavaType::Array(Box::new(t));
-                    // 只有最后一个参数才能是 varargs（Java 语义约束）
-                    if idx == total_parts - 1 {
-                        last_is_varargs = true;
-                    }
-                }
-                let mut declaration = Parser::new(trimmed, "<parameter>");
-                let attributes = declaration.read_annotations()?;
-                if !attributes.is_empty() { annotations.insert(name.clone(), attributes); }
-                out.push((t, name));
-            }
-        }
-    }
-    Ok((out, last_is_varargs, annotations))
-}
-
-fn split_type_and_name(s: &str) -> Option<(String, String)> {
-    let bytes = s.as_bytes();
-    let mut i = bytes.len();
-    while i > 0 {
-        let c = bytes[i - 1];
-        if c.is_ascii_alphanumeric() || c == b'_' || c == b'$' {
-            i -= 1;
-        } else {
-            break;
-        }
-    }
-    if i >= bytes.len() {
-        return None;
-    }
-    let name = std::str::from_utf8(&bytes[i..]).ok()?.to_string();
-    let type_str = std::str::from_utf8(&bytes[..i]).ok()?.trim().to_string();
-    if type_str.is_empty() || name.is_empty() {
-        return None;
-    }
-    Some((type_str, name))
-}
-
-fn strip_leading_annotations(s: &str) -> String {
-    let mut out = s.to_string();
+    if p.eat_char(b')') { return Ok((params, false, annotations)); }
+    let mut names = std::collections::BTreeSet::new();
     loop {
-        let trimmed = out.trim_start();
-        if trimmed.starts_with('@') {
-            let bytes = trimmed.as_bytes();
-            let mut i = 1;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'.')
-            {
-                i += 1;
-            }
-            let rest = &trimmed[i..];
-            let rest = rest.trim_start();
-            if rest.starts_with('(') {
-                let mut depth = 0i32;
-                let mut j = 0usize;
-                let b = rest.as_bytes();
-                while j < b.len() {
-                    match b[j] {
-                        b'(' => {
-                            depth += 1;
-                        }
-                        b')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                j += 1;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                    j += 1;
-                }
-                out = rest[j..].trim_start().to_string();
-            } else {
-                out = rest.to_string();
-            }
-        } else {
-            break;
+        let mut attributes = p.read_annotations()?;
+        if p.eat_keyword("final") { attributes.extend(p.read_annotations()?); }
+        let mut ty = parse_type(p).filter(|ty| *ty != JavaType::Void)
+            .ok_or_else(|| invalid(p, "expected a parameter type"))?;
+        p.skip_ws();
+        let variadic = p.starts_with("...");
+        if variadic {
+            p.pos += 3;
+            ty = JavaType::Array(Box::new(ty));
         }
+        p.skip_ws();
+        let at = p.pos;
+        let name = p.read_ident().ok_or_else(|| invalid(p, "expected a parameter name"))?;
+        if is_reserved_identifier(&name) || !names.insert(name.clone()) {
+            return Err(p.err_at(at, "[JAVA-PARAMETER] reserved or duplicate parameter name"));
+        }
+        while !variadic && p.eat_char(b'[') {
+            if !p.eat_char(b']') { return Err(invalid(p, "expected a closing array bracket")); }
+            ty = JavaType::Array(Box::new(ty));
+        }
+        if !attributes.is_empty() { annotations.insert(name.clone(), attributes); }
+        params.push((ty, name));
+        if p.eat_char(b')') { return Ok((params, variadic, annotations)); }
+        if variadic { return Err(invalid(p, "varargs must be the final parameter")); }
+        if !p.eat_char(b',') { return Err(invalid(p, "expected a comma or closing parenthesis")); }
     }
-    out
 }
 
 fn split_top_level_commas(s: &str) -> Vec<String> {
