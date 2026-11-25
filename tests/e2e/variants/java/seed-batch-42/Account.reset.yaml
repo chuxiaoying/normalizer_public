@@ -57,3 +57,12 @@
   edits:
     - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.Nullable(reason="审核,(参数)") ' }
   reject: ['unsupported source parameter annotation normalizer.annotations.Nullable']
+- name: repeated-nullable-markers-do-not-become-a-double-nullable-type
+  edits:
+    - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.Nullable @normalizer.annotations.Nullable ' }
+  reject: ['Account.reset.observer:', 'multiple source parameter annotations cannot define nullability']
+- name: illegal-annotation-on-an-unused-helper-is-not-ignored
+  edits:
+    - from: 'class Account {'
+      to: 'class Account { static int helper(@normalizer.annotations.Nullable int amount) { return amount; }'
+  reject: ['Account.helper.amount:', 'unsupported source parameter annotation normalizer.annotations.Nullable']

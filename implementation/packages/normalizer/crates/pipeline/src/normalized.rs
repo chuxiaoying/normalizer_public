@@ -141,6 +141,18 @@ pub(crate) fn entry_state(
                     .iter()
                     .any(|name| name == "normalizer.annotations.EntryState")))
 }
+pub(crate) fn source_nullable_parameter(
+    method: &simulator_parser::JavaMethod, name: &str, ty: &JavaType,
+) -> Result<bool, String> {
+    match method.param_annotations(name) {
+        [] => Ok(false),
+        [annotation] if annotation.name() == "normalizer.annotations.Nullable"
+            && !annotation.has_arguments() && matches!(ty, JavaType::Class(_)) => Ok(true),
+        [annotation] => Err(format!("unsupported source parameter annotation {}", annotation.name())),
+        _ => Err("multiple source parameter annotations cannot define nullability".into()),
+    }
+}
+
 pub(crate) fn source_nullable_field(
     class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
 ) -> bool {
@@ -352,6 +364,10 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
                 || m.params().iter().any(|(t, _)| !supported(t))
             {
                 return Err(error("NORM-METHOD-SHAPE", &id));
+            }
+            for (ty, parameter) in m.params() {
+                source_nullable_parameter(m, parameter, ty)
+                    .map_err(|detail| format!("{id}.{parameter}: {detail}"))?;
             }
             if m.body().is_none() && !m.is_native() {
                 return Err(error("NORM-MISSING-BODY", &id));

@@ -139,10 +139,7 @@ impl Loaded {
             },
             parameters: method.params().iter().enumerate().map(|(position, (ty, name))| {
                 let mut domain = source_type(ty)?.to_owned();
-                for annotation in method.param_annotations(name) {
-                    if annotation.name() != "normalizer.annotations.Nullable" || annotation.has_arguments() || !matches!(ty, JavaType::Class(_)) {
-                        return Err(format!("unsupported source parameter annotation {}", annotation.name()));
-                    }
+                if crate::normalized::source_nullable_parameter(method, name, ty)? {
                     domain.push('?');
                 }
                 Ok((name.clone(), Parameter { position, ty: domain }))

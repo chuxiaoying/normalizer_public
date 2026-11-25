@@ -728,7 +728,7 @@ impl Loaded {
                         n,
                         t,
                     )?,
-                    m.param_annotations(n).iter().any(|a| a.name() == "normalizer.annotations.Nullable" && !a.has_arguments()),
+                    crate::normalized::source_nullable_parameter(m, n, t)?,
                 )
             })
             .collect::<Result<_>>()?;
