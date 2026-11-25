@@ -205,9 +205,8 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
                 return rendered;
             }
         }
-        let sort_ctx = FormatSortContext;
         if let Some((display_op, flip)) =
-            math::ordering_axiom_ordered_comparison(op, left, right, &sort_ctx)
+            math::ordering_axiom_ordered_comparison(op, left, right, &math::DefaultSortContext)
         {
             let (lhs, rhs) = if flip { (right, left) } else { (left, right) };
             let l = format_expr_with_ctx(lhs, ctx);
@@ -443,14 +442,6 @@ fn ordering_axiom_key_for_expr(expr: &Expr, _ctx: &FormatCtx) -> String {
 fn stable_dedup_strings(items: &mut Vec<String>) {
     let mut seen = HashSet::new();
     items.retain(|item| seen.insert(item.clone()));
-}
-
-struct FormatSortContext;
-
-impl math::SortContext for FormatSortContext {
-    fn heap_display_name(&self, _id: i64) -> Option<String> {
-        None
-    }
 }
 
 fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {

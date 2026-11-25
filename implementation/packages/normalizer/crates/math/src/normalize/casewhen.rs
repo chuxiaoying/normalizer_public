@@ -1336,45 +1336,8 @@ fn is_not_of(cond: &Expr, expected_inner: &Expr) -> bool {
         } => operand == expected_inner,
         _ => {
             is_inverted_comparison(cond, expected_inner)
-                || is_demorgan_complement(cond, expected_inner)
         }
     }
-}
-
-fn is_demorgan_complement(a: &Expr, b: &Expr) -> bool {
-    let a_conjuncts = flatten_and(a);
-    let b_disjuncts = flatten_or(b);
-    if a_conjuncts.len() > 1
-        && b_disjuncts.len() > 1
-        && terms_are_pairwise_complements(&a_conjuncts, &b_disjuncts)
-    {
-        return true;
-    }
-
-    let a_disjuncts = flatten_or(a);
-    let b_conjuncts = flatten_and(b);
-    a_disjuncts.len() > 1
-        && b_conjuncts.len() > 1
-        && terms_are_pairwise_complements(&a_disjuncts, &b_conjuncts)
-}
-
-fn terms_are_pairwise_complements(left: &[Expr], right: &[Expr]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-
-    let mut used = vec![false; right.len()];
-    for l in left {
-        let Some(idx) = right
-            .iter()
-            .enumerate()
-            .find_map(|(idx, r)| (!used[idx] && is_not_of(l, r)).then_some(idx))
-        else {
-            return false;
-        };
-        used[idx] = true;
-    }
-    true
 }
 
 fn is_inverted_comparison(a: &Expr, b: &Expr) -> bool {
