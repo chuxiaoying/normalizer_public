@@ -49,6 +49,8 @@ class LabelService {
 
 内层 `trim(raw)` 仍只调用一次。U+2003 经 trim 后仍是空白，结果为 fallback；U+00A0 则原样返回。
 
+具体 `null` 先用同一份函数合同执行，`trim(null)` 得到 null，空白判断遇到 null 则为真。符号化的空白条件也使用这份合同；不在文本适配器和化简流水线分别复制这两条结果。
+
 **预处理 diff**
 
 | 差异点（old → new） | 升级思想 |

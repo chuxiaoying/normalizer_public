@@ -16,7 +16,6 @@ pub fn trim(value: Expr) -> Expr {
         math::domains::primitive::registry::FuncSemantics::pure_function()
             .with_null_behavior(vec![0], Lit::Null)
             .with_evaluator(std::sync::Arc::new(|args| match args {
-                [Lit::Null] => Some(Lit::Null),
                 [Lit::Str(s)] => Some(Lit::Str(s.trim_matches(|c: char| c <= '\u{20}').into())),
                 _ => None,
             }))
@@ -35,9 +34,8 @@ pub fn whitespace(unit: u16) -> bool {
     matches!(unit, 0x0009..=0x000d | 0x001c..=0x0020 | 0x1680 |
         0x2000..=0x2006 | 0x2008..=0x200a | 0x2028..=0x2029 | 0x205f | 0x3000)
 }
-pub fn evaluate(args: &[Lit]) -> Option<Lit> {
+fn evaluate_non_null(args: &[Lit]) -> Option<Lit> {
     match args {
-        [Lit::Null] => Some(Lit::Bool(true)),
         [Lit::Str(s)] => Some(Lit::Bool(s.encode_utf16().all(whitespace))),
         _ => None,
     }
@@ -49,7 +47,7 @@ pub fn is_blank(value: Expr) -> Expr {
         Some(Primitive::Boolean),
         math::domains::primitive::registry::FuncSemantics::pure_function()
             .with_null_behavior(vec![0], Lit::Bool(true))
-            .with_evaluator(std::sync::Arc::new(evaluate)),
+            .with_evaluator(std::sync::Arc::new(evaluate_non_null)),
     );
     math::normalize(b::call(key, vec![value]))
 }

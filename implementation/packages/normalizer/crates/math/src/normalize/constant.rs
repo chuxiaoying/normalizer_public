@@ -36,18 +36,9 @@ pub(crate) fn fold(expr: &Expr) -> Expr {
     }
 }
 
-/// Call 节点折叠：pure_function + all-Lit args + evaluator Some 时求值。
-///
-/// 三条件全满足：
-/// 1. `func_semantics(func_key).pure == true`（声明为纯函数）
-/// 2. `func_semantics(func_key).evaluator.is_some()`（提供 evaluator）
-/// 3. 所有 args 都是 `ExprKind::Lit`（参数全为常量）
-///
-/// evaluator 返回：
-/// - `Some(lit)`：折叠为该 Lit
-/// - `None`：evaluator 不支持此输入组合（如类型不匹配），保留原 Call
-///
-/// P2 方案 B 核心实现。
+/// Fold calls whose pure registry contract provides a result. An actual
+/// null trigger uses the same declaration as the symbolic Boolean rules.
+/// Ordinary evaluators need literal operands and run before symbolic rules.
 fn fold_call(
     func_key: crate::domains::primitive::registry::FuncKey,
     args: &[Expr],
@@ -59,20 +50,20 @@ fn fold_call(
     if !sem.pure {
         return None;
     }
-    if let Some(reducer) = &sem.symbolic_reducer {
-        if let Some(value) = symbolic_equation(func_key, args, reducer) {
-            return Some(value);
+    if let Some(null_behavior) = &sem.null_behavior {
+        if null_behavior.trigger_positions.iter().any(|&position| {
+            args.get(position).is_some_and(Expr::is_null)
+        }) {
+            return Some(builder::lit(null_behavior.result.clone()));
         }
     }
-    let evaluator = sem.evaluator.as_ref()?;
-    let mut lits: Vec<Lit> = Vec::with_capacity(args.len());
-    for a in args.iter() {
-        match a.kind() {
-            ExprKind::Lit(l) => lits.push(l.clone()),
-            _ => return None,
+    if let Some(evaluator) = &sem.evaluator {
+        let literals = args.iter().map(|arg| arg.as_lit().cloned()).collect::<Option<Vec<_>>>();
+        if let Some(value) = literals.and_then(|values| evaluator(&values)) {
+            return Some(builder::lit(value));
         }
     }
-    evaluator(&lits).map(builder::lit)
+    sem.symbolic_reducer.as_ref().and_then(|reducer| symbolic_equation(func_key, args, reducer))
 }
 
 thread_local! {

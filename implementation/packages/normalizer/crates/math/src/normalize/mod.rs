@@ -18,7 +18,6 @@ mod boolean_casewhen;
 mod casewhen;
 mod constant;
 pub(crate) mod constraint;
-mod func_algebra;
 mod integer_ac;
 mod integer_equations;
 mod integer_ranges;
@@ -685,7 +684,7 @@ fn is_normalize_atom(expr: &Expr) -> bool {
 
 /// 本地化简：只对顶层节点应用规则，不递归。
 pub(crate) fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
-    // 顺序：常量折叠 → 算术代数 → 布尔代数 → Func 代数律 → CaseWhen 化简
+    // 顺序：常量折叠 → 算术代数 → 布尔代数 → CaseWhen 化简
     //
     // 常量折叠必须先于 arithmetic：例如 `(3 - 2) > 0` 应先折叠为 `true`，
     // 而不是先做 `(x - y) > 0 → x > y` 的符号形变。
@@ -696,7 +695,6 @@ pub(crate) fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortCont
     let e = boolean::simplify(&e, ctx);
     let e = binop_casewhen::simplify(&e);
     let e = boolean_casewhen::simplify(&e);
-    let e = func_algebra::simplify(&e);
     let e = relation::simplify(&e);
     let e = casewhen::simplify(&e, ctx);
     e
