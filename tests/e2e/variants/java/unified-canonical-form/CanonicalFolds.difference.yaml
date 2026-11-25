@@ -96,3 +96,26 @@
       to: 'reduce left from initial + 1'
   reject:
     - pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold
+- name: private-array-alias-resolves-to-the-public-ordered-source
+  edits:
+    - from: int leftValue;
+      to: int[] same = left; int leftValue;
+    - from: 'reduce left from initial'
+      to: 'reduce same from initial'
+- name: conditional-fold-must-not-be-published-unconditionally
+  edits:
+    - from: class CanonicalFolds {
+      to: |-
+        class CanonicalFolds {
+            static int difference(int[] left, int[] right, int initial) {
+                if (initial > 0) return foldInside(left, right, initial);
+                return initial;
+            }
+    - from: |-
+        static int difference(int[] left, int[] right, int initial) {
+                int leftValue;
+      to: |-
+        static int foldInside(int[] left, int[] right, int initial) {
+                int leftValue;
+  reject:
+    - pure fold requires unconditional evaluation over one ordered source array
