@@ -507,9 +507,6 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
                 | normalizer_ir::local::LocalIr::LocalMapPut { .. }
                 | normalizer_ir::local::LocalIr::LocalMapGet { .. }
                 | normalizer_ir::local::LocalIr::ProjectedUnionCount { .. } | normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
-            S::LocalIr(normalizer_ir::local::LocalIr::Unsupported(_)) => {
-                return Err(error("NORM-UNSUPPORTED-LOCAL-IR", at));
-            }
             S::VarDecl {
                 java_type,
                 initializer: None,

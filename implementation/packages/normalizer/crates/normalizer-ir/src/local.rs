@@ -24,7 +24,6 @@ pub enum LocalIr {
     },
     Relation(relation::Query),
     Decimal(decimal::Assignment),
-    Unsupported(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -157,7 +156,7 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
     let binding = tokens.name()?;
     let accumulate = tokens.take("+=");
     if !accumulate && !tokens.take("=") {
-        return Ok(LocalIr::Unsupported(input.trim().to_owned()));
+        return Err("[NORM-UNSUPPORTED-LOCAL-IR] a local definition requires = or +=".into());
     }
     if !accumulate {
         let mut exact = Tokens { source: tokens.source };
@@ -291,12 +290,12 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         return Ok(LocalIr::Relation(query));
     }
     if accumulate {
-        return Ok(LocalIr::Unsupported(input.trim().into()));
+        return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown accumulating local operation".into());
     }
     let insert = tokens.take("insert");
     let delete = !insert && tokens.take("delete");
     if !insert && !delete && !tokens.take("update") {
-        return Ok(LocalIr::Unsupported(input.trim().to_owned()));
+        return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation".into());
     }
     if insert { tokens.expect("into")?; }
     if delete { tokens.expect("from")?; }

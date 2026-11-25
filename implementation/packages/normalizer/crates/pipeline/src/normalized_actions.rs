@@ -370,7 +370,9 @@ impl Engine<'_> {
             match action {
                 Action::LocalIr { source } => {
                     let normalizer_ir::local::LocalIr::Relation(query) =
-                        normalizer_ir::local::parse(source).map_err(fail)?
+                        normalizer_ir::local::parse(source).map_err(|error| {
+                            fail(format!("expected a typed relation query: {error}"))
+                        })?
                     else {
                         return Err(fail("expected a typed relation query"));
                     };

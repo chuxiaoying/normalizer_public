@@ -56,3 +56,36 @@
   edits:
     - from: 'if (cleared) {'
       to: 'if (!cleared) { } else {'
+
+- name: escaped-backslash-and-quote-identify-the-same-key
+  edits:
+    - from: 'map_put(captions, "main", null)'
+      to: 'map_put(captions, "team\\West\"A", null)'
+    - from: 'map_get_or(captions, "main", fallback)'
+      to: 'map_get_or(captions, "team\\West\"A", fallback)'
+- name: dropping-a-backslash-changes-the-key
+  edits:
+    - from: 'map_put(captions, "main", null)'
+      to: 'map_put(captions, "team\\West\"A", null)'
+    - from: 'map_get_or(captions, "main", fallback)'
+      to: 'map_get_or(captions, "teamWest\"A", fallback)'
+  expect:
+    - { path: [R], value: fallback }
+- name: unrecognized-escape-is-not-a-text-key
+  edits:
+    - from: 'map_put(captions, "main", null)'
+      to: 'map_put(captions, "team\q", null)'
+  reject: ['[SOURCE-PARSE-FAILED]', 'unsupported text escape']
+
+- name: local-operation-must-be-recognized-before-execution
+  edits:
+    - { from: 'value.map_empty(text, text?)', to: 'invented_operation(text, text?)' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[NORM-UNSUPPORTED-LOCAL-IR]', 'unknown local operation']
+- name: a-local-binding-needs-an-explicit-operator
+  edits:
+    - { from: 'captions = value.map_empty', to: 'captions value.map_empty' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[NORM-UNSUPPORTED-LOCAL-IR]', 'requires = or +=']
+- name: unknown-accumulation-does-not-guess-an-operation
+  edits:
+    - { from: 'captions = value.map_empty(text, text?)', to: 'captions += invented_operation(text, text?)' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[NORM-UNSUPPORTED-LOCAL-IR]', 'unknown accumulating local operation']
