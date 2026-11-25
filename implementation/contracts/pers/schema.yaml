@@ -51,11 +51,13 @@ properties:
     items:
       $ref: '#/$defs/operation'
   T:
-    description: 本子集使用已有的内部选择合同。一次实际选择定义一个绑定，同一绑定的所有字段取自同一成员。
+    description: 内部定义按依赖声明。成员选择保留每次发生的独立身份，纯递推按稳定结构命名。
     type: array
     minItems: 1
     items:
-      $ref: '#/$defs/member-choice'
+      oneOf:
+        - $ref: '#/$defs/member-choice'
+        - $ref: '#/$defs/pure-fold'
   R:
     $ref: '#/$defs/expression'
   throws:
@@ -280,6 +282,28 @@ $defs:
       members:
         $ref: '#/$defs/expression'
       empty:
+        $ref: '#/$defs/expression'
+  pure-fold:
+    type: object
+    additionalProperties: false
+    required: [id, op, type, source, initial, accumulator, element, body]
+    properties:
+      id:
+        type: string
+        pattern: '^\$t_[0-9]+$'
+      op:
+        const: fold
+      type:
+        const: number
+      source:
+        $ref: '#/$defs/expression'
+      initial:
+        $ref: '#/$defs/expression'
+      accumulator:
+        const: acc
+      element:
+        const: item
+      body:
         $ref: '#/$defs/expression'
   throw-declaration:
     type: object

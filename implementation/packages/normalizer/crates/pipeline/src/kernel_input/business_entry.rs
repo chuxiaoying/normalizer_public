@@ -267,6 +267,12 @@ impl EntryContext {
 
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
         let events = result.realtime_effects.events();
+        if !result.pure_folds.is_empty() && (!events.is_empty()
+            || result.source_record_return.is_some()
+            || result.realtime_completion.return_value().is_none())
+        {
+            return Err("pure fold publication requires a closed scalar entry with no effects or throws".into());
+        }
         if events.is_empty() && result.realtime_completion.return_value().is_some() {
             return self.render_observations(None, result, method);
         }
@@ -311,6 +317,12 @@ impl EntryContext {
             let param = self.parameters.get(root)?;
             self.types.contains_key(&param.ty).then(|| (*id, self.qualified("P", root)))
         }).collect::<BTreeMap<_, _>>();
+        let (fold_names, definitions) = if result.pure_folds.is_empty() {
+            (BTreeMap::new(), Vec::new())
+        } else {
+            let numbers = self.parameters.iter().filter(|(_, p)| p.ty == "number").map(|(n, _)| n.clone()).collect();
+            super::pure_fold::publish(&result.pure_folds, &result.business_return()?, &arrays, &numbers, &names)?
+        };
         let render_value = |expression: &Expr| -> Result<String> {
             let mut closed = true;
             let mut scalar_element = false;
@@ -374,7 +386,8 @@ impl EntryContext {
                             .and_then(|state| state.ty.as_ref())
                             .is_some_and(|ty| self.has_field(ty, path.iter().map(String::as_str)))
                     }
-                    Some(_) => false,
+                    Some(SymVarOrigin::Temporal { .. }) => super::pure_fold::fold_id(node)
+                        .is_some_and(|id| fold_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &join_tables, &record_inputs, &record_rows)
                         || node.as_array_lit().is_some_and(|items| group_tuples.iter().any(|keys| keys == items))
                         || node.as_heap_ref().is_some_and(|id| identities.contains_key(&id))
@@ -384,18 +397,20 @@ impl EntryContext {
                 }
             });
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
-            // All object identities in this value have been validated. Give
-            // their published names to the shared typed math normalizer;
-            // the text formatter must not sort or merge the resulting terms.
-            let expression = if expression.has_heap_ref() {
-                math::try_normalize_with(
-                    expression.clone(),
-                    &crate::canonical_names::CanonicalHeapNames(&identities),
-                ).map_err(|error| error.to_string())?
+            // The boundary checks both identity and definition references
+            // before passing their public names to the typed math normalizer.
+            let expression = if expression.has_heap_ref() || !fold_names.is_empty() {
+                let public = crate::canonical_names::CanonicalNames {
+                    heap: &identities,
+                    folds: (!fold_names.is_empty()).then_some(&fold_names),
+                };
+                math::try_normalize_with(expression.clone(), &public)
+                    .map_err(|error| error.to_string())?
             } else {
                 expression.clone()
             };
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
+            ctx.set_pure_fold_names(fold_names.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.set_nested_arrays(nested_arrays.clone());
             ctx.set_record_arrays(record_inputs.keys().cloned().collect());
@@ -417,6 +432,7 @@ impl EntryContext {
         } else { render_value(&result.business_return()?)? };
         let mut doc = json!({"schema": super::kernel_result::PERS_SCHEMA, "entry": {"function": self.function, "returns": self.returns},
             "P": {"parameters": self.parameters}, "R": value});
+        if !definitions.is_empty() { doc["T"] = json!(definitions); }
         if !self.types.is_empty() { doc["types"] = json!(self.types); }
         if !self.environment.is_empty() { doc["E"] = json!(self.environment); }
         let tables = observations.as_ref().map(|o| &o.tables).unwrap_or(&result.source_tables);

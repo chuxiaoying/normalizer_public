@@ -2,10 +2,15 @@
 //! Names order expressions; they do not identify or merge heap objects.
 use std::collections::BTreeMap;
 
-pub(crate) struct CanonicalHeapNames<'a>(pub(crate) &'a BTreeMap<i64, String>);
+pub(crate) struct CanonicalNames<'a> {
+    pub(crate) heap: &'a BTreeMap<i64, String>,
+    pub(crate) folds: Option<&'a BTreeMap<u64, usize>>,
+}
 
-impl math::SortContext for CanonicalHeapNames<'_> {
+impl math::SortContext for CanonicalNames<'_> {
     fn heap_display_name(&self, heap_id: i64) -> Option<String> {
-        self.0.get(&heap_id).cloned()
+        self.heap.get(&heap_id).cloned()
     }
+
+    fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.folds }
 }

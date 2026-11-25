@@ -76,7 +76,7 @@ pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     // Expr is immutable. Without HeapRef or function aliases this key is
     // independent of SortContext, so the bounded cache is semantics-preserving and
     // avoids recomputing the same DisplayIR key in high-frequency AND/OR sorts.
-    if !expr.has_heap_ref() && ctx.function_aliases().is_none() {
+    if !expr.has_heap_ref() && ctx.function_aliases().is_none() && ctx.temporal_aliases().is_none() {
         if let Some(cached) = CANONICAL_ORDER_CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
             if crate::profile::cache_observation_enabled() {
                 crate::profile::cache_lookup(
@@ -146,7 +146,7 @@ fn canonical_order_key_uncached(expr: &Expr, ctx: &dyn SortContext) -> String {
 
 fn subject_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     match expr.kind() {
-        ExprKind::SymVar { origin } => sym_origin_subject_key(origin),
+        ExprKind::SymVar { origin } => sym_origin_subject_key(origin, ctx),
         ExprKind::RowValue { alias } => format!("04|row|{alias}"),
         ExprKind::HeapRef(id) => heap_subject_key(*id, ctx),
         ExprKind::Lit(lit) => literal_subject_key(lit),
@@ -262,7 +262,7 @@ fn call_subject_key(
     format!("05|call:{name}|arity:{}", args.len())
 }
 
-fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin) -> String {
+fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortContext) -> String {
     match origin {
         crate::symvar::SymVarOrigin::Parameter { name, .. } => {
             // Boundary/external Pojo projections can be carried as Parameter
@@ -286,8 +286,11 @@ fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin) -> String {
                 format!("01|$e_{}.{}", binding_id, path.join("."))
             }
         }
-        crate::symvar::SymVarOrigin::Temporal { binding_id, .. } => {
-            format!("02|$t_{binding_id:020}")
+        crate::symvar::SymVarOrigin::Temporal { binding_id, primitive_type } => {
+            let aliases = (primitive_type == "integer").then(|| ctx.temporal_aliases()).flatten();
+            let slot = aliases.and_then(|aliases| aliases.get(binding_id))
+                .map_or(*binding_id, |slot| *slot as u64);
+            format!("02|$t_{slot:020}")
         }
     }
 }
@@ -432,7 +435,7 @@ fn structural_key(expr: &Expr, ctx: &dyn SortContext) -> String {
                 | External { primitive_type, .. }
                 | Temporal { primitive_type, .. } => primitive_type,
             };
-            key_node("sym", vec![sym_origin_subject_key(origin), primitive_type.clone()])
+            key_node("sym", vec![sym_origin_subject_key(origin, ctx), primitive_type.clone()])
         }
         ExprKind::RowValue { alias } => format!("row:{alias}"),
         ExprKind::HeapRef(id) => format!("heap:{}", heap_subject_key(*id, ctx)),

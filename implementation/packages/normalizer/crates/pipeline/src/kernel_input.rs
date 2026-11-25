@@ -511,6 +511,7 @@ impl Loaded {
             program: &self.program,
             source_objects: source_objects::SourceObjects::default(),
             source_relations: Default::default(),
+            pure_folds: Vec::new(),
             source_array_writes: Default::default(),
             project: &self.project,
             methods: BTreeMap::new(),
@@ -716,6 +717,7 @@ impl Loaded {
         need(realtime_completion.terminal_alternatives().is_some(), "entry has incomplete control flow")?;
         e.emit_profile_metrics("completed");
         Ok(ExecutionResult {
+            pure_folds: e.pure_folds,
             source_state_bindings: e.source_objects.state_bindings,
             source_identity_parameters: e.source_objects.compared_parameters,
             source_record_return,
@@ -728,6 +730,7 @@ impl Loaded {
         })
     }
 }
+mod pure_fold;
 mod business_entry;
 mod business_event;
 pub(crate) mod business_relation;

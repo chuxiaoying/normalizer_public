@@ -13,7 +13,7 @@
 mod relation_query;
 pub(crate) mod business_value;
 
-use crate::canonical_names::CanonicalHeapNames;
+use crate::canonical_names::CanonicalNames;
 use std::collections::{HashMap};
 
 use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKind};
@@ -24,6 +24,7 @@ pub struct FormatCtx {
     scalar_arrays: std::collections::BTreeSet<String>,
     nested_arrays: std::collections::BTreeSet<String>,
     record_arrays: std::collections::BTreeSet<String>,
+    pure_fold_names: std::collections::BTreeMap<u64, usize>,
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
@@ -43,6 +44,7 @@ impl Default for FormatCtx {
             scalar_arrays: Default::default(),
             nested_arrays: Default::default(),
             record_arrays: Default::default(),
+            pure_fold_names: Default::default(),
             business_identities: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
@@ -68,6 +70,10 @@ impl FormatCtx {
         if guard.as_bool() != Some(true) {
             self.business_receipt_guards.insert(id, guard);
         }
+    }
+
+    pub(crate) fn set_pure_fold_names(&mut self, names: std::collections::BTreeMap<u64, usize>) {
+        self.pure_fold_names = names;
     }
 
     pub(crate) fn set_business_identities(&mut self, roots: std::collections::BTreeMap<i64, String>) {
@@ -197,7 +203,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
             return rendered;
         }
         if let Some((display_op, flip)) =
-            math::canonical_order_ordered_comparison(op, left, right, &CanonicalHeapNames(&ctx.business_identities))
+            math::canonical_order_ordered_comparison(op, left, right, &CanonicalNames { heap: &ctx.business_identities, folds: (!ctx.pure_fold_names.is_empty()).then_some(&ctx.pure_fold_names) })
         {
             let (lhs, rhs) = if flip { (right, left) } else { (left, right) };
             let l = format_expr_with_ctx(lhs, ctx);
@@ -456,9 +462,11 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
                 format!("$e_{}.{}", n, path.join("."))
             }
         }
-        SymVarOrigin::Temporal { binding_id, .. } => {
-            let n = binding_id;
-            format!("$t_{}", n)
+        SymVarOrigin::Temporal { binding_id, primitive_type } => {
+            let slot = if primitive_type == "integer" && ctx.business_inputs.is_some() {
+                ctx.pure_fold_names.get(binding_id).copied().expect("closed pure fold")
+            } else { *binding_id as usize };
+            format!("$t_{slot}")
         }
     }
 }

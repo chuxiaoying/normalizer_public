@@ -13,6 +13,11 @@ pub trait SortContext {
     /// - 无 display_name → 返回 None，由排序规则使用 id 稳定字符串
     fn heap_display_name(&self, heap_id: i64) -> Option<String>;
 
+    /// Published ordinals of retained pure definitions, not internal tasks.
+    fn temporal_aliases(&self) -> Option<&std::collections::BTreeMap<u64, usize>> {
+        None
+    }
+
     /// Final semantic names for already declared pure functions (for example
     /// internal definition calls exposed as `$t_0`). None retains registered
     /// names. Some, including an empty map, disables context-independent key

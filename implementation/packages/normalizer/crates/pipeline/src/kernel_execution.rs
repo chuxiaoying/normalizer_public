@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
+    pub(super) pure_folds: Vec<super::pure_fold::Definition>,
     pub(super) source_relations:super::business_relation::Relations,
     pub(super) source_objects: super::source_objects::SourceObjects,
     pub(super) source_array_writes: BTreeMap<String, BTreeSet<i64>>,
@@ -758,9 +759,9 @@ impl Engine<'_> {
                     // Both operands have already been obtained in source order.
                     // Reorient only the pure comparison, never the evaluations.
                     let kind = if *op == B::Eq { math::BinOpKind::Eq } else { math::BinOpKind::Ne };
-                    let names = crate::canonical_names::CanonicalHeapNames(
-                        &self.source_objects.compared_parameters,
-                    );
+                    let names = crate::canonical_names::CanonicalNames {
+                        heap: &self.source_objects.compared_parameters, folds: None,
+                    };
                     if math::canonical_order_ordered_comparison(kind, &a, &z, &names).is_some() {
                         std::mem::swap(&mut a, &mut z);
                     }

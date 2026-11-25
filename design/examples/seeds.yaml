@@ -35,6 +35,7 @@ external-exception-propagation: topics/external-boundaries/java-exception-propag
 basic-return-shape: topics/basic-contracts/java-return-shape.md
 expr-associative-commutative-normal-form: topics/unified-canonical-form/java-associative-normal-form.md
 canonical-binary-case: topics/unified-canonical-form/java-binary-case.md
+canonical-pure-fold-definitions: topics/unified-canonical-form/java-pure-fold-definitions.md
 canonical-integer-partition: topics/unified-canonical-form/java-integer-partition.md
 canonical-total-boolean-order: topics/unified-canonical-form/java-total-boolean-order.md
 canonical-number-selection: topics/unified-canonical-form/java-number-selection.md

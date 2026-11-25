@@ -1,0 +1,98 @@
+- name: private-alpha-renaming-and-commutative-body
+  edits:
+    - from: '(leftAcc, leftItem) yield leftAcc * 2 + leftItem'
+      to: '(previous, digit) yield digit + 2 * previous'
+- name: reversed-independent-source-definitions
+  edits:
+    - from: |-
+        int leftValue;
+                /* @normalizer-ir
+                   leftValue = reduce left from initial as (leftAcc, leftItem) yield leftAcc * 2 + leftItem
+                */
+                int rightValue;
+                /* @normalizer-ir
+                   rightValue = reduce right from initial as (rightAcc, rightItem) yield rightAcc * 2 + rightItem
+                */
+      to: |-
+        int rightValue;
+                /* @normalizer-ir
+                   rightValue = reduce right from initial as (rightAcc, rightItem) yield rightAcc * 2 + rightItem
+                */
+                int leftValue;
+                /* @normalizer-ir
+                   leftValue = reduce left from initial as (leftAcc, leftItem) yield leftAcc * 2 + leftItem
+                */
+- name: dependency-precedes-lexical-source-name
+  edits:
+    - from: |-
+        int leftValue;
+                /* @normalizer-ir
+                   leftValue = reduce left from initial as (leftAcc, leftItem) yield leftAcc * 2 + leftItem
+                */
+                int rightValue;
+                /* @normalizer-ir
+                   rightValue = reduce right from initial as (rightAcc, rightItem) yield rightAcc * 2 + rightItem
+                */
+      to: |-
+        int rightValue;
+                /* @normalizer-ir
+                   rightValue = reduce right from initial as (rightAcc, rightItem) yield rightAcc * 2 + rightItem
+                */
+                int leftValue;
+                /* @normalizer-ir
+                   leftValue = reduce left from rightValue as (leftAcc, leftItem) yield leftAcc * 2 + leftItem
+                */
+  expect:
+    - path: [T]
+      value:
+        - { id: $t_0, op: fold, type: number, source: right, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item' }
+        - { id: $t_1, op: fold, type: number, source: left, initial: $t_0, accumulator: acc, element: item, body: 'acc * 2 + item' }
+    - path: [R]
+      value: $t_1 - $t_0
+- name: sum-of-fold-results-orders-by-public-labels
+  edits:
+    - from: return leftValue - rightValue;
+      to: return rightValue + leftValue;
+  expect:
+    - path: [R]
+      value: $t_0 + $t_1
+- name: identical-pure-definitions-are-shared
+  edits:
+    - from: 'rightValue = reduce right'
+      to: 'rightValue = reduce left'
+    - from: return leftValue - rightValue;
+      to: return leftValue + rightValue;
+  expect:
+    - path: [T]
+      value:
+        - { id: $t_0, op: fold, type: number, source: left, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item' }
+    - path: [R]
+      value: $t_0 + $t_0
+- name: unknown-capture-is-not-a-closed-pure-fold
+  edits:
+    - from: 'leftAcc * 2 + leftItem'
+      to: 'leftAcc * 2 + leftItem + mystery'
+  reject:
+    - pure fold body requires closed exact-integer arithmetic
+- name: unused-pure-folds-do-not-publish-definitions
+  edits:
+    - from: return leftValue - rightValue;
+      to: return initial;
+  expect:
+    - path: [T]
+      absent: true
+    - path: [R]
+      value: initial
+- name: constants-in-initializer-remain-exact
+  edits:
+    - from: 'reduce left from initial'
+      to: 'reduce left from 0'
+  expect:
+    - path: [T, 0, initial]
+      value: '0'
+- name: derived-initializer-outside-supported-subset-is-rejected
+  edits:
+    - from: 'reduce left from initial'
+      to: 'reduce left from initial + 1'
+  reject:
+    - pure fold initial must be an integer, numeric parameter, or prior pure fold

@@ -517,17 +517,36 @@ impl Engine<'_> {
                 need(rows.fields.contains_key(""), "reduce requires a bound numeric array")?;
                 let mut row_locals = locals.clone();
                 row_locals.remove(accumulator);
-                let Scalar::Binary(op @ (Op::Add | Op::Sub), left, term) = body else {
-                    return Err(fail("unsupported reduce recurrence"));
-                };
-                need(matches!(left.as_ref(), Scalar::Path(parts)
-                    if parts.as_slice() == std::slice::from_ref(accumulator)), "reduce needs a leading accumulator")?;
                 let start = self.query_value(initial, "", &BTreeMap::new(), env, guard)?;
-                let term = self.query_value(term, &query.alias, &rows.fields, &row_locals, guard)?;
-                need(start.ty() == Ty::Integer && term.ty() == Ty::Integer, "reduce needs exact integers")?;
-                let sum = r::relation_sum(rows.input, term.scalar()?);
-                let value = if *op == Op::Add { b::add(start.scalar()?, sum) } else { b::sub(start.scalar()?, sum) };
-                Value::Term(Ty::Integer, math::normalize(value))
+                need(start.ty() == Ty::Integer, "reduce needs an exact integer initial value")?;
+                fn has_accumulator(term: &Scalar, accumulator: &str) -> bool {
+                    match term {
+                        Scalar::Path(parts) => parts.first().is_some_and(|name| name == accumulator),
+                        Scalar::Binary(_, l, r) => has_accumulator(l, accumulator) || has_accumulator(r, accumulator),
+                        Scalar::NullPredicate { value, .. } => has_accumulator(value, accumulator),
+                        Scalar::Literal(_) | Scalar::Bool(_) => false,
+                    }
+                }
+                match body {
+                    Scalar::Binary(op @ (Op::Add | Op::Sub), left, term)
+                        if matches!(left.as_ref(), Scalar::Path(parts)
+                            if parts.as_slice() == std::slice::from_ref(accumulator))
+                            && !has_accumulator(term, accumulator) =>
+                    {
+                        let term = self.query_value(term, &query.alias, &rows.fields, &row_locals, guard)?;
+                        need(term.ty() == Ty::Integer, "reduce needs exact integer elements")?;
+                        let sum = r::relation_sum(rows.input, term.scalar()?);
+                        let value = if *op == Op::Add { b::add(start.scalar()?, sum) } else { b::sub(start.scalar()?, sum) };
+                        Value::Term(Ty::Integer, math::normalize(value))
+                    }
+                    _ => {
+                        let RelationExpr::Base { name, .. } = &rows.input else {
+                            return Err(fail("pure fold requires a direct ordered source array"));
+                        };
+                        need(rows.ordering.is_empty(), "pure fold must preserve source array order")?;
+                        self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard)?
+                    }
+                }
             }
             (Kind::First, Projection::FirstValue { value, fallback }) => {
                 need(!rows.ordering.is_empty(), "first requires an ordered input")?;
