@@ -47,21 +47,12 @@ impl Completion {
         }
     }
 
+    /// A total return is certified and collapsed by `from_alternatives`.
+    /// The remaining guarded states include a different exit or an uncovered domain.
     pub(crate) fn return_value(&self) -> Option<Expr> {
         match self {
             Self::Return(value) => Some(value.clone()),
-            Self::Guarded(alternatives) => {
-                if alternatives
-                    .iter()
-                    .all(|alternative| matches!(alternative.outcome, CompletionOutcome::Return(_)))
-                    && coverage(alternatives).as_bool() == Some(true)
-                {
-                    Some(collapse_return_values(alternatives))
-                } else {
-                    None
-                }
-            }
-            Self::Continue | Self::Throw { .. } => None,
+            Self::Continue | Self::Throw { .. } | Self::Guarded(_) => None,
         }
     }
 
