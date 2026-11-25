@@ -23,7 +23,6 @@ pub struct FormatCtx {
     business_inputs: Option<std::collections::BTreeMap<String, String>>,
     scalar_arrays: std::collections::BTreeSet<String>,
     nested_arrays: std::collections::BTreeSet<String>,
-    array_exit_guard: Option<Expr>,
     record_arrays: std::collections::BTreeSet<String>,
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
@@ -43,7 +42,6 @@ impl Default for FormatCtx {
             business_inputs: None,
             scalar_arrays: Default::default(),
             nested_arrays: Default::default(),
-            array_exit_guard: None,
             record_arrays: Default::default(),
             business_identities: Default::default(),
             business_projections: Vec::new(),
@@ -84,9 +82,6 @@ impl FormatCtx {
         self.scalar_arrays = arrays;
     }
 
-    pub(crate) fn set_array_exit_guard(&mut self, guard: Expr) {
-        self.array_exit_guard = Some(guard);
-    }
     pub(crate) fn protect_business_return(&mut self) { self.format_guarded_business_return = true; }
 
     pub(crate) fn for_business(inputs: std::collections::BTreeMap<String, String>, business_states: std::collections::BTreeMap<u64,String>) -> Self {

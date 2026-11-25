@@ -170,7 +170,6 @@ pub(super) fn observations(
         .terminal_alternatives()
         .ok_or_else(|| fail("entry has incomplete control flow"))?;
     let mut exceptions = BTreeMap::new();
-    let mut return_guard = b::lit_bool(false);
     for alternative in alternatives {
         validate_ids(&alternative.guard, &issued)?;
         match alternative.outcome {
@@ -186,7 +185,6 @@ pub(super) fn observations(
             }
             CompletionOutcome::Return(value) => {
                 validate_ids(&value, &issued)?;
-                return_guard = b::or(return_guard, alternative.guard);
             }
             CompletionOutcome::Continue => return Err(fail("incomplete settled return")),
         }
@@ -208,9 +206,6 @@ pub(super) fn observations(
         .ok_or_else(|| fail("no normal settled return"))?;
     validate_ids(&returned, &issued)?;
     ctx.protect_business_return();
-    if !arrays.is_empty() {
-        ctx.set_array_exit_guard(math::normalize(return_guard));
-    }
     let returned = if entry.return_type() == "void" {
         need(returned.is_null(), "non-void return in void event")?;
         "void".into()

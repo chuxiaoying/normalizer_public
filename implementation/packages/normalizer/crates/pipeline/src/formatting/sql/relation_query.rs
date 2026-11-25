@@ -79,17 +79,16 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         input = inner;
     }
     let scalar_array = matches!(input, RelationExpr::Base {name, ..} if ctx.scalar_arrays.contains(name));
-    // Math can factor a guarded nth(0) into FirstValue. Preserve the single
-    // canonical positional surface for a directly bound scalar array.
+    // Never convert the math layer's ordered first/null observation back
+    // to an index. Explicit non-null fallbacks remain a separate contract.
     if scalar_array && kind == math::RelationAggregateKind::FirstValue
         && predicates.is_empty() && keys.is_empty() && value.as_row_value() == Some("value")
     {
         let RelationExpr::Base { name, .. } = input else { unreachable!() };
         let array = super::array_name(name, ctx).to_owned();
         let default = default?;
-        if default.is_null() && ctx.array_exit_guard.as_ref().is_some_and(|path|
-            math::builder::path_implies(path, &math::normalize(r::relation_exists(relation.clone())))) {
-            return Some(format!("{array}[0]"));
+        if default.is_null() {
+            return Some(format!("FIRST(value FROM {array})"));
         }
         let empty = crate::format_expr_with_ctx(default, ctx);
         return Some(format!("CASE WHEN LENGTH({array}) == 0 THEN {empty} ELSE {array}[0] END"));

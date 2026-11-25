@@ -1,0 +1,13 @@
+- name: same-ordered-array-through-local-alias
+  edits:
+    - from: 'return values[0];'
+      to: 'int[] ordered = values; return ordered[0];'
+- name: nonzero-index-is-not-the-first-element
+  edits:
+    - from: 'return values[0];'
+      to: 'return values[1];'
+  expect:
+    - path: [R]
+      value: 'values[1]'
+    - path: [throws, 0, when]
+      value: 'LENGTH(values) <= 1'

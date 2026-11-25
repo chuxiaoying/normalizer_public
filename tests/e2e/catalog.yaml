@@ -105,7 +105,7 @@ groups:
   java/seed-batch-31:
     number-decimal-rounding: [DecimalPrice.roundPrice]
   java/seed-batch-32:
-    collection-empty-and-singleton: [FirstValue.firstOrZero]
+    collection-empty-and-singleton: [FirstValue.firstOrZero, FirstValue.firstRequired]
     collection-map: [MapValues.sumPlusOne]
     collection-reduce: [ReduceValues.sumFrom]
   java/seed-batch-33:
