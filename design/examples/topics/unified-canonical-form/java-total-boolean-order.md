@@ -59,3 +59,34 @@ R: |-
     ELSE 20
   END
 ```
+
+## 不相邻的同值分支只合并各自真正命中的域
+
+```java
+class CanonicalChecks {
+    static int priority(boolean a, boolean b, boolean c) {
+        if (a) return 10;
+        if (b) return 20;
+        if (c) return 10;
+        return 30;
+    }
+}
+```
+
+**原样通过。** 当 a 为假而 b、c 都为真时，先命中 b，应返回 20。不能直接把两个返回 10 的原条件写成 `a OR c`；只有 `b` 失败时第三个条件才有机会命中。合并后的 10 域是 `a OR (NOT b AND c)`，20 的有效域是 `NOT a AND b`，原默认值仍在最后。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/CanonicalChecks.java#CanonicalChecks.priority, returns: number }
+P:
+  parameters:
+    a: { position: 0, type: bool }
+    b: { position: 1, type: bool }
+    c: { position: 2, type: bool }
+R: |-
+  CASE
+    WHEN a OR NOT (b) AND c THEN 10
+    WHEN NOT (a) AND b THEN 20
+    ELSE 30
+  END
+```

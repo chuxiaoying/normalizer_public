@@ -1,0 +1,9 @@
+- name: explicitly-grouped-effective-domains
+  edits:
+    - from: |-
+        if (a) return 10;
+                if (b) return 20;
+                if (c) return 10;
+      to: |-
+        if (a || (!b && c)) return 10;
+                if (!a && b) return 20;
