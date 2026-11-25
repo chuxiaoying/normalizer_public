@@ -42,6 +42,7 @@ R: base + value
 - 精确加法：`(value + 2) + base` 和 `2 + (base + value)` 均归到 `base + value + 2`。证明来自同一加法族的交换、结合律；常量处在该规则指定的位置。
 - 精确乘法：`value * (base * value)` 和 `(value * value) * base` 均归到 `base * value * value`。同一个因子出现两次仍表示乘两次，不采用 Boolean 的幂等去重。
 - 加法和乘法不互相归并；例如 `base = 3, value = 2` 时，两组扩展分别得到 7 和 12。
+- 单个完整 CASE 与一个简单、已取得的操作数相减时，可以把减法移进各分支，但不能左右换边。`base - (value > 0 ? 3 : 7)` 与 `(value > 0 ? 3 : 7) - base` 分别保留 `base - 7` 与 `7 - base`。若两边都为 CASE，不套用这项单边规则把两组分支全排列。
 
 **预处理 diff**
 
