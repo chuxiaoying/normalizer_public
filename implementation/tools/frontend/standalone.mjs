@@ -1,15 +1,16 @@
 // Standalone JavaScript source, lowered without executing user code.
 // It parses, never executes, the module and uses the shared PERS kernel.
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 import ts from 'typescript';
 import { lowerExpression } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { typedModuleAst } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
+import { projectSources } from './project-source.mjs';
 
 const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
 const scalar = domain => domains.get(domain)?.[1];
@@ -255,13 +256,10 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
 
 try {
   const [kernel, rootArg, file, entry] = process.argv.slice(2);
-  if (!kernel || !rootArg || !file || !entry || isAbsolute(file) || !/\.(js|ts)$/.test(file)) fail('expected PROJECT_ROOT, a relative .js or .ts file, and an exported function');
-  const root = realpathSync(rootArg);
-  const path = realpathSync(resolve(root, file));
-  const name = relative(root, path);
-  if (name === '..' || name.startsWith('../') || isAbsolute(name)) fail('module path must remain in the project');
+  if (!kernel || !rootArg || !file || !entry || !/\.(js|ts)$/.test(file)) fail('expected PROJECT_ROOT, a relative .js or .ts file, and an exported function');
+  const { declared, name, path } = projectSources(rootArg)(file);
   const source = readFileSync(path, 'utf8');
-  const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, path);
+  const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, declared);
   if (closure) {
     const result = spawnSync(kernel, ['--validate-standalone-closure'], {input: JSON.stringify(closure), encoding: 'utf8'});
     if (result.error) throw result.error;

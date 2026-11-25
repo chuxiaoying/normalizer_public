@@ -12,4 +12,6 @@
 
 用 `implementation/tools/normalizer help` 查看入口。成功时从 stdout 读取最终 PERS，失败时查看退出码和 stderr 中的诊断。见[Java 入门](getting-started.md)。
 
+输入文件必须留在所选的源码目录内。Vue 的原组件与预处理模块分别校验；越界会报错，不产出 PERS。指向目录内文件的链接保留调用时声明的相对路径；Java 源目录扫描不会递归进入目录链接。
+
 独立模块的普通对象入参没有 external 合同。对入口立即执行、无可选链的入参方法调用，模块适配仅交付实际调用目标供内核检查，包括直接 `await input.read()` 的情况；没有源定义时 Panic，不产出 PERS。不把 JSDoc 或 `ports` 等入参名当作边界声明，也不据此宣称支持通用异步执行。

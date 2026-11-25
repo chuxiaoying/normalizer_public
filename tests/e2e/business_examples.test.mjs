@@ -114,6 +114,66 @@ for (const [name, setup, diagnostic] of [
 const additionSource = count => '/**\n * @param {number} x\n * @returns {number}\n */\n'
   + 'export function sum(x) { return x' + ' + 1'.repeat(count) + '; }\n';
 
+test('module CLI ingress / linked modules stay in the source root and keep their declared name', t => {
+  const workspace = mkdtempSync(join(tmpdir(), 'normalizer-module-link-'));
+  t.after(() => rmSync(workspace, {recursive: true, force: true}));
+  const project = join(workspace, 'selected');
+  mkdirSync(project);
+  writeFileSync(join(project, 'local.txt'), additionSource(1));
+  writeFileSync(join(workspace, 'outside.txt'), additionSource(1));
+  symlinkSync(join(project, 'local.txt'), join(project, 'sum.js'));
+  symlinkSync(join(workspace, 'outside.txt'), join(project, 'outside.js'));
+  mkdirSync(join(project, 'directory.js'));
+  const run = name => invoke(join(root, 'implementation/tools/normalizer'), ['module', project, name, 'sum'], root);
+  const accepted = run('sum.js');
+  assert.equal(accepted.status, 0, accepted.stderr);
+  const actual = YAML.parse(accepted.stdout);
+  assertPers(actual, 'in-root module link');
+  assert.equal(actual.entry.function, 'sum.js#sum');
+  assert.equal(actual.R, 'x + 1');
+  for (const [name, diagnostic] of [
+    ['outside.js', /\[SOURCE-OUTSIDE-ROOT\].*outside\.js/],
+    ['../other.js', /\[SOURCE-OUTSIDE-ROOT\].*other\.js/],
+    ['directory.js', /\[SOURCE-READ-FAILED\].*directory\.js/],
+  ]) {
+    const rejected = run(name);
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, diagnostic);
+  }
+});
+
+test('scenario CLI ingress / original and prepared Vue files stay in the same selected root', t => {
+  const workspace = mkdtempSync(join(tmpdir(), 'normalizer-scenario-link-'));
+  t.after(() => rmSync(workspace, {recursive: true, force: true}));
+  const project = join(workspace, 'selected');
+  mkdirSync(project);
+  const original = '<template><Card :amount="7" /></template>\n';
+  const prepared = '/** @componentProp Card#amount.value */\nexport function amount() { return 7; }\n';
+  writeFileSync(join(project, 'local.vue'), original);
+  writeFileSync(join(project, 'local.mjs'), prepared);
+  writeFileSync(join(workspace, 'outside.vue'), original);
+  writeFileSync(join(workspace, 'outside.mjs'), prepared);
+  symlinkSync(join(project, 'local.vue'), join(project, 'Page.vue'));
+  symlinkSync(join(project, 'local.mjs'), join(project, 'page.mjs'));
+  symlinkSync(join(workspace, 'outside.vue'), join(project, 'outside.vue'));
+  symlinkSync(join(workspace, 'outside.mjs'), join(project, 'outside.mjs'));
+  const run = (module, component) => invoke(join(root, 'implementation/tools/normalizer'),
+    ['scenario', 'frontend-vo-consumption', project, '--entry', `${module}:amount`, '--source', component], root);
+  const accepted = run('page.mjs', 'Page.vue');
+  assert.equal(accepted.status, 0, accepted.stderr);
+  const actual = YAML.parse(accepted.stdout);
+  assertPers(actual, 'in-root Vue links');
+  assert.equal(actual.entry.function, 'Page.vue#Card#amount.value');
+  assert.equal(actual.R, '7');
+  for (const [module, component] of [['page.mjs', 'outside.vue'], ['outside.mjs', 'Page.vue']]) {
+    const rejected = run(module, component);
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /\[SOURCE-OUTSIDE-ROOT\].*outside\.(vue|mjs)/);
+  }
+});
+
 test('module CLI ingress / expression nesting is bounded before execution', t => {
   const project = mkdtempSync(join(tmpdir(), 'normalizer-module-depth-'));
   t.after(() => rmSync(project, {recursive: true, force: true}));

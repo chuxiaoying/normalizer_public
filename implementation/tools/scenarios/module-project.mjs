@@ -1,9 +1,10 @@
 // Compile a synchronous component projection to the shared symbolic kernel.
 // Each binding denotes a read of a plain field during this render observation.
-import { accessSync, constants, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { readModuleEvent } from '../frontend/module-event.mjs';
 import { readModuleProjection } from '../frontend/module-projection.mjs';
+import { projectSources } from '../frontend/project-source.mjs';
 
 const carriers = {
   bool: ['boolean', 'bool'], text: ['String', 'text?'],
@@ -158,25 +159,19 @@ function eventContract(modulePath, moduleText, name, original) {
 }
 
 export function buildModuleProject({ scene, root, file, name, original, directory }) {
-  for (const path of [original, file]) {
-    if (!path || isAbsolute(path) || relative(resolve(root), resolve(root, path)).split(/[\\/]/)[0] === '..') {
-      throw new Error('SCENARIO_MODULE_INPUT: source paths must be project-relative');
-    }
-  }
   if (extname(original) !== '.vue' || extname(file) !== '.mjs') {
     throw new Error('SCENARIO_MODULE_INPUT: expected a Vue source and its prepared .mjs module');
   }
-  const originalPath = join(root, original);
-  if (!statSync(originalPath).isFile()) throw new Error('SCENARIO_MODULE_INPUT: original Vue source must be a file');
-  accessSync(originalPath, constants.R_OK);
-  const modulePath = join(root, file);
-  const moduleText = readFileSync(modulePath, 'utf8');
+  const source = projectSources(root);
+  const component = source(original);
+  const module = source(file);
+  accessSync(component.path, constants.R_OK);
+  const moduleText = readFileSync(module.path, 'utf8');
   const build = scene === 'frontend-vo-production' ? eventContract : projectionContract;
   if (!['frontend-vo-production', 'frontend-vo-consumption'].includes(scene)) throw new Error('SCENARIO_MODULE_INPUT: unsupported component scenario');
-  const project = build(modulePath, moduleText, name, original);
+  const project = build(module.declared, moduleText, name, component.name);
   const [entry] = project.entries;
-  const source = project.source_text;
-  writeFileSync(join(directory, 'Normalized.java'), source);
+  writeFileSync(join(directory, 'Normalized.java'), project.source_text);
   writeFileSync(join(directory, 'Prepared.mjs'), moduleText);
   const projectPath = join(directory, 'project.json');
   writeFileSync(projectPath, JSON.stringify(project, null, 2) + '\n');
