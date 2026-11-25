@@ -12,3 +12,31 @@
   expect:
     - path: [R]
       value: base + value + 1
+- name: add-left-associated
+  edits:
+    - from: 'return value + base;'
+      to: 'return (value + 2) + base;'
+  expect:
+    - path: [R]
+      value: base + value + 2
+- name: add-right-associated
+  edits:
+    - from: 'return value + base;'
+      to: 'return 2 + (base + value);'
+  expect:
+    - path: [R]
+      value: base + value + 2
+- name: multiply-right-associated
+  edits:
+    - from: 'return value + base;'
+      to: 'return value * (base * value);'
+  expect:
+    - path: [R]
+      value: base * value * value
+- name: multiply-left-associated
+  edits:
+    - from: 'return value + base;'
+      to: 'return (value * value) * base;'
+  expect:
+    - path: [R]
+      value: base * value * value

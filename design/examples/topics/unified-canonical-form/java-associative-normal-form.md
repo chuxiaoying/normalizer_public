@@ -37,6 +37,12 @@ P:
 R: base + value
 ```
 
+### 同形与异形的判别
+
+- 精确加法：`(value + 2) + base` 和 `2 + (base + value)` 均归到 `base + value + 2`。证明来自同一加法族的交换、结合律；常量处在该规则指定的位置。
+- 精确乘法：`value * (base * value)` 和 `(value * value) * base` 均归到 `base * value * value`。同一个因子出现两次仍表示乘两次，不采用 Boolean 的幂等去重。
+- 加法和乘法不互相归并；例如 `base = 3, value = 2` 时，两组扩展分别得到 7 和 12。
+
 **预处理 diff**
 
 | 差异点（old → new） | 升级思想 |
