@@ -1,6 +1,7 @@
-//! Exact finite partition of a proven bounded integer subject. No sampling of
+//! Exact finite partition of a proven integer subject. No sampling of
 //! inputs: every comparison endpoint partitions the entire integer domain.
 use crate::{builder as b, BinOpKind as B, Expr, Lit};
+use num_bigint::BigInt;
 
 // Only direct acquired entry parameters carry this declaration evidence.
 // Legacy expansion also encodes partial field/E projections as Parameter paths;
@@ -43,25 +44,39 @@ pub(super) fn bounds(e: &Expr) -> Option<(i128, i128)> {
     None
 }
 
+// None endpoints are unbounded, not the host word's minimum and maximum.
+type Endpoint = Option<BigInt>;
+fn subject_domain(e: &Expr) -> Option<(Endpoint, Endpoint)> {
+    if let Some((lo, hi)) = bounds(e) {
+        return Some((Some(lo.into()), Some(hi.into())));
+    }
+    match e.as_sym_var() {
+        Some(crate::SymVarOrigin::Parameter { name, primitive_type })
+            if primitive_type == "integer" && !name.starts_with('$')
+                && !name.contains(['.', '[', ']']) => Some((None, None)),
+        _ => None,
+    }
+}
+
 #[derive(Clone)]
 enum Guard {
     Bool(bool),
-    Compare(B, i128),
+    Compare(B, BigInt),
     And(Box<Guard>, Box<Guard>),
     Or(Box<Guard>, Box<Guard>),
     Not(Box<Guard>),
 }
 impl Guard {
-    fn at(&self, x: i128) -> bool {
+    fn at(&self, x: &BigInt) -> bool {
         match self {
             Self::Bool(v) => *v,
             Self::Compare(op, n) => match op {
-                B::Eq => x == *n,
-                B::Ne => x != *n,
-                B::Lt => x < *n,
-                B::Le => x <= *n,
-                B::Gt => x > *n,
-                B::Ge => x >= *n,
+                B::Eq => x == n,
+                B::Ne => x != n,
+                B::Lt => x < n,
+                B::Le => x <= n,
+                B::Gt => x > n,
+                B::Ge => x >= n,
                 _ => unreachable!(),
             },
             Self::And(a, b) => a.at(x) && b.at(x),
@@ -70,7 +85,7 @@ impl Guard {
         }
     }
 }
-fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<i128>) -> Option<Guard> {
+fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option<Guard> {
     if let Some(v) = e.as_bool() {
         return Some(Guard::Bool(v));
     }
@@ -90,9 +105,9 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<i128>) -> Option<G
     if !matches!(op, B::Eq | B::Ne | B::Lt | B::Le | B::Gt | B::Ge) {
         return None;
     }
-    let (s, n) = if let Some(Lit::Int(n)) = z.as_lit() {
-        (a, *n)
-    } else if let Some(Lit::Int(n)) = a.as_lit() {
+    let (s, n) = if let Some(n) = z.as_lit().and_then(Lit::as_integer) {
+        (a, n)
+    } else if let Some(n) = a.as_lit().and_then(Lit::as_integer) {
         op = match op {
             B::Lt => B::Gt,
             B::Le => B::Ge,
@@ -100,11 +115,11 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<i128>) -> Option<G
             B::Ge => B::Le,
             other => other,
         };
-        (z, *n)
+        (z, n)
     } else {
         return None;
     };
-    bounds(s)?;
+    subject_domain(s)?;
     if let Some(old) = subject {
         if old != s {
             return None;
@@ -112,9 +127,9 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<i128>) -> Option<G
     } else {
         *subject = Some(s.clone());
     }
-    cuts.push(n as i128);
-    cuts.push(n as i128 + 1);
-    Some(Guard::Compare(op, n as i128))
+    cuts.push(n.clone());
+    cuts.push(&n + 1);
+    Some(Guard::Compare(op, n))
 }
 pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
     if branches.len() < 3
@@ -130,23 +145,29 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
         .map(|(c, _)| guard(c, &mut subject, &mut cuts))
         .collect::<Option<Vec<_>>>()?;
     let subject = subject?;
-    let (lo, hi) = bounds(&subject)?;
-    cuts.retain(|n| *n > lo && *n <= hi);
-    cuts.extend([lo, hi + 1]);
+    let (lo, hi) = subject_domain(&subject)?;
+    cuts.retain(|n| lo.as_ref().is_none_or(|v| n > v)
+        && hi.as_ref().is_none_or(|v| n <= v));
     cuts.sort();
     cuts.dedup();
-    let mut segments: Vec<(i128, i128, Expr)> = vec![];
-    for pair in cuts.windows(2) {
-        let value = branches[guards.iter().position(|g| g.at(pair[0]))?]
-            .1
-            .clone();
+
+    let mut segments: Vec<(Endpoint, Endpoint, Expr)> = Vec::new();
+    let mut start = lo.clone();
+    for next in cuts.into_iter().map(Some).chain(std::iter::once(None)) {
+        let end = next.as_ref().map(|n| n - 1).or_else(|| hi.clone());
+        // Predicates are constant within a cell. For the unbounded first
+        // cell any integer before its next cut is exactly equivalent.
+        let sample = start.as_ref().or(end.as_ref()).cloned().unwrap_or_default();
+        let value = branches[guards.iter().position(|g| g.at(&sample))?].1.clone();
         if let Some(last) = segments.last_mut() {
             if last.2 == value {
-                last.1 = pair[1] - 1;
+                last.1 = end;
+                start = next;
                 continue;
             }
         }
-        segments.push((pair[0], pair[1] - 1, value));
+        segments.push((start, end, value));
+        start = next;
     }
     // Keep the explicit default and the source's first occurrence of each
     // non-default payload. Partition cells determine effective domains, not a
@@ -167,19 +188,19 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
             if cell_value != &value {
                 continue;
             }
-            let condition = if a == z {
-                b::eq(subject.clone(), b::lit_int(*a as i64))
-            } else if *a == lo && *z == hi {
-                b::lit_bool(true)
-            } else if *a == lo {
-                b::le(subject.clone(), b::lit_int(*z as i64))
-            } else if *z == hi {
-                b::ge(subject.clone(), b::lit_int(*a as i64))
-            } else {
-                b::and(
-                    b::ge(subject.clone(), b::lit_int(*a as i64)),
-                    b::le(subject.clone(), b::lit_int(*z as i64)),
-                )
+            let condition = match (a, z) {
+                (Some(a), Some(z)) if a == z => b::eq(subject.clone(), b::lit_integer(a.clone())),
+                (a, z) => {
+                    let lower = a.as_ref().filter(|_| a != &lo)
+                        .map(|n| b::ge(subject.clone(), b::lit_integer(n.clone())));
+                    let upper = z.as_ref().filter(|_| z != &hi)
+                        .map(|n| b::le(subject.clone(), b::lit_integer(n.clone())));
+                    match (lower, upper) {
+                        (None, None) => b::lit_bool(true),
+                        (Some(term), None) | (None, Some(term)) => term,
+                        (Some(lower), Some(upper)) => b::and(lower, upper),
+                    }
+                }
             };
             intervals.push(condition);
         }

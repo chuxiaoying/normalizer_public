@@ -1,0 +1,23 @@
+- name: explicit-closed-intervals
+  edits:
+    - from: 'quantity < 0'
+      to: 'quantity <= -1'
+    - from: |-
+        if (quantity < 3) return 20;
+                if (quantity <= 5) return 20;
+      to: 'if (quantity >= 0 && quantity <= 5) return 20;'
+- name: overlapping-priority-is-observable
+  edits:
+    - from: |-
+        if (quantity < 0) return 10;
+                if (quantity < 3) return 20;
+      to: |-
+        if (quantity < 3) return 20;
+                if (quantity < 0) return 10;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN quantity <= 5 THEN 20
+          ELSE 30
+        END

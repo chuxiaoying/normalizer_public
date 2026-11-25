@@ -62,6 +62,7 @@ seeds:
   canonical-text-order: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
   canonical-number-selection: { kind: topic, topic: unified-canonical-form, related: [number-domain, control-flow] }
   canonical-total-boolean-order: { kind: topic, topic: unified-canonical-form, related: [expression-simplification, control-flow] }
+  canonical-integer-partition: { kind: topic, topic: unified-canonical-form, related: [control-flow, number-domain] }
   canonical-binary-case: { kind: topic, topic: unified-canonical-form, related: [expression-simplification, control-flow] }
   control-short-circuit: { kind: topic, topic: control-flow, related: [] }
   basic-nullable-input: { kind: basic, topic: basic-contracts, related: [] }

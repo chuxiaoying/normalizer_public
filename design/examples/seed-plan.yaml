@@ -2,8 +2,8 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 105
-  seeded: 90
+  total: 106
+  seeded: 91
   planned: 15
 topics:
   expression-simplification:
@@ -93,6 +93,12 @@ topics:
         status: seeded
         surface: java
         focus: 总布尔 AND 和 OR 的排列、括号及语义差异
+        test_status: covered
+        review_status: proposed
+      - id: canonical-integer-partition
+        status: seeded
+        surface: java
+        focus: 精确整数首命中分区、同值区间合并与优先级反例
         test_status: covered
         review_status: proposed
   collections:
