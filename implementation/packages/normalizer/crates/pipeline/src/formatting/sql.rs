@@ -166,7 +166,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return format_sym_var(origin, ctx);
     }
     if let Some(alias) = expr.as_row_value() {
-        return format_parameter_name(alias, ctx);
+        return alias.to_owned();
     }
     if let Some(id) = expr.as_heap_ref() {
         if let Some(root) = ctx.business_identities.get(&id) {
@@ -257,7 +257,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if name == "value.input" {
             if let [value] = args {
                 if let Some(math::Lit::Str(name)) = value.as_lit() {
-                    return format_parameter_name(name, ctx);
+                    return name.to_owned();
                 }
             }
         }
@@ -319,10 +319,6 @@ fn try_format_array_bound(op: BinOpKind, left: &Expr, right: &Expr, ctx: &Format
     let Some(Lit::Int(index)) = right.as_lit() else { return None };
     if !ctx.scalar_arrays.contains(name) || *index <= 0 { return None; }
     Some(format!("LENGTH({}) >= {}", array_name(name, ctx), index.checked_add(1)?))
-}
-
-fn format_parameter_name(name: &str, ctx: &FormatCtx) -> String {
-    rewrite_e_prefix_in_param_name(name, ctx)
 }
 
 fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {
@@ -491,10 +487,7 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
     match origin {
         SymVarOrigin::Parameter { name, .. } => {
             if let Some(display) = ctx.business_inputs.as_ref().and_then(|names| names.get(name)) { return display.clone(); }
-            // Boundary Pojo 字段符号化路径：Parameter name 形如 `$e_<raw_id>.field.subfield`
-            // 对 name 里的 `$e_<digit+>` 前缀做 renumber 映射。Relation SQL 内部的
-            // normalize row 名（如 `$e_17.item.name`）在这里额外映射成 pretty alias。
-            format_parameter_name(name, ctx)
+            name.clone()
         }
         SymVarOrigin::External {
             binding_id, path, ..
@@ -514,65 +507,4 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
             format!("$t_{}", n)
         }
     }
-}
-
-/// Parameter name 里形如 `$e_<raw>` 前缀替换为 `$e_<renumber>`。
-///
-/// Boundary 返回 Pojo 时 symbolize_fields_recursive 以 `$e_<raw_id>` 为 path_prefix
-/// 生成 Parameter { name: "$e_<raw>.field.sub", ... }。这里按 ctx.e_renumber 做字符串
-/// 替换，保证 R/S/T section 全局编号一致。
-///
-/// 仅处理开头的 `$e_<数字+>` 前缀；若 name 不以 `$e_` 开头，原样返回。
-fn rewrite_e_prefix_in_param_name(name: &str, ctx: &FormatCtx) -> String {
-    // Parameter/display paths can contain raw E/T textual prefixes such as
-    // `$e_1.field`, `$t_3.bizType`, or helper-wrapped paths like
-    // `__item__($e_1.items)`. Rewrite every occurrence to the public PERST
-    // slot so R/S/T sections share the same numbering.
-    let bytes = name.as_bytes();
-    let mut out = String::with_capacity(name.len());
-    let mut i = 0usize;
-    let mut quoted = false;
-    let mut escaped = false;
-    while i < bytes.len() {
-        // A certified constant display can contain JSON string literals.
-        // Literal contents are data, never observation-reference tokens.
-        if quoted || bytes[i] == b'"' {
-            let ch = name[i..].chars().next().expect("valid string boundary");
-            out.push(ch);
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                quoted = !quoted;
-            }
-            i += ch.len_utf8();
-            continue;
-        }
-        let is_e = bytes[i..].starts_with(b"$e_");
-        let is_t = bytes[i..].starts_with(b"$t_");
-        if bytes[i] == b'$' && (is_e || is_t) {
-            let mut j = i + 3;
-            while j < bytes.len() && bytes[j].is_ascii_digit() {
-                j += 1;
-            }
-            if j > i + 3 {
-                if let Ok(raw) = name[i + 3..j].parse::<u64>() {
-                    if is_e {
-                        out.push_str(&format!("$e_{}", ctx.e_slot(raw)));
-                    } else {
-                        out.push_str(&format!("$t_{}", raw));
-                    }
-                    i = j;
-                    continue;
-                }
-            }
-        }
-        let ch = name[i..].chars().next().unwrap_or_else(|| {
-            panic!("[FORMAT-BINDING-REWRITE-INVALID-UTF8-BOUNDARY] invalid char boundary")
-        });
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-    out
 }

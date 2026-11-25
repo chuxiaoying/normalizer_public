@@ -97,7 +97,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     let nested = matches!(input, RelationExpr::Base {name, ..} if ctx.nested_arrays.contains(name));
     let correlated = matches!(input, RelationExpr::Vector {value, ..} if value.as_row_value().is_some());
     let from = match input {
-        RelationExpr::Base { name, alias } if record_array || nested => format!("{} AS {alias}", super::format_parameter_name(name, ctx)),
+        RelationExpr::Base { name, alias } if record_array || nested => format!("{name} AS {alias}"),
         RelationExpr::Base { name, .. } if scalar_array =>
             super::array_name(name, ctx).to_owned(),
         RelationExpr::Base { name, .. } => name.clone(),
