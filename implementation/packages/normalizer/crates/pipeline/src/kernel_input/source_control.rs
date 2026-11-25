@@ -54,12 +54,11 @@ impl Engine<'_> {
         let no_completion = self.realtime_completion.clone();
         let no_writes = self.realtime_store.suffix_from(original_store.len());
         self.realtime_store = original_store;
-        self.realtime_store
-            .append(super::realtime_state::SymbolicStore::join(
-                condition.clone(),
-                &yes_writes,
-                &no_writes,
-            ));
+        // Each branch ran with its full path. Its writes already carry that
+        // path (and any additional normal-completion or bounds guard), just
+        // like the effects recorded at the write. Keep those guards as-is.
+        self.realtime_store.append(yes_writes);
+        self.realtime_store.append(no_writes);
         let yes_live = yes_completion.continuing_guard().as_bool() != Some(false);
         let no_live = no_completion.continuing_guard().as_bool() != Some(false);
         for (name, value) in env {

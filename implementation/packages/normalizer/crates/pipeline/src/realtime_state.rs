@@ -498,29 +498,6 @@ impl SymbolicStore {
         }))
     }
 
-    pub(crate) fn join(condition: Expr, then_store: &Self, else_store: &Self) -> Self {
-        let condition = math::normalize(condition);
-        let inverse = math::normalize(b::not(condition.clone()));
-        let mut joined = Self::default();
-        for entry in &then_store.entries {
-            joined.store_guarded(
-                b::and(condition.clone(), entry.guard.clone()),
-                entry.reference.clone(),
-                entry.field.clone(),
-                entry.value.clone(),
-            );
-        }
-        for entry in &else_store.entries {
-            joined.store_guarded(
-                b::and(inverse.clone(), entry.guard.clone()),
-                entry.reference.clone(),
-                entry.field.clone(),
-                entry.value.clone(),
-            );
-        }
-        joined
-    }
-
     pub(crate) fn suffix_from(&self, start: usize) -> Self {
         Self {
             entries: self.entries.iter().skip(start).cloned().collect(),
