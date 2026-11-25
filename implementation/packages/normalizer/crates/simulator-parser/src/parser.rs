@@ -960,7 +960,13 @@ pub(crate) fn parse_type(p: &mut Parser) -> Option<JavaType> {
     if p.eat_keyword("void") {
         return Some(JavaType::Void);
     }
-    let mut ty = parse_type_atom(p, false)?;
+    let ty = parse_type_atom(p, false)?;
+    parse_array_type_suffix(p, ty)
+}
+
+// Empty dimension pairs in type/declarator syntax are distinct from the
+// sized dimensions consumed by the array creation expression.
+pub(crate) fn parse_array_type_suffix(p: &mut Parser, mut ty: JavaType) -> Option<JavaType> {
     while p.eat_char(b'[') {
         if !p.eat_char(b']') {
             return None;
@@ -1041,9 +1047,9 @@ fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
         if is_reserved_identifier(&name) || !names.insert(name.clone()) {
             return Err(p.err_at(at, "[JAVA-PARAMETER] reserved or duplicate parameter name"));
         }
-        while !variadic && p.eat_char(b'[') {
-            if !p.eat_char(b']') { return Err(invalid(p, "expected a closing array bracket")); }
-            ty = JavaType::Array(Box::new(ty));
+        if !variadic {
+            ty = parse_array_type_suffix(p, ty)
+                .ok_or_else(|| invalid(p, "expected a closing array bracket"))?;
         }
         if !attributes.is_empty() { annotations.insert(name.clone(), attributes); }
         params.push((ty, name));

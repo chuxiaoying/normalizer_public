@@ -6,7 +6,7 @@
 //! - 复用 parser.rs 的 Parser struct 和 helper（通过 pub(crate)）
 
 use crate::ast::*;
-use crate::parser::{parse_creation_type, parse_type, ParseError, Parser};
+use crate::parser::{parse_array_type_suffix, parse_creation_type, parse_type, ParseError, Parser};
 
 pub(crate) fn parse_method_body_text(
     body_text: &str,
@@ -436,7 +436,7 @@ impl<'a> Parser<'a> {
             }
         };
         self.skip_ws();
-        let ty = match self.parse_c_style_array_suffix(base_ty.clone()) {
+        let ty = match parse_array_type_suffix(self, base_ty.clone()) {
             Some(t) => t,
             None => {
                 self.pos = save;
@@ -468,8 +468,7 @@ impl<'a> Parser<'a> {
                 .read_ident()
                 .ok_or_else(|| self.err("expected var name in multi-decl"))?;
             self.skip_ws();
-            let ty2 = self
-                .parse_c_style_array_suffix(base_ty.clone())
+            let ty2 = parse_array_type_suffix(self, base_ty.clone())
                 .ok_or_else(|| self.err("expected ']' in array declarator"))?;
             self.skip_ws();
             let i2 = if self.eat_char(b'=') {
@@ -492,22 +491,6 @@ impl<'a> Parser<'a> {
             initializer: init,
         };
         Ok(Some((main, extras)))
-    }
-
-    fn parse_c_style_array_suffix(&mut self, mut ty: JavaType) -> Option<JavaType> {
-        loop {
-            self.skip_ws();
-            if self.peek() != Some(b'[') {
-                break;
-            }
-            self.pos += 1;
-            self.skip_ws();
-            if !self.eat_char(b']') {
-                return None;
-            }
-            ty = JavaType::Array(Box::new(ty));
-        }
-        Some(ty)
     }
 
     // ============ 表达式解析（优先级爬升）============

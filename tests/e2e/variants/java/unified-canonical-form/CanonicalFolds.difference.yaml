@@ -119,3 +119,7 @@
                 int leftValue;
   reject:
     - pure fold requires unconditional evaluation over one ordered source array
+
+- name: array-parameter-suffix-preserves-source-and-order
+  edits:
+    - { from: 'int[] left, int[] right', to: 'int left[], int[] right' }

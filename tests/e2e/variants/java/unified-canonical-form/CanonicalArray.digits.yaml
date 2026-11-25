@@ -18,3 +18,14 @@
     - from: '{2, 7}'
       to: '{2 7}'
   reject: ['SOURCE-PARSE-FAILED']
+
+- name: array-declarator-can-keep-brackets-after-its-name
+  edits:
+    - { from: 'int[] values', to: 'int values[]' }
+- name: array-suffix-belongs-only-to-its-comma-declarator
+  edits:
+    - { from: 'int[] values = {2, 7}', to: 'int first = 2, values[] = {first, 7}' }
+- name: unclosed-second-array-declarator-cannot-disappear
+  edits:
+    - { from: 'int[] values = {2, 7}', to: 'int first = 2, values[ = {first, 7}' }
+  reject: ['[SOURCE-PARSE-FAILED]', "expected ']' in array declarator"]
