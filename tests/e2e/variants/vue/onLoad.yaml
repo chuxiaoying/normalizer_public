@@ -97,3 +97,9 @@
       from: 'export async function onLoad() {'
       to: 'export function onLoad() {'
   reject: ['SCENARIO_MODULE_INPUT', 'entry needs an exported async function']
+- name: a-state-write-must-use-a-field-declared-for-this-entry
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'arrears.status.ready = true'
+      to: 'arrears.status.neverDeclared = true'
+  reject: ['SCENARIO_KERNEL_FAILED', 'undeclared state field']

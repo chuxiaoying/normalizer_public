@@ -338,24 +338,9 @@ impl Engine<'_> {
 
     fn read_host_input(&mut self, env: &mut Env, name: &str, input: &str) -> Result<()> {
         need(identifier(input), "invalid host input name")?;
-        let domain = if let Some(context) = self.entry_context {
-            context.parameter_type(input)
-        } else {
-            // Whole-project validation also checks uncalled semantic methods
-            // without a selected entry. A shared slot must then be unambiguous.
-            let mut domains = self
-                .project
-                .entry_contexts
-                .values()
-                .filter_map(|context| context.parameter_type(input));
-            let first = domains.next();
-            need(
-                domains.all(|domain| Some(domain) == first),
-                "ambiguous host input type without an entry",
-            )?;
-            first
-        }
-        .ok_or_else(|| fail(format!("host input {input} has no P declaration")))?;
+        let context = self.entry_context.ok_or_else(|| fail("host input requires the selected entry context"))?;
+        let domain = context.parameter_type(input)
+            .ok_or_else(|| fail(format!("host input {input} has no P declaration")))?;
         let ty = match domain {
             "bool" => Ty::Bool,
             "number" => Ty::Integer,
@@ -406,24 +391,8 @@ impl Engine<'_> {
                         target.iter().all(|part| identifier(part)),
                         "invalid state field path",
                     )?;
-                    let domain = match self.entry_context {
-                        Some(context) => context.state_field(root, fields)?,
-                        None => {
-                            let mut candidates = self
-                                .project
-                                .entry_contexts
-                                .values()
-                                .filter_map(|context| context.state_field(root, fields).ok());
-                            let first = candidates
-                                .next()
-                                .ok_or_else(|| fail("undeclared state write target"))?;
-                            need(
-                                candidates.all(|ty| ty == first),
-                                "ambiguous state type without an entry",
-                            )?;
-                            first
-                        }
-                    };
+                    let context = self.entry_context.ok_or_else(|| fail("state write requires the selected entry context"))?;
+                    let domain = context.state_field(root, fields)?;
                     let expected = match domain {
                         "number" => Ty::Integer,
                         "bool" => Ty::Bool,
