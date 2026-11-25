@@ -2,7 +2,7 @@
 
 ## 输入原始代码
 
-入口接收 `SummaryRequest`，计算并返回 `Summary` 的三个字段。按[统一业务类型合同](../../../implementation/contracts/pers/schema.yaml)，普通类型默认非空，因此本例的请求对象非空；允许空值的入口须显式声明 `SummaryRequest?`。
+入口接收 `SummaryRequest`，计算并返回 `Summary` 的三个字段。按[统一业务类型合同](../../../../implementation/contracts/pers/schema.yaml)，普通类型默认非空，因此本例的请求对象非空；允许空值的入口须显式声明 `SummaryRequest?`。
 
 ```java
 class Summary {

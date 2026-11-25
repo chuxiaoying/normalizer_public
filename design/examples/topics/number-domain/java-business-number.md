@@ -42,7 +42,7 @@ P:
 R: balance + fee
 ```
 
-`R` 描述业务加法，不携带 Java `int` 的 32 位回绕。显式业务回卷由[业务流水号回卷](../../series-2/java-explicit-rollover.md)这个已有种子承担。
+`R` 描述业务加法，不携带 Java `int` 的 32 位回绕。显式业务回卷由[业务流水号回卷](java-explicit-rollover.md)这个已有种子承担。
 
 **PERS 验收要点**
 

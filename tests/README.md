@@ -18,7 +18,7 @@ topic 表示单个基础语义能力，basic 表示常规合同和防御边界�
 
 ## 看一个种子怎样长出三条验收
 
-[整数加一](../design/examples/series-1/java-static.md)规定业务数值无固定上限。它给出原始 Java、可原样交付的预处理结果，以及含 `R: value + 1` 的完整 PERS。[对应变体](e2e/variants/java/pure/HelloWorld.addOne.yaml)只记录相对种子的变化。
+[整数加一](../design/examples/topics/expression-simplification/java-static.md)规定业务数值无固定上限。它给出原始 Java、可原样交付的预处理结果，以及含 `R: value + 1` 的完整 PERS。[对应变体](e2e/variants/java/pure/HelloWorld.addOne.yaml)只记录相对种子的变化。
 
 | 运行项 | 给 CLI 的程序 | 独立预期 |
 |---|---|---|

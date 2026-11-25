@@ -1,6 +1,6 @@
 # Hello World：合法入口旁的非法声明
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 

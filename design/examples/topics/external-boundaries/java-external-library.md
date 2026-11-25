@@ -2,7 +2,7 @@
 
 ## 输入原始代码
 
-`normalizeLabel` 先去掉两端字符，再为空白结果选择备用文本。两处调用均来自 Apache Commons。按[统一业务类型合同](../../../implementation/contracts/pers/schema.yaml)，本例原始文本 `raw` 显式允许 null，备用文本 `fallback` 非空；空字符串仍是合法文本，不能与 null 混同。
+`normalizeLabel` 先去掉两端字符，再为空白结果选择备用文本。两处调用均来自 Apache Commons。按[统一业务类型合同](../../../../implementation/contracts/pers/schema.yaml)，本例原始文本 `raw` 显式允许 null，备用文本 `fallback` 非空；空字符串仍是合法文本，不能与 null 混同。
 
 ```java
 import org.apache.commons.lang3.StringUtils;

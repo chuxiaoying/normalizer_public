@@ -115,7 +115,7 @@ R: |-
 **PERS 验收要点**
 
 - 统一函数入口仍须保留它代表的模板属性身份。提取函数只是分析手段，业务观察的对象始终是原组件属性及其读取的状态。
-- 不能以缩窄输入数值域换取成功输出。业务数值抽象的目标见[基础案例](java-static.md)；无法闭合的适配应明确报告。
+- 不能以缩窄输入数值域换取成功输出。业务数值抽象的目标见[基础案例](../expression-simplification/java-static.md)；无法闭合的适配应明确报告。
 - 源码到结果的验收要贯穿原入口和上下文约束。CLI 有输出不代表原行为已被完整承接；适配参数的技术取值范围不能冒充真实业务输入域。
 
-数值域的共性见[基础案例](java-static.md)，业务类型默认非空的共性见[对象案例](java-static-object.md)，状态身份的共性见[参数与状态同名案例](java-name-collision.md)。
+数值域的共性见[基础案例](../expression-simplification/java-static.md)，业务类型默认非空的共性见[对象案例](../objects-and-types/java-static-object.md)，状态身份的共性见[参数与状态同名案例](../basic-contracts/java-name-collision.md)。

@@ -1,6 +1,6 @@
 # Hello World：显式空值覆盖默认标题
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 

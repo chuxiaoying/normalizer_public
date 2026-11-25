@@ -1,6 +1,6 @@
 # Hello World：登记回调与真正发送通知
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 

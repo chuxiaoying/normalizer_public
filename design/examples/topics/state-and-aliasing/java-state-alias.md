@@ -1,6 +1,6 @@
 # Hello World：从另一个引用读回刚写的额度
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 

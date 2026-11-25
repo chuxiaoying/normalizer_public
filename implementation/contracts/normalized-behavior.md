@@ -4,4 +4,4 @@
 
 宿主字段的写入在发生时更新在线存储与可观察序列。局部对象字段用于求值，只有业务可见的值才在出口出现。异步调用和等待分别绑定到实际的操作与完成值，等待前后对可变宿主状态的读取要区分观察时点。
 
-可运行例子见 [SQL 写入](../../design/examples/series-1/java-static-external-sql.md)、[有界重试](../../design/examples/series-1/java-loop-bounded-retry.md)和 [Vue 事件](../../design/examples/series-1/frontend-vo-production-vue.md)。入口、顺序与异常的验收规则见[实时归一化](realtime-normalization.md)。缺少回调发生次数、调度合同或可观测修改范围时，应报告缺口。
+可运行例子见 [SQL 写入](../../design/examples/topics/relational-data/java-static-external-sql.md)、[有界重试](../../design/examples/topics/loops-and-termination/java-loop-bounded-retry.md)和 [Vue 事件](../../design/examples/topics/language-entries/frontend-vo-production-vue.md)。入口、顺序与异常的验收规则见[实时归一化](realtime-normalization.md)。缺少回调发生次数、调度合同或可观测修改范围时，应报告缺口。

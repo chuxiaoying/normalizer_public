@@ -65,6 +65,9 @@ export function loadSeedManifest(root, seeds = loadSeeds(root)) {
     assert.match(value.topic, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid seed topic for ' + id);
     if (value.kind === 'composition') assert.ok(compositionIds.has(value.topic), 'Unknown composition topic for ' + id);
     else assert.ok(topicIds.has(value.topic), 'Unknown topic for ' + id);
+    const registry = value.kind === 'composition' ? compositions : topics;
+    const directory = registry.get(value.topic).path;
+    assert.ok(seeds.get(id).startsWith(directory + '/'), 'Design seed must live in its registered topic: ' + id);
     const related = value.related ?? [];
     assert.ok(Array.isArray(related), 'Seed related topics must be a list: ' + id);
     assert.equal(new Set(related).size, related.length, 'Duplicate related topic: ' + id);

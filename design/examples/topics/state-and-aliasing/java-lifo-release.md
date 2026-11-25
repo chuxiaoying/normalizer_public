@@ -1,6 +1,6 @@
 # Hello World：按相反顺序关闭嵌套任务
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 
@@ -57,7 +57,7 @@ class TaskBatch {
  }
 ```
 
-局部 IR 展示本例需要的有序折叠语义。每步按列出的顺序检查异常，正常时才交付下一栈；空栈已先被拦截。错配前的临时栈不会逃出本方法。[已有复合状态合同](../../../implementation/contracts/normalized-state.md)
+局部 IR 展示本例需要的有序折叠语义。每步按列出的顺序检查异常，正常时才交付下一栈；空栈已先被拦截。错配前的临时栈不会逃出本方法。[已有复合状态合同](../../../../implementation/contracts/normalized-state.md)
 
 ## 归一化最终结果
 

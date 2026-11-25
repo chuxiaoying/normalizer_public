@@ -1,6 +1,6 @@
 # Hello World：抽取两个候选，保持每次选择的完整记录
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 
@@ -21,7 +21,7 @@ class Offers {
 
 ## AI 预处理结果
 
-在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留构造 Pick 的 Java。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../implementation/contracts/normalized-choice.md)
+在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留构造 Pick 的 Java。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../../implementation/contracts/normalized-choice.md)
 
 ```diff
 --- a/src/Offers.java

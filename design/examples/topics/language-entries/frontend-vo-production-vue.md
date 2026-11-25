@@ -243,7 +243,7 @@ rename to src/ArrearsPage.mjs
 
 **预处理要点**：框架预处理必须交付工程真正能承接的业务入口。去掉框架外壳之后，仍要为工程不能推导的集合语义建立明确交接；转换载体时保留等待关系与成功、失败路径。
 
-集合局部替换的共性见[关系聚合案例](java-loop-fold.md)；状态主动标记的共性见[参数与状态同名案例](java-name-collision.md)。
+集合局部替换的共性见[关系聚合案例](../loops-and-termination/java-loop-fold.md)；状态主动标记的共性见[参数与状态同名案例](../basic-contracts/java-name-collision.md)。
 
 ## 归一化最终结果
 
@@ -373,4 +373,4 @@ throws:
 
 **PERS 验收要点**：一次页面动作的成果要由状态变化、外部交互和完成结果共同表达。返回 `void` 不等于没有业务输出；产出源码或局部计算公式，也不能代替完整动作的归一化结果。
 
-入口与输入声明的共性见[基础案例](java-static.md)，业务类型的共性见[对象案例](java-static-object.md)。
+入口与输入声明的共性见[基础案例](../expression-simplification/java-static.md)，业务类型的共性见[对象案例](../objects-and-types/java-static-object.md)。

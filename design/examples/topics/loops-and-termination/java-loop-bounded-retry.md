@@ -125,4 +125,4 @@ R: |-
 
 **PERS 验收要点**：把重试过程收束为完成条件与结果的关系，消除重复控制流痕迹，同时保留每次调用的独立性和先后依赖。
 
-入口、P 和数值域的共性见[基础案例](java-static.md)；条件归约的共性见[表达式化简](java-expression-simplification.md)。
+入口、P 和数值域的共性见[基础案例](../expression-simplification/java-static.md)；条件归约的共性见[表达式化简](../expression-simplification/java-expression-simplification.md)。

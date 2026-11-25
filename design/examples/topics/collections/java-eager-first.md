@@ -1,6 +1,6 @@
 # Hello World：先完整取号，再返回第一项
 
-[十个业务边界案例](README.md)
+[本主题](README.md)
 
 ## 输入原始代码
 
