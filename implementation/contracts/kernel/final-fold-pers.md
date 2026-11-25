@@ -1,10 +1,12 @@
-# 纯循环的最终 PERS
+# 泛化纯循环的 PERS 目标
 
-`normalized_pers_fold` 将无 heap、端口、task、catch 的值循环归约为已有 `T.op: fold_until` 数学递推。`step.next_state` 和 `step.continue` 都是纯表达式；每步先提交 next_state，再按 continue 决定是否继续。Vector 输入使用 `vector_sequence` 与纯值表达式，例如 `value.indices(count)`，不包含执行节点。
+本文保留将来泛化的 `fold_until`、参数化递推和异常完成值的设计目标，**不是当前可提交的生产输入或已发布的 PERS 格式**。当前支持范围见[遍历合同](../normalized-fold.md)：已验收的纯数值 fold 输出 `T.op: fold`，固定遍历、关系聚合和重试按各自种子验收，不把未知循环当作泛化递推。
+
+目标中的 `step.next_state` 和 `step.continue` 都是纯表达式；每步先提交下一状态，再按 continue 决定是否继续。向量或关系由已闭合的值表达式提供，不包含执行节点。
 
 循环内显式异常以纯完成值表达：状态类型为 `record<exception:i32,state:...>`，有可观察 payload 时增加对应的 `payloadN` 字段。零标签表示正常；非零标签由排序后的异常类分配。异常步保留最后已提交的业务状态并停止，不能把异常步骤未提交的 state 当作正常结果。最终 `R` 投影业务状态，`throws` 投影异常标签和 payload；外部输入为空等循环前异常保留原条件。异常完成值是吸收状态，不会继续消费后续输入。此规则限于无 heap 写入的值循环；有写入的异常步骤需要保存抛出前已发生的可观察更新，不能直接套用旧业务 state。
 
-`pers_fold_completion` 从 `semantic-composite-state/Original.java` 独立构造完整文档，使用已有 math/formatter 规范化手推公式。这验证源码到归约结果的计算链，不是独立验证 math 化简器。
+以下判别输入用于未来独立验收，尚未登记为当前生产回归：
 
 - `balanced`：0 停止；40/91 入栈；41/93 仅匹配栈顶时出栈；其余输入或不匹配抛出异常。空输入列表为正常真值，null 输入仍抛 NPE。异常保留旧栈。
 - 动态 typed-step：在原 budget 步骤之前增加 `item == 99` 则抛 `InvalidItem(index)`。其余步骤先 push，再依据旧长度与 limit 比较停止。例如 `[1,99]`、limit=0 在第一步正常停止，不读到 99；`[1,2,99,4]`、limit=10 在 index=2 抛出，已提交向量为 `[1,2]`。
@@ -13,7 +15,7 @@ balanced 的源码公式为 `top == CASE x==41 THEN 40 ELSE 91 END`。在 `x==41
 
 嵌套纯向量循环使用同一文档中的参数化 T 定义：`parameters` 声明完整值类型，`$t_n(args)` 每次按实参从 initial 求值。带参定义的 `when` 必须为 `true`，条件调用由外层 CASE 控制；尚未实现的参数化部分域不能通过认证。输入向量、捕获值以及有自由依赖的初值都显式参数化；不把内层循环提前计算一次，不隐藏外层 row、入口 P、E 或 HeapRef。实际实参类型来自现有声明和已证明的字段投影规则，不从表达式文字猜测。定义依赖只能指向先前完整定义；每个文档使用独立的内部函数身份，最终 formatter 仅按该文档已验证的精确映射打印 T 应用。
 
-`pers_nested_contract` 从未修改的 `fixture-nested-fold/Probe.java` 固定内外层方程：内层逐项提交 `subtotal + (x + before)` 后判断 x 是否非负，外层提交 `before + subtotal` 后判断 index 是否小于 stop，全部加法保留 word64。`[[1,2],[3,4]]` 得 16，`[[1,2],[-1,100]]` 得 5；stop=0 时跳过后续 null 行，不能提前抛异常。各比较的互逆写法（x>=0 / 0<=x，index<stop / stop>index）按既有整数序规范统一；测试只接受唯一规范完整文档，独立源码分类仍拒绝方向或开闭边界错误。
+嵌套递推的目标判别例：内层逐项提交 `subtotal + (x + before)` 后判断 x 是否非负，外层提交 `before + subtotal` 后判断 index 是否小于 stop，全部加法保留 word64。`[[1,2],[3,4]]` 得 16，`[[1,2],[-1,100]]` 得 5；stop=0 时跳过后续 null 行，不能提前抛异常。各比较的互逆写法（x>=0 / 0<=x，index<stop / stop>index）按既有整数序规范统一；测试只接受唯一规范完整文档，独立源码分类仍拒绝方向或开闭边界错误。
 
 入口状态读取仍由 state reducer 保留真实 E 获取域。条件中的观察依赖在 Expr 层按域形成 CASE；例如 source=null 时先得到 NPE 真值，非空分支才能读取外层 T 的异常标签。CASE 未激活臂不是读取，两个互斥获取域不能错误地相与。域外裸读、循环获取依赖和资源预算耗尽均明确报错，不能变成 false。
 
@@ -21,7 +23,7 @@ balanced 的源码公式为 `top == CASE x==41 THEN 40 ELSE 91 END`。在 `x==41
 
 ### 关系源的最终 PERS 结构
 
-纯 fold 的 `input` 可以继续携带统一关系代数。关系源在最终 PERS 中保持为可递归检查的结构对象，不能退化成内部关系调试文本，也不能因为它不是 `Base`、`Select` 或 `Empty` 就被静默丢弃。当前结构源包括：
+纯 fold 的 `input` 可以继续携带统一关系代数。关系源在最终 PERS 中保持为可递归检查的结构对象，不能退化成内部关系调试文本，也不能因为它不是 `Base`、`Select` 或 `Empty` 就被静默丢弃。设计候选结构包括：
 
 - `input_sequence` 和 `vector_sequence` 表示外部输入与已绑定的不可变向量。
 - `singleton_sequence`、`singleton_kv_sequence` 表示单元素关系。
@@ -32,11 +34,9 @@ balanced 的源码公式为 `top == CASE x==41 THEN 40 ELSE 91 END`。在 `x==41
 
 这些结构源可以嵌套，也可以继续作为下一层 fold 的输入。源内表达式仍须经过同一作用域检查和 formatter，关系算子本身不代表执行节点。`ActiveSet` 只有在历史被完整归约后才能进入这里；未闭合的活动关系继续 fail closed，避免把不完整的事件历史伪装成纯关系 PERS。
 
-### Immutable vector type evidence
+### 不可变向量的类型证据
 
-The internal `IterationInput::Vector.value_type` retains the complete vector type already checked by the normalized parser. It is optional for older internal producers and does not add a field to final PERS or change the historical diagnostic renderer. A consumer must establish the same complete type from binding evidence, or validate a literal array/record/CASE against that declaration. Integer literals do not independently choose i32 or i64; declared i32 elements must fit i32. Unknown symbols, conflicting declarations and unproved composite constructors fail closed. Validation runs during whole-body admission, including branches not selected by a particular output path.
-
-`pers_decimal_format_contract` fixes the source equations for both decimal-format entries before comparing CLI output. The inner nine-element i32 vector computes one decimal digit by repeated subtraction of a negative power; the outer nineteen-element i64 vector handles the entire signed long domain, including MIN_VALUE. The nine and nineteen bounds come from base ten and the declared long width. Runtime zero digit and negative prefix remain symbolic, and the visible Money constructor's constant 123 behavior does not restrict its raw text/null input. The test is an independent source formula using the shared mathematical formatter, not an independent proof of that formatter.
+递推输入应保留已验证的完整向量类型，不凭整数字面量或一个运行样本推测字宽。消费方必须依据实际绑定验证字面量、记录和 CASE，未知符号或类型不一致应拒绝。若将来验收十进制格式化，九位及十九位循环的上界分别来自十进制和声明的整数位宽，不来自样例。
 
 ## 必须应用的纯递推等式
 
@@ -50,4 +50,4 @@ The internal `IterationInput::Vector.value_type` retains the complete vector typ
 
 上述规则先通过完整定义认证，再检查新表达式的词法作用域；新引入的自由 fold row 明确失败。关系内行绑定只在该关系的查询范围有效。正常执行域不因删除 T 而变成全域，E 的获取和异常条件继续由原入口路径保持。参数化定义、异常完成记录及历史证书不因这些局部等式而绕过自身认证。
 
-`pers_simplification_contract` 的完整源码预期覆盖 singleton、copy/filtered-copy 消费、带位宽计数和存在性、原观察域、空/null 异常。生产单测另覆盖早停、捕获值、参数化不删除、自由行拒绝及重复 normalize 稳定性。共享 math/formatter 构造的源码预期用于端到端校验；数学规则本身另有直接等式和反例测试。
+未来正式验收应从源码独立推导唯一完整 PERS，覆盖单元素、复制消费、位宽、提前停止、空及 null、定义域以及自由行拒绝；共享 formatter 不是独立的化简正确性证明。

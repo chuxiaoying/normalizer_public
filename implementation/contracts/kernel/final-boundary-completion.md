@@ -1,22 +1,8 @@
 # 同一次边界调用的正常与异常观察
 
-有声明异常的同步端口，S 中一次 `boundary_call` 的 `e` 指向一个互斥且完备的完成值：`Return(value)` 或某个声明的 `Throw(exception, payload)`。同一调用不会为正常值与异常另造互不相关的观察身份。没有声明异常的端口保留原来的响应值格式。
+当前同步外部调用用一次 `S.call` 和它的 `result` 关联本次完成；不要为正常值与异常另造两个观察身份。`$e_0` 在该调用正常完成域内直接表示返回值，`completion.is_return($e_0)` 与 `completion.is_throw($e_0, RemoteFault)` 区分同一次调用的完成方向。仅在已声明的异常发生域内读取 `completion.payload($e_0, RemoteFault)`；异常落入 `throws` 时按合同声明 `payload_type`，没有载荷不造一个 null。见[完整的同步异常种子](../../../design/examples/topics/unified-canonical-form/java-exception-payload.md)。
 
-例如返回 `text?`、可能抛出载荷类型为 `text?` 的 `Failure`，该 S 记录额外声明：
-
-```yaml
-completion:
-  returns: text?
-  throws:
-    - exception: Failure
-      payload_type: text?
-```
-
-`completion.is_throw($e_0, "Failure")` 是总布尔表达式；`completion.value($e_0)` 只在正常完成域定义；`completion.payload($e_0, "Failure")` 只在对应异常域定义。这些是已定义的完成值代数投影，不是延迟执行端口或解释程序。R 仍只描述正常返回域，throws 记录对应异常条件与载荷。后继调用只能在此前调用正常完成域发生；Catch 从实际抛出点承接已经发生的状态写入和调用记录。
-
-在业务 PERS 中，`S.call.result` 绑定的 `$e_0` 在正常取值位置直接表示本次调用的返回值，包括数值、文本和对象。重试分支写作 `WHEN completion.is_return($e_0) THEN $e_0`。成功条件与失败条件仍然观察同一次调用的完成状态。
-
-引用响应保留环境身份，可能与输入或其他响应别名，不能当成新分配对象。原 `reference_value` 合同规定响应引用的字段属于同一个环境堆；`heap_effect: none` 不改变该堆。字段 E 的 `at: entry` 指向这个堆基准，前序写入仍按别名条件覆盖；取得该字段观察的顺序在响应之后，条件保留调用正常域和引用非空域。未认证的任意表达式不能作为新增堆根。
+`R` 只表达正常返回。后继调用继续沿其已证明的发生条件，catch 承接实际抛出点之前已有的可观察效果。引用返回属于真实环境观察，不能把取得的既有对象当成本地新分配；更广泛的字段写回与跨槽返回身份仍是下述目标。
 
 当前生产认证范围为同步、无堆变更、无回调、闭合参数/返回类型及明确声明的异常载荷类型。适配器生成的内核输入只接纳 `heap_effect: none`，不能声明 `mutations`；下文的 `argument_fields` 是目标合同，不是可提交的内核输入。异步和回调组合需要各自完整语义，不由本合同隐式接纳。
 
@@ -56,4 +42,4 @@ completion:
 - 调用自身的条件、实参、别名关系和 before checkpoint 都不能依赖该次完成值。对后续观察，先检查调用确实发生，再按各投影的有效域用 CASE 保护。
 - 对已发生的外部对象写回，最终 S 保留原目标，字段值按出口合同投影。新建的本地 Resp 字段初始化和写入仅影响模拟状态、调用时实参或最终 R，无公开分配记录。对非空 String 字段，先确认写回存在且非空，再从该 String 的原堆内容投影完整 UTF-16 单元。
 
-当前测试守卫认证的直接字段类型为 bool、i32、i64、text? 和 ref?。同一字段可经不同别名槽授权时，各槽声明相同的模拟字段类型。生产状态归约尚未接通该合同。
+目标中的直接字段类型为 bool、i32、i64、text? 和 ref?。同一字段可经不同别名槽授权时，各槽声明相同的模拟字段类型。生产状态归约尚未接通该合同。

@@ -1,6 +1,6 @@
 # 归一化内核交付合同
 
-发布物应可复现、可校验、可回退。稳定的执行入口是 `normalizer-normalized`；正式输出和内部诊断表示的区别见[最终 PERS](final-pers.md)。
+发布物应可复现、可校验、可回退。稳定的用户入口是 [`implementation/tools/normalizer`](../../../usage/cli.md)，`normalizer-normalized` 是其内部执行器；正式输出和内部诊断表示的区别见[最终 PERS](final-pers.md)。
 
 ## 交付内容
 
