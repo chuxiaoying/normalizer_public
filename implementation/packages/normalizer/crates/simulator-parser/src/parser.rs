@@ -113,13 +113,14 @@ impl<'a> Parser<'a> {
 
     fn location(&self, offset: usize) -> (usize, usize) {
         let (mut line, mut col) = (1usize, 1usize);
+        let mut previous_cr = false;
         for &b in &self.src[..offset.min(self.src.len())] {
-            if b == b'\n' {
-                line += 1;
-                col = 1;
-            } else {
-                col += 1;
+            match b {
+                b'\r' => { line += 1; col = 1; }
+                b'\n' => { if !previous_cr { line += 1; } col = 1; }
+                _ => col += 1,
             }
+            previous_cr = b == b'\r';
         }
         (line, col)
     }
@@ -168,6 +169,13 @@ impl<'a> Parser<'a> {
         Some(self.src.len() - rest.len())
     }
 
+    fn skip_line_comment(&mut self) {
+        while let Some(c) = self.peek() {
+            self.pos += 1;
+            if matches!(c, b'\r' | b'\n') { break; }
+        }
+    }
+
     pub(crate) fn skip_ws(&mut self) {
         loop {
             match self.peek() {
@@ -175,12 +183,7 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                 }
                 Some(b'/') if self.peek_at(1) == Some(b'/') => {
-                    while let Some(c) = self.peek() {
-                        self.pos += 1;
-                        if c == b'\n' {
-                            break;
-                        }
-                    }
+                    self.skip_line_comment();
                 }
                 Some(b'/') if self.peek_at(1) == Some(b'*') => {
                     if self.local_ir_start().is_some() {
@@ -348,12 +351,7 @@ impl<'a> Parser<'a> {
                 }
                 b'/' if self.peek_at(1) == Some(b'/') => {
                     // line comment: skip to end of line
-                    while let Some(c2) = self.peek() {
-                        self.pos += 1;
-                        if c2 == b'\n' {
-                            break;
-                        }
-                    }
+                    self.skip_line_comment();
                 }
                 b'/' if self.peek_at(1) == Some(b'*') => {
                     // block comment (incl. JavaDoc): skip to */
@@ -404,12 +402,7 @@ impl<'a> Parser<'a> {
                     self.skip_char_lit();
                 }
                 b'/' if self.peek_at(1) == Some(b'/') => {
-                    while let Some(c2) = self.peek() {
-                        self.pos += 1;
-                        if c2 == b'\n' {
-                            break;
-                        }
-                    }
+                    self.skip_line_comment();
                 }
                 b'/' if self.peek_at(1) == Some(b'*') => {
                     self.pos += 2;

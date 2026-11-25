@@ -72,3 +72,14 @@
 - name: doubled-backslash-remains-literal-and-is-not-a-java-source-escape
   edits:
     - { from: 'return value;', to: 'String literal = "\\u0061"; return value;' }
+- name: cr-and-crlf-both-end-line-comments
+  edits:
+    - from: 'return value;'
+      to: "int result = value; // CR\r result = result + 1; // CRLF\r\n result = result + 1; return result;"
+  expect:
+    - { path: [R], value: 'value + 2' }
+- name: cr-only-line-count-keeps-the-physical-declaration-location
+  edits:
+    - from: 'class TicketCode {'
+      to: "class TicketCode {\r    static int return() { return 0; }\r"
+  reject: ['[SOURCE-PARSE-FAILED]', 'src/TicketCode.java:2:16:', 'TicketCode.return']
