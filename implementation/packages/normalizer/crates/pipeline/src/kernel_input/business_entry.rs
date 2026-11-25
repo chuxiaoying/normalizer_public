@@ -14,6 +14,11 @@ pub(super) struct BusinessObservations {
     pub(super) definitions: Vec<serde_json::Value>,
 }
 
+enum BusinessOutput {
+    Pure(Expr),
+    Observed(BusinessObservations),
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct EntryContext {
@@ -330,14 +335,20 @@ impl EntryContext {
         let certified_composite_return = (typed == super::Ty::Vector(Box::new(super::Ty::Integer))
             && self.returns == "number[]") || (typed == super::Ty::OrderedTextMap
             && self.returns == "map<text,text>");
-        if !result.temporal_definitions.is_empty()
-            && (result.realtime_completion.return_value().is_none()
-                || result.source_record_return.is_some() && !events.is_empty())
-        {
+        let has_temporals = !result.temporal_definitions.is_empty();
+        let total_return = if events.is_empty() || has_temporals {
+            result.realtime_completion.return_value()
+        } else {
+            None
+        };
+        if has_temporals && (total_return.is_none() || result.source_record_return.is_some() && !events.is_empty()) {
             return Err("temporal publication requires a closed normal entry; record results cannot mix with effects".into());
         }
-        if events.is_empty() && result.realtime_completion.return_value().is_some() {
-            return self.render_observations(None, result, method, certified_composite_return);
+        if events.is_empty() {
+            if let Some(returned) = total_return {
+                result.check_visible_heap()?;
+                return self.render_output(BusinessOutput::Pure(returned), result, method, certified_composite_return);
+            }
         }
         let mut names = self.host_names();
         self.add_initial_state_names(&mut names);
@@ -345,10 +356,10 @@ impl EntryContext {
             names.insert(name.clone(), self.binding(name)?.0);
         }
         let observations = super::business_event::observations(project, self, result, names)?;
-        self.render_observations(Some(observations), result, method, certified_composite_return)
+        self.render_output(BusinessOutput::Observed(observations), result, method, certified_composite_return)
     }
 
-    fn render_observations(&self, observations:Option<BusinessObservations>, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool) -> Result<String> {
+    fn render_output(&self, output: BusinessOutput, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool) -> Result<String> {
         if self.function.is_empty() || !self.function.contains('#') { return Err("missing business entry identity".into()); }
         let mut positions: Vec<_> = self.parameters.values().map(|p| p.position).collect();
         positions.sort_unstable();
@@ -377,15 +388,16 @@ impl EntryContext {
             Some((name.clone(), record.fields.keys().cloned().collect::<std::collections::BTreeSet<_>>()))
         }).collect::<BTreeMap<_, _>>();
         let identities = self.source_identity_names(result);
-        let publication = if observations.is_some() || result.temporal_definitions.is_empty() {
-            super::temporal_graph::Publication::default()
-        } else {
-            let returned = if let Some(fields) = &result.source_record_return {
-                math::builder::array_lit(fields.iter().map(|(_, expression)| expression.clone()).collect())
-            } else {
-                result.business_return()?
-            };
-            self.publish_temporals(result, &returned, &names, |id, path| self.acquired_state_path(result, id, path))?
+        let publication = match &output {
+            BusinessOutput::Pure(returned) if !result.temporal_definitions.is_empty() => {
+                let returned = if let Some(fields) = &result.source_record_return {
+                    math::builder::array_lit(fields.iter().map(|(_, expression)| expression.clone()).collect())
+                } else {
+                    returned.clone()
+                };
+                self.publish_temporals(result, &returned, &names, |id, path| self.acquired_state_path(result, id, path))?
+            }
+            _ => super::temporal_graph::Publication::default(),
         };
         let definition_names = &publication.aliases;
         let render_value = |expression: &Expr| -> Result<String> {
@@ -493,28 +505,38 @@ impl EntryContext {
             Ok(crate::formatting::sql::business_value::format_value(&expression, &mut ctx))
         };
 
-        let value = if let Some(observations) = &observations { observations.returned.clone() } else if let Some(record) = &result.source_record_return {
-            result.business_return()?;
-            let definition = self.types.get(&self.returns).ok_or("result record type is undeclared")?;
-            if record.len() != definition.fields.len() || record.iter().any(|(key,_)| !definition.fields.contains_key(key)) {
-                return Err("result record fields differ from boundary type".into());
+        let value = match &output {
+            BusinessOutput::Observed(observations) => observations.returned.clone(),
+            BusinessOutput::Pure(returned) => {
+                if let Some(record) = &result.source_record_return {
+                    let definition = self.types.get(&self.returns).ok_or("result record type is undeclared")?;
+                    if record.len() != definition.fields.len() || record.iter().any(|(key,_)| !definition.fields.contains_key(key)) {
+                        return Err("result record fields differ from boundary type".into());
+                    }
+                    let fields = record.iter().map(|(name, value)| {
+                        let rendered = render_value(value)?.replace('\n', "\n  ");
+                        Ok(format!("  {name}: {rendered}"))
+                    }).collect::<Result<Vec<_>>>()?;
+                    format!("{{\n{}\n}}", fields.join(",\n"))
+                } else if self.returns == "void" {
+                    if !returned.is_null() { return Err("non-void return for void entry".into()); }
+                    "void".into()
+                } else {
+                    render_value(returned)?
+                }
             }
-            let fields = record.iter().map(|(name, value)| {
-                let rendered = render_value(value)?.replace('\n', "\n  ");
-                Ok(format!("  {name}: {rendered}"))
-            }).collect::<Result<Vec<_>>>()?;
-            format!("{{\n{}\n}}", fields.join(",\n"))
-        } else if self.returns == "void" {
-            if !result.business_return()?.is_null() { return Err("non-void return for void entry".into()); }
-            "void".into()
-        } else { render_value(&result.business_return()?)? };
+        };
+        let observations = match &output {
+            BusinessOutput::Observed(observations) => Some(observations),
+            BusinessOutput::Pure(_) => None,
+        };
         let mut doc = json!({"schema": super::kernel_result::PERS_SCHEMA, "entry": {"function": self.function, "returns": self.returns},
             "P": {"parameters": self.parameters}, "R": value});
-        let definitions = observations.as_ref().map_or(&publication.rows, |o| &o.definitions);
+        let definitions = observations.map_or(&publication.rows, |o| &o.definitions);
         if !definitions.is_empty() { doc["T"] = json!(definitions); }
         if !self.types.is_empty() { doc["types"] = json!(self.types); }
         if !self.environment.is_empty() { doc["E"] = json!(self.environment); }
-        let tables = observations.as_ref().map(|o| &o.tables).unwrap_or(&result.source_tables);
+        let tables = observations.map(|o| &o.tables).unwrap_or(&result.source_tables);
         for (table, columns) in tables {
             if self.parameters.contains_key(table) || self.environment.contains_key(table) {
                 return Err(format!("unresolved table source name collision: {table}"));

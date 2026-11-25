@@ -37,13 +37,4 @@ impl ExecutionResult {
         Ok(())
     }
 
-    pub(super) fn business_return(&self) -> Result<Expr> {
-        self.check_visible_heap()?;
-        if !self.realtime_effects.events().is_empty() {
-            return Err(fail("entry has observations outside a scalar return"));
-        }
-        self.realtime_completion
-            .return_value()
-            .ok_or_else(|| fail("missing total normal return"))
-    }
 }
