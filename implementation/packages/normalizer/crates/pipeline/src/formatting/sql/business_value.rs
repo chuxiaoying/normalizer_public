@@ -1,23 +1,37 @@
 use super::FormatCtx;
-use math::Expr;
+use math::{builder as b, BinOpKind, Expr, SymVarOrigin};
 
 // A repeated row query may have one lexical definition only if the query
 // itself contains a CASE. A surrounding CASE does not qualify the query.
 // Bindings belong to this R or S value; they never cross an operation boundary.
 pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
-    let mut queries = Vec::<(Expr, usize)>::new();
-    value.walk(&mut |node| {
-        if node.as_relation_aggregate().is_some() && node.has_case_when() {
-            if let Some((_, count)) = queries.iter_mut().find(|(expr, _)| expr == node) {
+    fn collect_eager(value: &Expr, queries: &mut Vec<(Expr, usize)>) {
+        use math::BinOpKind::{Add, Mul, Sub};
+        if value.as_relation_aggregate().is_some() && value.has_case_when() {
+            if let Some((_, count)) = queries.iter_mut().find(|(expr, _)| expr == value) {
                 *count += 1;
             } else {
-                queries.push((node.clone(), 1));
+                queries.push((value.clone(), 1));
             }
+        } else if let Some((Add | Sub | Mul, left, right)) = value.as_binop() {
+            // Only these scalar operators provide a shared, eager evaluation
+            // scope. A CASE arm, Boolean guard or query row is not that scope.
+            collect_eager(left, queries);
+            collect_eager(right, queries);
         }
-    });
+    }
+    let mut queries = Vec::new();
+    collect_eager(value, &mut queries);
     let mut definitions = Vec::new();
     for (query, count) in queries {
         if count < 2 {
+            continue;
+        }
+        // Formatter substitutions are expression-wide. If the same query
+        // also exists outside the eager scope, do not capture that occurrence.
+        let mut all = 0;
+        value.walk(&mut |expr| all += usize::from(*expr == query));
+        if all != count {
             continue;
         }
         let name = format!("$l_{}", definitions.len());
@@ -58,43 +72,121 @@ pub(super) fn format_selection(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -
     ))
 }
 
-/// The shared math tree has no operation ledger: a Boolean expression can
-/// have been flattened into AND/OR without knowledge of receipt existence.
-/// At the boundary, restore the lazy guard when it is what makes a named
-/// receipt exist. Unconditional receipts do not inhibit Boolean normal form.
-pub(super) fn format_guarded_boolean(
-    op: math::BinOpKind, left: &Expr, right: &Expr, ctx: &mut FormatCtx,
-) -> Option<String> {
-    use math::{builder as b, BinOpKind, SymVarOrigin};
-    if !ctx.format_guarded_business_return || ctx.business_receipt_guards.is_empty() || !matches!(op, BinOpKind::And | BinOpKind::Or) {
-        return None;
-    }
-    let receipts = |value: &Expr| {
-        let mut ids = std::collections::BTreeSet::new();
-        value.walk(&mut |node| {
-            if let Some(SymVarOrigin::External { binding_id, .. }) = node.as_sym_var() {
-                ids.insert(*binding_id);
+/// A short-circuit candidate must be safe to observe, not merely algebraically
+/// equivalent on total Boolean values.
+fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
+    let mut available = true;
+    value.walk(&mut |node| {
+        if !available {
+            return;
+        }
+        if let Some(SymVarOrigin::External { binding_id, .. }) = node.as_sym_var() {
+            if let Some(issued) = ctx.business_receipt_guards.get(binding_id) {
+                available &= domain.is_some_and(|domain| b::path_implies(domain, issued));
             }
-        });
-        ids
+        }
+    });
+    available
+}
+
+fn selected_domain(op: BinOpKind, guard: &Expr, domain: Option<&Expr>) -> Expr {
+    let selected = match op {
+        BinOpKind::And => guard.clone(),
+        BinOpKind::Or => math::normalize(b::not(guard.clone())),
+        _ => unreachable!("only short-circuit Boolean operations have a selected domain"),
     };
+    match domain {
+        Some(domain) => math::normalize(b::and(domain.clone(), selected)),
+        None => selected,
+    }
+}
+
+fn is_safe(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
+    if receipts_available(value, domain, ctx) {
+        return true;
+    }
+    if let Some((op @ (BinOpKind::And | BinOpKind::Or), left, right)) = value.as_binop() {
+        return lazy_operands(op, left, right, domain, ctx).is_some();
+    }
+    false
+}
+
+fn lazy_operands<'a>(
+    op: BinOpKind,
+    left: &'a Expr,
+    right: &'a Expr,
+    domain: Option<&Expr>,
+    ctx: &FormatCtx,
+) -> Option<(&'a Expr, &'a Expr, Expr)> {
     for (guard, value) in [(left, right), (right, left)] {
-        let guard_ids = receipts(guard);
-        let value_ids = receipts(value);
-        if guard_ids.iter().any(|id| ctx.business_receipt_guards.contains_key(id)) {
-            continue;
+        if is_safe(guard, domain, ctx) {
+            let selected = selected_domain(op, guard, domain);
+            if is_safe(value, Some(&selected), ctx) {
+                return Some((guard, value, selected));
+            }
         }
-        let guarded: Vec<_> = value_ids.iter().filter_map(|id| ctx.business_receipt_guards.get(id)).collect();
-        if guarded.is_empty() { continue; }
-        let available = if op == BinOpKind::And { guard.clone() } else { math::normalize(b::not(guard.clone())) };
-        if !guarded.iter().all(|issued| b::path_implies(&available, issued)) { continue; }
-        let guard_text = super::format_expr_with_ctx(guard, ctx);
-        let value_text = super::format_expr_with_ctx(value, ctx);
-        let (yes, no) = if op == BinOpKind::And { (value_text.as_str(), "false") } else { ("true", value_text.as_str()) };
-        if guard.as_sym_var().is_some() && !yes.contains('\n') && !no.contains('\n') {
-            return Some(format!("CASE WHEN {guard_text} THEN {yes} ELSE {no} END"));
-        }
-        return Some(format!("CASE\n  WHEN {guard_text} THEN {yes}\n  ELSE {no}\nEND"));
     }
     None
+}
+
+/// The shared math tree has no operation ledger: a Boolean expression can
+/// have been flattened into AND/OR without knowledge of receipt existence.
+/// Restore lazy evaluation wherever a named receipt depends on that guard.
+/// A dominating operation guard can already establish receipt availability.
+pub(crate) fn format_guarded_boolean(
+    op: BinOpKind,
+    left: &Expr,
+    right: &Expr,
+    ctx: &mut FormatCtx,
+) -> Option<String> {
+    if ctx.business_receipt_guards.is_empty() || !matches!(op, BinOpKind::And | BinOpKind::Or) {
+        return None;
+    }
+    let domain = ctx.business_evaluation_guard.as_ref();
+    if receipts_available(left, domain, ctx) && receipts_available(right, domain, ctx) {
+        return None;
+    }
+    let (guard, value, selected) = lazy_operands(op, left, right, domain, ctx)?;
+    let guard_text = super::format_expr_with_ctx(guard, ctx);
+    let value_text = ctx.with_business_evaluation_guard(&selected, |ctx| {
+        super::format_expr_with_ctx(value, ctx)
+    });
+    let (yes, no) = if op == BinOpKind::And {
+        (value_text.as_str(), "false")
+    } else {
+        ("true", value_text.as_str())
+    };
+    if guard.as_sym_var().is_some() && !yes.contains('\n') && !no.contains('\n') {
+        return Some(format!("CASE WHEN {guard_text} THEN {yes} ELSE {no} END"));
+    }
+    let guard_text = guard_text.replace('\n', "\n  ");
+    let yes = yes.replace('\n', "\n  ");
+    let no = no.replace('\n', "\n  ");
+    Some(format!("CASE\n  WHEN {guard_text} THEN {yes}\n  ELSE {no}\nEND"))
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use math::{builder as b, domains::relation::{relation_sum, RelationExpr}};
+
+    #[test]
+    fn let_factors_a_repeated_case_query_only_in_a_shared_eager_scope() {
+        let flag = b::param("flag", "boolean");
+        let query = relation_sum(RelationExpr::base("bills", "row"), b::case_when(vec![
+            (flag.clone(), b::lit_int(1)),
+            (b::lit_bool(true), b::lit_int(2)),
+        ]));
+        let shared = b::add(query.clone(), query.clone());
+        let guarded = b::case_when(vec![
+            (flag, shared.clone()),
+            (b::lit_bool(true), b::lit_int(0)),
+        ]);
+        let mut context = FormatCtx::for_business(Default::default(), Default::default());
+        let formatted = format_value(&shared, &mut context);
+        assert!(formatted.starts_with("LET $l_0 = ") && formatted.contains("\nIN $l_0 + $l_0"), "{formatted}");
+        let formatted = format_value(&guarded, &mut context);
+        assert!(!formatted.contains("LET "), "{formatted}");
+    }
 }

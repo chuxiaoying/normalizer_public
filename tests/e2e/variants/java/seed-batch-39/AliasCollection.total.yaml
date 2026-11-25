@@ -16,4 +16,4 @@
   edits:
     - {from: 'int total(int[] values, int next)', to: 'int total(int[] values, int next, int[] other)'}
     - {from: 'int[] alias = values;', to: 'int[] alias = other;'}
-  reject: ['distinct source arrays may alias']
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'distinct source arrays may alias']

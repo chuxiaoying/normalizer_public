@@ -64,6 +64,7 @@ declare const profileClient: ProfileClient
 declare const arrearsClient: ArrearsClient
 
 async function onLoad() {
+  const todayAtEntry = props.today
   arrears.loadedAccountId = props.accountId
   arrears.status.loading = true
 
@@ -72,7 +73,7 @@ async function onLoad() {
     const rows = await arrearsClient.queryOpenBills(profile.accountId)
 
     const total = rows
-      .filter(row => row.dueDate <= props.today)
+      .filter(row => row.dueDate <= todayAtEntry)
       .filter(row => row.priority >= profile.minPriority)
       .map(row => row.amount - row.waivedAmount)
       .filter(netAmount => netAmount > 0)
@@ -104,7 +105,7 @@ rename from src/ArrearsPage.vue
 rename to src/ArrearsPage.mjs
 --- a/src/ArrearsPage.vue
 +++ b/src/ArrearsPage.mjs
-@@ -1,31 +1,23 @@
+@@ -1,32 +1,24 @@
 -<template>
 -  <section v-if="arrears.status.ready">
 -    <strong>{{ arrears.summary.payable }}</strong>
@@ -152,7 +153,9 @@ rename to src/ArrearsPage.mjs
 +const arrears = {
    loadedAccountId: 0,
    status: {
-@@ -37,25 +29,37 @@
+     loading: false,
+@@ -36,27 +28,39 @@
+   summary: {
      payable: 0,
    },
 -})
@@ -205,13 +208,15 @@ rename to src/ArrearsPage.mjs
 +let arrearsClient
 +
 +export async function onLoad() {
+   const todayAtEntry = props.today
    arrears.loadedAccountId = props.accountId
    arrears.status.loading = true
-@@ -65,10 +69,14 @@
+@@ -65,12 +69,16 @@
+     const profile = await profileClient.fetchProfile(props.accountId)
      const rows = await arrearsClient.queryOpenBills(profile.accountId)
 
 -    const total = rows
--      .filter(row => row.dueDate <= props.today)
+-      .filter(row => row.dueDate <= todayAtEntry)
 -      .filter(row => row.priority >= profile.minPriority)
 -      .map(row => row.amount - row.waivedAmount)
 -      .filter(netAmount => netAmount > 0)
@@ -220,7 +225,7 @@ rename to src/ArrearsPage.mjs
 +    let total
 +    /* @normalizer-ir
 +       total = sum from rows as row
-+         where row.dueDate <= props.today
++         where row.dueDate <= todayAtEntry
 +           and row.priority >= profile.minPriority
 +         let netAmount = row.amount - row.waivedAmount
 +         where netAmount > 0
@@ -228,7 +233,9 @@ rename to src/ArrearsPage.mjs
 +    */
 
      arrears.status.loading = false
-@@ -82,6 +90,2 @@
+     arrears.summary.payable = total > profile.quota ? profile.quota : total
+@@ -82,7 +90,3 @@
+     throw error
    }
  }
 -
@@ -237,7 +244,7 @@ rename to src/ArrearsPage.mjs
 -</script>
 ```
 
-`@entryState` 标明 `arrears` 是当前实例已创建的状态。`@entryInputs` 标明 props 来自宿主，`accountId` 在第一次等待前用于记录账户和请求资料。`today` 是本次调用的不变量，即使源码在等待后才用它筛选，也仍使用本次调用绑定的值。两个 `@external` 声明给出各自的返回值和拒绝类型。
+`@entryState` 标明 `arrears` 是当前实例已创建的状态。`@entryInputs` 标明 props 来自宿主，`accountId` 在第一次等待前用于记录账户和请求资料。`today` 是本次调用的不变量，源码在首次等待前将它读入 `todayAtEntry`，等待后筛选只读这个局部值。两个 `@external` 声明给出各自的返回值和拒绝类型。
 
 集合链在原处改写为局部聚合。该表达以行字段与筛选期间读取的输入稳定、读取无可观察副作用为前提；若 getter 的调用次序可被观察，仍须保留原链分阶段读取的顺序。
 
@@ -345,31 +352,53 @@ S:
             0
           )
         END
-      when: completion.is_return($e_0) and completion.is_return($e_1)
+      when: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN completion.is_return($e_1)
+          ELSE false
+        END
 
   - write:
       target: arrears.status.ready
       value: true
-      when: completion.is_return($e_0) and completion.is_return($e_1)
+      when: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN completion.is_return($e_1)
+          ELSE false
+        END
 
   - write:
       target: arrears.status.failed
       value: true
-      when: completion.is_throw($e_0, ProfileFetchError) or completion.is_throw($e_1, BillQueryError)
+      when: |-
+        CASE
+          WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
+          ELSE completion.is_throw($e_1, BillQueryError)
+        END
 
   - write:
       target: arrears.status.ready
       value: false
-      when: completion.is_throw($e_0, ProfileFetchError) or completion.is_throw($e_1, BillQueryError)
+      when: |-
+        CASE
+          WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
+          ELSE completion.is_throw($e_1, BillQueryError)
+        END
 
 R: void
 
 throws:
   - type: BillQueryError
-    when: completion.is_return($e_0) and completion.is_throw($e_1, BillQueryError)
+    when: |-
+      CASE
+        WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, BillQueryError)
+        ELSE false
+      END
   - type: ProfileFetchError
     when: completion.is_throw($e_0, ProfileFetchError)
 ~~~
+
+第 2 次调用只在第 1 次调用成功时发出。第 1 次失败时直接进入失败路径，不读取未取得的第 2 次回执；成功路径同样先检查第 1 次是否完成。
 
 **PERS 验收要点**：一次页面动作的成果要由状态变化、外部交互和完成结果共同表达。返回 `void` 不等于没有业务输出；产出源码或局部计算公式，也不能代替完整动作的归一化结果。
 

@@ -51,7 +51,7 @@ properties:
     items:
       $ref: '#/$defs/operation'
   T:
-    description: 本子集使用已有的内部选择合同。一次实际选择定义一个绑定，同一绑定的所有字段取自同一成员。
+    description: 供待验收种子检查候选整成员选择的结构；schema 接受此形状不表示当前 CLI 可以产生它。同一绑定的各字段取自同一成员。
     type: array
     minItems: 1
     items:

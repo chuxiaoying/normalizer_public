@@ -36,4 +36,4 @@
   expect: [{path: [R], value: '9007199254740994'}]
 - name: midpoint-requires-a-source-mode
   edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(value, 2)'}]
-  reject: ['decimal rounding requires an explicit midpoint mode']
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'decimal rounding requires an explicit midpoint mode']

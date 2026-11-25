@@ -371,7 +371,11 @@ R: |-
 
 throws:
   - type: DatabaseWriteError
-    when: amount > 0 AND completion.is_throw($e_0, DatabaseWriteError)
+    when: |-
+      CASE
+        WHEN amount > 0 THEN completion.is_throw($e_0, DatabaseWriteError)
+        ELSE false
+      END
 ```
 
 **PERS 验收要点**

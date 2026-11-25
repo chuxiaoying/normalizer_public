@@ -27,4 +27,4 @@
   edits:
     - from: 'count distinct from values as value'
       to: 'count distinct from values as value where 0'
-  reject: ['NORM-PROJECT', 'where requires bool']
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'where requires bool']

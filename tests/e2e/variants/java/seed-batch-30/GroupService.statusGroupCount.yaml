@@ -36,9 +36,9 @@
         )
 - name: reject-undeclared-key
   edits: [{from: 'by b.status', to: 'by b.unlisted'}]
-  reject: ['unknown projected field']
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'unknown projected field']
 - name: filtered-group-input-is-not-admitted
   edits:
     - from: 'from bill as row yield'
       to: 'from bill as row where false yield'
-  reject: ['NORM-PROJECT', 'group count currently requires an unfiltered table declaration']
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'group count currently requires an unfiltered table declaration']

@@ -26,11 +26,11 @@
         const early = later
           const later = '查询中'
           return arrears.status.loading ? early : '应付金额'
-  reject: ['unbound projection local later']
+  reject: ['SCENARIO_MODULE_INPUT:', 'unbound projection local later']
 
 - name: directive-in-return-expression
   edits:
     - file: src/ArrearsPage.mjs
       from: "return arrears.status.loading ? '加载中' : '应付金额'"
       to: "return arrears.status.loading ? /* @normalizer-ir extra = unknown */ '加载中' : '应付金额'"
-  reject: ['@normalizer-ir must appear between statements']
+  reject: ['SCENARIO_MODULE_INPUT:', '@normalizer-ir must appear between statements']

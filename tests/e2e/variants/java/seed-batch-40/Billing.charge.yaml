@@ -1,4 +1,4 @@
-reject: ['[NORM-OUT-OF-SOURCE]', '[NORM-ENGINE-FAILURE]', 'Billing.charge', 'Fee.apply', 'unsupported']
+reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', '[NORM-ENGINE-FAILURE]', 'Billing.charge', 'Fee.apply', 'unsupported']
 variants:
   - name: shift-argument-does-not-close-dispatch
     edits:

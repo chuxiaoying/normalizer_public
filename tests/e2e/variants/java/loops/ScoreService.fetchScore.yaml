@@ -50,13 +50,24 @@
             args: [accountId]
             returns: number
             result: $e_2
-            when: completion.is_throw($e_0, RetryableScoreError) and completion.is_throw($e_1, RetryableScoreError)
+            when: |-
+              CASE
+                WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
+                ELSE false
+              END
         - call:
             external: scoreClient.readPoints
             args: [accountId]
             returns: number
             result: $e_3
-            when: completion.is_throw($e_0, RetryableScoreError) and completion.is_throw($e_1, RetryableScoreError) and completion.is_throw($e_2, RetryableScoreError)
+            when: |-
+              CASE
+                WHEN CASE
+                  WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
+                  ELSE false
+                END THEN completion.is_throw($e_2, RetryableScoreError)
+                ELSE false
+              END
     - path: [R]
       value: |-
         CASE

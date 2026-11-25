@@ -35,7 +35,7 @@
   edits:
     - from: return value + 1;
       to: "return '🙂' + 1;"
-  reject: ['SOURCE-PARSE-FAILED', 'Java character literal must contain one UTF-16 code unit']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'Java character literal must contain one UTF-16 code unit']
 
 - name: exact-arithmetic-below-java-long-minimum
   edits:
@@ -53,7 +53,7 @@
       to: static long addOne(int value)
     - from: return value + 1;
       to: return 9223372036854775808L;
-  reject: ['SOURCE-PARSE-FAILED', 'invalid int literal']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'invalid int literal']
 
 - name: negative-identifier-is-not-the-long-boundary-literal
   edits:
@@ -87,4 +87,4 @@
 
 - name: overwide-hex-int-rejects-instead-of-guessing-width
   edits: [{from: 'return value + 1;', to: 'return 0x1_0000_0000;'}]
-  reject: ['SOURCE-PARSE-FAILED', 'nondecimal int literal exceeds 32 bits']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'nondecimal int literal exceeds 32 bits']

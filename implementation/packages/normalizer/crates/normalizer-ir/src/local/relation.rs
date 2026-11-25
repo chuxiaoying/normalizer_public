@@ -258,6 +258,9 @@ fn parse_query(
             break;
         }
     }
+    if t.take("OR") || t.take("or") {
+        return Err("OR is not supported in local relation predicates; SQL UNKNOWN must be preserved".into());
+    }
     if matches!(kind, Kind::Count | Kind::CountDistinct) && t.rest().is_empty() {
         return Ok(Some(Query {
             binding, accumulate, kind, source, alias: alias.clone(), clauses,

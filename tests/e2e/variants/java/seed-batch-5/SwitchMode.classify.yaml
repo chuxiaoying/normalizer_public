@@ -27,4 +27,4 @@
   edits:
     - from: 'if (code == 1) return 10;'
       to: 'switch (code) { case 1: return 10; }'
-  reject: ['SOURCE-PARSE-FAILED', 'switch requires explicit preprocessing']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'switch requires explicit preprocessing']

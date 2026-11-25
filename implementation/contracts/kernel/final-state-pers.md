@@ -65,13 +65,13 @@ Catch 仅匹配声明的异常类型，并为 handler 提供该次 throw 的实�
 
 ## 内部整成员选择
 
-内部选择复用已确认的 choice 合同，在 T 中以 member_choice 声明允许成员与 empty fallback；R、字段 S 和后续调用共同引用同一个关系绑定。它不占用外部 E/RPC 编号，两次实际选择也不因候选相同而合并。仅在各自发生条件成立时关系有效，未支持的循环组合仍明确拒绝。完整语义和诊断模式的区别见仓库 `docs/normalized-choice.md`。
+[整成员选择合同](../normalized-choice.md)要求一次选择的所有字段来自同一成员，两次选择各有独立身份。当前公开输出尚不支持保留一般的选择关联；不能用单个确定值或两个独立字段掩盖它。候选表示见[设计种子](../../../design/examples/topics/collections/java-independent-choice.md)。
 
 ## 观察获取域与共享递推
 
 E、调用响应和 T 仅在各自获取条件成立时有定义。条件合并保留原分支，在 Expr 层以 CASE 保护未获取观察；不能通过无条件求全部观察或把互斥获取域相与来删掉合法路径。该保护同时用于 E/S、调用及 checkpoint 条件、T.when 和 throws，R 仍只在正常完成域有定义。
 
-已具备实时状态合同的有序标量 fold 在 execution 期间直接更新 `T` 定义，返回边界发布实时状态中的 `R/T/throws`，不再为该切片调用 post-execution fold reducer。仍未具备完整实时状态合同的复杂状态递推、member_choice、循环异常与一般返回端口引用继续使用兼容状态归约，直到 stack/heap、completion 和观察域都有独立证明。循环前已写字段不回滚。一般返回的端口引用仍属于同一环境堆：先写 state.value=7 再读取 reply.value，需以 reply==state 的 CASE 转发 7，其他身份读取其入口 E，不能把所有返回引用当新对象。只有无参数、无字段状态、无读写、无异常的一次同步 `reference_value` 调用，且返回区与唯一 S 事件保持同一外部身份时，才可走 realtime identity-only 直出；其他返回引用继续使用兼容状态归约。
+已具备实时状态合同的有序标量 fold 在 execution 期间直接更新 `T` 定义，返回边界发布实时状态中的 `R/T/throws`，不再为该切片调用 post-execution fold reducer。仍未具备完整实时状态合同的复杂状态递推、循环异常与一般返回端口引用继续使用兼容状态归约，直到 stack/heap、completion 和观察域都有独立证明。循环前已写字段不回滚。一般返回的端口引用仍属于同一环境堆：先写 state.value=7 再读取 reply.value，需以 reply==state 的 CASE 转发 7，其他身份读取其入口 E，不能把所有返回引用当新对象。只有无参数、无字段状态、无读写、无异常的一次同步 `reference_value` 调用，且返回区与唯一 S 事件保持同一外部身份时，才可走 realtime identity-only 直出；其他返回引用继续使用兼容状态归约。
 在这条 identity-only 合同上又允许一个窄分支：同一外部引用只可用于一个 `== null` 或 `!= null` guard，两个分支都必须返回不携带堆身份的标量。execution 保留引用身份，direct renderer 将 guard 中的临时 `HeapRef` 映射为对应的 `$e_n`，同时发布 guarded `R` 和唯一 `S`；引用进入字段、参数、写入、回调、异常或其他 alias 关系时仍回退兼容状态归约。
 同一合同还允许一个唯一外部引用的只读字段投影。只有一个声明字段、一个同步无参数 `reference_value` 调用、一个 `reference != null` 守卫读取和标量返回同时成立时，`E` 才直接记录该字段，`R` 使用该字段的外部绑定，`S` 保留调用顺序，空路径在 `throws` 中保留受守卫的 `NullPointerException`。字段写入、多个未观测字段、字段值携带 heap identity 或其他 alias 关系继续使用兼容状态归约。
 外部引用也可在同一实时合同中作为下一次同步端口的唯一 `reference_value` 参数。此时 `S` 必须保留第一次返回和第二次转发的顺序，第二次调用返回的外部 `E` 直接进入 `R`，不把中间引用复制为新的 heap identity。只允许两次无异常调用和无字段状态，重复转发、字段写入、回调、异常或其他 alias 关系继续使用兼容状态归约。

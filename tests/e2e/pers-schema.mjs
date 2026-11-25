@@ -30,7 +30,34 @@ export function assertPers(document, label) {
     if (source.type) typeRef(source.type, 'E.' + name);
     else fields(source.fields ?? source.columns, 'E.' + name);
   }
+  const receipts = new Set();
+  const checkReferences = (expression, location) => {
+    if (typeof expression !== 'string') return;
+    // PERS double-quoted text uses escapes; SQL text uses doubled single quotes.
+    const tokens = /"(?:[^"\\]|\\[\s\S])*"|'(?:[^']|'')*'|\$e_\d+\b/g;
+    for (const [token] of expression.matchAll(tokens)) {
+      if (token.startsWith('$')) {
+        assert.ok(receipts.has(token), label + ': unbound receipt ' + token + ' at ' + location);
+      }
+    }
+  };
   for (const [i, operation] of (document.S ?? []).entries()) {
-    if (operation.call) typeRef(operation.call.returns, 'S[' + i + '].call.returns');
+    const location = 'S[' + i + ']';
+    const { call, write, sql } = operation;
+    const binding = call ?? (sql ? operation : null);
+    if (call) typeRef(call.returns, location + '.call.returns');
+    checkReferences((call ?? write ?? operation).when, location + '.when');
+    call?.args.forEach((arg, j) => checkReferences(arg, location + '.args[' + j + ']'));
+    if (write) checkReferences(write.value, location + '.write.value');
+    checkReferences(sql, location + '.sql');
+    if (binding) {
+      assert.ok(!receipts.has(binding.result), label + ': duplicate receipt ' + binding.result + ' at ' + location);
+      receipts.add(binding.result);
+    }
   }
+  for (const [i, choice] of (document.T ?? []).entries()) {
+    for (const field of ['when', 'members', 'empty']) checkReferences(choice[field], 'T[' + i + '].' + field);
+  }
+  checkReferences(document.R, 'R');
+  for (const [i, declaration] of (document.throws ?? []).entries()) checkReferences(declaration.when, 'throws[' + i + '].when');
 }

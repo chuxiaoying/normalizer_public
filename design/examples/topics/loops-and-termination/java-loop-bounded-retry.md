@@ -111,7 +111,11 @@ S:
         - accountId
       returns: number
       result: $e_2
-      when: completion.is_throw($e_0, RetryableScoreError) and completion.is_throw($e_1, RetryableScoreError)
+      when: |-
+        CASE
+          WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
+          ELSE false
+        END
 
 R: |-
   CASE
@@ -122,6 +126,8 @@ R: |-
     ELSE 0
   END
 ```
+
+第 3 次取号只有前两次均以已声明异常完成才发生。若第 1 次成功，第 2 次回执未取得，判断不得读取它；第 4 次对照同样逐层检查已取得的回执。
 
 **PERS 验收要点**：把重试过程收束为完成条件与结果的关系，消除重复控制流痕迹，同时保留每次调用的独立性和先后依赖。
 

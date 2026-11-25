@@ -93,3 +93,5 @@ R: |-
 **PERS 验收要点**：finally 是完成路径上的有序业务效果。它不能被吸收进 R，也不能因为异常被 catch 就从 S 中删除。
 
 派生对照在 finally 写入后执行 `return 42`。无论外部调用正常完成还是被 catch，R 都是 42，S 仍按原顺序包含外部调用及一次状态写入。
+
+若 finally 写入后无条件抛出 `RemoteError`，则它取代 try 和 catch 的所有正常完成。S 仍保留同一次外部调用及写入；`R: ⊥`，`throws` 在全域报告 `RemoteError`。

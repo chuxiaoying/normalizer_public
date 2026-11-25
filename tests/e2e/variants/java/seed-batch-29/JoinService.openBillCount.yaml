@@ -34,4 +34,4 @@
         )
 - name: reject-unknown-join-column
   edits: [{from: 'a.id == b.account_id', to: 'a.id == b.unlisted'}]
-  reject: ['undeclared query input b']
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'undeclared query input b']

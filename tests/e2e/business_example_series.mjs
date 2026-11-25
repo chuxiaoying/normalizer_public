@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { diagnosticCode } from './rejection.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
@@ -16,6 +17,7 @@ export function loadSeries(file) {
     ({ reject, variants } = series);
     assert.ok(Array.isArray(reject) && reject.length && reject.every(text => typeof text === 'string' && text.trim().length),
       'Expected diagnostic fragments: ' + file);
+    assert.ok(diagnosticCode(reject[0]), 'Expected primary diagnostic marker: ' + file);
   }
   assert.ok(Array.isArray(variants) && variants.length, 'Empty series: ' + file);
   const names = new Set(['original']);
@@ -29,6 +31,7 @@ export function loadSeries(file) {
     if (Object.hasOwn(variant, 'reject')) {
       assert.ok(!variant.expect && Array.isArray(variant.reject) && variant.reject.length);
       assert.ok(variant.reject.every(text => typeof text === 'string' && text.trim().length));
+      assert.ok(diagnosticCode(variant.reject[0]), 'Expected primary diagnostic marker: ' + file + ' / ' + variant.name);
     }
   }
   return { variants, reject };
@@ -61,18 +64,28 @@ export function applyVariant(project, mainFile, baseline, variant) {
 export function applyExpectedChanges(baseline, changes = []) {
   const expected = structuredClone(baseline);
   for (const change of changes) {
-    checkKeys(change, ['path', 'value', 'absent']);
-    const replacement = Object.hasOwn(change, 'value');
-    assert.ok(Array.isArray(change.path) && change.path.length &&
-      (replacement ? !Object.hasOwn(change, 'absent') : change.absent === true));
+    checkKeys(change, ['path', 'value', 'absent', 'add']);
+    const operation = ['value', 'absent', 'add'].filter(key => Object.hasOwn(change, key));
+    assert.ok(Array.isArray(change.path) && change.path.length && operation.length === 1 &&
+      (operation[0] !== 'absent' || change.absent === true));
+    for (const key of change.path) {
+      assert.ok((typeof key === 'string' && key.length && !['__proto__', 'constructor', 'prototype'].includes(key)) ||
+        (Number.isSafeInteger(key) && key >= 0), 'Invalid expected field path');
+    }
     let node = expected;
     for (const key of change.path.slice(0, -1)) {
       assert.ok(Object.hasOwn(node, key), 'Unknown expected field: ' + change.path.join('.'));
       node = node[key];
     }
     const last = change.path.at(-1);
+    if (operation[0] === 'add') {
+      assert.ok(node && typeof node === 'object' && !Array.isArray(node) && typeof last === 'string', 'Add requires a mapping field');
+      assert.ok(!Object.hasOwn(node, last), 'Expected field already exists: ' + change.path.join('.'));
+      node[last] = change.add;
+      continue;
+    }
     assert.ok(Object.hasOwn(node, last), 'Unknown expected field: ' + change.path.join('.'));
-    if (replacement) {
+    if (operation[0] === 'value') {
       node[last] = change.value;
     } else {
       assert.ok(!Array.isArray(node), 'Use a whole-array replacement to remove a list item');

@@ -48,3 +48,64 @@
         - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
     - path: [R]
       value: $e_0 > 0
+- name: keep-receipt-guard-in-call-argument
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: |-
+        boolean allowed = active && probe.read(value) > 0;
+                probe.publish(allowed);
+                return allowed;
+    - from: 'interface Probe { int read(int value); }'
+      to: 'interface Probe { int read(int value); void publish(boolean allowed); }'
+  expect:
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+        - call:
+            external: probe.publish
+            args: ['CASE WHEN active THEN $e_0 > 0 ELSE false END']
+            returns: void
+            result: $e_1
+- name: keep-receipt-guard-in-state-write
+  edits:
+    - from: 'import normalizer.annotations.External;'
+      to: |-
+        import normalizer.annotations.EntryState;
+        import normalizer.annotations.External;
+    - from: 'class GuardWithProbe {'
+      to: |-
+        class GuardWithProbe {
+            @EntryState
+            boolean stored;
+    - from: 'return active && probe.read(value) > 0;'
+      to: |-
+        stored = active && probe.read(value) > 0;
+                return stored;
+  expect:
+    - path: [E]
+      add:
+        stored: { kind: state, source: src/GuardWithProbe.java#GuardWithProbe.stored, type: bool }
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+        - write: { target: stored, value: 'CASE WHEN active THEN $e_0 > 0 ELSE false END' }
+- name: keep-receipt-guard-in-later-call-condition
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: |-
+        if (active && probe.read(value) > 0) probe.signal();
+                return true;
+    - from: 'interface Probe { int read(int value); }'
+      to: 'interface Probe { int read(int value); void signal(); }'
+  expect:
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+        - call:
+            external: probe.signal
+            args: []
+            returns: void
+            result: $e_1
+            when: CASE WHEN active THEN $e_0 > 0 ELSE false END
+    - path: [R]
+      value: 'true'

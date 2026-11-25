@@ -1,4 +1,4 @@
-reject: ['kind=PREPROCESS_REQUIRED', 'external response', 'no finite bound']
+reject: ['[NORM-EXTERNAL-POLL]', 'kind=PREPROCESS_REQUIRED', 'external response', 'no finite bound']
 variants:
   - name: compare-readiness-with-false
     edits:

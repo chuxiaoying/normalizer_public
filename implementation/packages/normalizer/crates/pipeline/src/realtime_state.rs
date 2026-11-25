@@ -5,7 +5,7 @@
 //! It is used by both source execution and normalized action execution so the
 //! earliest branch join has one implementation and one simplification boundary.
 
-use math::{builder as b, BinOpKind, Expr};
+use math::{builder as b, Expr};
 
 /// The completion channel carried by a real-time execution state.
 ///
@@ -78,6 +78,14 @@ impl Completion {
             return None;
         }
         Some(alternatives)
+    }
+
+    pub(crate) fn is_always_throwing(&self) -> bool {
+        self.terminal_alternatives().is_some_and(|alternatives| {
+            !alternatives.is_empty() && alternatives.iter().all(|alternative| {
+                matches!(alternative.outcome, CompletionOutcome::Throw { .. })
+            })
+        })
     }
 
     /// Project the normal-return part of a terminal completion. Throwing
@@ -613,56 +621,7 @@ fn canonicalize_realtime_case(expression: Expr) -> Expr {
 }
 
 fn preferred_realtime_complement(condition: &Expr, yes: &Expr, no: &Expr) -> Option<Expr> {
-    if yes.as_case_when().is_some() || no.as_case_when().is_some() {
-        return None;
-    }
-    let complement = math::normalize(b::not(condition.clone()));
-    if is_demorgan_complement(condition, &complement) {
-        return Some(complement);
-    }
     math::case_orientation::preferred_complement(condition, yes, no, &math::DefaultSortContext)
-}
-
-fn is_demorgan_complement(condition: &Expr, complement: &Expr) -> bool {
-    let Some((BinOpKind::And, _, _)) = condition.as_binop() else {
-        return false;
-    };
-    let Some((BinOpKind::Or, _, _)) = complement.as_binop() else {
-        return false;
-    };
-    let mut condition_terms = Vec::new();
-    let mut complement_terms = Vec::new();
-    flatten_boolean_terms(condition, BinOpKind::And, &mut condition_terms);
-    flatten_boolean_terms(complement, BinOpKind::Or, &mut complement_terms);
-    if condition_terms.len() != complement_terms.len() {
-        return false;
-    }
-    condition_terms.iter().all(|term| {
-        complement_terms
-            .iter()
-            .any(|candidate| relation_complements(term, candidate))
-    })
-}
-
-fn flatten_boolean_terms(expression: &Expr, operator: BinOpKind, output: &mut Vec<Expr>) {
-    if let Some((actual, left, right)) = expression.as_binop() {
-        if actual == operator {
-            flatten_boolean_terms(left, operator, output);
-            flatten_boolean_terms(right, operator, output);
-            return;
-        }
-    }
-    output.push(expression.clone());
-}
-
-fn relation_complements(left: &Expr, right: &Expr) -> bool {
-    match (left.as_binop(), right.as_binop()) {
-        (Some((BinOpKind::Eq, left_l, left_r)), Some((BinOpKind::Ne, right_l, right_r)))
-        | (Some((BinOpKind::Ne, left_l, left_r)), Some((BinOpKind::Eq, right_l, right_r))) => {
-            left_l == right_l && left_r == right_r
-        }
-        _ => false,
-    }
 }
 
 /// Join two completion outcomes at their earliest common continuation.

@@ -30,3 +30,8 @@
           ),
           0
         )
+- name: reject-unadmitted-three-valued-disjunction
+  edits:
+    - from: 'row.memo IS NULL'
+      to: 'row.memo == "x" OR row.memo != "x"'
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'OR is not supported in local relation predicates']

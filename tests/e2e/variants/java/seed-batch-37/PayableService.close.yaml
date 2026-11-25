@@ -10,4 +10,9 @@
   edits: [{ from: 'amount > 0', to: 'amount >= 0' }]
   expect:
     - { path: [S, 0, when], value: amount >= 0 }
-    - { path: [throws, 0, when], value: 'amount >= 0 AND completion.is_throw($e_0, DatabaseWriteError)' }
+    - path: [throws, 0, when]
+      value: |-
+        CASE
+          WHEN amount >= 0 THEN completion.is_throw($e_0, DatabaseWriteError)
+          ELSE false
+        END

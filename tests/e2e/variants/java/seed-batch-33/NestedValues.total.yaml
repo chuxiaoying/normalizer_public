@@ -29,4 +29,4 @@
   edits:
     - from: 'sum from group as value'
       to: 'sum from groups as value'
-  reject: ['[SOURCE-PARSE-FAILED]', 'nested sum requires a scalar sum from the outer row']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'nested sum requires a scalar sum from the outer row']

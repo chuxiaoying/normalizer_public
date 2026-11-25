@@ -50,14 +50,14 @@
         yield netAmount
             */
             /* @normalizer-ir total = unknown_operation rows */
-  reject: ['expected a typed relation query']
+  reject: ['SCENARIO_KERNEL_FAILED:', '[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'expected a typed relation query']
 
 - name: directive-inside-write-value
   edits:
     - file: src/ArrearsPage.mjs
       from: 'arrears.status.failed = true'
       to: 'arrears.status.failed = /* @normalizer-ir total = sum from rows as row yield row.priority */ true'
-  reject: ['@normalizer-ir must appear between statements']
+  reject: ['SCENARIO_MODULE_INPUT:', '@normalizer-ir must appear between statements']
 
 - name: later-sum-adds-to-existing-binding
   edits:
@@ -70,7 +70,7 @@
             */
             const first = total
             /* @normalizer-ir total += sum from rows as row
-                 where row.dueDate <= props.today and row.priority >= profile.minPriority
+                 where row.dueDate <= todayAtEntry and row.priority >= profile.minPriority
                  let netAmount = row.amount - row.waivedAmount
                  where netAmount > 0 yield netAmount */
     - file: src/ArrearsPage.mjs
@@ -80,20 +80,17 @@
     - path: [S, 5, write, value]
       value: "701"
 
-- name: capture-invariant-today-before-await
+- name: reuse-entry-today-through-local-alias
   edits:
     - file: src/ArrearsPage.mjs
-      from: 'export async function onLoad() {'
+      from: 'const todayAtEntry = props.today'
       to: |-
-        export async function onLoad() {
-          const todayAtEntry = props.today
-    - file: src/ArrearsPage.mjs
-      from: 'row.dueDate <= props.today'
-      to: 'row.dueDate <= todayAtEntry'
+        const dateSnapshot = props.today
+          const todayAtEntry = dateSnapshot
 
 - name: synchronous-entry-hides-await
   edits:
     - file: src/ArrearsPage.mjs
       from: 'export async function onLoad() {'
       to: 'export function onLoad() {'
-  reject: ['SCENARIO_MODULE_INPUT', 'entry needs an exported async function']
+  reject: ['SCENARIO_MODULE_INPUT:', 'entry needs an exported async function']

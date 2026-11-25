@@ -36,14 +36,14 @@ node --test --test-name-pattern='^java-static / ' tests/e2e/business_examples.te
 
 1. **设计区登记种子。** 在[种子清单](../design/examples/seeds.yaml)登记稳定 ID 和案例路径。案例拥有原始源码、预处理交付物与独立预期。多个入口可以共用一篇，例如 SQL 的查询、插入、更新。
 2. **测试区登记覆盖。** 在[测试清单](e2e/catalog.yaml)以同一 ID 登记入口，暂未派生的种子显式列入 `pending`。每个入口对应 `e2e/variants/<分组>/<入口>.yaml`，入口名中的 `#` 在文件名里写作 `-`。Vue 同时登记 CLI 的场景。
-3. **一次改变一个有业务含义的条件。** 每个具名变体都从原例重新开始。用 `edits` 指定规范源码中唯一匹配的位置。等价改写直接继承完整 expected；改变行为时，用 `expect` 列出应变的字段；字段应当完全消失时，用 `absent: true` 断言不存在（例如没有发生任何外部调用时的 `S`）；应拒绝的变体用 `reject` 给出预期诊断。若种子本身就要求拒绝，系列在 `variants` 外声明统一的 `reject`，同时核对种子给出的拒绝类型和入口。预期由业务关系推出，再与 CLI 实际输出比对。
+3. **一次改变一个有业务含义的条件。** 每个具名变体都从原例重新开始。用 `edits` 指定规范源码中唯一匹配的位置。等价改写直接继承完整 expected；改变行为时，用 `expect` 列出应变的字段；此前没有的字段用 `add: 值` 显式新增；字段应当完全消失时，用 `absent: true` 断言不存在（例如没有发生任何外部调用时的 `S`）；应拒绝的变体用 `reject` 给出首条诊断标记、可用的错误类别和具体原因。若种子本身就要求拒绝，系列在 `variants` 外声明统一的 `reject`，同时核对种子给出的拒绝类型和入口。预期由业务关系推出，再与 CLI 实际输出比对。
 4. **运行整套验收。** 收集阶段核对设计文档、种子 ID、已覆盖或待派生状态、真实入口和变体文件。漏登记、重复绑定、孤儿文件或无法唯一应用的改动都会报错。
 
 每条验收创建独立临时工程，回放已审阅的 AI 预处理 diff，再从正式 CLI 的 Java `source`、JavaScript `module` 或 Vue `scenario` 入口执行。成功路径比较完整 PERS 结构和表达式；拒绝路径检查非零退出、空 stdout 和具体诊断。这里覆盖的是已给定预处理交付物后的端到端工程链路，AI 实时生成预处理结果的质量需单独评估。
 
 独立 JavaScript 模块通过 `implementation/tools/normalizer module PROJECT_ROOT src/module.js exportedFunction` 运行。当前入口接收带明确 JSDoc 类型的闭合同步标量函数，并从语言适配器交付共享有类型 IR；独立异步入口仍须补齐一般调用与完成语义；若入口明确直接调用普通对象入参上的无源码方法，独立负向例断言内核 Panic、具体调用目标及空 stdout。缺少能力时保留独立完整预期或精确拒绝合同，且不跳过。无源码的调用不是天然端口：不允许伪造端口让正向预期通过。
 
-`implementation/tools/normalizer test pers-goldens` 离线检查所有正向预期（含变体）的 PERS schema 和类型引用，不启动内核。它不证明业务行为；完整 CLI 回归仍逐项比较实际 PERS 与独立预期，并在比较前检查两者结构。
+`implementation/tools/normalizer test pers-goldens` 离线检查所有正向预期（含变体）的 PERS schema、类型引用和回执绑定顺序，不启动内核。它不证明业务行为；完整 CLI 回归仍逐项比较实际 PERS 与独立预期，并在比较前检查两者结构。
 
 `implementation/tools/normalizer test seed-patches` 回放全部登记设计种子的预处理补丁（含待派生的种子），不启动内核。补丁回放通过不等于该种子已进入正式行为回归。
 

@@ -94,7 +94,12 @@ S:
     when: amount > 0
 R: amount
 throws:
-  - { type: DatabaseWriteError, when: 'amount > 0 AND completion.is_throw($e_0, DatabaseWriteError)' }
+  - type: DatabaseWriteError
+    when: |-
+      CASE
+        WHEN amount > 0 THEN completion.is_throw($e_0, DatabaseWriteError)
+        ELSE false
+      END
 ```
 
 ## 两条独立语句的部分失败
@@ -166,7 +171,11 @@ throws:
   - type: AuditInsertError
     when: completion.is_throw($e_0, AuditInsertError)
   - type: CloseUpdateError
-    when: completion.is_return($e_0) AND completion.is_throw($e_1, CloseUpdateError)
+    when: |-
+      CASE
+        WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, CloseUpdateError)
+        ELSE false
+      END
 ```
 
 变体只改变第二条语句的状态值。第一条写入、执行顺序和两个失败域均不变。

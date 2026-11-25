@@ -27,9 +27,19 @@
   edits:
     - from: 'try {'
       to: 'try (java.io.StringReader resource = new java.io.StringReader("")) {'
-  reject: ['SOURCE-PARSE-FAILED', 'try-with-resources is not supported']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'try-with-resources is not supported']
 - name: reject-multi-catch-instead-of-dropping-a-type
   edits:
     - from: 'catch (RemoteError ignored)'
       to: 'catch (RemoteError | IllegalStateException ignored)'
-  reject: ['SOURCE-PARSE-FAILED', 'multi-catch is not supported']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'multi-catch is not supported']
+- name: always-throw-after-finally-write
+  edits:
+    - from: 'attempts = attempts + 1;'
+      to: 'attempts = attempts + 1; throw new RemoteError();'
+  expect:
+    - path: [R]
+      value: '⊥'
+    - path: [throws]
+      add:
+        - {type: RemoteError, when: 'true'}

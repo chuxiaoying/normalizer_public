@@ -2,6 +2,8 @@
 
 [本主题](README.md)
 
+**设计种子，尚未接入正式 CLI。** 以下语法与 PERS 只用来评审候选表示，不是当前已支持的输入或输出。
+
 ## 输入原始代码
 
 数组、备用项及数组成员都不是 null。业务允许每次从非空集合任选一整条，无概率或遍历顺序要求。空集两次都使用调用者给定的备用项。
@@ -21,7 +23,7 @@ class Offers {
 
 ## AI 预处理结果
 
-在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留构造 Pick 的 Java。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../../implementation/contracts/normalized-choice.md)
+在两个 findAny 的原位置分别示意绑定一次候选的整成员选择语义：items 均取 offers，empty 均取 backup。保留构造 Pick 的 Java。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../../implementation/contracts/normalized-choice.md)
 
 ```diff
 --- a/src/Offers.java
@@ -43,9 +45,9 @@ class Offers {
  }
 ```
 
-注释中的 choose 是原位交接示意：两个源码位置分别绑定到已有 action.choose 的 site、items 和 empty；公共 PERS 使用已有的 T.member_choice。
+注释中的 choose 是原位交接示意：两个位置需要分别保留选择站点、候选集合和空集默认值。下面的 `T.member_choice` 是这个种子的候选公共表示；当前内核不会从该注释生成它。
 
-## 归一化最终结果
+## 待验收的理想 PERS
 
 ```yaml
 schema: normalizer.pers/1
