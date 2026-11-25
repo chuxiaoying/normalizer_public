@@ -752,7 +752,7 @@ impl<'a> Parser<'a> {
                             self.pos += 1;
                             JavaLit::Long(i64::MIN)
                         } else {
-                            JavaLit::Int(i64::from(i32::MIN))
+                            JavaLit::Int(i32::MIN)
                         };
                         return Some(JavaExpr::Lit(literal));
                     }
@@ -1322,7 +1322,7 @@ impl<'a> Parser<'a> {
             } else {
                 let word = u32::try_from(value)
                     .map_err(|_| self.err("nondecimal int literal exceeds 32 bits"))?;
-                Ok(JavaLit::Int(i64::from(word as i32)))
+                Ok(JavaLit::Int(word as i32))
             }
         } else {
             let v: i64 = cleaned
@@ -1333,7 +1333,7 @@ impl<'a> Parser<'a> {
             } else {
                 let v = i32::try_from(v)
                     .map_err(|_| self.err("decimal int literal exceeds its source range"))?;
-                Ok(JavaLit::Int(i64::from(v)))
+                Ok(JavaLit::Int(v))
             }
         }
     }

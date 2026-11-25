@@ -105,3 +105,7 @@
     - {from: 'static int addOne(int value)', to: 'static long addOne(int value)'}
     - {from: 'return value + 1;', to: 'return 2147483648L;'}
   expect: [{path: [R], value: '2147483648'}]
+
+- name: hex-int-minimum-keeps-its-source-sign-before-promotion
+  edits: [{from: 'return value + 1;', to: 'return 0x8000_0000;'}]
+  expect: [{path: [R], value: '-2147483648'}]

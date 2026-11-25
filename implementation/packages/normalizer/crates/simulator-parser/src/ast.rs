@@ -447,7 +447,7 @@ pub enum JavaExpr {
 /// Java 字面量。
 #[derive(Debug, Clone)]
 pub enum JavaLit {
-    Int(i64),
+    Int(i32),
     Long(i64),
     Double(f64),
     Bool(bool),

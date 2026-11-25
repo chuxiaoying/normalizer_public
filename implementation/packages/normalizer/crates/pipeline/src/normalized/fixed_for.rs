@@ -12,7 +12,8 @@ pub(crate) struct FixedFor<'a> {
 
 fn literal(expr: &E) -> Option<i128> {
     match expr {
-        E::Lit(JavaLit::Int(n) | JavaLit::Long(n)) => Some(i128::from(*n)),
+        E::Lit(JavaLit::Int(n)) => Some(i128::from(*n)),
+        E::Lit(JavaLit::Long(n)) => Some(i128::from(*n)),
         E::UnaryOp {
             op: U::Neg,
             operand,

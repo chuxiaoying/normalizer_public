@@ -581,7 +581,7 @@ impl Engine<'_> {
             }
             J::Lit(JavaLit::Int(v)) => Ok(Value::Term(
                 Ty::Integer,
-                b::lit_int(*v),
+                b::lit_int(i64::from(*v)),
             )),
             J::New {
                 java_type: JavaType::Class(owner),
