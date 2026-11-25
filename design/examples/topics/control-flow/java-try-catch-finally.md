@@ -101,3 +101,5 @@ R: |-
 | old 的 finally 写入只在 Java 控制流中出现；new 在 S 中把外部调用和无论完成结果都发生的 `attempts` 写入按顺序列出，R 单独表达 catch 后的零值。 | finally 是完成路径上的有序业务效果。它不能被吸收进 R，也不能因为异常被 catch 就从 S 中删除。 |
 
 派生对照在 finally 写入后执行 `return 42`。无论外部调用正常完成还是被 catch，R 都是 42，S 仍按原顺序包含外部调用及一次状态写入。
+
+**只按类型匹配的对照**　外部端口仍声明抛出 `RemoteError`，但增加 `ParentError`，让继承链成为 `RemoteError → ParentError → RuntimeException`。先放一个不匹配的同级 `OtherError` handler，再捕获 `RuntimeException`。应穿过中间父类命中后者，不会返回第一个 handler 的 999。回执里仍是实际的 `RemoteError`，finally 仍仅写一次。此例不读取或构造异常对象的载荷。继承有环或根不在当前 RuntimeException 合同内时，必须在源码合同校验时拒绝。

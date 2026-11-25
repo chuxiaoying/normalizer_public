@@ -33,3 +33,28 @@
     - from: 'catch (RemoteError ignored)'
       to: 'catch (RemoteError | IllegalStateException ignored)'
   reject: ['SOURCE-PARSE-FAILED', 'multi-catch is not supported']
+
+- name: type-only-exception-walks-its-parents-not-an-unrelated-handler
+  edits:
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class ParentError extends RuntimeException {}
+        class RemoteError extends ParentError {}
+        class OtherError extends RuntimeException {}
+    - from: 'catch (RemoteError ignored)'
+      to: |-
+        catch (OtherError ignored) { return 999; } catch (RuntimeException ignored)
+- name: type-only-exception-hierarchy-cannot-cycle
+  edits:
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class ParentError extends RemoteError {}
+        class RemoteError extends ParentError {}
+  reject: ['[NORM-EXCEPTION-CYCLE]', 'ParentError']
+- name: type-only-exception-hierarchy-must-reach-the-supported-root
+  edits:
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class ParentError extends java.lang.Exception {}
+        class RemoteError extends ParentError {}
+  reject: ['[NORM-EXCEPTION-BASE]', 'ParentError']
