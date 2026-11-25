@@ -9,3 +9,22 @@
           left: value,
           right: value + 2
         }
+
+- name: raw-super-constructor-delegation-is-not-an-ordinary-call
+  edits:
+    - from: 'this.left = left;'
+      to: 'super(); this.left = left;'
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CONSTRUCTOR-DELEGATION]', 'super(...)']
+- name: raw-this-constructor-delegation-does-not-change-initialization-scope
+  edits:
+    - from: 'Pair(int left, int right) {'
+      to: |-
+        Pair(int left) { this.left = left; }
+            Pair(int left, int right) {
+    - from: |-
+        Pair(int left, int right) {
+                this.left = left;
+      to: |-
+        Pair(int left, int right) {
+                this(left);
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CONSTRUCTOR-DELEGATION]', 'this(...)']

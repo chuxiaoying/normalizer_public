@@ -24,7 +24,7 @@ class PairFactory {
 
 ## AI 预处理结果
 
-**原样通过。** 构造器和字段写入是当前 Java parser 可处理的对象语义。
+**原样通过。** 直接构造对象和 `this.field` 赋值属于当前源码合同。显式 `this(...)` 或 `super(...)` 委托有自己的初始化顺序（[JLS 8.8.7.1](https://docs.oracle.com/javase/specs/jls/se21/html/jls-8.html#jls-8.8.7.1)），不能被当作普通方法或直接删除；当前源码入口在委托关键字提示先预处理，不改变本例对 `this.field` 的支持。
 
 ## 归一化最终结果
 

@@ -905,30 +905,21 @@ impl<'a> Parser<'a> {
             return self.parse_new_expr();
         }
 
-        // this / super: 后跟 `(` 是构造器调用 this(args)/super(args)，否则是 Ident
-        if self.eat_keyword("this") {
-            self.skip_ws();
-            if self.peek() == Some(b'(') {
-                let args = self.parse_arg_list()?;
-                return Ok(JavaExpr::MethodCall {
-                    target: None,
-                    method: "this".to_string(),
-                    args,
-                });
+        // A qualified receiver such as this.field is not a constructor
+        // invocation. Do not lower this(...) or super(...) as ordinary
+        // methods, since their initialization order is not supported here.
+        let receiver_at = self.pos;
+        for keyword in ["this", "super"] {
+            if self.eat_keyword(keyword) {
+                self.skip_ws();
+                if self.peek() == Some(b'(') {
+                    self.pos = receiver_at;
+                    return Err(self.err(&format!(
+                        "[JAVA-CONSTRUCTOR-DELEGATION] {keyword}(...) requires explicit constructor preprocessing"
+                    )));
+                }
+                return Ok(JavaExpr::Ident(keyword.into()));
             }
-            return Ok(JavaExpr::Ident("this".to_string()));
-        }
-        if self.eat_keyword("super") {
-            self.skip_ws();
-            if self.peek() == Some(b'(') {
-                let args = self.parse_arg_list()?;
-                return Ok(JavaExpr::MethodCall {
-                    target: None,
-                    method: "super".to_string(),
-                    args,
-                });
-            }
-            return Ok(JavaExpr::Ident("super".to_string()));
         }
 
         // 字面量
