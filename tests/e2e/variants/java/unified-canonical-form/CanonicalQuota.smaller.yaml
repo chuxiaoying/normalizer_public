@@ -1,0 +1,31 @@
+- name: strict-same-side
+  edits:
+    - from: 'if (total <= quota) return total;'
+      to: 'if (total < quota) return total;'
+- name: non-strict-and-swapped-arms
+  edits:
+    - from: |-
+        if (total <= quota) return total;
+                return quota;
+      to: |-
+        if (quota <= total) return quota;
+                return total;
+- name: canonical-source-form
+  edits:
+    - from: |-
+        if (total <= quota) return total;
+                return quota;
+      to: |-
+        if (quota < total) return quota;
+                return total;
+- name: maximum-is-a-different-selection
+  edits:
+    - from: 'if (total <= quota) return total;'
+      to: 'if (total >= quota) return total;'
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN quota > total THEN quota
+          ELSE total
+        END

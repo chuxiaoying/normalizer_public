@@ -60,6 +60,7 @@ seeds:
   basic-return-shape: { kind: basic, topic: basic-contracts, related: [objects-and-types] }
   expr-associative-commutative-normal-form: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
   canonical-text-order: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
+  canonical-number-selection: { kind: topic, topic: unified-canonical-form, related: [number-domain, control-flow] }
   canonical-binary-case: { kind: topic, topic: unified-canonical-form, related: [expression-simplification, control-flow] }
   control-short-circuit: { kind: topic, topic: control-flow, related: [] }
   basic-nullable-input: { kind: basic, topic: basic-contracts, related: [] }
