@@ -42,6 +42,7 @@ function expr(node, sf) {
     const operator = BINARY.get(node.operatorToken.kind);
     if (operator) return { op: 'binary', operator, left: expr(node.left, sf), right: expr(node.right, sf) };
   }
+  if (ts.isArrayLiteralExpression(node)) return { op: 'array', items: node.elements.map(item => expr(item, sf)) };
   if (ts.isConditionalExpression(node)) return { op: 'select', condition: expr(node.condition, sf), whenTrue: expr(node.whenTrue, sf), whenFalse: expr(node.whenFalse, sf) };
   return { op: 'opaque', text: node.getText(sf) };
 }

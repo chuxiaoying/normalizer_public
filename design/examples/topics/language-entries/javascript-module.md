@@ -51,3 +51,32 @@ R: |-
     ELSE 7
   END
 ```
+
+## 不可变构造把完整 CASE 放到外层
+
+```javascript
+/**
+ * @param {boolean} enabled
+ * @param {number} left
+ * @param {number} right
+ * @param {number} fixed
+ * @returns {ReadonlyArray<number>}
+ */
+export function pair(enabled, left, right, fixed) {
+  return [enabled ? left : right, fixed];
+}
+```
+
+**原样通过。** 出口是不可变数值内容，不观察对象身份。条件以及两个元素都来自已取得的入口参数，构造本身不抛异常、不执行外部动作。外提须保留第二个元素和元素位置，不能因某个分支未命中就多取得外部值或重排元素。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/vector-construction.js#pair, returns: 'number[]' }
+P:
+  parameters:
+    enabled: { position: 0, type: bool }
+    left: { position: 1, type: number }
+    right: { position: 2, type: number }
+    fixed: { position: 3, type: number }
+R: CASE WHEN enabled THEN [left, fixed] ELSE [right, fixed] END
+```

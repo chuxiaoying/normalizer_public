@@ -211,6 +211,8 @@ struct Origin {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
+    #[serde(rename = "value.number_vector")]
+    NumberVector { items: Vec<Node> },
     #[serde(rename = "value.field")]
     Field {
         value: Box<Node>,

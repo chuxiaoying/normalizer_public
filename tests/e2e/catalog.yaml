@@ -124,7 +124,7 @@ groups:
   java/seed-batch-37:
     relation-batch-write: [PayableService.close, PayableAudit.closeWithAudit]
   javascript/seed-batch-38:
-    entry-javascript-module: [total.js#total, vector-case.js#choose]
+    entry-javascript-module: [total.js#total, vector-case.js#choose, vector-construction.js#pair]
     entry-async-await: [async-total.js#total]
   java/seed-batch-39:
     collection-alias-and-mutation: [AliasCollection.total]

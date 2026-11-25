@@ -100,6 +100,58 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
     })
 }
 
+/// Closed numeric vector construction. These are immutable values, not
+/// JavaScript allocations whose identity or mutation can be observed.
+pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
+    use crate::{BinOpKind as Op, SymVarOrigin, UnaryOpKind::Not};
+
+    fn integer(value: &Expr) -> bool {
+        if value.as_lit().and_then(crate::Lit::as_integer).is_some() { return true; }
+        if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
+            return primitive_type == "integer" && !name.starts_with('$') && !name.contains('.');
+        }
+        if let Some((Op::Add | Op::Sub | Op::Mul, a, b)) = value.as_binop() {
+            return integer(a) && integer(b);
+        }
+        if let Some(branches) = value.as_case_when() {
+            return branches.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true))
+                && branches.iter().all(|(guard, arm)| boolean(guard) && integer(arm));
+        }
+        false
+    }
+
+    fn boolean(value: &Expr) -> bool {
+        if value.as_bool().is_some() { return true; }
+        if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
+            return primitive_type == "boolean" && !name.starts_with('$') && !name.contains('.');
+        }
+        if let Some((Not, value)) = value.as_unary_op() { return boolean(value); }
+        match value.as_binop() {
+            Some((Op::And | Op::Or, left, right)) => boolean(left) && boolean(right),
+            Some((Op::Eq | Op::Ne | Op::Lt | Op::Le | Op::Gt | Op::Ge, left, right)) =>
+                integer(left) && integer(right),
+            _ => false,
+        }
+    }
+
+    fn lift(items: Vec<Expr>, budget: &mut usize) -> Result<Expr, &'static str> {
+        *budget = budget.checked_sub(1).ok_or("readonly Vector CASE lift exceeds its expansion budget")?;
+        let Some((index, branches)) = items.iter().enumerate()
+            .find_map(|(index, item)| item.as_case_when().map(|branches| (index, branches)))
+        else { return Ok(b::array_lit(items)); };
+        let out = branches.iter().map(|(guard, choice)| {
+            let mut arm = items.clone();
+            arm[index] = choice.clone();
+            Ok((guard.clone(), lift(arm, budget)?))
+        }).collect::<Result<Vec<_>, _>>()?;
+        Ok(b::case_when(out))
+    }
+    if items.len() > 256 || !items.iter().all(integer) {
+        return Err("readonly Vector construction requires total acquired integer elements");
+    }
+    lift(items, &mut 256).map(crate::normalize)
+}
+
 pub fn reduce(key: crate::FuncKey, args: &[Expr]) -> Option<Expr> {
     if let ("value.field", [record, field]) = (output_name(&crate::func_name(key)), args) {
         // Projection preserves the existing first-match domain. Only

@@ -267,6 +267,8 @@ impl EntryContext {
 
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
         let events = result.realtime_effects.events();
+        let readonly_vector = project.result_type(method.return_type())? == super::Ty::Vector(Box::new(super::Ty::Integer))
+            && self.returns == "number[]";
         if !result.pure_folds.is_empty() && (!events.is_empty()
             || result.source_record_return.is_some()
             || result.realtime_completion.return_value().is_none())
@@ -274,7 +276,7 @@ impl EntryContext {
             return Err("pure fold publication requires a closed scalar entry with no effects or throws".into());
         }
         if events.is_empty() && result.realtime_completion.return_value().is_some() {
-            return self.render_observations(None, result, method);
+            return self.render_observations(None, result, method, readonly_vector);
         }
         let mut names = self.host_names();
         self.add_initial_state_names(&mut names);
@@ -282,10 +284,10 @@ impl EntryContext {
             names.insert(name.clone(), self.binding(name)?.0);
         }
         let observations = super::business_event::observations(project, self, result, names)?;
-        self.render_observations(Some(observations), result, method)
+        self.render_observations(Some(observations), result, method, readonly_vector)
     }
 
-    fn render_observations(&self, observations:Option<BusinessObservations>, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
+    fn render_observations(&self, observations:Option<BusinessObservations>, result: &ExecutionResult, method: &JavaMethod, readonly_vector: bool) -> Result<String> {
         if self.function.is_empty() || !self.function.contains('#') { return Err("missing business entry identity".into()); }
         let mut positions: Vec<_> = self.parameters.values().map(|p| p.position).collect();
         positions.sort_unstable();
@@ -303,7 +305,7 @@ impl EntryContext {
         for name in self.parameters.keys() {
             names.insert(super::host_input_symbol(name), self.qualified("P", name));
         }
-        check_domain(method.return_type(), &self.returns)?;
+        if !readonly_vector { check_domain(method.return_type(), &self.returns)?; }
         self.add_initial_state_names(&mut names);
         let states = result.source_state_bindings.iter().map(|(id, root)| (*id, self.qualified("E", root))).collect::<BTreeMap<_,_>>();
         let arrays = self.scalar_array_symbols();
@@ -397,7 +399,7 @@ impl EntryContext {
                     Some(SymVarOrigin::Temporal { .. }) => super::pure_fold::fold_id(node)
                         .is_some_and(|id| fold_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &join_tables, &record_inputs, &record_rows)
-                        || node.as_array_lit().is_some_and(|items| group_tuples.iter().any(|keys| keys == items))
+                        || node.as_array_lit().is_some_and(|items| readonly_vector || group_tuples.iter().any(|keys| keys == items))
                         || node.as_heap_ref().is_some_and(|id| identities.contains_key(&id))
                         || node.as_lit().is_some() || node.as_binop().is_some() || node.as_unary_op().is_some()
                         || node.as_case_when().is_some() || math::domains::decimal::is_decimal(node)

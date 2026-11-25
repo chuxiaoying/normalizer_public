@@ -72,6 +72,15 @@ impl Engine<'_> {
             );
         }
         match n {
+            Node::NumberVector { items } => {
+                let mut values = Vec::with_capacity(items.len());
+                for item in items {
+                    let value = self.node(item, env, path.clone())?;
+                    need(value.ty() == Ty::Integer, "readonly Vector literal requires numbers")?;
+                    values.push(value.scalar()?);
+                }
+                values::number_vector(values)
+            }
             Node::Field { value, name } => {
                 let acquired = self.node(value, env, path)?;
                 if name == "length" && matches!(&acquired, Value::Term(Ty::Vector(_), _)) {

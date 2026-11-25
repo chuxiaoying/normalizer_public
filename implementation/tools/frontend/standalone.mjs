@@ -82,8 +82,8 @@ function compile(source, file, entry) {
   if (fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
-  const returnDomain = ts.getJSDocReturnType(fn)?.getText(sf);
-  if (!scalar(returnDomain)) fail('expected declared business scalar return type');
+  const returnDomain = declaredParameter(ts.getJSDocReturnType(fn), sf);
+  if (!parameter(returnDomain)) fail('expected declared business scalar or non-null readonly Vector return type');
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
     if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken) fail('expected named required parameters');
@@ -125,6 +125,12 @@ function compile(source, file, entry) {
       const [a, b] = expr.operator === '<' ? [right, left] : [left, right];
       return {type: 'bool', node: internal(expr.operator === '===' ? 'eq' : 'gt', {left: a.node, right: b.node})};
     }
+    if (expr.op === 'array') {
+      if (expr.items.some(item => ['opaque', 'undefined'].includes(item.op))) fail('readonly Vector literal requires a closed list of numbers');
+      const items = expr.items.map(expression);
+      if (items.some(item => item.type !== 'number')) fail('readonly Vector literal requires a closed list of numbers');
+      return {type: 'number[]', node: internal('value.number_vector', {items: items.map(item => item.node)})};
+    }
     if (expr.op === 'select') {
       const test = expression(expr.condition), yes = expression(expr.whenTrue), no = expression(expr.whenFalse);
       if (test.type !== 'bool' || yes.type !== no.type) fail('incompatible conditional types');
@@ -135,14 +141,18 @@ function compile(source, file, entry) {
   const [last, ...remaining] = fn.body.statements;
   if (remaining.length || !last || !ts.isReturnStatement(last) || !last.expression) fail('expected one closed return expression');
   const result = expression(lowerExpression(last.expression, sf));
-  const returns = scalar(returnDomain);
+  const returns = parameter(returnDomain);
   if (result.type !== returns) fail('return value differs from declared domain');
   const binding = 'Entry.run';
   const javaParams = params.map(param => carrier(param.domain));
   const declarations = params.map((param, i) => javaParams[i] + ' ' + param.name);
-  const javaSource = 'class Entry { static native ' + domains.get(returnDomain)[0] + ' run(' + declarations.join(', ') + '); }\n';
+  const vectorReturn = returnDomain === readonlyVector;
+  const returnCarrier = vectorReturn ? 'ReadonlyNumbers' : carrier(returnDomain);
+  const javaSource = (vectorReturn ? 'class ReadonlyNumbers {}\n' : '') +
+    'class Entry { static native ' + returnCarrier + ' run(' + declarations.join(', ') + '); }\n';
   return {carrier: javaSource, binding, project: {
     schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: javaSource, entries: [binding],
+    result_value_types: vectorReturn ? {ReadonlyNumbers: 'vector<number>'} : {},
     parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
@@ -151,7 +161,7 @@ function compile(source, file, entry) {
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
       params: params.map(param => ({name: param.name, type: param.domain === readonlyVector ? 'vector<number>' : scalar(param.domain)})),
-      returns, origin: {path: 'Module.js', excerpt: fn.getText(sf)},
+      returns: vectorReturn ? 'vector<number>' : returns, origin: {path: 'Module.js', excerpt: fn.getText(sf)},
       body: result.node,
     }},
   }};
