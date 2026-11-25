@@ -316,7 +316,9 @@ impl Engine<'_> {
     }
 
     pub(super) fn source_steps(&mut self, body: &[S], id: &str, env: &mut Env, entry_path: Expr) -> Result<Option<Value>> {
+        let mut consumed_through = 0;
         for (i, s) in body.iter().enumerate() {
+            if i < consumed_through { continue; }
             let path = math::normalize(b::and(entry_path.clone(), self.realtime_completion.continuing_guard()));
             if path.as_bool() == Some(false) { break; }
             self.budget()?;
@@ -374,6 +376,9 @@ impl Engine<'_> {
                         _=>false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
+                }
+                S::LocalIr(normalizer_ir::local::LocalIr::Stack(_)) => {
+                    consumed_through = i + self.execute_closed_source_stack(&body[i..], id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding }) => {
                     need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),

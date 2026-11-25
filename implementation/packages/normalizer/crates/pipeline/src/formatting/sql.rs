@@ -265,6 +265,10 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if let Some((key, args)) = expr.as_call() {
         let registered_name = math::func_name(key);
         if ctx.business_inputs.is_some() {
+            if let Some((root, position, field)) = math::domains::relation::positional::field_projection(expr) {
+                let position = format_expr_with_ctx(position, ctx);
+                return format!("{}[{position}].{field}", array_name(root, ctx));
+            }
             if matches!(math::domains::completion::output_name(&registered_name), "completion.is_throw" | "completion.payload") {
                 if let [response, class] = args {
                     if let Some(math::Lit::Str(name)) = class.as_lit() {

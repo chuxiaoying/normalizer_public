@@ -149,7 +149,7 @@ groups:
     java-map-present-null: [Caption.select]
     java-state-alias: [Account.reset]
     java-invalid-declaration: [TicketCode.read, TicketCode.readValid]
+    java-lifo-release: [TaskBatch.complete]
 pending:
   - frontend-deferred-listener
-  - java-lifo-release
   - typescript-tuple-slots

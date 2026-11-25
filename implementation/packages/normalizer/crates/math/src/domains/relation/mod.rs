@@ -13,6 +13,7 @@
 //!   is admitted here.
 
 mod order_by;
+pub mod positional;
 pub use order_by::{order_by, order_components};
 
 use crate::{

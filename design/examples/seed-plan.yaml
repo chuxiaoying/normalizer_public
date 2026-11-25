@@ -298,7 +298,7 @@ topics:
         focus: 同一对象和不同对象的写后读取
       - id: java-lifo-release
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 栈状态和逆序关闭
       - id: state-explicit-marker

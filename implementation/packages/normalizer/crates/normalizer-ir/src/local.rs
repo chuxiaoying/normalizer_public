@@ -2,6 +2,7 @@
 use std::collections::BTreeSet;
 
 pub mod relation;
+pub mod stack;
 pub mod decimal;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,6 +13,7 @@ pub enum LocalIr {
     LocalMapGet { binding: String, source: String, key: String, fallback: MapText },
     ProjectedUnionCount { binding: String, branches: Vec<(String, String)> },
     MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
+    Stack(stack::Action),
     CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
     FoldIndexRange {
         binding: String,
@@ -162,6 +164,11 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         if let Some(assignment) = decimal::parse(&binding, &mut exact)? {
             return Ok(LocalIr::Decimal(assignment));
         }
+    }
+    let mut ordered = Tokens { source: tokens.source };
+    if let Some(action) = stack::parse(&binding, &mut ordered)? {
+        if accumulate { return Err("local stack uses only the = binding".into()); }
+        return Ok(LocalIr::Stack(action));
     }
     let mut map = Tokens { source: tokens.source };
     if map.take("value") && map.take(".") {

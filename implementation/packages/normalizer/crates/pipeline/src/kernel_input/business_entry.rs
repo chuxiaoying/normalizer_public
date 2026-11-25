@@ -281,6 +281,13 @@ impl EntryContext {
         Ok(format!("{}.{}",self.qualified("E",root),fields.join(".")))
     }
 
+    pub(super) fn has_record_array_integer_field(&self, name: &str, field: &str) -> bool {
+        self.parameter_type(name).and_then(|domain| domain.strip_suffix("[]"))
+            .and_then(|record| self.types.get(record))
+            .and_then(|record| record.fields.get(field))
+            .is_some_and(|domain| domain == "number")
+    }
+
     pub(super) fn record_array_symbols(&self) -> std::collections::BTreeSet<String> {
         self.parameters.iter().filter_map(|(name, param)|
             self.types.contains_key(param.ty.strip_suffix("[]")?).then(|| name.clone())).collect()

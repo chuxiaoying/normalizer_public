@@ -211,6 +211,10 @@ f(a, CASE WHEN C THEN x ELSE y END, b)
 
 FIRST 的选中值若为 CASE，且同一行绑定的过滤域已蕴含某个显式分支的首匹配有效域，可用该分支的原行值或纯字面量替换选中 CASE。首批证明限 Base 与连续 Select、行值的 null 比较和总 Boolean 组合；未知调用、其他行绑定、技术观察根及未取得 E 不参与。原关系和空集默认值保留，后续既有规则可继续归约；部分 CASE 不补 ELSE，不跨投影绑定取用外层同名行，也不增加求值或改变身份。
 
+## 两个保序快照的共同位置范围
+
+当两个非空入口引用提供长度已取得的不可变记录序列时，`indices(LEAST(LENGTH(x), LENGTH(y)))` 枚举两序列都存在的位置，不包含上界。只在长度这两个纯、总、已经取得的自然数上使用 `LEAST` 的交换律，按共享结构键排序；同一快照的两个长度去重为单个长度。两个序列在实际位置表达式里的职责不交换：对关闭序列取 `i`，对打开序列取 `LENGTH(opened) - 1 - i`。任何一个输入可能为空，也不得访问界外位置或去掉重复编号。见[打开与关闭的反向位置对照](examples/series-2/java-lifo-release.md)。
+
 ## 顶层异常结果的稳定排列
 
 顶层 `throws` 列表表示互斥的终态异常结果，不是按列表位置执行的抛出或 catch 优先级。源码真正先发生的异常必须由各记录的首匹配有效域保留。typed 归约完成、宿主取得 guard 闭合、E／T 编号确定后，以 `(exception class, payload presence + typed Expr structural key, guarded condition structural key)` 排列记录：类名采用稳定字典序，载荷缺省与已观察到的 null 区分，表达式键使用既有共享结构排序核心，不使用 JSON／SQL 文本、函数注册号或 fixture 名称。

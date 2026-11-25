@@ -208,6 +208,7 @@ pub(super) fn builtin_exception(name: &str) -> bool {
         name,
         "java.lang.NullPointerException"
             | "java.lang.RuntimeException"
+            | "java.lang.IllegalArgumentException"
             | "java.lang.IndexOutOfBoundsException"
             | "java.lang.ArrayIndexOutOfBoundsException"
             | "java.lang.NegativeArraySizeException"

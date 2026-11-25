@@ -768,6 +768,7 @@ mod business_sql;
 mod source_objects;
 mod source_arrays;
 mod source_map;
+mod source_stack;
 mod source_decimal;
 pub mod standalone_closure;
 mod source_ports;
