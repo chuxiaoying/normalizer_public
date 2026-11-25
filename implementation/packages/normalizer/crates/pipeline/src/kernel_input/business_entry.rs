@@ -507,6 +507,9 @@ impl EntryContext {
                 Ok(format!("  {name}: {rendered}"))
             }).collect::<Result<Vec<_>>>()?;
             format!("{{\n{}\n}}", fields.join(",\n"))
+        } else if self.returns == "void" {
+            if !result.business_return()?.is_null() { return Err("non-void return for void entry".into()); }
+            "void".into()
         } else { render_value(&result.business_return()?)? };
         let mut doc = json!({"schema": super::kernel_result::PERS_SCHEMA, "entry": {"function": self.function, "returns": self.returns},
             "P": {"parameters": self.parameters}, "R": value});

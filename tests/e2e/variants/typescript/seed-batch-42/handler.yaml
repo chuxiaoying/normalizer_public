@@ -1,0 +1,74 @@
+- name: a-false-branch-does-not-dispatch-the-registered-callback
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (false) pending!()' }
+  expect:
+    - path: [S]
+      value: [{ call: { external: audit.registered, args: [], returns: void, result: '$e_0' } }]
+- name: a-true-branch-dispatches-after-registration-without-a-guard
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (true) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: '$e_0' }
+        - call: { external: notices.notify, args: [], returns: void, result: '$e_1' }
+- name: an-actual-invocation-during-registration-is-not-deferred
+  edits:
+    - { from: 'audit.registered()', to: 'callback(); audit.registered()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: notices.notify, args: [], returns: void, result: '$e_0' }
+        - call: { external: audit.registered, args: [], returns: void, result: '$e_1' }
+        - call: { external: notices.notify, args: [], returns: void, result: '$e_2', when: deliver }
+- name: two-dispatches-have-distinct-receipts-even-on-the-same-guard
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (deliver) { pending!(); pending!() }' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: '$e_0' }
+        - call: { external: notices.notify, args: [], returns: void, result: '$e_1', when: deliver }
+        - call: { external: notices.notify, args: [], returns: void, result: '$e_2', when: deliver }
+- name: no-marked-external-for-a-reached-notification-panics
+  edits:
+    - from: |-
+        /** @external */
+        declare const notices
+      to: 'declare const notices'
+  reject: ['panicked', '[NORM-OUT-OF-SOURCE]', 'target=notices.notify']
+- name: no-source-in-a-proven-dead-branch-is-not-encountered
+  edits:
+    - from: |-
+        /** @external */
+        declare const notices
+      to: 'declare const notices'
+    - { from: 'if (deliver) pending!()', to: 'if (false) pending!()' }
+  expect:
+    - path: [S]
+      value: [{ call: { external: audit.registered, args: [], returns: void, result: '$e_0' } }]
+- name: writing-the-local-slot-alone-is-not-an-external-operation
+  edits:
+    - { from: 'audit.registered()', to: '' }
+    - { from: 'if (deliver) pending!()', to: '' }
+  expect:
+    - { path: [S], absent: true }
+- name: no-local-slot-assignment-is-not-a-registered-callback
+  edits:
+    - { from: 'pending = callback', to: '' }
+  reject: ['listener callback is not registered in the local slot']
+- name: callback-result-does-not-become-the-void-entry-result
+  edits:
+    - { from: '"callback-only"', to: '"another-local-result"' }
+- name: a-declared-throw-contract-is-not-assumed-to-complete-normally
+  edits:
+    - from: |-
+        /** @external */
+        declare const notices
+      to: |-
+        /**
+         * @external
+         * @throws {Error}
+         */
+        declare const notices
+  reject: ['unsupported listener host contract tag']

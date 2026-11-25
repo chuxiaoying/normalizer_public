@@ -7,6 +7,7 @@
 | Java 源目录，静态或实例业务方法 | `source SOURCE_DIR Class.method` |
 | 独立 JavaScript 标量模块 | `module PROJECT_ROOT src/module.js exportedFunction` |
 | 独立 TypeScript 局部元组模块 | `module PROJECT_ROOT src/receipt.ts traceCount` |
+| 独立 TypeScript 同步监听模块 | `module PROJECT_ROOT src/handler.ts handle` |
 | Vue 原组件和属性观察模块 | `scenario frontend-vo-consumption PROJECT_ROOT --entry src/page.mjs:render --source src/page.vue` |
 | Vue 原组件和事件模块 | `scenario frontend-vo-production PROJECT_ROOT --entry src/page.mjs:onLoad --source src/page.vue` |
 

@@ -80,6 +80,12 @@ pub(super) enum Action {
         name: String,
         input: String,
     },
+    CallSync {
+        port: Option<String>,
+        target: String,
+        site: String,
+        condition: Option<Node>,
+    },
     TaskInvoke {
         name: String,
         port: String,
@@ -322,6 +328,30 @@ impl Engine<'_> {
         Ok((values, ty))
     }
 
+    fn call_closed_sync(
+        &mut self, port: Option<&str>, target: &str, site: &str,
+        condition: Option<&Node>, env: &mut Env,
+    ) -> Result<()> {
+        let mut guard = self.action_path.clone();
+        if let Some(condition) = condition {
+            let condition = self.action_value(condition, env)?;
+            need(condition.ty() == Ty::Bool, "sync call requires a Boolean guard")?;
+            guard = math::normalize(b::and(guard, condition.scalar()?));
+        }
+        if guard.as_bool() == Some(false) { return Ok(()); }
+        let entry = self.selected_entry.unwrap_or("standalone module");
+        let id = port.unwrap_or_else(|| crate::preprocess::out_of_source(entry, target));
+        let contract = self.project.ports.get(id).ok_or_else(|| fail("missing sync call contract"))?;
+        let spec = contract.completion_spec(self.project)?;
+        need(identifier(site) && contract.endpoint == target && contract.effect == "sync"
+            && contract.heap_effect == "none" && contract.params.is_empty()
+            && spec.returns == Ty::Unit && !spec.throwing(),
+            "listener call requires a declared normal zero-argument void sync port")?;
+        let binding = self.fresh_binding();
+        self.realtime_effects.record(guard, id, site, Vec::new(), Some(b::external_completion(binding)));
+        Ok(())
+    }
+
     fn read_host_input(&mut self, env: &mut Env, name: &str, input: &str) -> Result<()> {
         need(identifier(input), "invalid host input name")?;
         let domain = if let Some(context) = self.entry_context {
@@ -446,6 +476,9 @@ impl Engine<'_> {
                     self.realtime_effects.write_state(guard, target, value);
                 }
                 Action::ReadInput { name, input } => self.read_host_input(env, name, input)?,
+                Action::CallSync { port, target, site, condition } => {
+                    self.call_closed_sync(port.as_deref(), target, site, condition.as_ref(), env)?;
+                }
                 Action::TaskInvoke { .. } | Action::TaskWait { .. } => {
                     self.task_action(action, env)?;
                 }

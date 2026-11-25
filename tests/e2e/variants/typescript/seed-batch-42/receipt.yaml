@@ -43,4 +43,8 @@
 - name: type-only-import-is-not-opened-by-the-closed-module-typecheck
   edits:
     - { from: 'type Reply =', to: 'type Indirect = import("./missing").Indirect; type Reply =' }
-  reject: ['typed tuple module cannot import outside declarations']
+  reject: ['typed module cannot import outside declarations']
+- name: a-reserved-local-directive-is-never-silently-ignored
+  edits:
+    - { from: 'if (failed) return', to: '/* @normalizer-ir retained = 2 */ if (failed) return' }
+  reject: ['@normalizer-ir']

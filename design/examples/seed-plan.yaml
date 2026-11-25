@@ -402,7 +402,7 @@ topics:
         focus: Apache 文本库调用转换为标准表达式
       - id: frontend-deferred-listener
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: typescript
         focus: 监听登记和真正派发
       - id: external-scalar-success-failure

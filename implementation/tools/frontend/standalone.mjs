@@ -7,6 +7,8 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { lowerExpression } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
+import { compileTypedListener } from './module-listener.mjs';
+import { typedModuleAst } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
@@ -126,9 +128,13 @@ function mapEntries(node, names) {
 
 function compile(source, file, entry, physicalPath) {
   if (file.endsWith('.ts')) {
-    const tuple = compileTypedTuple(source, entry, physicalPath);
-    const params = tuple.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
-    return projectInput(file, entry, params, 'number', false, 'number', tuple.result, tuple.excerpt);
+    const {sf, fn} = typedModuleAst(source, physicalPath, entry);
+    const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
+    const typed = isListener ? compileTypedListener(physicalPath, sf, fn)
+      : compileTypedTuple(physicalPath, sf, fn);
+    const params = typed.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
+    const returns = isListener ? 'void' : 'number';
+    return projectInput(file, entry, params, returns, false, returns, typed.result, typed.excerpt, typed);
   }
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
@@ -218,28 +224,30 @@ function compile(source, file, entry, physicalPath) {
   return projectInput(file, entry, params, returnDomain, orderedMap, returns, result.node, fn.getText(sf));
 }
 
-function projectInput(file, entry, params, returnDomain, orderedMap, returns, body, excerpt) {
+function projectInput(file, entry, params, returnDomain, orderedMap, returns, body, excerpt, typed = {}) {
   const binding = 'Entry.run';
   const moduleFile = file.endsWith('.ts') ? 'Module.ts' : 'Module.js';
   const javaParams = params.map(param => carrier(param.domain));
   const declarations = javaParams.map((type, index) => type + ' ' + params[index].name);
   const resultTypes = returnDomain === readonlyVector ? {ReadonlyNumbers: 'vector<number>'}
     : orderedMap ? {ReadonlyLabels: returns} : {};
-  const returnCarrier = Object.keys(resultTypes)[0] ?? carrier(returnDomain);
+  const returnCarrier = returnDomain === 'void' ? 'void' : Object.keys(resultTypes)[0] ?? carrier(returnDomain);
   const javaSource = Object.keys(resultTypes).map(name => 'class ' + name + ' {}\n').join('') +
     'class Entry { static native ' + returnCarrier + ' run(' + declarations.join(', ') + '); }\n';
   return {carrier: javaSource, binding, moduleFile, project: {
     schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: javaSource, entries: [binding],
     result_value_types: resultTypes,
+    ...(typed.ports && {ports: typed.ports}),
     parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
+      ...(typed.externalResults && {external_results: typed.externalResults}),
       parameters: Object.fromEntries(params.map(param => [param.publicName, {position: param.position, type: parameter(param.domain)}])),
     }},
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
       params: params.map(param => ({name: param.name, type: valueType(param.domain)})),
-      returns: resultTypes[returnCarrier] ?? returns, origin: {path: moduleFile, excerpt},
+      returns: returns === 'void' ? 'unit' : resultTypes[returnCarrier] ?? returns, origin: {path: moduleFile, excerpt},
       body,
     }},
   }};

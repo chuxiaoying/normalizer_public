@@ -1,47 +1,31 @@
 // Shared module front end for a typed, nonescaping tuple and its observations.
 // The emitted plan keeps source branches and literal slots; the kernel executes it.
 import ts from 'typescript';
+import {checkedTypeScript, failTypedModule, typedBooleanParameters, typedIdentifier} from './typed-module.mjs';
 
 const n = (op, fields) => ({op, ...fields});
 const variable = name => n('var', {name});
 const literal = (type, value) => n('const', {type, value});
 const choose = (cond, then, otherwise) => n('if', {cond, then, else: otherwise});
 const has = (node, kind) => node.modifiers?.some(m => m.kind === kind);
-const fail = message => { throw new Error('[NORM-TS-MODULE] ' + message); };
+const fail = failTypedModule;
 const unwrap = node => {
   while (ts.isParenthesizedExpression(node)) node = node.expression;
   return node;
 };
-const uid = x => typeof x === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(x) && x !== 'undefined';
+const uid = typedIdentifier;
 
-export function compileTypedTuple(source, entry, physicalPath) {
-  const sf = ts.createSourceFile(physicalPath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
-  if (sf.referencedFiles.length || sf.typeReferenceDirectives.length || sf.libReferenceDirectives.length
-      || sf.statements.some(node => !ts.isFunctionDeclaration(node) && !ts.isTypeAliasDeclaration(node))) {
-    fail('typed tuple module requires closed function and type declarations');
-  }
+export function compileTypedTuple(physicalPath, sf, fn) {
+  const checker = checkedTypeScript(physicalPath, sf,
+    node => ts.isFunctionDeclaration(node) || ts.isTypeAliasDeclaration(node));
   const funcs = new Map();
   for (const dec of sf.statements.filter(ts.isFunctionDeclaration)) {
     if (!dec.name || !uid(dec.name.text) || funcs.has(dec.name.text) || !dec.body
         || dec.asteriskToken || has(dec, ts.SyntaxKind.AsyncKeyword)) fail('expected distinct closed synchronous functions');
     funcs.set(dec.name.text, dec);
   }
-  const fn = funcs.get(entry);
-  if (!fn || !has(fn, ts.SyntaxKind.ExportKeyword) || fn.type?.kind !== ts.SyntaxKind.NumberKeyword) {
-    fail('typed tuple module requires an exported number function');
-  }
-  function paramsOf(declaration) {
-    const bound = new Set();
-    return declaration.parameters.map(param => {
-      if (!ts.isIdentifier(param.name) || !uid(param.name.text) || bound.has(param.name.text)
-          || param.initializer || param.dotDotDotToken || param.questionToken
-          || param.type?.kind !== ts.SyntaxKind.BooleanKeyword) fail('tuple functions require distinct Boolean parameters');
-      bound.add(param.name.text);
-      return param.name.text;
-    });
-  }
-  const params = paramsOf(fn);
+  if (fn.type?.kind !== ts.SyntaxKind.NumberKeyword) fail('typed tuple module requires an exported number function');
+  const params = typedBooleanParameters(fn);
   const [bind, ret, ...other] = fn.body.statements;
   if (other.length || !bind || !ret || !ts.isVariableStatement(bind) || !(bind.declarationList.flags & ts.NodeFlags.Const)
       || bind.declarationList.declarations.length !== 1 || !ts.isReturnStatement(ret) || !ret.expression) {
@@ -54,26 +38,9 @@ export function compileTypedTuple(source, entry, physicalPath) {
   const helper = funcs.get(call.expression.text);
   if (!helper || helper === fn || funcs.size !== 2 || has(helper, ts.SyntaxKind.ExportKeyword)) fail('tuple plan requires one local source helper');
   const inputScope = new Map(params.map(name => [name, variable(name)]));
-  const helperParams = paramsOf(helper);
+  const helperParams = typedBooleanParameters(helper);
   if (call.arguments.length !== helperParams.length) fail('tuple helper arity mismatch');
 
-  // Reject imports and reference directives before asking the checker for the
-  // typed program. No transpilation or evaluation of the user module occurs.
-  let hasImport = false;
-  const inspect = node => {
-    if (ts.isImportTypeNode(node) || node.kind === ts.SyntaxKind.ImportKeyword) hasImport = true;
-    ts.forEachChild(node, inspect);
-  };
-  inspect(sf);
-  if (hasImport) fail('typed tuple module cannot import outside declarations');
-  const options = {strict: true, noEmit: true, noResolve: true, types: [], target: ts.ScriptTarget.ES2022};
-  const host = ts.createCompilerHost(options);
-  const readSource = host.getSourceFile.bind(host);
-  host.getSourceFile = (name, ...args) => name === physicalPath ? sf : readSource(name, ...args);
-  const checked = ts.createProgram([physicalPath], options, host);
-  const checker = checked.getTypeChecker();
-  const errors = [...checked.getSyntacticDiagnostics(), ...checked.getSemanticDiagnostics()];
-  if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
   if (!helper.type || !ts.isTypeReferenceNode(helper.type) || !ts.isIdentifier(helper.type.typeName)
       || !sf.statements.some(item => ts.isTypeAliasDeclaration(item)
         && item.name.text === helper.type.typeName.text && ts.isTupleTypeNode(item.type))) {

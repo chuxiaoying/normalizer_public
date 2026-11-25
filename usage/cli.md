@@ -7,6 +7,7 @@
 | 已闭合的 Java 源目录 | `implementation/tools/normalizer source SOURCE_DIR Class.method` |
 | 独立 JavaScript 标量或只读值模块 | `implementation/tools/normalizer module PROJECT_ROOT src/module.js exportedFunction` |
 | 独立 TypeScript 局部元组模块 | `implementation/tools/normalizer module PROJECT_ROOT src/receipt.ts traceCount` |
+| 独立 TypeScript 同步监听模块 | `implementation/tools/normalizer module PROJECT_ROOT src/handler.ts handle` |
 | 预处理后的 Vue 模块及原组件 | `implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE:FUNCTION --source ORIGINAL.vue` |
 
 用 `implementation/tools/normalizer help` 查看入口。成功时从 stdout 读取最终 PERS，失败时查看退出码和 stderr 中的诊断。见[Java 入门](getting-started.md)。

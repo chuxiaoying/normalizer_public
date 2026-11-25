@@ -27,6 +27,8 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
         steps = tail;
         match action {
             Action::ReadInput { .. } | Action::Rethrow | Action::LocalIr { .. } => {}
+            Action::CallSync { condition, .. }
+                if condition.as_ref().is_none_or(expression_is_closed) => {}
             Action::WriteState { value, .. }
             | Action::Let { value, .. }
             | Action::Return { value }

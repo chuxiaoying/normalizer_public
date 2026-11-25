@@ -152,5 +152,5 @@ groups:
     java-lifo-release: [TaskBatch.complete]
   typescript/seed-batch-42:
     typescript-tuple-slots: [receipt.ts#traceCount]
-pending:
-  - frontend-deferred-listener
+    frontend-deferred-listener: [handler.ts#handle]
+pending: []
