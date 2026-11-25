@@ -5,7 +5,7 @@ use super::*;
 
 #[derive(Clone)]
 enum Origin {
-    Parameter(String),
+    Parameter { path: String, nullable: bool },
     State { binding: u64, path: Vec<String> },
     Allocation,
 }
@@ -18,7 +18,6 @@ pub(super) struct SourceObjects {
     pub(super) state_bindings: BTreeMap<u64, String>,
     pub(super) compared_parameters: BTreeMap<i64, String>,
     pub(super) compared_states: BTreeMap<i64, u64>,
-    nullable_parameters: BTreeSet<i64>,
 }
 impl SourceObjects {
     pub(super) fn allocation_owner(&self, reference: &Expr) -> Option<&str> {
@@ -27,10 +26,10 @@ impl SourceObjects {
     }
 
     pub(super) fn borrowed_parameter(&self, reference: &Expr) -> Option<(&str, &str)> {
-        let (owner, Origin::Parameter(name)) = self.objects.get(&reference.as_heap_ref()?)? else {
+        let (owner, Origin::Parameter { path, .. }) = self.objects.get(&reference.as_heap_ref()?)? else {
             return None;
         };
-        Some((owner, name))
+        Some((owner, path))
     }
 
     // Fresh local allocations cannot equal an identity acquired from the
@@ -40,8 +39,8 @@ impl SourceObjects {
             value.as_heap_ref().and_then(|id| self.objects.get(&id)).map(|(_, origin)| origin)
         };
         matches!((origin(left), origin(right)),
-            (Some(Origin::Allocation), Some(Origin::Parameter(_) | Origin::State { .. }))
-            | (Some(Origin::Parameter(_) | Origin::State { .. }), Some(Origin::Allocation)))
+            (Some(Origin::Allocation), Some(Origin::Parameter { .. } | Origin::State { .. }))
+            | (Some(Origin::Parameter { .. } | Origin::State { .. }), Some(Origin::Allocation)))
     }
 
     fn knows_identity(&self, value: &Expr) -> bool {
@@ -79,9 +78,8 @@ impl Engine<'_> {
             let reference = self.heap.new_path_object();
             self.source_objects.objects.insert(
                 reference.id(),
-                (owner.into(), Origin::Parameter(name.into())),
+                (owner.into(), Origin::Parameter { path: name.into(), nullable }),
             );
-            if nullable { self.source_objects.nullable_parameters.insert(reference.id()); }
             Ok(Value::Term(Ty::Ref, b::heap_ref(reference.id())))
         } else {
             symbolic(name, ty, &mut self.heap)
@@ -224,7 +222,12 @@ impl Engine<'_> {
             "ordinary object field read has no nullable member acquisition proof")?;
         let child = match origin {
             Origin::Allocation => return self.read_source_field_on_path(reference, name, path),
-            Origin::Parameter(root) => Origin::Parameter(format!("{root}.{name}")),
+            Origin::Parameter { path: root, .. } => Origin::Parameter {
+                path: format!("{root}.{name}"),
+                // A nullable child declaration was rejected above; root
+                // nullability applies at the root selection, not the child.
+                nullable: false,
+            },
             Origin::State { binding, path } => {
                 let mut path = path.clone();
                 path.push(name.to_owned());
@@ -242,9 +245,11 @@ impl Engine<'_> {
     }
 
     pub(super) fn source_object_null(&mut self, reference: &Expr) -> Expr {
-        if let Some(id) = reference.as_heap_ref().filter(|id| self.source_objects.nullable_parameters.contains(id)) {
-            let (_, Origin::Parameter(name)) = &self.source_objects.objects[&id] else { unreachable!() };
-            self.source_objects.compared_parameters.insert(id, name.clone());
+        let origin = reference.as_heap_ref().and_then(|id| {
+            self.source_objects.objects.get(&id).map(|(_, origin)| (id, origin))
+        });
+        if let Some((id, Origin::Parameter { path, nullable: true })) = origin {
+            self.source_objects.compared_parameters.insert(id, path.clone());
             b::eq(reference.clone(), b::lit_null())
         } else {
             b::lit_bool(false)
@@ -303,7 +308,7 @@ impl Engine<'_> {
                 .realtime_store
                 .read_on_path(reference, name, path)
                 .ok_or_else(|| fail("uninitialized source field"))?,
-            Origin::Parameter(root) => b::param(format!("{root}.{name}"), scalar_origin_type(&ty)?),
+            Origin::Parameter { path: root, .. } => b::param(format!("{root}.{name}"), scalar_origin_type(&ty)?),
             Origin::State { binding, path } => {
                 let primitive = scalar_origin_type(&ty)?;
                 path.iter().map(String::as_str).chain([name]).fold(b::sym_e(*binding, primitive), |base, field| {
@@ -439,7 +444,7 @@ impl Engine<'_> {
             (Some(Origin::Allocation), _) | (_, Some(Origin::Allocation)) | (None, None) => Ok(()),
             (Some(left), Some(right)) if [left, right].into_iter().all(|origin| match origin {
                 Origin::State { path, .. } => path.is_empty(),
-                Origin::Parameter(name) => !name.contains('.'),
+                Origin::Parameter { path, .. } => !path.contains('.'),
                 Origin::Allocation => false,
             }) => {
                 // A different borrowed ID describes a different acquisition
@@ -447,7 +452,7 @@ impl Engine<'_> {
                 for (reference, origin) in [(a, left), (b, right)] {
                     let id = reference.as_heap_ref().unwrap();
                     match origin {
-                        Origin::Parameter(name) => { self.source_objects.compared_parameters.insert(id, name.clone()); }
+                        Origin::Parameter { path, .. } => { self.source_objects.compared_parameters.insert(id, path.clone()); }
                         Origin::State { binding, .. } => { self.source_objects.compared_states.insert(id, *binding); }
                         Origin::Allocation => unreachable!(),
                     }
