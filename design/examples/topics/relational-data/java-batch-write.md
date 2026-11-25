@@ -169,4 +169,4 @@ throws:
     when: completion.is_return($e_0) AND completion.is_throw($e_1, CloseUpdateError)
 ```
 
-变体只改变第二条语句的状态值。第一条写入、执行顺序和两个失败域均不变。
+一个变体只改变第二条语句的状态值，不改第一条写入、执行顺序或失败域。另一个变体让第二条写入的异常名 `AaaUpdateError` 排在第一条的 `ZzzInsertError` 前。只有终态 `throws` 展示顺序对换：第二条仍要求 `$e_0` 正常完成，`S` 仍先 INSERT、后 UPDATE。两个终态域互斥，因此排序不改变哪次失败会先发生。

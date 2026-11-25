@@ -6,3 +6,22 @@
         UPDATE payable
         SET status = 'SETTLED'
         WHERE payable.account_id = accountId
+- name: exception-type-order-does-not-move-the-sql-events
+  edits:
+    - from: 'class AuditInsertError extends RuntimeException'
+      to: 'class ZzzInsertError extends RuntimeException'
+    - from: 'class CloseUpdateError extends RuntimeException'
+      to: 'class AaaUpdateError extends RuntimeException'
+    - from: 'throws AuditInsertError, CloseUpdateError {'
+      to: 'throws ZzzInsertError, AaaUpdateError {'
+    - from: 'throws AuditInsertError'
+      to: 'throws ZzzInsertError'
+    - from: 'throws CloseUpdateError'
+      to: 'throws AaaUpdateError'
+  expect:
+    - path: [throws]
+      value:
+        - type: AaaUpdateError
+          when: completion.is_return($e_0) AND completion.is_throw($e_1, AaaUpdateError)
+        - type: ZzzInsertError
+          when: completion.is_throw($e_0, ZzzInsertError)

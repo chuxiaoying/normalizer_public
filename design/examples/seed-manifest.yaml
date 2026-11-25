@@ -101,7 +101,7 @@ seeds:
   external-callback-order: { kind: topic, topic: external-boundaries, related: [control-flow] }
   loop-nested: { kind: topic, topic: loops-and-termination, related: [collections] }
   loop-recursive: { kind: topic, topic: loops-and-termination, related: [] }
-  relation-batch-write: { kind: topic, topic: relational-data, related: [collections] }
+  relation-batch-write: { kind: topic, topic: relational-data, related: [collections, unified-canonical-form] }
   relation-delete: { kind: topic, topic: relational-data, related: [] }
   relation-order-limit: { kind: topic, topic: relational-data, related: [collections] }
   relation-null-semantics: { kind: topic, topic: relational-data, related: [basic-contracts] }
