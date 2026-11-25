@@ -1,0 +1,50 @@
+- name: commuting-result-arithmetic-does-not-merge-the-choices
+  edits:
+    - from: 'return first + second;'
+      to: 'return second + first;'
+- name: ordered-result-operation-retains-which-occurrence-it-uses
+  edits:
+    - from: 'return first + second;'
+      to: 'return second - first;'
+  expect:
+    - path: [R]
+      value: '$t_1 - $t_0'
+- name: empty-fallback-is-specific-to-each-occurrence
+  edits:
+    - from: 'second = choose from values else backup'
+      to: 'second = choose from values else 3'
+  expect:
+    - path: [T, 1, empty]
+      value: '3'
+- name: private-binding-rename-does-not-rename-its-occurrence
+  edits:
+    - from: 'int first;'
+      to: 'int picked;'
+    - from: 'first = choose from values'
+      to: 'picked = choose from values'
+    - from: 'return first + second;'
+      to: 'return picked + second;'
+- name: a-scalar-is-not-a-member-source
+  edits:
+    - from: 'first = choose from values'
+      to: 'first = choose from backup'
+  reject: ['member choice requires a direct integer source array']
+- name: conditional-choice-must-not-be-hoisted-to-an-unconditional-definition
+  edits:
+    - from: |-
+        int first;
+                /* @normalizer-ir first = choose from values else backup */
+      to: |-
+        if (backup > 0) {
+          int first;
+          /* @normalizer-ir first = choose from values else backup */
+          return first;
+        }
+    - from: 'return first + second;'
+      to: 'return second;'
+  reject: ['conditional member choice needs a guarded T contract']
+- name: choice-does-not-accumulate-an-uninitialized-binding
+  edits:
+    - from: 'first = choose from values'
+      to: 'first += choose from values'
+  reject: ['member choice must initialize its binding with =']

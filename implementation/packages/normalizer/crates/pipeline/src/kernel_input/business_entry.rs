@@ -271,6 +271,12 @@ impl EntryContext {
         let certified_composite_return = (typed == super::Ty::Vector(Box::new(super::Ty::Integer))
             && self.returns == "number[]") || (typed == super::Ty::OrderedTextMap
             && self.returns == "map<text,text>");
+        if !result.member_choices.is_empty() && (!result.pure_folds.is_empty()
+            || !events.is_empty() || result.source_record_return.is_some()
+            || result.realtime_completion.return_value().is_none())
+        {
+            return Err("member choice publication requires a closed scalar entry without effects, throws or folds".into());
+        }
         if !result.pure_folds.is_empty() && (!events.is_empty()
             || result.source_record_return.is_some()
             || result.realtime_completion.return_value().is_none())
@@ -321,7 +327,9 @@ impl EntryContext {
             let param = self.parameters.get(root)?;
             self.types.contains_key(&param.ty).then(|| (*id, self.qualified("P", root)))
         }).collect::<BTreeMap<_, _>>();
-        let (fold_names, definitions) = if result.pure_folds.is_empty() {
+        let (definition_names, definitions) = if !result.member_choices.is_empty() {
+            super::member_choice::publish(&result.member_choices, &arrays, &names)?
+        } else if result.pure_folds.is_empty() {
             (BTreeMap::new(), Vec::new())
         } else {
             let numbers = self.parameters.iter().filter(|(_, p)| p.ty == "number").map(|(n, _)| n.clone()).collect();
@@ -398,8 +406,8 @@ impl EntryContext {
                             .and_then(|state| state.ty.as_ref())
                             .is_some_and(|ty| self.has_field(ty, path.iter().map(String::as_str)))
                     }
-                    Some(SymVarOrigin::Temporal { .. }) => super::pure_fold::fold_id(node)
-                        .is_some_and(|id| fold_names.contains_key(&id)),
+                    Some(SymVarOrigin::Temporal { .. }) => super::integer_definition_id(node)
+                        .is_some_and(|id| definition_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &join_tables, &record_inputs, &record_rows)
                         || node.as_array_lit().is_some_and(|items| certified_composite_return || group_tuples.iter().any(|keys| keys == items))
                         || (certified_composite_return && self.returns == "map<text,text>"
@@ -416,11 +424,11 @@ impl EntryContext {
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
             // The boundary checks both identity and definition references
             // before passing their public names to the typed math normalizer.
-            let expression = if expression.has_heap_ref() || !fold_names.is_empty() || !states.is_empty() {
+            let expression = if expression.has_heap_ref() || !definition_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &identities,
                     external: (!states.is_empty()).then_some(&states),
-                    folds: (!fold_names.is_empty()).then_some(&fold_names),
+                    temporals: (!definition_names.is_empty()).then_some(&definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
                     .map_err(|error| error.to_string())?
@@ -428,7 +436,7 @@ impl EntryContext {
                 expression.clone()
             };
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
-            ctx.set_pure_fold_names(fold_names.clone());
+            ctx.set_temporal_names(definition_names.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());

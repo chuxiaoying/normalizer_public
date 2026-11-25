@@ -212,7 +212,7 @@ pub(super) fn observations(
         let public = crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
             external: Some(&public_names),
-            folds: None,
+            temporals: None,
         };
         exceptions.sort_by_cached_key(|(name, payload, cond)| (
             name.clone(),

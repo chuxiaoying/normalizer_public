@@ -526,6 +526,7 @@ impl Loaded {
             program: &self.program,
             source_objects: source_objects::SourceObjects::default(),
             source_relations: Default::default(),
+            member_choices: Vec::new(),
             pure_folds: Vec::new(),
             source_array_writes: Default::default(),
             project: &self.project,
@@ -732,6 +733,7 @@ impl Loaded {
         need(realtime_completion.terminal_alternatives().is_some(), "entry has incomplete control flow")?;
         e.emit_profile_metrics("completed");
         Ok(ExecutionResult {
+            member_choices: e.member_choices,
             pure_folds: e.pure_folds,
             source_state_bindings: e.source_objects.state_bindings,
             source_identity_parameters: e.source_objects.compared_parameters,
@@ -746,6 +748,7 @@ impl Loaded {
     }
 }
 mod pure_fold;
+mod member_choice;
 mod business_entry;
 mod business_event;
 pub(crate) mod business_relation;
@@ -846,6 +849,13 @@ fn source_state_symbol(name: &str) -> String {
 }
 fn host_input_symbol(name: &str) -> String {
     format!("$host.{name}")
+}
+
+fn integer_definition_id(expr: &Expr) -> Option<u64> {
+    match expr.as_sym_var() {
+        Some(SymVarOrigin::Temporal { binding_id, primitive_type }) if primitive_type == "integer" => Some(*binding_id),
+        _ => None,
+    }
 }
 
 fn symbolic(name: &str, t: &Ty, heap: &mut Heap) -> Result<Value> {

@@ -40,14 +40,7 @@ impl Engine<'_> {
             self.pure_folds.push(definition);
             id
         }) as u64;
-        Ok(Value::Term(Ty::Integer, b::integer_fold_result(id)))
-    }
-}
-
-pub(super) fn fold_id(expr: &Expr) -> Option<u64> {
-    match expr.as_sym_var() {
-        Some(SymVarOrigin::Temporal { binding_id, primitive_type }) if primitive_type == "integer" => Some(*binding_id),
-        _ => None,
+        Ok(Value::Term(Ty::Integer, b::integer_temporal_result(id)))
     }
 }
 
@@ -65,11 +58,11 @@ pub(super) fn publish(
     state_path: impl Fn(u64, &[String]) -> Option<String>,
 ) -> Result<(BTreeMap<u64, usize>, Vec<serde_json::Value>)> {
     let mut pending = BTreeSet::new();
-    expression.walk(&mut |node| { if let Some(id) = fold_id(node) { pending.insert(id); } });
+    expression.walk(&mut |node| { if let Some(id) = integer_definition_id(node) { pending.insert(id); } });
     let mut todo: Vec<_> = pending.iter().copied().collect();
     while let Some(id) = todo.pop() {
         let def = folds.get(id as usize).ok_or_else(|| fail("undefined pure fold"))?;
-        if let Some(dep) = fold_id(&def.initial) {
+        if let Some(dep) = integer_definition_id(&def.initial) {
             need(dep < id, "pure fold dependency must already be defined")?;
             if pending.insert(dep) { todo.push(dep); }
         }
@@ -81,7 +74,7 @@ pub(super) fn publish(
         for &id in &pending {
             let def = &folds[id as usize];
             need(arrays.contains(&def.source), "pure fold source requires a declared numeric input array")?;
-            let initial = if let Some(dep) = fold_id(&def.initial) {
+            let initial = if let Some(dep) = integer_definition_id(&def.initial) {
                 let Some(&slot) = aliases.get(&dep) else { continue; };
                 InitialKey::Prior(slot)
             } else if let Some(n) = def.initial.as_lit().and_then(math::Lit::as_integer) {

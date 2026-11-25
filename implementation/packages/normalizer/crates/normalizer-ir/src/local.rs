@@ -7,6 +7,7 @@ pub mod decimal;
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalIr {
     SqlWrite(SqlWrite),
+    MemberChoice { binding: String, members: String, empty: ScalarOperand },
     CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
     FoldIndexRange {
         binding: String,
@@ -159,6 +160,17 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
             return Err("count range endpoints must be integers".into());
         }
         return Ok(LocalIr::CountRange { binding, accumulate, lower, upper });
+    }
+    if tokens.take("choose") {
+        if accumulate { return Err("member choice must initialize its binding with =".into()); }
+        tokens.expect("from")?;
+        let members = tokens.name()?;
+        tokens.expect("else")?;
+        let empty = tokens.value()?;
+        if !tokens.rest().is_empty() || matches!(empty, ScalarOperand::Text(_)) {
+            return Err("member choice requires one integer empty fallback".into());
+        }
+        return Ok(LocalIr::MemberChoice { binding, members, empty });
     }
     if tokens.take("fold") {
         if accumulate { return Err("indexed fold updates its existing accumulator; use =".into()); }

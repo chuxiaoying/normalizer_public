@@ -465,7 +465,8 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
     for stmt in body {
         match stmt {
             S::LocalIr(normalizer_ir::local::LocalIr::CountRange { .. }
-                | normalizer_ir::local::LocalIr::FoldIndexRange { .. }) => {}
+                | normalizer_ir::local::LocalIr::FoldIndexRange { .. }
+                | normalizer_ir::local::LocalIr::MemberChoice { .. }) => {}
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
             S::For {init,cond,update,body}
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {

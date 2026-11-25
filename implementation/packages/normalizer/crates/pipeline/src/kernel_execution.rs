@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
+    pub(super) member_choices: Vec<super::member_choice::Occurrence>,
     pub(super) pure_folds: Vec<super::pure_fold::Definition>,
     pub(super) source_relations:super::business_relation::Relations,
     pub(super) source_objects: super::source_objects::SourceObjects,
@@ -357,6 +358,8 @@ impl Engine<'_> {
                     initializer: None,
                 } => {
                     let binds = match body.get(i+1) {
+                        Some(S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. })) =>
+                            binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(w))) => &w.binding == name && self.project.parameter_type(java_type)?==Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::CountRange { binding, accumulate: false, .. })) => binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Relation(q))) => &q.binding==name && !q.accumulate,
@@ -470,6 +473,12 @@ impl Engine<'_> {
                 }
                 S::Try {body,catches,finally_block} => {
                     self.execute_source_try(body,catches,finally_block.as_deref(),id,env,path)?;
+                }
+                S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
+                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
+                        Some(S::VarDecl { name, initializer: None, .. }) if name == binding),
+                        "member choice must follow its uninitialized local declaration")?;
+                    self.choose_source_member(binding, members, empty, id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after }) => {
                     self.execute_index_fold(binding, lower, upper, skip_before, stop_after, env)?;
@@ -829,7 +838,7 @@ impl Engine<'_> {
                     // Reorient only the pure comparison, never the evaluations.
                     let kind = if *op == B::Eq { math::BinOpKind::Eq } else { math::BinOpKind::Ne };
                     let names = crate::canonical_names::CanonicalNames {
-                        heap: &self.source_objects.compared_parameters, external: None, folds: None,
+                        heap: &self.source_objects.compared_parameters, external: None, temporals: None,
                     };
                     if math::canonical_order_ordered_comparison(kind, &a, &z, &names).is_some() {
                         std::mem::swap(&mut a, &mut z);

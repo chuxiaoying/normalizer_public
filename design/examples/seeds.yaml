@@ -42,6 +42,7 @@ canonical-number-selection: topics/unified-canonical-form/java-number-selection.
 canonical-text-order: topics/unified-canonical-form/java-text-order.md
 canonical-constant-array: topics/unified-canonical-form/java-constant-array.md
 canonical-exception-payload: topics/unified-canonical-form/java-exception-payload.md
+canonical-member-choice: topics/unified-canonical-form/java-member-choice.md
 control-short-circuit: topics/control-flow/java-short-circuit.md
 basic-nullable-input: topics/basic-contracts/java-nullable-input.md
 external-object-success-failure: topics/external-boundaries/java-external-object.md

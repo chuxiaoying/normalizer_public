@@ -43,7 +43,7 @@ class Offers {
  }
 ```
 
-注释中的 choose 是原位交接示意：两个源码位置分别绑定到已有 action.choose 的 site、items 和 empty；公共 PERS 使用已有的 T.member_choice。
+注释中的 choose 是原位交接示意：两个源码位置分别代表独立的选择位置、候选和缺省值；下方 `T.member_choice` 是整记录目标。当前正式入口只验收[整数数组的独立成员选择](../topics/unified-canonical-form/java-member-choice.md)，此整记录种子尚待派生。
 
 ## 归一化最终结果
 
