@@ -48,3 +48,5 @@ R: CASE WHEN fixed THEN value - 1 ELSE value * 2 END
 ```
 
 对于 value=4，封闭入口在 fixed=true 时选 FixedFee，返回 3；在 fixed=false 时选 ScaledFee，返回 8。RateFee 不参与这个入口的分派。正向变体分别固定两种接收者，但保留经接口的原调用。
+
+分派依据是源码里完整的名义声明，不能把 `implements Fee<String>` 擦成 `implements Fee` 再进入封闭分派。当前规范 Java 入口只接受此处的非泛型继承边；遇到带类型实参的父类或接口，须明确拒绝并报告预处理能力缺口。不识别的顶层 token 也不能跳过：合法的空声明 `;` 不改变结果，任意未知单词则让同一编译单元解析失败。

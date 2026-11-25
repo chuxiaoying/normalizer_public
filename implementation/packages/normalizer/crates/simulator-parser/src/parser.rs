@@ -121,11 +121,6 @@ impl<'a> Parser<'a> {
     pub(crate) fn peek_at(&self, o: usize) -> Option<u8> {
         self.src.get(self.pos + o).copied()
     }
-    pub(crate) fn bump(&mut self) -> Option<u8> {
-        let c = self.peek()?;
-        self.pos += 1;
-        Some(c)
-    }
     pub(crate) fn starts_with(&self, s: &str) -> bool {
         self.src[self.pos..].starts_with(s.as_bytes())
     }
@@ -403,30 +398,36 @@ impl<'a> Parser<'a> {
         Err(self.err("unclosed '('"))
     }
 
-    pub(crate) fn skip_angle_brackets(&mut self) -> Result<(), ParseError> {
-        if !self.eat_char(b'<') {
-            return Err(self.err("expected '<'"));
+    fn parse_nominal_base(&mut self) -> Result<String, ParseError> {
+        let name = self.read_qualified_ident()
+            .ok_or_else(|| self.err("expected nominal supertype"))?;
+        self.skip_ws();
+        if self.peek() == Some(b'<') {
+            return Err(self.err("generic supertype requires explicit preprocessing"));
         }
-        let mut depth: i32 = 1;
-        while let Some(c) = self.peek() {
-            match c {
-                b'<' => {
-                    depth += 1;
-                    self.pos += 1;
-                }
-                b'>' => {
-                    depth -= 1;
-                    self.pos += 1;
-                    if depth == 0 {
-                        return Ok(());
-                    }
-                }
-                _ => {
-                    self.pos += 1;
+        Ok(name)
+    }
+
+    fn parse_class_hierarchy(
+        &mut self,
+        is_interface: bool,
+    ) -> Result<(Option<String>, Vec<String>), ParseError> {
+        let supertype = if !is_interface && self.eat_keyword("extends") {
+            Some(self.parse_nominal_base()?)
+        } else {
+            None
+        };
+        let interfaces_keyword = if is_interface { "extends" } else { "implements" };
+        let mut interfaces = Vec::new();
+        if self.eat_keyword(interfaces_keyword) {
+            loop {
+                interfaces.push(self.parse_nominal_base()?);
+                if !self.eat_char(b',') {
+                    break;
                 }
             }
         }
-        Err(self.err("unclosed '<'"))
+        Ok((supertype, interfaces))
     }
 
     fn parse_class_type_params(&mut self) -> Result<Vec<String>, ParseError> {
@@ -567,26 +568,20 @@ impl<'a> Parser<'a> {
             }
         }
 
-        while self.peek().is_some() {
+        loop {
             self.skip_ws();
             if self.peek().is_none() {
                 break;
             }
-            let class = self.parse_class_or_skip()?;
-            if let Some(c) = class {
-                classes.push(c);
+            if !self.eat_char(b';') {
+                classes.push(self.parse_class()?);
             }
         }
 
         Ok(JavaProgram { classes })
     }
 
-    fn parse_class_or_skip(&mut self) -> Result<Option<JavaClass>, ParseError> {
-        self.skip_ws();
-        if self.peek().is_none() {
-            return Ok(None);
-        }
-
+    fn parse_class(&mut self) -> Result<JavaClass, ParseError> {
         let annotations = self.read_annotations()?;
 
         loop {
@@ -620,8 +615,7 @@ impl<'a> Parser<'a> {
         } else if self.eat_keyword("enum") {
             return Err(self.err("enum requires explicit preprocessing"));
         } else {
-            self.bump();
-            return Ok(None);
+            return Err(self.err("expected class or interface declaration"));
         };
 
         let simple_name = self
@@ -630,53 +624,7 @@ impl<'a> Parser<'a> {
 
         let type_params = self.parse_class_type_params()?;
 
-        let mut supertype: Option<String> = None;
-        let mut interfaces: Vec<String> = Vec::new();
-
-        loop {
-            self.skip_ws();
-            if self.eat_keyword("extends") {
-                if is_interface {
-                    loop {
-                        if let Some(name) = self.read_qualified_ident() {
-                            interfaces.push(name);
-                        }
-                        self.skip_ws();
-                        if self.peek() == Some(b'<') {
-                            let _ = self.skip_angle_brackets();
-                        }
-                        self.skip_ws();
-                        if !self.eat_char(b',') {
-                            break;
-                        }
-                    }
-                } else {
-                    if let Some(name) = self.read_qualified_ident() {
-                        supertype = Some(name);
-                    }
-                    self.skip_ws();
-                    if self.peek() == Some(b'<') {
-                        let _ = self.skip_angle_brackets();
-                    }
-                }
-            } else if self.eat_keyword("implements") {
-                loop {
-                    if let Some(name) = self.read_qualified_ident() {
-                        interfaces.push(name);
-                    }
-                    self.skip_ws();
-                    if self.peek() == Some(b'<') {
-                        let _ = self.skip_angle_brackets();
-                    }
-                    self.skip_ws();
-                    if !self.eat_char(b',') {
-                        break;
-                    }
-                }
-            } else {
-                break;
-            }
-        }
+        let (supertype, interfaces) = self.parse_class_hierarchy(is_interface)?;
 
         self.skip_ws();
         let body_text = self.skip_balanced_braces()?;
@@ -701,7 +649,7 @@ impl<'a> Parser<'a> {
 
         parse_class_body(&body_text, &mut class, &self.package, &self.file)?;
 
-        Ok(Some(class))
+        Ok(class)
     }
 }
 
@@ -793,50 +741,8 @@ fn parse_class_body(
                 .ok_or_else(|| p.err("expected nested class name"))?;
             let nested_type_params = p.parse_class_type_params()?;
 
-            let mut nested_supertype: Option<String> = None;
-            let mut nested_interfaces: Vec<String> = Vec::new();
-            loop {
-                p.skip_ws();
-                if p.eat_keyword("extends") {
-                    if nested_is_interface {
-                        loop {
-                            if let Some(name) = p.read_qualified_ident() {
-                                nested_interfaces.push(name);
-                            }
-                            p.skip_ws();
-                            if p.peek() == Some(b'<') {
-                                let _ = p.skip_angle_brackets();
-                            }
-                            p.skip_ws();
-                            if !p.eat_char(b',') {
-                                break;
-                            }
-                        }
-                    } else {
-                        nested_supertype = p.read_qualified_ident();
-                        p.skip_ws();
-                        if p.peek() == Some(b'<') {
-                            let _ = p.skip_angle_brackets();
-                        }
-                    }
-                } else if p.eat_keyword("implements") {
-                    loop {
-                        if let Some(name) = p.read_qualified_ident() {
-                            nested_interfaces.push(name);
-                        }
-                        p.skip_ws();
-                        if p.peek() == Some(b'<') {
-                            let _ = p.skip_angle_brackets();
-                        }
-                        p.skip_ws();
-                        if !p.eat_char(b',') {
-                            break;
-                        }
-                    }
-                } else {
-                    break;
-                }
-            }
+            let (nested_supertype, nested_interfaces) =
+                p.parse_class_hierarchy(nested_is_interface)?;
 
             p.skip_ws();
             let nested_body = p.skip_balanced_braces()?;
