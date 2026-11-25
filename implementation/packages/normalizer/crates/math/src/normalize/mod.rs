@@ -27,7 +27,6 @@ pub(crate) mod relation;
 use crate::expr::{Expr, ExprKind};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
@@ -48,8 +47,6 @@ static NORMALIZE_MEMO_HITS: AtomicU64 = AtomicU64::new(0);
 static NORMALIZE_MEMO_MISSES: AtomicU64 = AtomicU64::new(0);
 static NORMALIZE_SIMPLIFY_ONCE_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static NORMALIZE_SIMPLIFY_ONCE_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
-
-const MAX_DEFAULT_NORMALIZE_CACHE_ENTRIES: usize = 100_000;
 
 /// The bounded work categories shared by normalization and proof helpers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -562,13 +559,7 @@ pub fn normalize(expr: Expr) -> Expr {
     if cache_weight <= crate::profile::cache_entry_limit() {
         DEFAULT_NORMALIZE_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
-            // Bounded deterministic cache: clearing affects only performance, never
-            // semantics.  It prevents long aggregate runs from retaining unbounded
-            // historical expressions.
-            if cache.len() >= MAX_DEFAULT_NORMALIZE_CACHE_ENTRIES {
-                evict_half(&mut cache, "normalize");
-            }
-            cache.insert(key, out.clone());
+            crate::cache::insert_bounded(&mut cache, key, out.clone(), crate::cache::DEFAULT_KEY_LIMIT, "normalize");
         });
     } else {
         crate::profile::cache_admission_skip("normalize", cache_weight);
@@ -681,27 +672,8 @@ fn default_simplify_once_cache_insert(key: Expr, output: &Expr) {
     }
     DEFAULT_SIMPLIFY_ONCE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        // This cache stores one-step simplification for DefaultSortContext only.
-        // Clearing changes only performance; simplify_once is pure for a fixed
-        // context, and callers still run fixed-point iteration to completion.
-        if cache.len() >= MAX_DEFAULT_NORMALIZE_CACHE_ENTRIES {
-            evict_half(&mut cache, "simplify_once");
-        }
-        cache.insert(key, output.clone());
+        crate::cache::insert_bounded(&mut cache, key, output.clone(), crate::cache::DEFAULT_KEY_LIMIT, "simplify_once");
     });
-}
-
-fn evict_half<K, V>(cache: &mut HashMap<K, V>, category: &str)
-where
-    K: Eq + Hash + Clone,
-{
-    let before = cache.len();
-    let remove = (before / 2).max(1);
-    let keys: Vec<K> = cache.keys().take(remove).cloned().collect();
-    for key in keys {
-        cache.remove(&key);
-    }
-    crate::profile::cache_eviction(category, before, remove, cache.len());
 }
 
 fn is_normalize_atom(expr: &Expr) -> bool {

@@ -27,7 +27,6 @@ use crate::sort_context::SortContext;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::hash::Hash;
 
 thread_local! {
     static CANONICAL_ORDER_CACHE: RefCell<HashMap<Expr, String>> = RefCell::new(HashMap::new());
@@ -105,10 +104,9 @@ pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
         if cache_weight <= crate::profile::cache_entry_limit() {
             CANONICAL_ORDER_CACHE.with(|cache| {
                 let mut cache = cache.borrow_mut();
-                if cache.len() > 100_000 {
-                    evict_half(&mut cache);
-                }
-                cache.insert(expr.clone(), out.clone());
+                // Preserve the ordering table's historical one-key offset.
+                crate::cache::insert_bounded(&mut cache, expr.clone(), out.clone(),
+                    crate::cache::DEFAULT_KEY_LIMIT + 1, "ordering_axiom");
             });
         } else {
             crate::profile::cache_admission_skip("ordering_axiom", cache_weight);
@@ -117,19 +115,6 @@ pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     }
 
     canonical_order_key_uncached(expr, ctx)
-}
-
-fn evict_half<K, V>(cache: &mut HashMap<K, V>)
-where
-    K: Eq + Hash + Clone,
-{
-    let before = cache.len();
-    let remove = (before / 2).max(1);
-    let keys: Vec<K> = cache.keys().take(remove).cloned().collect();
-    for key in keys {
-        cache.remove(&key);
-    }
-    crate::profile::cache_eviction("ordering_axiom", before, remove, cache.len());
 }
 
 fn canonical_order_key_uncached(expr: &Expr, ctx: &dyn SortContext) -> String {

@@ -23,7 +23,6 @@ use crate::primitive::is_any_primitive;
 use crate::symvar::SymVarOrigin;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
 use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
@@ -45,7 +44,6 @@ static PATH_IMPLIES_INDEPENDENT_COUNTEREXAMPLES: AtomicU64 = AtomicU64::new(0);
 static PATH_IMPLIES_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static PATH_IMPLIES_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 
-const MAX_PROOF_CACHE_ENTRIES: usize = 100_000;
 
 // Truth-table compilation is an exact proof, but compiling a boolean tree is
 // linear in the complete tree for every condition and evaluation then repeats
@@ -689,10 +687,7 @@ fn conditions_cover_cache_insert(conds: &[Expr], value: bool) {
     }
     CONDITIONS_COVER_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.len() >= MAX_PROOF_CACHE_ENTRIES {
-            evict_half(&mut cache, "conditions_cover");
-        }
-        cache.insert(conds.to_vec(), value);
+        crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover");
     });
 }
 
@@ -839,10 +834,7 @@ fn conditions_cover_disjunction_cache_insert(conds: &[Expr], value: Expr) {
     }
     CONDITIONS_COVER_DISJUNCTION_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.len() >= MAX_PROOF_CACHE_ENTRIES {
-            evict_half(&mut cache, "conditions_cover_disjunction");
-        }
-        cache.insert(conds.to_vec(), value);
+        crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover_disjunction");
     });
 }
 
@@ -890,24 +882,8 @@ fn path_proof_cache_insert(
     }
     cache_cell.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.len() >= MAX_PROOF_CACHE_ENTRIES {
-            evict_half(&mut cache, "path_proof");
-        }
-        cache.insert((active.clone(), expr.clone()), value);
+        crate::cache::insert_bounded(&mut cache, (active.clone(), expr.clone()), value, crate::cache::DEFAULT_KEY_LIMIT, "path_proof");
     });
-}
-
-fn evict_half<K, V>(cache: &mut HashMap<K, V>, category: &str)
-where
-    K: Eq + Hash + Clone,
-{
-    let before = cache.len();
-    let remove = (before / 2).max(1);
-    let keys: Vec<K> = cache.keys().take(remove).cloned().collect();
-    for key in keys {
-        cache.remove(&key);
-    }
-    crate::profile::cache_eviction(category, before, remove, cache.len());
 }
 
 fn independent_condition_groups(conds: &[Expr]) -> Option<Vec<Vec<Expr>>> {

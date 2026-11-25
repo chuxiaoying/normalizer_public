@@ -22,6 +22,7 @@
 //! 凡未通过上述 API 构造的 Expr，编译器拒绝。
 
 pub mod builder;
+mod cache;
 pub mod case_orientation;
 pub mod domains;
 pub mod expr;

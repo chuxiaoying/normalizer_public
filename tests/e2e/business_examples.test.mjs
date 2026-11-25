@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyVariant } from './business_example_series.mjs';
@@ -140,4 +140,25 @@ test('module CLI execution / exhausted normalization leaves no misleading PERS',
   assert.equal(constrained.stdout, '');
   assert.match(constrained.stderr, /normalization steps budget exhausted/);
   assert.match(constrained.stderr, /no canonical result was produced/);
+});
+
+test('source CLI execution / bounded cache eviction does not change normalization', t => {
+  const project = mkdtempSync(join(tmpdir(), 'normalizer-source-cache-'));
+  t.after(() => rmSync(project, {recursive: true, force: true}));
+  const count = 55_000;
+  writeFileSync(join(project, 'CacheProbe.java'),
+    'class CacheProbe { static int sum(int x) { int y = x;\n'
+    + 'y = y + 1;\n'.repeat(count) + 'return y; } }\n');
+  const profile = join(project, 'math-profile.log');
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => !name.startsWith('NORMALIZER_MATH_')));
+  env.NORMALIZER_MATH_PROFILE_LOG = profile;
+  const result = invoke(join(root, 'implementation/tools/normalizer'),
+    ['source', project, 'CacheProbe.sum'], root, undefined, env);
+  assert.equal(result.status, 0, result.stderr);
+  const actual = YAML.parse(result.stdout);
+  assertPers(actual, 'bounded cache source result');
+  assert.equal(actual.R, 'x + ' + count);
+  assert.match(readFileSync(profile, 'utf8'),
+    /math\.cache\.evict category=simplify_once before=100000 removed=50000 after=50000/);
 });
