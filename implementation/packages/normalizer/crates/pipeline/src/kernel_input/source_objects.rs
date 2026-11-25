@@ -17,6 +17,8 @@ pub(super) struct SourceObjects {
     borrowed_fields: BTreeMap<(i64, String), i64>,
     pub(super) state_bindings: BTreeMap<u64, String>,
     pub(super) compared_parameters: BTreeMap<i64, String>,
+    pub(super) compared_states: BTreeMap<i64, u64>,
+    nullable_parameters: BTreeSet<i64>,
 }
 impl SourceObjects {
     pub(super) fn allocation_owner(&self, reference: &Expr) -> Option<&str> {
@@ -44,6 +46,7 @@ impl Engine<'_> {
         name: &str,
         declared: &JavaType,
         ty: &Ty,
+        nullable: bool,
     ) -> Result<Value> {
         if let JavaType::Array(item) = declared {
             if let Some(owner) = self.project.source_owner(item) {
@@ -56,6 +59,7 @@ impl Engine<'_> {
                 reference.id(),
                 (owner.into(), Origin::Parameter(name.into())),
             );
+            if nullable { self.source_objects.nullable_parameters.insert(reference.id()); }
             Ok(Value::Term(Ty::Ref, b::heap_ref(reference.id())))
         } else {
             symbolic(name, ty, &mut self.heap)
@@ -100,7 +104,9 @@ impl Engine<'_> {
             self.source_objects
                 .objects
                 .insert(reference.id(), (target.into(), Origin::State { binding: bind, path: Vec::new() }));
-            b::heap_ref(reference.id())
+            let reference = b::heap_ref(reference.id());
+            self.state_roots.insert(format!("{owner}.{name}"), reference.clone());
+            reference
         } else {
             let primitive = scalar_origin_type(&ty)?;
             b::param(source_state_symbol(name), primitive)
@@ -191,7 +197,7 @@ impl Engine<'_> {
         let Some((class, field, child_owner)) = self.program.find_class(owner)
             .and_then(|class| class.fields().iter().find(|field| field.name() == name)
                 .and_then(|field| self.project.source_owner(field.java_type()).map(|child| (class, field, child))))
-        else { return self.read_source_field_on_path(reference, name, path); };
+        else { return self.read_guarded_source_scalar(reference, name, path); };
         need(!crate::normalized::source_nullable_field(class, field),
             "ordinary object field read has no nullable member acquisition proof")?;
         let child = match origin {
@@ -211,6 +217,43 @@ impl Engine<'_> {
         self.source_objects.objects.insert(child_ref, (child_owner.to_owned(), child));
         self.source_objects.borrowed_fields.insert(key, child_ref);
         Ok(Value::Term(Ty::Ref, b::heap_ref(child_ref)))
+    }
+
+    pub(super) fn source_object_null(&mut self, reference: &Expr) -> Expr {
+        if let Some(id) = reference.as_heap_ref().filter(|id| self.source_objects.nullable_parameters.contains(id)) {
+            let (_, Origin::Parameter(name)) = &self.source_objects.objects[&id] else { unreachable!() };
+            self.source_objects.compared_parameters.insert(id, name.clone());
+            b::eq(reference.clone(), b::lit_null())
+        } else {
+            b::lit_bool(false)
+        }
+    }
+
+    fn read_guarded_source_scalar(&mut self, reference: &Expr, field: &str, path: &Expr) -> Result<Value> {
+        let id = reference.as_heap_ref().ok_or_else(|| fail("unresolved source receiver"))?;
+        if matches!(self.source_objects.objects[&id].1, Origin::Allocation) {
+            return self.read_source_field_on_path(reference, field, path);
+        }
+        let initial = self.read_source_field_on_path(reference, field, path)?;
+        let path = self.normal_path(path.clone());
+        let mut identities = BTreeMap::new();
+        let candidates = self.realtime_store.entries().iter()
+            .filter(|entry| entry.field == field && entry.reference != *reference)
+            .filter_map(|entry| entry.reference.as_heap_ref())
+            .filter(|other| self.source_objects.objects.get(other).is_some_and(|(owner, origin)| {
+                owner == &self.source_objects.objects[&id].0 && matches!(origin, Origin::State { .. })
+            }))
+            .collect::<BTreeSet<_>>();
+        for other in candidates {
+            let candidate = b::heap_ref(other);
+            self.check_borrowed_identity(reference, &candidate)?;
+            identities.insert(other, b::eq(reference.clone(), candidate));
+        }
+        let value = self.realtime_store.read_matching_with_initial(field, &path, Some(initial.scalar()?), |candidate| {
+            if candidate == reference { Some(b::lit_bool(true)) }
+            else { candidate.as_heap_ref().and_then(|id| identities.get(&id).cloned()) }
+        }).ok_or_else(|| fail("unresolved state read"))?;
+        Ok(Value::Term(initial.ty(), value))
     }
 
     pub(super) fn read_source_field(&self, reference: &Expr, name: &str) -> Result<Value> {
@@ -259,11 +302,14 @@ impl Engine<'_> {
         let id = reference
             .as_heap_ref()
             .ok_or_else(|| fail("unresolved source receiver"))?;
-        need(
-            self.realtime_local_allocations.contains(&id),
-            "observable mutation of an input object requires a state write",
-        )?;
-        let (owner, _) = &self.source_objects.objects[&id];
+        let (owner, origin) = &self.source_objects.objects[&id];
+        let state = match origin {
+            Origin::Allocation => None,
+            Origin::State { binding, path } if path.is_empty() => {
+                Some(self.source_objects.state_bindings[binding].clone())
+            }
+            _ => return Err(fail("observable mutation of an input object requires a state write")),
+        };
         let declaration = self
             .program
             .find_class(owner)
@@ -273,12 +319,13 @@ impl Engine<'_> {
             value.ty() == self.project.parameter_type(declaration.java_type())?,
             "field assignment type mismatch",
         )?;
-        self.realtime_store.store_guarded(
-            path,
-            reference.clone(),
-            field,
-            value.scalar()?,
-        );
+        let path = self.normal_path(path);
+        let value = value.scalar()?;
+        if let Some(state) = state {
+            scalar_origin_type(&self.project.parameter_type(declaration.java_type())?)?;
+            self.realtime_effects.write_state(path.clone(), &[state, field.into()], value.clone());
+        }
+        self.realtime_store.store_guarded(path, reference.clone(), field, value);
         Ok(())
     }
 
@@ -301,13 +348,21 @@ impl Engine<'_> {
         };
         match (origin(a), origin(b)) {
             (Some(Origin::Allocation), _) | (_, Some(Origin::Allocation)) | (None, None) => Ok(()),
-            (Some(Origin::Parameter(left)), Some(Origin::Parameter(right)))
-                if !left.contains('.') && !right.contains('.') =>
-            {
-                // These are borrowed identities, not distinct allocations;
-                // keep their equality symbolic until rendering named P roots.
-                let bindings = [(a.as_heap_ref().unwrap(), left.clone()), (b.as_heap_ref().unwrap(), right.clone())];
-                self.source_objects.compared_parameters.extend(bindings);
+            (Some(left), Some(right)) if [left, right].into_iter().all(|origin| match origin {
+                Origin::State { path, .. } => path.is_empty(),
+                Origin::Parameter(name) => !name.contains('.'),
+                Origin::Allocation => false,
+            }) => {
+                // A different borrowed ID describes a different acquisition
+                // path, not necessarily a different Java object.
+                for (reference, origin) in [(a, left), (b, right)] {
+                    let id = reference.as_heap_ref().unwrap();
+                    match origin {
+                        Origin::Parameter(name) => { self.source_objects.compared_parameters.insert(id, name.clone()); }
+                        Origin::State { binding, .. } => { self.source_objects.compared_states.insert(id, *binding); }
+                        Origin::Allocation => unreachable!(),
+                    }
+                }
                 Ok(())
             }
             _ => Err(fail(

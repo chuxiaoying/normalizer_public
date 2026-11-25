@@ -173,6 +173,16 @@ impl EntryContext {
         if fields.is_empty() { return Err("state path requires a field".into()); }
         let state = self.environment.get(root).ok_or("undeclared state root")?;
         if state.kind != "state" || state.source.is_empty() { return Err("invalid state source".into()); }
+        if state.fields.is_empty() {
+            let mut domain = state.ty.as_deref().ok_or("undeclared state field")?;
+            for field in fields {
+                domain = self.types.get(domain).and_then(|record| record.fields.get(field))
+                    .ok_or("undeclared state field")?;
+            }
+            return if matches!(domain.trim_end_matches('?'), "number" | "bool" | "text") {
+                Ok(domain)
+            } else { Err("expected a scalar state field".into()) };
+        }
         let mut field = state.fields.get(&fields[0]).ok_or("undeclared state field")?;
         for name in &fields[1..] {
             let Field::Record(record) = field else { return Err("scalar field has no members".into()) };
@@ -233,6 +243,23 @@ impl EntryContext {
 
     pub(super) fn host_names(&self) -> BTreeMap<String,String> {
         self.parameters.keys().map(|name| (super::host_input_symbol(name), self.qualified("P",name))).collect()
+    }
+
+    pub(super) fn source_parameter_path(&self, name: &str) -> Option<String> {
+        let (root, tail) = name.split_once('.')?;
+        let source_type = self.parameter_type(root)?.trim_end_matches('?');
+        self.has_field(source_type, tail.split('.')).then(|| format!("{}.{tail}", self.qualified("P", root)))
+    }
+
+    pub(super) fn source_identity_names(&self, result: &ExecutionResult) -> BTreeMap<i64, String> {
+        result.source_identity_parameters.iter().filter_map(|(id, root)| {
+            let ty = self.parameter_type(root)?.trim_end_matches('?');
+            self.types.contains_key(ty).then(|| (*id, self.qualified("P", root)))
+        }).chain(result.source_identity_states.iter().filter_map(|(id, binding)| {
+            let root = result.source_state_bindings.get(binding)?;
+            let state = self.environment.get(root)?;
+            self.types.contains_key(state.ty.as_deref()?).then(|| (*id, self.qualified("E", root)))
+        })).collect()
     }
 
     pub(super) fn source_state_path(&self, root: &str, path: &[String]) -> bool {
@@ -345,10 +372,7 @@ impl EntryContext {
             let record = self.types.get(p.ty.strip_suffix("[]")?)?;
             Some((name.clone(), record.fields.keys().cloned().collect::<std::collections::BTreeSet<_>>()))
         }).collect::<BTreeMap<_, _>>();
-        let identities = result.source_identity_parameters.iter().filter_map(|(id, root)| {
-            let param = self.parameters.get(root)?;
-            self.types.contains_key(&param.ty).then(|| (*id, self.qualified("P", root)))
-        }).collect::<BTreeMap<_, _>>();
+        let identities = self.source_identity_names(result);
         let publication = if observations.is_some() || result.temporal_definitions.is_empty() {
             super::temporal_graph::Publication::default()
         } else {
@@ -411,12 +435,8 @@ impl EntryContext {
             expression.walk(&mut |node| {
                 closed &= match node.as_sym_var() {
                     Some(SymVarOrigin::Parameter { name, .. }) => {
-                        if let Some((root, tail)) = name.split_once('.') {
-                            if let Some(param) = self.parameters.get(root) {
-                                if self.has_field(&param.ty, tail.split('.')) {
-                                    inputs.insert(name.clone(), format!("{}.{tail}", self.qualified("P", root)));
-                                }
-                            }
+                        if let Some(display) = self.source_parameter_path(name) {
+                            inputs.insert(name.clone(), display);
                         }
                         inputs.contains_key(name)
                     }

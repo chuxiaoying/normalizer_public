@@ -12,6 +12,7 @@ pub(super) struct ExecutionResult {
     pub(super) source_record_return: Option<Vec<(String, Expr)>>,
     pub(super) source_state_bindings: BTreeMap<u64, String>,
     pub(super) source_identity_parameters: BTreeMap<i64, String>,
+    pub(super) source_identity_states: BTreeMap<i64, u64>,
     pub(super) realtime_store: SymbolicStore,
     pub(super) realtime_local_allocations: BTreeSet<i64>,
     /// Roots written through a declared host state field and represented in S.

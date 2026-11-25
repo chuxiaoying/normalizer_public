@@ -722,6 +722,7 @@ impl Loaded {
                         n,
                         t,
                     )?,
+                    m.param_annotations(n).iter().any(|a| a.name() == "normalizer.annotations.Nullable" && a.args().is_empty()),
                 )
             })
             .collect::<Result<_>>()?;
@@ -743,6 +744,7 @@ impl Loaded {
             temporal_definitions: e.temporal_definitions,
             source_state_bindings: e.source_objects.state_bindings,
             source_identity_parameters: e.source_objects.compared_parameters,
+            source_identity_states: e.source_objects.compared_states,
             source_record_return,
             host_state_roots: e.state_roots.values().filter_map(Expr::as_heap_ref).collect(),
             source_tables: e.source_relations.tables,

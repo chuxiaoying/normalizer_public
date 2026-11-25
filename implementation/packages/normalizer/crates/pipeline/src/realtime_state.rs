@@ -449,11 +449,22 @@ impl SymbolicStore {
     pub(crate) fn read_with_initial(
         &self, reference: &Expr, field: &str, path: &Expr, initial: Option<Expr>,
     ) -> Option<Expr> {
-        let entries = self.entries.iter().filter(|entry| entry.reference == *reference && entry.field == field);
+        self.read_matching_with_initial(field, path, initial, |candidate| {
+            (candidate == reference).then(|| b::lit_bool(true))
+        })
+    }
+
+    // A write reaches a read only on paths where their source objects
+    // denote the same reference. Walk the single store in reverse order.
+    pub(crate) fn read_matching_with_initial(
+        &self, field: &str, path: &Expr, initial: Option<Expr>,
+        mut aliases: impl FnMut(&Expr) -> Option<Expr>,
+    ) -> Option<Expr> {
         let mut branches = Vec::new();
         let mut fallback = initial;
-        for entry in entries.rev() {
-            let guard = math::normalize(entry.guard.clone());
+        for entry in self.entries.iter().rev().filter(|entry| entry.field == field) {
+            let Some(identity) = aliases(&entry.reference) else { continue; };
+            let guard = math::normalize(b::and(entry.guard.clone(), identity));
             if guard.as_bool() == Some(false) || b::path_implies(path, &b::not(guard.clone())) {
                 continue;
             }

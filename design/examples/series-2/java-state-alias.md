@@ -54,7 +54,11 @@ E:
   quota: { kind: state, source: src/Account.java#Account.quota, type: Quota }
 S:
   - write: { target: quota.units, value: '7' }
-R: CASE WHEN observer == quota THEN 7 ELSE observer.units END
+R: |-
+  CASE
+    WHEN observer == quota THEN 7
+    ELSE observer.units
+  END
 throws:
   - { type: java.lang.NullPointerException, when: observer == null }
 ```
@@ -62,3 +66,11 @@ throws:
 公式中的 `observer == quota` 比较两个引用是否指向同一个对象。
 
 **判别例**　两个对象原本都为 3 时，传 quota 返回 7，传另一个对象返回 3。传 null 会抛异常，此时 quota.units 仍为 7。
+
+**顺序对照**　把方法体改为先读原值，再写额度，最后按对象身份决定返回值：
+
+    int prior = observer.units;
+    quota.units = 7;
+    return observer == quota ? 7 : prior;
+
+同一对象、不同对象两种正常返回和上例相同；传 null 也仍抛同一种异常，但这次写入没有执行，额度保留原值 3。因此验收不能只对比 R 和异常类型：上例的 S 在 null 路径上也有写入，对照版本的 S 只允许在 observer 非空的路径上写入。

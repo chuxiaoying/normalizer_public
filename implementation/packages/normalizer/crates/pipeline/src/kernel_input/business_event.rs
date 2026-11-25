@@ -62,7 +62,32 @@ pub(super) fn observations(
     let states = result.source_state_bindings.iter()
         .map(|(&id, root)| (id, entry.qualified("E", root))).collect::<BTreeMap<_, _>>();
     let arrays = entry.scalar_array_symbols();
+    let identities = entry.source_identity_names(result);
+    let mut names = names;
+    let returned = result.realtime_completion.value_on_normal_exit()
+        .ok_or_else(|| fail("no normal settled return"))?;
+    let mut add_declared_paths = |expression: &Expr| {
+        expression.walk(&mut |part| {
+            if let Some(SymVarOrigin::Parameter { name, .. }) = part.as_sym_var() {
+                if let Some(display) = entry.source_parameter_path(name) {
+                    names.insert(name.clone(), display);
+                }
+            }
+        });
+    };
+    add_declared_paths(&returned);
+    let alternatives = result.realtime_completion.terminal_alternatives()
+        .ok_or_else(|| fail("entry has incomplete control flow"))?;
+    for alternative in &alternatives {
+        add_declared_paths(&alternative.guard);
+        if let CompletionOutcome::Return(value) = &alternative.outcome { add_declared_paths(value); }
+    }
+    for event in result.realtime_effects.events() {
+        add_declared_paths(&event.guard);
+        for arg in &event.args { add_declared_paths(arg); }
+    }
     let mut ctx = crate::FormatCtx::for_business(names.clone(), states);
+    ctx.set_business_identities(identities.clone());
     ctx.set_scalar_arrays(arrays.clone());
     ctx.set_record_arrays(entry.record_array_symbols());
     ctx.declare_nullable_columns(&result.source_tables);
@@ -74,8 +99,20 @@ pub(super) fn observations(
     let mut external_payloads = Vec::new();
     let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>, temporals: Option<&BTreeMap<u64, usize>>| -> Result<()> {
         let mut closed = true;
+        let mut heap_operands = BTreeMap::<i64, (usize, usize)>::new();
         expr.walk(&mut |node| {
-            closed &= node.as_heap_ref().is_none();
+            if let Some(id) = node.as_heap_ref() {
+                closed &= identities.contains_key(&id);
+                heap_operands.entry(id).or_default().0 += 1;
+            }
+            if let Some((math::BinOpKind::Eq | math::BinOpKind::Ne, left, right)) = node.as_binop() {
+                let allowed = |value: &Expr| value.is_null() || value.as_heap_ref().is_some_and(|id| identities.contains_key(&id));
+                if allowed(left) && allowed(right) {
+                    for id in [left, right].iter().filter_map(|value| value.as_heap_ref()) {
+                        heap_operands.entry(id).or_default().1 += 1;
+                    }
+                }
+            }
             if let Some(origin) = node.as_sym_var() {
                 closed &= match origin {
                     SymVarOrigin::Parameter { name, .. } => names.contains_key(name),
@@ -87,7 +124,10 @@ pub(super) fn observations(
                 };
             }
         });
-        need(closed, "unbound local or external value in settled output")
+        // Named source references are permitted only as identity/null
+        // comparison operands, never as naked objects in settled output.
+        need(closed && heap_operands.values().all(|(actual, allowed)| actual == allowed),
+            "unbound local or external value in settled output")
     };
     for event in result.realtime_effects.events() {
         validate_ids(&event.guard, &issued, None)?;
@@ -186,8 +226,7 @@ pub(super) fn observations(
         wrapper[label] = item;
         effects.push(wrapper);
     }
-    let returned = result.realtime_completion.value_on_normal_exit()
-        .ok_or_else(|| fail("no normal settled return"))?;
+
     let publication = if result.temporal_definitions.is_empty() {
         super::temporal_graph::Publication::default()
     } else {
@@ -199,10 +238,7 @@ pub(super) fn observations(
         })?
     };
     let temporal_names = &publication.aliases;
-    let alternatives = result
-        .realtime_completion
-        .terminal_alternatives()
-        .ok_or_else(|| fail("entry has incomplete control flow"))?;
+
     let mut exceptions: Vec<(String, Option<Expr>, Expr)> = Vec::new();
     for alternative in alternatives {
         validate_ids(&alternative.guard, &issued, None)?;

@@ -147,9 +147,9 @@ groups:
     java-eager-first: [Batch.firstId]
     sql-projected-distinct: [BillReport.countAccounts]
     java-map-present-null: [Caption.select]
+    java-state-alias: [Account.reset]
 pending:
   - frontend-deferred-listener
   - java-invalid-declaration
   - java-lifo-release
-  - java-state-alias
   - typescript-tuple-slots

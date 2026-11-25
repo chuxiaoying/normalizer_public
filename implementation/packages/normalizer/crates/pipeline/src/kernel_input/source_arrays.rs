@@ -72,16 +72,6 @@ fn original_slot(root: &str, index: i64) -> Expr {
 }
 
 impl Engine<'_> {
-    pub(super) fn fail_source_array(&mut self, path: Expr, exception: &str) {
-        let path = self.normal_path(path);
-        if path.as_bool() != Some(false) {
-            self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
-                path.clone(), exception, None,
-            );
-            self.realtime_throws.push(path);
-        }
-    }
-
     pub(super) fn source_local_array_initializer(&self, values: Vec<Value>) -> Result<Value> {
         let entries = values.into_iter().map(exact_java_int).collect::<Result<_>>()?;
         Ok(Value::LocalIntArray(LocalIntArray::Initialized(entries)))
@@ -90,7 +80,7 @@ impl Engine<'_> {
     pub(super) fn source_local_array_allocation(&mut self, size: Value, path: Expr) -> Result<Value> {
         let length = exact_java_int(size)?;
         if length < 0 {
-            self.fail_source_array(path, NEGATIVE_SIZE);
+            self.throw_source_on_path(path, NEGATIVE_SIZE);
         }
         Ok(Value::LocalIntArray(LocalIntArray::Zeroed(length.max(0))))
     }
@@ -105,7 +95,7 @@ impl Engine<'_> {
 
     fn check_source_bounds(&mut self, root: &str, index: i64, path: &Expr) -> Expr {
         let fails = math::normalize(bounds_failure(root, index));
-        self.fail_source_array(b::and(path.clone(), fails.clone()), OUT_OF_BOUNDS);
+        self.throw_source_on_path(b::and(path.clone(), fails.clone()), OUT_OF_BOUNDS);
         math::normalize(b::and(path.clone(), b::not(fails)))
     }
 
@@ -140,13 +130,13 @@ impl Engine<'_> {
         need(self.project.direct_source, "source array index requires direct source")?;
         if let Value::EagerIntProjection { base, selected } = array {
             need(index_value(index)? == 0, "eager record projection currently supports only its first element")?;
-            self.fail_source_array(b::and(path, b::not(r::relation_exists(base.clone()))), OUT_OF_BOUNDS);
+            self.throw_source_on_path(b::and(path, b::not(r::relation_exists(base.clone()))), OUT_OF_BOUNDS);
             return Ok(Value::Term(Ty::Integer, r::relation_first_value(base, selected, b::lit_null())));
         }
         if let Value::LocalIntArray(local) = array {
             let index = exact_java_int(index)?;
             let Some(value) = local.get(index) else {
-                self.fail_source_array(path, OUT_OF_BOUNDS);
+                self.throw_source_on_path(path, OUT_OF_BOUNDS);
                 // This continuation is now unreachable; do not use null as a
                 // normal result for an integer-valued Java expression.
                 return Ok(Value::Term(Ty::Integer, b::lit_int(0)));

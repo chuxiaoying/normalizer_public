@@ -301,7 +301,7 @@ impl Engine<'_> {
                 let missing = b::eq(b::row_value(format!("r.{link}")), b::lit_null());
                 // This is the completion of the entire projection, not of a single selected row.
                 let exception = r::relation_exists(RelationExpr::select(missing, base.clone()));
-                self.fail_source_array(b::and(guard.clone(), exception), "java.lang.NullPointerException");
+                self.throw_source_on_path(b::and(guard.clone(), exception), "java.lang.NullPointerException");
                 env.insert(query.binding.clone(), Value::EagerIntProjection {
                     base, selected: b::row_value(format!("r.{link}.{leaf}")),
                 });

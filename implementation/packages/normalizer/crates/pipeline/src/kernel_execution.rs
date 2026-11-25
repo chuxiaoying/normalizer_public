@@ -628,7 +628,10 @@ impl Engine<'_> {
                 }
                 if let Some(value)=self.read_selected_field(&reference.scalar()?,field,&path)? { return Ok(value); }
                 if self.source_objects.owns(&reference.scalar()?) {
-                    self.read_or_bind_source_field(&reference.scalar()?, field, &path)
+                    let reference = reference.scalar()?;
+                    let null = self.source_object_null(&reference);
+                    self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
+                    self.read_or_bind_source_field(&reference, field, &path)
                 } else {
                     Err(fail("field read requires a closed source object"))
                 }
@@ -846,7 +849,7 @@ impl Engine<'_> {
                     let presence = match &v { Value::Term(Ty::Ref,r)=>self.row_presence(r),_=>None };
                     let null = if let Some(present)=presence { b::not(present) } else if matches!(&v, Value::Term(Ty::Ref, reference) if self.source_objects.owns(reference))
                     {
-                        b::lit_bool(false)
+                        self.source_object_null(&v.scalar()?)
                     } else {
                         match v {
                             Value::Sequence { null, .. } => null,
@@ -985,6 +988,16 @@ impl Engine<'_> {
                 && self.project.source_ports.get(id).is_some_and(|port| port.throws.is_empty())
                 && b::path_implies(&self.normal_path(path.clone()), &event.guard)
         })
+    }
+
+    pub(super) fn throw_source_on_path(&mut self, path: Expr, exception: &str) {
+        let path = math::normalize(self.normal_path(path));
+        if path.as_bool() != Some(false) {
+            self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
+                path.clone(), exception, None,
+            );
+            self.realtime_throws.push(path);
+        }
     }
 
     pub(super) fn normal_path(&self, path: Expr) -> Expr {

@@ -293,7 +293,7 @@ topics:
     seeds:
       - id: java-state-alias
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 同一对象和不同对象的写后读取
       - id: java-lifo-release
