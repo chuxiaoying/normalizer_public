@@ -1,0 +1,3 @@
+- name: qualified-arithmetic-exception-catches-the-same-throw
+  edits:
+    - { from: 'catch (ArithmeticException ignored)', to: 'catch (java.lang.ArithmeticException ignored)' }

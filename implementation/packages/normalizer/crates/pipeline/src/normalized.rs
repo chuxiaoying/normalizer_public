@@ -194,6 +194,9 @@ pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String,
     if matches!(name, "RuntimeException" | "java.lang.RuntimeException") {
         return Some(RUNTIME_EXCEPTION.into());
     }
+    if matches!(name, "ArithmeticException" | "java.lang.ArithmeticException") {
+        return Some("java.lang.ArithmeticException".into());
+    }
     if parents.contains_key(name) {
         return Some(name.into());
     }
@@ -622,12 +625,6 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
         } if matches!(target_type, JavaType::Primitive(n) if n == "long") => {
             expr(operand, at, calls)?
         }
-        // A source declaration may contain a known nonzero divisor without
-        // assigning the division a PERS result. If this body is reached, the
-        // executor still requires a supported division contract.
-        E::BinOp { op: B::Div, left, right } if matches!(right.as_ref(), E::Lit(JavaLit::Int(n)) if *n != 0) => {
-            expr(left, at, calls)?;
-        }
         E::BinOp { op, left, right }
             if matches!(
                 op,
@@ -642,6 +639,8 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
                     | B::Add
                     | B::Sub
                     | B::Mul
+                    | B::Div
+                    | B::Mod
             ) =>
         {
             expr(left, at, calls)?;

@@ -41,6 +41,7 @@ canonical-total-boolean-order: topics/unified-canonical-form/java-total-boolean-
 canonical-number-selection: topics/unified-canonical-form/java-number-selection.md
 canonical-text-order: topics/unified-canonical-form/java-text-order.md
 canonical-constant-array: topics/unified-canonical-form/java-constant-array.md
+canonical-constant-quotient: topics/unified-canonical-form/java-constant-quotient.md
 canonical-exception-payload: topics/unified-canonical-form/java-exception-payload.md
 canonical-member-choice: topics/unified-canonical-form/java-member-choice.md
 control-short-circuit: topics/control-flow/java-short-circuit.md

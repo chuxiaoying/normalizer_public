@@ -783,6 +783,33 @@ impl Engine<'_> {
                     math::normalize(build(left, right)),
                 ))
             }
+            J::BinOp { op: op @ (B::Div | B::Mod), left, right } => {
+                let left = self.java_expr(left, id, env, path.clone())?;
+                let normal = self.normal_path(path.clone());
+                let no_value = || Value::Term(Ty::Integer, b::lit_null());
+                if normal.as_bool() == Some(false) {
+                    return Ok(no_value());
+                }
+                let right = self.java_expr(right, id, env, normal)?;
+                let normal = self.normal_path(path);
+                if normal.as_bool() == Some(false) {
+                    return Ok(no_value());
+                }
+                need(left.ty() == Ty::Integer && right.ty() == Ty::Integer,
+                    "division and remainder require integer operands")?;
+                let concrete = |v: Value| v.scalar()?.as_lit().and_then(math::Lit::as_integer)
+                    .ok_or_else(|| crate::preprocess::required(
+                        "NORM-EXPRESSION", id, "division and remainder require concrete integers",
+                        "保留原操作数和异常行为；当前入口不接纳符号化商或余数。",
+                    ));
+                let (left, right) = (concrete(left)?, concrete(right)?);
+                if right == math::Integer::from(0) {
+                    self.throw_source_on_path(normal, "java.lang.ArithmeticException");
+                    return Ok(no_value());
+                }
+                let result = if *op == B::Div { left / right } else { left % right };
+                Ok(Value::Term(Ty::Integer, b::lit_integer(result)))
+            }
             J::BinOp { op, left, right } if matches!(op, B::And | B::Or) => {
                 let left = self.java_expr(left, id, env, path.clone())?;
                 need(

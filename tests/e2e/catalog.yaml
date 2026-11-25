@@ -12,6 +12,7 @@ groups:
     canonical-number-selection: [CanonicalQuota.smaller]
     canonical-text-order: [CanonicalLabel.label, CanonicalLabel.charCode]
     canonical-constant-array: [CanonicalArray.digits, CanonicalArray.sized, CanonicalArray.guarded]
+    canonical-constant-quotient: [CanonicalQuotient.signed, CanonicalQuotient.large, CanonicalQuotient.guarded, CanonicalQuotient.caught]
     canonical-exception-payload: [CanonicalFailure.validate, GuardedCanonicalFailure.validate, RemotePayload.read]
     canonical-member-choice: [CanonicalPick.total, StatePick.choose, ReceiptPick.choose, MixedTemporal.settle]
   java/pure:

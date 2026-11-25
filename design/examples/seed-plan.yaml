@@ -2,8 +2,8 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 110
-  seeded: 95
+  total: 111
+  seeded: 96
   planned: 15
 topics:
   expression-simplification:
@@ -87,6 +87,12 @@ topics:
         status: seeded
         surface: java
         focus: 常量数组位置、初始化与长度分配的区别
+        test_status: covered
+        review_status: proposed
+      - id: canonical-constant-quotient
+        status: seeded
+        surface: java
+        focus: 具体整数商和余数、无回绕与零除数异常
         test_status: covered
         review_status: proposed
       - id: canonical-member-choice

@@ -61,6 +61,7 @@ seeds:
   expr-associative-commutative-normal-form: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
   canonical-text-order: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
   canonical-constant-array: { kind: topic, topic: unified-canonical-form, related: [collections, expression-simplification] }
+  canonical-constant-quotient: { kind: topic, topic: unified-canonical-form, related: [number-domain, expression-simplification] }
   canonical-exception-payload: { kind: topic, topic: unified-canonical-form, related: [control-flow, external-boundaries] }
   canonical-member-choice: { kind: topic, topic: unified-canonical-form, related: [collections, control-flow] }
   canonical-number-selection: { kind: topic, topic: unified-canonical-form, related: [number-domain, control-flow] }
