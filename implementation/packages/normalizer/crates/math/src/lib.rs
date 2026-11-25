@@ -28,7 +28,6 @@ pub mod domains;
 pub mod expr;
 pub mod normalize;
 pub mod canonical_order;
-pub mod primitive;
 pub mod primitive_enum;
 mod profile;
 pub mod sort_context;
@@ -45,7 +44,6 @@ pub use normalize::{
 pub use canonical_order::{
     canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison,
 };
-pub use primitive::{is_any_primitive, is_java_primitive};
 pub use primitive_enum::Primitive;
 pub use sort_context::{DefaultSortContext, SortContext};
 pub use symvar::SymVarOrigin;

@@ -25,11 +25,8 @@ fn native_parameter_bounds(e: &Expr) -> Option<(i128, i128)> {
         return None;
     }
     match primitive_type.as_str() {
-        "byte" => Some((i8::MIN as i128, i8::MAX as i128)),
-        "short" => Some((i16::MIN as i128, i16::MAX as i128)),
-        "int" => Some((i32::MIN as i128, i32::MAX as i128)),
-        "long" => Some((i64::MIN as i128, i64::MAX as i128)),
-        "char" => Some((0, u16::MAX as i128)),
+        "i32" => Some((i32::MIN as i128, i32::MAX as i128)),
+        "i64" => Some((i64::MIN as i128, i64::MAX as i128)),
         _ => None,
     }
 }

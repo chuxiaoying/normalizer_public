@@ -13,11 +13,11 @@
 //! 用户指示（20260427161604）："所有 P 和 E 的符号变量，都是 primitive（含 string 这些）？
 //! 这个需要确保，不能用一个 struct pojo 当做符号。这个断言要确认做到。"
 //!
-//! 三个变体都必填 `primitive_type: String`——Java 原生 primitive（int/long/boolean/...）
-//! 或归一化 primitive（String/Wrapper/Date 等）。业务 Pojo 必须用 HeapRef 表达。
+//! 每个变体都携带逻辑类型或专用内部绑定标签，而不是 Java 类名。
+//! 业务对象必须用 HeapRef 表达。
 //! 内部 pending_task_handle 可携带专用任务句柄，不能作为公开 T 定义；纯递推结果另有精确整数构造器。
 //!
-//! param/sym_e/sym_t 做 assert 验证（release mode 也生效），非 primitive panic。
+//! 普通标量构造器会校验逻辑类型，发布版本也同样校验。
 
 /// 符号变量 origin。
 ///
@@ -28,8 +28,8 @@ pub enum SymVarOrigin {
     /// 入参符号，名字标识（如 "x", "req.name"）。
     ///
     /// `primitive_type` 示例：
-    /// - Java 原生：`"int"` / `"long"` / `"boolean"` / `"double"` / ...
-    /// - 归一化 primitive：`"java.lang.String"` / `"integer"` 等
+    /// - 逻辑标量：`"integer"` / `"boolean"` / `"text"` 等。
+    /// - 明确固定位宽载体：`"i32"`、`"i64"`。
     Parameter {
         name: String,
         primitive_type: String,

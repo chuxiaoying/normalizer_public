@@ -177,7 +177,7 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
         if !keys.insert(key) { return Err("readonly Map requires unique literal keys"); }
         if !matches!(value.as_sym_var(),
             Some(SymVarOrigin::Parameter { name, primitive_type })
-                if primitive_type == "java.lang.String" && !name.starts_with('$') && !name.contains('.'))
+                if primitive_type == "text" && !name.starts_with('$') && !name.contains('.'))
         {
             return Err("readonly Map requires an acquired nullable text parameter");
         }

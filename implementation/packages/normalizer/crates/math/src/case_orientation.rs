@@ -23,7 +23,7 @@ fn has_integer_evidence(value: &Expr) -> bool {
             | SymVarOrigin::External { primitive_type, .. }
             | SymVarOrigin::Temporal { primitive_type, .. } => matches!(
                 primitive_type.as_str(),
-                "integer" | "byte" | "short" | "int" | "long" | "char"
+                "integer" | "i32" | "i64"
             ),
         },
         _ => false,

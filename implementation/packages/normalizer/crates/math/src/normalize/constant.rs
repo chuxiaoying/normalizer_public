@@ -159,7 +159,7 @@ fn is_symbolic_text(value: &Expr) -> bool {
                 | crate::SymVarOrigin::Temporal { primitive_type, .. }
                 | crate::SymVarOrigin::External { primitive_type, .. } => primitive_type,
             };
-            ty == "java.lang.String"
+            ty == "text"
         }
         ExprKind::Call { key, .. } =>
             crate::domains::primitive::registry::func_return_type(*key)

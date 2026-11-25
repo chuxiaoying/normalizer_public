@@ -649,7 +649,7 @@ fn is_projectable_boolean_value(expr: &Expr) -> bool {
             crate::symvar::SymVarOrigin::Parameter { primitive_type, .. }
             | crate::symvar::SymVarOrigin::External { primitive_type, .. }
             | crate::symvar::SymVarOrigin::Temporal { primitive_type, .. } => {
-                primitive_type == "boolean" || primitive_type == "java.lang.Boolean"
+                primitive_type == "boolean"
             }
         },
         _ => false,

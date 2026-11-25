@@ -525,7 +525,7 @@ fn scalar_origin_type(ty: &Ty) -> Result<&'static str> {
     match ty {
         Ty::Integer => Ok("integer"),
         Ty::Bool => Ok("boolean"),
-        Ty::Text => Ok("java.lang.String"),
+        Ty::Text => Ok("text"),
         _ => Err(fail(
             "source scalar origin requires a declared scalar field",
         )),

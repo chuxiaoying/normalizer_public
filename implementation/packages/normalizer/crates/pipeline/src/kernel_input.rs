@@ -856,22 +856,14 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap) -> Result<Value> {
             Ty::Ref,
             b::heap_ref(heap.new_path_object().id()),
         ),
-        _ => Value::Term(
-            t.clone(),
-            b::param(
-                name,
-                match t {
-                    Ty::Unit => "void",
-                    Ty::Bool => "boolean",
-                    Ty::Integer => "integer",
-                    Ty::Decimal => math::domains::decimal::VALUE_TAG,
-                    Ty::I32 => "int",
-                    Ty::I64 => "long",
-                    Ty::Text => "java.lang.String",
-                    _ => "Object",
-                },
-            ),
-        ),
+        Ty::Bool => Value::Term(t.clone(), b::param(name, "boolean")),
+        Ty::Integer => Value::Term(t.clone(), b::param(name, "integer")),
+        Ty::Decimal => Value::Term(t.clone(), b::param(name, math::domains::decimal::VALUE_TAG)),
+        Ty::I32 => Value::Term(t.clone(), b::param(name, "i32")),
+        Ty::I64 => Value::Term(t.clone(), b::param(name, "i64")),
+        Ty::Text => Value::Term(t.clone(), b::param(name, "text")),
+        Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
+            return Err(fail("this value type has no input symbol contract")),
     })
 }
 type Env = BTreeMap<String, Value>;

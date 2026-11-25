@@ -7,19 +7,18 @@
 //!
 //! ```text
 //! use math::builder::*;
-//! let x = param("x", "int");
+//! let x = param("x", "integer");
 //! let e = add(x, lit_int(1));  // x + 1
 //! ```
 //!
 //! ## P0 架构断言（20260427）
 //!
 //! 所有 SymVar 构造（param/sym_e/sym_e_project/sym_t）必须传入 primitive_type，
-//! 且 assert 验证是 primitive（Java 原生 + 归一化 whitelist，release mode 也生效）。
+//! 普通标量构造器校验语言适配器交付的逻辑类型，发布版本也同样校验。
 //! 业务 Pojo 必须用 HeapRef，禁止用 SymVar 表达。
 
 use crate::domains::primitive::registry::{func_arity, FuncKey};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
-use crate::primitive::is_any_primitive;
 use crate::symvar::SymVarOrigin;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -137,7 +136,7 @@ thread_local! {
 #[inline]
 fn assert_primitive_type(ty: &str) {
     assert!(
-        is_any_primitive(ty),
+        crate::Primitive::from_symbol_tag(ty).is_some(),
         "[MATH-BUILDER] SymVar primitive_type must be primitive (closed scalar encoding), got: '{}'. Pojo types must use HeapRef, not SymVar.",
         ty
     );
@@ -190,8 +189,8 @@ pub fn lit(l: Lit) -> Expr {
 /// # 示例
 /// ```text
 /// use math::builder::param;
-/// let x = param("x", "int");                        // Java 原生 primitive
-/// let s = param("s", "java.lang.String");           // 归一化 primitive
+/// let x = param("x", "integer");
+/// let s = param("s", "text");
 /// ```
 ///
 /// # Panics
