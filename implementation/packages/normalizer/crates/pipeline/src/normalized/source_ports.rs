@@ -9,7 +9,7 @@ pub(crate) fn marked(class: &JavaClass, field: &JavaField) -> bool {
     let [marker] = field.annotations() else {
         return false;
     };
-    marker.args().is_empty()
+    !marker.has_arguments()
         && (marker.name() == IMPORT
             || (marker.name() == "External" && class.imports().iter().any(|name| name == IMPORT)))
 }

@@ -360,7 +360,7 @@ impl<'a> Parser<'a> {
         Err(self.err("unclosed '{'"))
     }
 
-    pub(crate) fn skip_balanced_parens(&mut self) -> Result<String, ParseError> {
+    pub(crate) fn skip_balanced_parens(&mut self) -> Result<&'a str, ParseError> {
         self.skip_ws();
         if !self.eat_char(b'(') {
             return Err(self.err("expected '('"));
@@ -377,8 +377,7 @@ impl<'a> Parser<'a> {
                     depth -= 1;
                     if depth == 0 {
                         let body = std::str::from_utf8(&self.src[start..self.pos])
-                            .unwrap_or_else(|e| panic!("[PARSER-METHOD-BODY-UTF8-FAIL] method body utf8 decode failed: {:?}", e))
-                            .to_string();
+                            .map_err(|_| self.err("invalid UTF-8 in parentheses"))?;
                         self.pos += 1;
                         return Ok(body);
                     }
@@ -505,20 +504,16 @@ impl<'a> Parser<'a> {
             let name = self
                 .read_qualified_ident()
                 .ok_or_else(|| self.err("expected annotation name"))?;
-            let mut args: Vec<(String, String)> = Vec::new();
             self.skip_ws();
-            if self.peek() == Some(b'(') {
+            let has_arguments = if self.peek() == Some(b'(') {
                 let inner = self.skip_balanced_parens()?;
-                for part in split_top_level_commas(&inner) {
-                    let t = part.trim();
-                    if let Some(eq) = t.find('=') {
-                        args.push((t[..eq].trim().to_string(), t[eq + 1..].trim().to_string()));
-                    } else if !t.is_empty() {
-                        args.push(("value".to_string(), t.to_string()));
-                    }
-                }
-            }
-            out.push(AnnotationRef { name, args });
+                let mut contents = Parser::new(inner, &self.file);
+                contents.skip_ws();
+                contents.peek().is_some()
+            } else {
+                false
+            };
+            out.push(AnnotationRef { name, has_arguments });
         }
         Ok(out)
     }
@@ -1102,34 +1097,4 @@ fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
         if variadic { return Err(invalid(p, "varargs must be the final parameter")); }
         if !p.eat_char(b',') { return Err(invalid(p, "expected a comma or closing parenthesis")); }
     }
-}
-
-fn split_top_level_commas(s: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-    let mut depth_paren: i32 = 0;
-    let mut depth_angle: i32 = 0;
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        match c {
-            b'(' => depth_paren += 1,
-            b')' => depth_paren -= 1,
-            b'<' => depth_angle += 1,
-            b'>' => depth_angle -= 1,
-            b',' if depth_paren == 0 && depth_angle == 0 => {
-                out.push(std::mem::take(&mut current));
-                i += 1;
-                continue;
-            }
-            _ => {}
-        }
-        current.push(c as char);
-        i += 1;
-    }
-    if !current.is_empty() {
-        out.push(current);
-    }
-    out
 }

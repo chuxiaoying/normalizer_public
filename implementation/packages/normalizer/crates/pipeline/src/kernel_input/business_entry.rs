@@ -140,7 +140,7 @@ impl Loaded {
             parameters: method.params().iter().enumerate().map(|(position, (ty, name))| {
                 let mut domain = source_type(ty)?.to_owned();
                 for annotation in method.param_annotations(name) {
-                    if annotation.name() != "normalizer.annotations.Nullable" || !annotation.args().is_empty() || !matches!(ty, JavaType::Class(_)) {
+                    if annotation.name() != "normalizer.annotations.Nullable" || annotation.has_arguments() || !matches!(ty, JavaType::Class(_)) {
                         return Err(format!("unsupported source parameter annotation {}", annotation.name()));
                     }
                     domain.push('?');

@@ -240,19 +240,19 @@ pub enum JavaType {
     Void,
 }
 
-/// 注解引用（仅名字和简单参数，具体解析由 plugin 负责）。
+/// Source annotation marker; only the name and presence of arguments matter.
 #[derive(Debug, Clone)]
 pub struct AnnotationRef {
     pub(crate) name: String,
-    pub(crate) args: Vec<(String, String)>,
+    pub(crate) has_arguments: bool,
 }
 
 impl AnnotationRef {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn args(&self) -> &[(String, String)] {
-        &self.args
+    pub fn has_arguments(&self) -> bool {
+        self.has_arguments
     }
 }
 

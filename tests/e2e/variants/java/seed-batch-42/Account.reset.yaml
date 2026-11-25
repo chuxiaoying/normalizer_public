@@ -43,3 +43,17 @@
   expect:
     - { path: [R], value: '2' }
     - { path: [throws], absent: true }
+- name: nullable-marker-with-empty-parentheses-keeps-the-same-contract
+  edits:
+    - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.Nullable() ' }
+- name: a-comment-does-not-count-as-a-marker-argument
+  edits:
+    - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.Nullable(/* marker only */) ' }
+- name: annotation-comma-is-not-an-empty-marker
+  edits:
+    - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.Nullable(,) ' }
+  reject: ['unsupported source parameter annotation normalizer.annotations.Nullable']
+- name: marker-does-not-treat-quoted-commas-as-missing-arguments
+  edits:
+    - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.Nullable(reason="审核,(参数)") ' }
+  reject: ['unsupported source parameter annotation normalizer.annotations.Nullable']

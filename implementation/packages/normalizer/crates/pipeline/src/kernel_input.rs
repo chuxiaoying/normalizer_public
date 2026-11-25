@@ -728,7 +728,7 @@ impl Loaded {
                         n,
                         t,
                     )?,
-                    m.param_annotations(n).iter().any(|a| a.name() == "normalizer.annotations.Nullable" && a.args().is_empty()),
+                    m.param_annotations(n).iter().any(|a| a.name() == "normalizer.annotations.Nullable" && !a.has_arguments()),
                 )
             })
             .collect::<Result<_>>()?;

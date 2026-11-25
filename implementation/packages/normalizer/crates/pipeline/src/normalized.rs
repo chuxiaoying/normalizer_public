@@ -133,7 +133,7 @@ pub(crate) fn entry_state(
     let [annotation] = field.annotations() else {
         return false;
     };
-    annotation.args().is_empty()
+    !annotation.has_arguments()
         && (annotation.name() == "normalizer.annotations.EntryState"
             || (annotation.name() == "EntryState"
                 && class
@@ -146,7 +146,7 @@ pub(crate) fn source_nullable_field(
 ) -> bool {
     let [annotation] = field.annotations() else { return false; };
     matches!(field.java_type(), JavaType::Class(_))
-        && annotation.args().is_empty()
+        && !annotation.has_arguments()
         && (annotation.name() == "normalizer.annotations.Nullable"
             || (annotation.name() == "Nullable" && class.imports().iter().any(|name| name == "normalizer.annotations.Nullable")))
 }
@@ -160,7 +160,7 @@ pub(crate) fn nullable_text_field(
 pub(crate) fn nullable_text_return(class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod) -> bool {
     let [annotation] = method.annotations() else { return false; };
     matches!(method.return_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
-        && annotation.args().is_empty()
+        && !annotation.has_arguments()
         && (annotation.name() == "normalizer.annotations.Nullable"
             || (annotation.name() == "Nullable" && class.imports().iter().any(|name| name == "normalizer.annotations.Nullable")))
 }
