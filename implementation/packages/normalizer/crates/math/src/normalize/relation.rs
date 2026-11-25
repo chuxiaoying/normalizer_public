@@ -147,18 +147,6 @@ fn rewrite_empty_first(expr: &Expr) -> Option<Expr> {
     }
 }
 
-/// Rule Q3b: NthValue(Empty, i, default) = default.
-///
-/// Local simplification: an empty ordered list has no indexed row.
-fn rewrite_empty_index(expr: &Expr) -> Option<Expr> {
-    match relation_aggregate_fields(expr) {
-        Some((RelationAggregateKind::NthValue, RelationExpr::Empty, _, Some(default_expr))) => {
-            Some(default_expr.clone())
-        }
-        _ => None,
-    }
-}
-
 /// Apply local relation-query rewrite rules at the Expr layer.
 ///
 /// These rules operate over structured `RelationExpr` aggregate nodes; the
@@ -178,7 +166,6 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
         .or_else(|| rewrite_index_zero_as_first(expr))
         .or_else(|| rewrite_empty_exists(expr))
         .or_else(|| rewrite_empty_first(expr))
-        .or_else(|| rewrite_empty_index(expr))
         .unwrap_or_else(|| expr.clone());
     if let Some((kind, relation, select_expr, (input_size, input_depth), start)) = profile {
         let output_relation =

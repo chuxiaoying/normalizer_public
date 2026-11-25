@@ -50,10 +50,6 @@ pub enum RelationExpr {
 }
 
 impl RelationExpr {
-    pub fn empty() -> Self {
-        Self::Empty
-    }
-
     pub fn base<S1: Into<String>, S2: Into<String>>(name: S1, alias: S2) -> Self {
         Self::Base {
             name: name.into(),

@@ -16,3 +16,8 @@
           ),
           0
         )
+- name: known-empty-first-row-does-not-read-a-field
+  edits:
+    - from: 'where row.amount > 0'
+      to: 'where row.amount > 0 and false'
+  expect: [{path: [R], value: '0'}]
