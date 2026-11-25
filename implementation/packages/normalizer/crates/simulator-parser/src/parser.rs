@@ -97,9 +97,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(crate) fn err(&self, msg: &str) -> ParseError {
+    fn location(&self, offset: usize) -> (usize, usize) {
         let (mut line, mut col) = (1usize, 1usize);
-        for &b in &self.src[..self.pos.min(self.src.len())] {
+        for &b in &self.src[..offset.min(self.src.len())] {
             if b == b'\n' {
                 line += 1;
                 col = 1;
@@ -107,11 +107,29 @@ impl<'a> Parser<'a> {
                 col += 1;
             }
         }
+        (line, col)
+    }
+
+    fn err_at(&self, offset: usize, msg: &str) -> ParseError {
+        let (line, col) = self.location(offset);
+        ParseError::Syntax { file: self.file.clone(), line, col, msg: msg.to_string() }
+    }
+
+    pub(crate) fn err(&self, msg: &str) -> ParseError {
+        self.err_at(self.pos, msg)
+    }
+
+    // Class and method fragments are parsed with local offsets. Reattach an
+    // error to its original source position at every enclosing slice.
+    fn rebase_slice(&self, offset: usize, error: ParseError) -> ParseError {
+        let ParseError::Syntax { file, line, col, msg } = error;
+        if file != self.file {
+            return ParseError::Syntax { file, line, col, msg };
+        }
+        let (start_line, start_col) = self.location(offset);
         ParseError::Syntax {
-            file: self.file.clone(),
-            line,
-            col,
-            msg: msg.to_string(),
+            file, line: start_line + line - 1,
+            col: if line == 1 { start_col + col - 1 } else { col }, msg,
         }
     }
 
@@ -627,6 +645,7 @@ impl<'a> Parser<'a> {
         let (supertype, interfaces) = self.parse_class_hierarchy(is_interface)?;
 
         self.skip_ws();
+        let body_at = self.pos + 1; // after the opening brace
         let body_text = self.skip_balanced_braces()?;
 
         let mut class = JavaClass {
@@ -647,7 +666,7 @@ impl<'a> Parser<'a> {
             is_interface,
         };
 
-        parse_class_body(&body_text, &mut class, &self.package, &self.file)?;
+        parse_class_body(&body_text, &mut class, &self.package, &self.file).map_err(|error| self.rebase_slice(body_at, error))?;
 
         Ok(class)
     }
@@ -766,6 +785,7 @@ fn parse_class_body(
                 p.parse_class_hierarchy(nested_is_interface)?;
 
             p.skip_ws();
+            let nested_at = p.pos + 1;
             let nested_body = p.skip_balanced_braces()?;
             let mut nested_class = JavaClass {
                 source_file: Some(file.to_owned()),
@@ -789,7 +809,7 @@ fn parse_class_body(
                 &mut nested_class,
                 package,
                 file,
-            )?;
+            ).map_err(|error| p.rebase_slice(nested_at, error))?;
             class.inner_classes.push(nested_class);
             continue;
         }
@@ -820,6 +840,7 @@ fn parse_class_body(
                 let throws = parse_throws(&mut p)?;
                 p.skip_ws();
                 let body = if p.peek() == Some(b'{') {
+                    let body_at = p.pos + 1;
                     let text = p.skip_balanced_braces()?;
                     Some(crate::body_parser::parse_method_body_text(
                         &text,
@@ -828,7 +849,7 @@ fn parse_class_body(
                         class.imports.clone(),
                         class.imports_wildcard.clone(),
 
-                    )?)
+                    ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
                     p.eat_char(b';');
                     None
@@ -862,6 +883,7 @@ fn parse_class_body(
         };
 
         p.skip_ws();
+        let member_at = p.pos;
         let member_name = p
             .read_ident()
             .ok_or_else(|| p.err("[MEMBER-NAME-UNPARSED] expected member name"))?;
@@ -869,7 +891,7 @@ fn parse_class_body(
         p.skip_ws();
         if p.peek() == Some(b'(') {
             if is_reserved_identifier(&member_name) {
-                return Err(p.err(&format!("[JAVA-RESERVED-METHOD-NAME] {}.{}: reserved keyword used as a Java method name", class.full_name(), member_name)));
+                return Err(p.err_at(member_at, &format!("[JAVA-RESERVED-METHOD-NAME] {}.{}: reserved keyword used as a Java method name", class.full_name(), member_name)));
             }
             if is_native && class.is_interface() {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] interface method cannot be native"));
@@ -907,6 +929,7 @@ fn parse_class_body(
                 }
                 None
             } else if p.peek() == Some(b'{') {
+                let body_at = p.pos + 1;
                 let text = p.skip_balanced_braces()?;
                 Some(crate::body_parser::parse_method_body_text(
                     &text,
@@ -915,7 +938,7 @@ fn parse_class_body(
                     class.imports.clone(),
                     class.imports_wildcard.clone(),
 
-                )?)
+                ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {
                 p.eat_char(b';');
                 None

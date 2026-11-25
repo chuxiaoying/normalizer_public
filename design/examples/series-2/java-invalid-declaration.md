@@ -44,3 +44,22 @@ entry: { function: src/TicketCode.java#TicketCode.readValid, returns: number }
 P: { parameters: { value: { position: 0, type: number } } }
 R: value
 ```
+
+## 合法的嵌套声明
+
+合法的内部类不应被跳过。显式选择完整限定名时，入口必须来自同一源码文件中的那个声明。若把嵌套方法名换成保留字，诊断也必须指回文件中的原行列，而不是内层片段的相对位置。
+
+```java
+class TicketCode {
+    static class Nested {
+        static int readNested(int value) { return value + 1; }
+    }
+}
+```
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/TicketCode.java#TicketCode.Nested.readNested, returns: number }
+P: { parameters: { value: { position: 0, type: number } } }
+R: value + 1
+```

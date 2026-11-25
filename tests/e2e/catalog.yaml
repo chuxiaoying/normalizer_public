@@ -148,7 +148,7 @@ groups:
     sql-projected-distinct: [BillReport.countAccounts]
     java-map-present-null: [Caption.select]
     java-state-alias: [Account.reset]
-    java-invalid-declaration: [TicketCode.read, TicketCode.readValid]
+    java-invalid-declaration: [TicketCode.read, TicketCode.readValid, TicketCode.Nested.readNested]
     java-lifo-release: [TaskBatch.complete]
   typescript/seed-batch-42:
     typescript-tuple-slots: [receipt.ts#traceCount]
