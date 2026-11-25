@@ -1,0 +1,18 @@
+- name: private-receipt-name-does-not-renumber-the-actual-call
+  edits:
+    - from: 'int second ='
+      to: 'int observed ='
+    - from: 'else second'
+      to: 'else observed'
+- name: choosing-the-first-fallback-does-not-delete-the-second-call
+  edits:
+    - from: 'else second'
+      to: 'else first'
+  expect:
+    - path: [T, 0, empty]
+      value: '$e_0'
+- name: conditional-receipt-is-not-an-unconditionally-acquired-fallback
+  edits:
+    - from: 'int first = checkpoints.read(code);'
+      to: 'int first = code; if (code > 0) first = checkpoints.read(code);'
+  reject: ['member choices with effects require unconditional nonthrowing integer receipts']

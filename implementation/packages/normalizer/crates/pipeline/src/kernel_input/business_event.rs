@@ -69,7 +69,8 @@ pub(super) fn observations(
     let mut effects = Vec::new();
     let mut tables = result.source_tables.clone();
     let mut sql_exceptions = BTreeSet::new();
-    let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>| -> Result<()> {
+    let mut choice_receipts = BTreeMap::new();
+    let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>, temporals: Option<&BTreeMap<u64, usize>>| -> Result<()> {
         let mut closed = true;
         expr.walk(&mut |node| {
             closed &= node.as_heap_ref().is_none();
@@ -79,16 +80,17 @@ pub(super) fn observations(
                     SymVarOrigin::External { binding_id, path, .. } => issued.contains(binding_id)
                         || result.source_state_bindings.get(binding_id)
                             .is_some_and(|root| entry.source_state_path(root, path)),
-                    _ => false,
+                    SymVarOrigin::Temporal { binding_id, primitive_type } => primitive_type == "integer"
+                        && temporals.is_some_and(|names| names.contains_key(binding_id)),
                 };
             }
         });
         need(closed, "unbound local or external value in settled output")
     };
     for event in result.realtime_effects.events() {
-        validate_ids(&event.guard, &issued)?;
+        validate_ids(&event.guard, &issued, None)?;
         for arg in &event.args {
-            validate_ids(arg, &issued)?;
+            validate_ids(arg, &issued, None)?;
         }
         if let EffectOperation::Sql(sql) = &event.operation {
             let (response, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
@@ -119,6 +121,14 @@ pub(super) fn observations(
                     "external business result disagrees with port type",
                 )?;
                 let (response, output) = bind_receipt(event, &mut issued, &mut ctx)?;
+                if !result.member_choices.is_empty() && event.guard.as_bool() == Some(true)
+                    && spec.returns == Ty::Integer && !spec.throwing()
+                {
+                    let Some(SymVarOrigin::External { binding_id, .. }) = response.as_sym_var() else {
+                        return Err(fail("missing already bound member choice receipt"));
+                    };
+                    choice_receipts.insert(*binding_id, output.clone());
+                }
                 if spec.returns != Ty::Unit {
                     let value = spec.awaited_value(response)?;
                     ctx.display_business_value(value, output.clone());
@@ -166,13 +176,23 @@ pub(super) fn observations(
         wrapper[label] = item;
         effects.push(wrapper);
     }
+    let (temporal_names, definitions) = if result.member_choices.is_empty() {
+        (BTreeMap::new(), Vec::new())
+    } else {
+        need(choice_receipts.len() == effects.len(),
+            "member choices with effects require unconditional nonthrowing integer receipts")?;
+        super::member_choice::publish(&result.member_choices, &arrays, &names, |id, path| {
+            entry.acquired_state_path(result, id, path)
+                .or_else(|| if path.is_empty() { choice_receipts.get(&id).cloned() } else { None })
+        })?
+    };
     let alternatives = result
         .realtime_completion
         .terminal_alternatives()
         .ok_or_else(|| fail("entry has incomplete control flow"))?;
     let mut exceptions: Vec<(String, Option<Expr>, Expr)> = Vec::new();
     for alternative in alternatives {
-        validate_ids(&alternative.guard, &issued)?;
+        validate_ids(&alternative.guard, &issued, None)?;
         match alternative.outcome {
             CompletionOutcome::Throw { class, payload } => {
                 if let Some(value) = &payload {
@@ -181,7 +201,7 @@ pub(super) fn observations(
                             && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))),
                         "exception payload outside closed typed entry",
                     )?;
-                    validate_ids(value, &issued)?;
+                    validate_ids(value, &issued, None)?;
                 } else {
                     need(project.type_only_exception(&class), "undeclared type-only exception")?;
                 }
@@ -194,7 +214,7 @@ pub(super) fn observations(
                 }
             }
             CompletionOutcome::Return(value) => {
-                validate_ids(&value, &issued)?;
+                validate_ids(&value, &issued, Some(&temporal_names))?;
             }
             CompletionOutcome::Continue => return Err(fail("incomplete settled return")),
         }
@@ -241,7 +261,8 @@ pub(super) fn observations(
         .realtime_completion
         .value_on_normal_exit()
         .ok_or_else(|| fail("no normal settled return"))?;
-    validate_ids(&returned, &issued)?;
+    validate_ids(&returned, &issued, Some(&temporal_names))?;
+    ctx.set_temporal_names(temporal_names);
     ctx.protect_business_return();
     let returned = if entry.return_type() == "void" {
         need(returned.is_null(), "non-void return in void event")?;
@@ -254,5 +275,6 @@ pub(super) fn observations(
         returned,
         effects,
         throws,
+        definitions,
     })
 }

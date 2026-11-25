@@ -11,6 +11,7 @@ pub(super) struct BusinessObservations {
     pub(super) tables: BTreeMap<String, BTreeMap<String, String>>,
     pub(super) effects: Vec<serde_json::Value>,
     pub(super) throws: Vec<serde_json::Value>,
+    pub(super) definitions: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -265,6 +266,15 @@ impl EntryContext {
         }
     }
 
+    pub(super) fn acquired_state_path(&self, result: &ExecutionResult, id: u64, path: &[String]) -> Option<String> {
+        let root = result.source_state_bindings.get(&id)?;
+        if !self.source_state_path(root, path) {
+            return None;
+        }
+        let label = self.qualified("E", root);
+        Some(std::iter::once(label.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join("."))
+    }
+
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
         let events = result.realtime_effects.events();
         let typed = project.result_type(method.return_type())?;
@@ -272,10 +282,9 @@ impl EntryContext {
             && self.returns == "number[]") || (typed == super::Ty::OrderedTextMap
             && self.returns == "map<text,text>");
         if !result.member_choices.is_empty() && (!result.pure_folds.is_empty()
-            || !events.is_empty() || result.source_record_return.is_some()
-            || result.realtime_completion.return_value().is_none())
+            || result.source_record_return.is_some() || result.realtime_completion.return_value().is_none())
         {
-            return Err("member choice publication requires a closed scalar entry without effects, throws or folds".into());
+            return Err("member choice publication requires a closed scalar entry without throws or folds".into());
         }
         if !result.pure_folds.is_empty() && (!events.is_empty()
             || result.source_record_return.is_some()
@@ -327,15 +336,10 @@ impl EntryContext {
             let param = self.parameters.get(root)?;
             self.types.contains_key(&param.ty).then(|| (*id, self.qualified("P", root)))
         }).collect::<BTreeMap<_, _>>();
-        let state_path = |id: u64, path: &[String]| {
-            let root = result.source_state_bindings.get(&id)?;
-            if !self.source_state_path(root, path) {
-                return None;
-            }
-            let label = states.get(&id)?;
-            Some(std::iter::once(label.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join("."))
-        };
-        let (definition_names, definitions) = if !result.member_choices.is_empty() {
+        let state_path = |id, path: &[String]| self.acquired_state_path(result, id, path);
+        let (definition_names, definitions) = if let Some(observed) = &observations {
+            (BTreeMap::new(), observed.definitions.clone())
+        } else if !result.member_choices.is_empty() {
             super::member_choice::publish(&result.member_choices, &arrays, &names, state_path)?
         } else if result.pure_folds.is_empty() {
             (BTreeMap::new(), Vec::new())
