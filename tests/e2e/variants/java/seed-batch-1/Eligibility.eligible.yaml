@@ -34,3 +34,18 @@
       to: 'return (score == 1 || score == 2) && preferred && score != 2;'
   expect:
     - { path: [R], value: 'preferred AND score == 1' }
+- name: one-total-integer-is-always-positive-negative-or-zero
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return score > 0 || score < 0 || score == 0;'
+  expect:
+    - { path: [R], value: 'true' }
+- name: zero-from-a-different-integer-does-not-prove-exhaustiveness
+  edits:
+    - { from: 'int score, boolean preferred', to: 'int score, int alternate' }
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return score > 0 || score < 0 || alternate == 0;'
+  expect:
+    - path: [P, parameters]
+      value: { score: { position: 0, type: number }, alternate: { position: 1, type: number } }
+    - { path: [R], value: 'alternate == 0 OR score < 0 OR score > 0' }

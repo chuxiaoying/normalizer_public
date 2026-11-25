@@ -1,0 +1,3 @@
+- name: swapping-the-positive-comparison-does-not-remove-the-zero-exception
+  edits:
+    - { from: 'quantity > 0', to: '0 < quantity' }

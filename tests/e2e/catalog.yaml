@@ -7,7 +7,7 @@ groups:
   java/unified-canonical-form:
     canonical-binary-case: [CanonicalCount.clamp, CanonicalCount.present]
     canonical-pure-fold-definitions: [CanonicalFolds.difference, CanonicalFolds.fromState]
-    canonical-integer-partition: [CanonicalQuantity.band]
+    canonical-integer-partition: [CanonicalQuantity.band, CanonicalQuantity.signGuarded]
     canonical-total-boolean-order: [CanonicalChecks.approved, CanonicalChecks.tier, CanonicalChecks.priority]
     canonical-number-selection: [CanonicalQuota.smaller]
     canonical-text-order: [CanonicalLabel.label, CanonicalLabel.charCode]

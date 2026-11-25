@@ -125,6 +125,42 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
     cuts.push(&n + 1);
     Some(Guard::Compare(op, n))
 }
+
+fn cells(lo: Endpoint, hi: Endpoint, mut cuts: Vec<BigInt>) -> impl Iterator<Item = (Endpoint, Endpoint)> {
+    cuts.retain(|n| lo.as_ref().is_none_or(|v| n > v)
+        && hi.as_ref().is_none_or(|v| n <= v));
+    cuts.sort();
+    cuts.dedup();
+    let mut start = lo;
+    cuts.into_iter().map(Some).chain(std::iter::once(None)).map(move |next| {
+        let end = next.as_ref().map(|n| n - 1).or_else(|| hi.clone());
+        (std::mem::replace(&mut start, next), end)
+    })
+}
+
+// Every comparison is constant on a cell. This is exact enumeration of
+// equivalence classes, including the two possible unbounded tail cells.
+fn cell_representative(lo: &Endpoint, hi: &Endpoint) -> BigInt {
+    lo.as_ref().or(hi.as_ref()).cloned().unwrap_or_default()
+}
+
+/// Prove a small union on one certified integer domain, without assuming
+/// totality for fields, nullable values, call results or other subjects.
+pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {
+    if !(3..=16).contains(&disjuncts.len()) || disjuncts.iter().map(Expr::size).sum::<usize>() > 64 {
+        return false;
+    }
+    let mut subject = None;
+    let mut cuts = Vec::new();
+    let Some(guards) = disjuncts.iter().map(|c| guard(c, &mut subject, &mut cuts))
+        .collect::<Option<Vec<_>>>() else { return false; };
+    let Some((lo, hi)) = subject.as_ref().and_then(subject_domain) else { return false; };
+    cells(lo, hi, cuts).all(|(lo, hi)| {
+        let representative = cell_representative(&lo, &hi);
+        guards.iter().any(|g| g.at(&representative))
+    })
+}
+
 pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
     if branches.len() < 3
         || !branches.last()?.0.as_bool().is_some_and(|b| b)
@@ -140,28 +176,17 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
         .collect::<Option<Vec<_>>>()?;
     let subject = subject?;
     let (lo, hi) = subject_domain(&subject)?;
-    cuts.retain(|n| lo.as_ref().is_none_or(|v| n > v)
-        && hi.as_ref().is_none_or(|v| n <= v));
-    cuts.sort();
-    cuts.dedup();
-
     let mut segments: Vec<(Endpoint, Endpoint, Expr)> = Vec::new();
-    let mut start = lo.clone();
-    for next in cuts.into_iter().map(Some).chain(std::iter::once(None)) {
-        let end = next.as_ref().map(|n| n - 1).or_else(|| hi.clone());
-        // Predicates are constant within a cell. For the unbounded first
-        // cell any integer before its next cut is exactly equivalent.
-        let sample = start.as_ref().or(end.as_ref()).cloned().unwrap_or_default();
-        let value = branches[guards.iter().position(|g| g.at(&sample))?].1.clone();
+    for (start, end) in cells(lo.clone(), hi.clone(), cuts) {
+        let representative = cell_representative(&start, &end);
+        let value = branches[guards.iter().position(|g| g.at(&representative))?].1.clone();
         if let Some(last) = segments.last_mut() {
             if last.2 == value {
                 last.1 = end;
-                start = next;
                 continue;
             }
         }
         segments.push((start, end, value));
-        start = next;
     }
     // Keep the explicit default and the source's first occurrence of each
     // non-default payload. Partition cells determine effective domains, not a

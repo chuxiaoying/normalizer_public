@@ -941,6 +941,9 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
     // 对每个 anchor disjunct d_i，从其它 disjunct d_j 的 conjuncts 中删除与 d_i 互补的因子
     out = resolution_absorb(&out);
     out = comparison_or_absorb(&out);
+    if super::integer_ranges::exhaustive_union(&out) {
+        return Some(builder::lit_bool(true));
+    }
     if out.is_empty() {
         return Some(builder::lit_bool(false));
     }

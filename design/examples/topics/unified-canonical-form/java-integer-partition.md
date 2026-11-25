@@ -38,3 +38,33 @@ R: |-
 在整数域，首支是到 -1 为止；第二和第三支的有效域分别为 0 到 2、3 到 5，按相邻整数区间合并，再按结构键排列同一 guard 的两个比较。写成显式的闭区间，或者在每一支把比较两端和运算符一起换边（例如 `5 >= quantity`），都得到同一 PERS。若把前两个可重叠的源码判断调换，负数将先返回 20，10 从此不可达，不能继续用上述结果。
 
 另有两条边界验收。若三个分支分别只匹配 -2、0、2，且 -2 与 2 共用结果，必须保留两点的并集；不能填满它们之间的区间。若第一条上界为 `9223372036854775807`、第二条上界再加一，在本项目的业务精确整数域内，第二个有效域只有 `9223372036854775808`；它不回绕，也不能被 Java 的宿主字长误判为空。
+
+对于同一个已取得的精确整数，正、负、零覆盖整个整数域。若三个早返回分别给 1、-1、0，末尾的显式抛错不可达；这与省略第三个条件、默认返回 0 的写法应得到相同的 CASE。若只覆盖正负，`quantity == 0` 仍然可达，必须保留该分支的异常，而不是把它当正常返回。若第三个条件比较另一个变量，也不能证明该并集穷尽。
+
+## 零分支确实抛错的对照
+
+```java
+class CanonicalQuantity {
+    static int signGuarded(int quantity) {
+        if (quantity > 0) return 1;
+        if (quantity < 0) return -1;
+        throw new RuntimeException("zero");
+    }
+}
+```
+
+**原样通过。** `R` 只在正常完成域使用；在这个域，`quantity <= 0` 与 `quantity < 0` 等价，零路径由下方的异常单独记录。把正数比较写成 `0 < quantity` 不改变结果。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/CanonicalQuantity.java#CanonicalQuantity.signGuarded, returns: number }
+P: { parameters: { quantity: { position: 0, type: number } } }
+R: |-
+  CASE
+    WHEN quantity <= 0 THEN -1
+    ELSE 1
+  END
+S: []
+throws:
+  - { type: java.lang.RuntimeException, when: 'quantity == 0', payload: '"zero"' }
+```
