@@ -667,35 +667,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }
     }
 
-    // Narrow RCL cardinality absorption:
-    //   Exists(Select(P, R))  =>  Exists(R)
-    //
-    // In AND contexts keep the stronger filtered existence and remove the
-    // duplicate base non-empty observer.  This is a relation-cardinality law
-    // over the same current relation, not broad peer implication.
-    let before_filtered_exists_absorb_len = out.len();
-    let absorbed_by_filtered_exists: Vec<bool> = (0..out.len())
-        .map(|i| {
-            (0..out.len()).any(|j| i != j && relation_exists_filter_implies_base(&out[j], &out[i]))
-        })
-        .collect();
-    if absorbed_by_filtered_exists.iter().any(|absorbed| *absorbed) {
-        out = out
-            .into_iter()
-            .zip(absorbed_by_filtered_exists.iter())
-            .filter_map(|(expr, absorbed)| if *absorbed { None } else { Some(expr) })
-            .collect();
-        if out.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
-        if out.len() == 1 {
-            return Some(out.into_iter().next().unwrap());
-        }
-        if out.len() != before_filtered_exists_absorb_len {
-            return Some(rebuild_and(&out));
-        }
-    }
-
     // Narrow row-domain absorption:
     //   a row-scoped value for R proves the source relation row exists.
     //

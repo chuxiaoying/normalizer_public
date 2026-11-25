@@ -57,13 +57,7 @@ pub(super) fn relation_exists_conjunct_implies(left: &Expr, right: &Expr) -> boo
     if profile_pair_can_skip_proof_check(left, right) {
         return false;
     }
-    relation_exists_filter_implies_base(left, right)
-        || relation_exists_filter_implies_base_negative(left, right)
-        || relation_count_nonzero_filter_implies_base(left, right)
-        || relation_count_nonzero_filter_implies_base_negative(left, right)
-        || relation_count_nonzero_implies_exists(left, right)
-        || relation_exists_implies_count_nonzero(left, right)
-        || relation_count_zero_base_implies_filter(left, right)
+    relation_count_nonzero_implies_exists(left, right)
 }
 
 pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> bool {
@@ -161,94 +155,6 @@ pub(super) fn relation_exists_contradicts_count_zero(
     relation_cardinality_input_matches(exists_relation, count_zero_relation)
 }
 
-pub(super) fn relation_exists_filter_implies_base(left: &Expr, right: &Expr) -> bool {
-    let Some((RelationAggregateKind::Exists, left_relation, left_select, left_default)) =
-        left.as_relation_aggregate()
-    else {
-        return false;
-    };
-    if left_select.and_then(|expr| expr.as_bool()) != Some(true) || left_default.is_some() {
-        return false;
-    }
-    let crate::domains::relation::RelationExpr::Select { input, .. } = left_relation else {
-        return false;
-    };
-
-    let Some((RelationAggregateKind::Exists, right_relation, right_select, right_default)) =
-        right.as_relation_aggregate()
-    else {
-        return false;
-    };
-    right_select.and_then(|expr| expr.as_bool()) == Some(true)
-        && right_default.is_none()
-        && relation_cardinality_input_matches(input.as_ref(), right_relation)
-}
-
-pub(super) fn relation_exists_filter_implies_base_negative(left: &Expr, right: &Expr) -> bool {
-    let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand: left_operand,
-    } = left.kind()
-    else {
-        return false;
-    };
-    let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand: right_operand,
-    } = right.kind()
-    else {
-        return false;
-    };
-    relation_exists_filter_implies_base(right_operand, left_operand)
-}
-
-pub(super) fn relation_count_nonzero_filter_implies_base(left: &Expr, right: &Expr) -> bool {
-    let Some(left_relation) = relation_count_nonzero_relation(left) else {
-        return false;
-    };
-    let crate::domains::relation::RelationExpr::Select { input, .. } = left_relation else {
-        return false;
-    };
-    let Some(right_relation) = relation_count_nonzero_relation(right) else {
-        return false;
-    };
-    relation_cardinality_input_matches(input.as_ref(), right_relation)
-}
-
-pub(super) fn relation_count_nonzero_filter_implies_base_negative(
-    left: &Expr,
-    right: &Expr,
-) -> bool {
-    let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand: left_operand,
-    } = left.kind()
-    else {
-        return false;
-    };
-    let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand: right_operand,
-    } = right.kind()
-    else {
-        return false;
-    };
-    relation_count_nonzero_filter_implies_base(right_operand, left_operand)
-}
-
-pub(super) fn relation_count_zero_base_implies_filter(left: &Expr, right: &Expr) -> bool {
-    let Some(left_relation) = relation_count_zero_relation(left) else {
-        return false;
-    };
-    let Some(right_relation) = relation_count_zero_relation(right) else {
-        return false;
-    };
-    let crate::domains::relation::RelationExpr::Select { input, .. } = right_relation else {
-        return false;
-    };
-    relation_cardinality_input_matches(input.as_ref(), left_relation)
-}
-
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {
     let Some(left_relation) =
         relation_count_nonzero_relation(left).or_else(|| relation_count_positive_lower_bound(left))
@@ -299,21 +205,6 @@ pub(super) fn relation_count_positive_lower_bound(
         return None;
     };
     Some(relation)
-}
-
-pub(super) fn relation_exists_implies_count_nonzero(left: &Expr, right: &Expr) -> bool {
-    let Some((RelationAggregateKind::Exists, left_relation, left_select, left_default)) =
-        left.as_relation_aggregate()
-    else {
-        return false;
-    };
-    if left_select.and_then(|expr| expr.as_bool()) != Some(true) || left_default.is_some() {
-        return false;
-    }
-    let Some(right_relation) = relation_count_nonzero_relation(right) else {
-        return false;
-    };
-    relation_cardinality_input_matches(left_relation, right_relation)
 }
 
 pub(super) fn relation_cardinality_input_matches(
