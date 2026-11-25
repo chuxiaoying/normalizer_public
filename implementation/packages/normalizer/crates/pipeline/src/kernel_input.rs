@@ -398,7 +398,10 @@ impl Loaded {
         let exceptions = source_exception_parents
             .keys()
             .cloned()
-            .map(|name| (name, "unit".to_string()))
+            .map(|name| {
+                let domain = program.find_class(&name).and_then(crate::normalized::source_payload_domain).unwrap_or("unit");
+                (name, domain.to_owned())
+            })
             .collect();
         let heap_fields = source_layouts
             .values()
@@ -580,6 +583,7 @@ impl Loaded {
                     && (!c.is_interface() || self.project.source_ports.values().any(|p| p.interface==c.full_name())
                         || (self.project.direct_source && crate::normalized::plain_source_interface(c)))
                     && (c.fields().is_empty()
+                        || self.project.source_exception_parents.contains_key(&c.full_name())
                         || self.project.source_layouts.contains_key(&c.full_name()))
                     && c.annotations().is_empty()
                     && c.type_params().is_empty()

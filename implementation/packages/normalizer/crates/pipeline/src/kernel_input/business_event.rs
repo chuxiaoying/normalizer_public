@@ -70,6 +70,7 @@ pub(super) fn observations(
     let mut tables = result.source_tables.clone();
     let mut sql_exceptions = BTreeSet::new();
     let mut temporal_receipts = BTreeMap::new();
+    let mut external_payloads = Vec::new();
     let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>, temporals: Option<&BTreeMap<u64, usize>>| -> Result<()> {
         let mut closed = true;
         expr.walk(&mut |node| {
@@ -121,6 +122,14 @@ pub(super) fn observations(
                     "external business result disagrees with port type",
                 )?;
                 let (response, output) = bind_receipt(event, &mut issued, &mut ctx)?;
+                for (class, failed, payload) in spec.throw_variants(response) {
+                    if let Some(payload) = payload.filter(|_| project.direct_source
+                        && project.exceptions.get(&class).is_some_and(|ty| matches!(ty.as_str(), "text?" | "number")))
+                    {
+                        let domain = math::normalize(b::and(event.guard.clone(), failed));
+                        external_payloads.push((class, payload, domain));
+                    }
+                }
                 if !result.temporal_definitions.is_empty() && event.guard.as_bool() == Some(true)
                     && spec.returns == Ty::Integer && !spec.throwing()
                 {
@@ -200,8 +209,11 @@ pub(super) fn observations(
             CompletionOutcome::Throw { class, payload } => {
                 if let Some(value) = &payload {
                     need(
-                        project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
-                            && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))),
+                        (project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
+                            && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))))
+                            || external_payloads.iter().any(|(declared, observed, domain)|
+                                declared == &class && observed == value
+                                    && b::path_implies(&alternative.guard, domain)),
                         "exception payload outside closed typed entry",
                     )?;
                     validate_ids(value, &issued, None)?;
@@ -256,6 +268,9 @@ pub(super) fn observations(
             let mut record = json!({"type":name,"when":guard});
             if let Some(value) = payload {
                 record["payload"] = json!(crate::format_expr_with_ctx(&value, &mut ctx));
+                if let Some(ty) = project.exceptions.get(&name).filter(|ty| ty.as_str() != "unit") {
+                    record["payload_type"] = json!(ty);
+                }
             }
             record
         })

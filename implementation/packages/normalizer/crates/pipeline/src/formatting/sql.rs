@@ -265,10 +265,11 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if let Some((key, args)) = expr.as_call() {
         let registered_name = math::func_name(key);
         if ctx.business_inputs.is_some() {
-            if registered_name == "completion.is_throw" {
+            if matches!(math::domains::completion::output_name(&registered_name), "completion.is_throw" | "completion.payload") {
                 if let [response, class] = args {
                     if let Some(math::Lit::Str(name)) = class.as_lit() {
-                        return format!("completion.is_throw({}, {name})", format_expr_with_ctx(response, ctx));
+                        return format!("{}({}, {name})", math::domains::completion::output_name(&registered_name),
+                            format_expr_with_ctx(response, ctx));
                     }
                 }
             }

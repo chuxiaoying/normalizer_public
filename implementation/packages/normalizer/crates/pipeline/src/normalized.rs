@@ -75,6 +75,7 @@ pub(crate) fn source_layouts(
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
     let mut layouts = BTreeMap::new();
     for class in program.classes() {
+        if source_payload_domain(class).is_some() { continue; }
         if class.fields().is_empty() {
             if plain_source_interface(class) || !class.interfaces().is_empty() {
                 layouts.insert(class.full_name(), BTreeMap::new());
@@ -172,6 +173,22 @@ pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String,
     let lexical = format!("{owner}.{name}");
     parents.contains_key(&lexical).then_some(lexical)
 }
+/// Closed data carried by the external exception, not a Java heap target.
+pub(crate) fn source_payload_domain(class: &simulator_parser::JavaClass) -> Option<&'static str> {
+    if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
+    let [field] = class.fields() else { return None; };
+    if field.name() != "payload" || field.is_static() || field.is_final() || field.is_volatile()
+        || field.initializer().is_some() || !field.annotations().is_empty()
+    {
+        return None;
+    }
+    match field.java_type() {
+        JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String") => Some("text?"),
+        ty if integral(ty) => Some("number"),
+        _ => None,
+    }
+}
+
 pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String, String>, String> {
     let mut parents = BTreeMap::new();
     for class in program.classes() {
@@ -189,7 +206,7 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
             return Err(error("NORM-EXCEPTION-SHADOW", &class.full_name()));
         }
         if let Some(parent) = class.supertype() {
-            if !class.fields().is_empty()
+            if (!class.fields().is_empty() && source_payload_domain(class).is_none())
                 || !class.methods().is_empty()
                 || !class.annotations().is_empty()
                 || !class.interfaces().is_empty()
@@ -324,7 +341,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
             })
             || (c.is_interface() && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
-            || (!c.fields().is_empty() && !layouts.contains_key(&name))
+            || (!c.fields().is_empty() && !layouts.contains_key(&name) && !exceptions.contains_key(&name))
             || !c.annotations().is_empty()
             || !c.type_params().is_empty()
             || !supported_source_imports(c)

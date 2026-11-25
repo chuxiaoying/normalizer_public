@@ -79,3 +79,32 @@ throws:
   - { type: java.lang.RuntimeException, when: 'enabled and $e_0 == 1', payload: '"alpha"' }
   - { type: java.lang.RuntimeException, when: 'enabled and $e_0 == 2', payload: '"zeta"' }
 ```
+
+## 外部异常载荷必须来自它自己的回执
+
+```java
+import normalizer.annotations.External;
+
+class RemoteFault extends RuntimeException { String payload; }
+interface Rates { int read(int input) throws RemoteFault; }
+class RemotePayload {
+    @External private final Rates rates;
+    RemotePayload(Rates rates) { this.rates = rates; }
+    int read(int input) { return rates.read(input); }
+}
+```
+
+**原样通过。** 外部异常类直接继承 RuntimeException 并声明一个明确的 `payload` 标量字段：可空文本或精确整数。类型声明本身不会创建回执；原调用未发生时，S 和异常载荷均不存在。这里只描述合法 S 的外部异常数据，不赋予该声明可写堆身份。载荷类型显式发布，数值与可空文本不能归成同一种结果。正常时返回回执值；发生 `RemoteFault` 时仅从同一次调用投影该异常的载荷。没有载荷的异常则省略字段，而不是编造 null。如两次调用均可抛相同类型，实际发生域仍不同，不得合并两份载荷。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/RemotePayload.java#RemotePayload.read, returns: number }
+P:
+  parameters:
+    input: { position: 0, type: number }
+S:
+  - call: { external: rates.read, args: [input], returns: number, result: '$e_0' }
+R: $e_0
+throws:
+  - { type: RemoteFault, when: 'completion.is_throw($e_0, RemoteFault)', payload: 'completion.payload($e_0, RemoteFault)', payload_type: 'text?' }
+```

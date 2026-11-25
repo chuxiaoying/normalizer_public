@@ -211,7 +211,7 @@ FIRST 的选中值若为 CASE，且同一行绑定的过滤域已蕴含某个显
 
 `task_completion.throws` 的类型声明、异常 tag 及完成记录布局属于另一层合同，不是顶层异常数组，不能独立重排声明而不一致改写相关 tag。legacy SQL pretty 的无载荷展示路径也不因本节自动成为 typed 终态。
 
-本节规定所有有类型出口的目标方向。仅有异常类型、没有载荷的终态，在完成域已证明互斥后先按类汇聚，再按类名排列；有载荷的出口必须再比较载荷与条件结构键。不具备互斥证明的出口保留原顺序并报告规范缺口，不能将一个出口的局部实现扩大为全局完成。具体支持范围以专题种子和独立完整断言为准。当前[直接 Java 异常验收](examples/topics/unified-canonical-form/java-exception-payload.md)闭合 RuntimeException 的字面量消息和显式 null；不将其扩大为 cause、可观察异常对象或外部端口载荷已闭合。
+本节规定所有有类型出口的目标方向。仅有异常类型、没有载荷的终态，在完成域已证明互斥后先按类汇聚，再按类名排列；有载荷的出口必须再比较载荷与条件结构键。不具备互斥证明的出口保留原顺序并报告规范缺口，不能将一个出口的局部实现扩大为全局完成。具体支持范围以专题种子和独立完整断言为准。当前[直接 Java 异常验收](examples/topics/unified-canonical-form/java-exception-payload.md)闭合 RuntimeException 的字面量消息和显式 null；不将其扩大为 cause 或可观察异常对象；[外部端口型载荷](examples/topics/unified-canonical-form/java-exception-payload.md#外部异常载荷必须来自它自己的回执)独立证明同类不同回执、声明类型与取得路径。
 
 ## 规范代表的统一选择
 

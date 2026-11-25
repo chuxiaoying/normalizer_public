@@ -310,6 +310,8 @@ $defs:
     type: object
     additionalProperties: false
     required: [type]
+    dependentRequired:
+      payload_type: [payload]
     properties:
       type:
         $ref: '#/$defs/exception-type'
@@ -317,3 +319,5 @@ $defs:
         $ref: '#/$defs/expression'
       payload:
         $ref: '#/$defs/expression'
+      payload_type:
+        $ref: '#/$defs/semantic-type'
