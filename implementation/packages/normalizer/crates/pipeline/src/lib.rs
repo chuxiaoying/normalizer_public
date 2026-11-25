@@ -10,7 +10,6 @@ mod preprocess;
 mod profile;
 mod runtime_heap;
 pub mod stages;
-mod yaml_input;
 
 pub use error::PipelineError;
 pub use formatting::sql::{

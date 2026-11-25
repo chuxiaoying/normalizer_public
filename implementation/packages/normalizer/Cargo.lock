@@ -95,7 +95,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "simulator-parser",
- "unsafe-libyaml",
 ]
 
 [[package]]

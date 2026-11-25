@@ -178,7 +178,7 @@ export function buildModuleProject({ scene, root, file, name, original, director
   const source = project.source_text;
   writeFileSync(join(directory, 'Normalized.java'), source);
   writeFileSync(join(directory, 'Prepared.mjs'), moduleText);
-  const projectPath = join(directory, 'project.yaml');
+  const projectPath = join(directory, 'project.json');
   writeFileSync(projectPath, JSON.stringify(project, null, 2) + '\n');
   return { projectPath, entry };
 }

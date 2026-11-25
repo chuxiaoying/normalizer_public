@@ -266,7 +266,7 @@ enum Node {
     Const {
         #[serde(rename = "type")]
         typ: String,
-        value: serde_yaml::Value,
+        value: serde_json::Value,
     },
     If {
         cond: Box<Node>,
@@ -451,11 +451,11 @@ impl Loaded {
         let root = path.parent().ok_or_else(|| fail("missing project root"))?;
         let project_text = read(&path)?;
         emit_stage_profile(
-            "project_yaml_parse",
+            "project_read",
             load_started,
             format!("input_bytes={}", project_text.len()),
         );
-        let project: Project = crate::yaml_input::parse_to(&project_text).map_err(fail)?;
+        let project: Project = serde_json::from_str(&project_text).map_err(|error| fail(error.to_string()))?;
         need(project.entries.len() == project.entry_contexts.len()
                 && project.entries.iter().all(|name| project.entry_contexts.contains_key(name)),
                 "business source contexts must cover each selected entry")?;

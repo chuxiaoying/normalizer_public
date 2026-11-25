@@ -193,6 +193,10 @@ PERS 是共享扩展语义和统一 IR 的最终业务表达。它不区分来�
 - `count [distinct] from values as v [where predicate]` 在过滤后计数。`where true` 保留所有项，`where false` 不保留任何项，因此计数为零。普通计数保留重复项；去重计数只合并元素值相同的项。SQL 表上的可空列不沿用数组元素非空的证明。
 - `reduce values from initial as (acc, v) yield acc + term` 和相应的减法可归约为初值加减逐元素求和，前提是 term 不依赖 acc，且初值和每个 term 都是闭合的精确整数值。这不是任意递推或浮点、定宽运算的交换规则。
 
+### 适配器的交接格式
+
+`module` 与 `scenario` 把各自读到的规范源码转为同一份有类型的内核输入。适配器生成的内部工程数据为 JSON，内核经过同一加载和类型校验路径。内部格式不提供第二种面向用户的规范输入入口，最终 PERS 仍是 YAML。
+
 ### Java 声明与无源码调用
 
 源码树里的 Java 声明先经过语法检查，即使声明的函数不会被入口调用。保留字不能作方法名；例如 `return` 非法，`returnValue` 合法。语法错误必须指向原文件及非法声明，不可以删除声明来通过入口检查。

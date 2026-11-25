@@ -134,18 +134,18 @@ impl Engine<'_> {
             Node::Const { typ, value } => {
                 let t = Ty::parse(typ)?;
                 let e = match (&t, value) {
-                    (Ty::Unit, serde_yaml::Value::Null) => b::lit_null(),
-                    (Ty::Bool, serde_yaml::Value::Bool(v)) => b::lit_bool(*v),
-                    (Ty::Integer | Ty::I32 | Ty::I64, serde_yaml::Value::Number(v)) => {
+                    (Ty::Unit, serde_json::Value::Null) => b::lit_null(),
+                    (Ty::Bool, serde_json::Value::Bool(v)) => b::lit_bool(*v),
+                    (Ty::Integer | Ty::I32 | Ty::I64, serde_json::Value::Number(v)) => {
                         let x = v.as_i64().ok_or_else(|| fail("integer range"))?;
                         need(t != Ty::I32 || i32::try_from(x).is_ok(), "i32 range")?;
                         b::lit_int(x)
                     }
-                    (Ty::Ref | Ty::Text, serde_yaml::Value::Null) => b::lit_null(),
-                    (Ty::Vector(item), serde_yaml::Value::Null) if **item == Ty::I32 => {
+                    (Ty::Ref | Ty::Text, serde_json::Value::Null) => b::lit_null(),
+                    (Ty::Vector(item), serde_json::Value::Null) if **item == Ty::I32 => {
                         b::lit_null()
                     }
-                    (Ty::Text, serde_yaml::Value::String(v)) => b::lit_str(v),
+                    (Ty::Text, serde_json::Value::String(v)) => b::lit_str(v),
                     _ => return Err(fail("invalid constant")),
                 };
                 Ok(Value::Term(t, e))

@@ -273,7 +273,7 @@ try {
     try {
       writeFileSync(join(temp, 'Carrier.java'), carrier);
       writeFileSync(join(temp, moduleFile), source);
-      const projectPath = join(temp, 'Project.yaml');
+      const projectPath = join(temp, 'Project.json');
       writeFileSync(projectPath, JSON.stringify(project));
       const result = spawnSync(kernel, ['--project', projectPath, binding], {encoding: 'utf8'});
       if (result.error) throw result.error;
