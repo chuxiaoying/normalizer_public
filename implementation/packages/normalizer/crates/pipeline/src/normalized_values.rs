@@ -15,8 +15,6 @@ impl Ty {
             Self::Text => "text?".into(),
             Self::Ref => "ref?".into(),
             Self::Vector(t) => format!("vector<{}>", t.describe()),
-            Self::Map(k, v) => format!("map<{},{}>", k.describe(), v.describe()),
-            Self::NullableMap(k, v) => format!("map<{},{}>?", k.describe(), v.describe()),
             Self::Record(f) => format!(
                 "record<{}>",
                 f.iter()
@@ -37,16 +35,9 @@ impl Ty {
             | Self::Text
             | Self::Ref => true,
             Self::Task(t) | Self::Vector(t) => t.state_value(),
-            Self::Map(k, v) | Self::NullableMap(k, v) => k.map_key_value() && v.state_value(),
             Self::Record(fields) => fields.values().all(Self::state_value),
             _ => false,
         }
-    }
-    fn map_key_value(&self) -> bool {
-        matches!(
-            self,
-            Self::Bool | Self::Integer | Self::I32 | Self::I64 | Self::Text | Self::Ref
-        ) || matches!(self, Self::Vector(item) if **item == Self::I32)
     }
     // External immutable values carry no identity, callbacks, or heap mutation.
     // They are typed response data, not guessed library implementations.
@@ -54,13 +45,6 @@ impl Ty {
         match self {
             Self::Unit | Self::Bool | Self::Integer | Self::I32 | Self::I64 | Self::Text => true,
             Self::Vector(t) => t.port_value(),
-            Self::Map(k, v) | Self::NullableMap(k, v) => {
-                (matches!(
-                    **k,
-                    Self::Bool | Self::Integer | Self::I32 | Self::I64 | Self::Text
-                ) || matches!(k.as_ref(), Self::Vector(item) if **item == Self::I32))
-                    && v.port_value()
-            }
             Self::Record(fields) => fields.values().all(Self::port_value),
             _ => false,
         }
@@ -74,8 +58,6 @@ impl Ty {
             Self::Ref => Primitive::ReferenceIdentity,
             Self::Task(_)
             | Self::Vector(_)
-            | Self::Map(_, _)
-            | Self::NullableMap(_, _)
             | Self::Record(_) => Primitive::Composite,
             _ => return Err(fail("state values cannot erase source sequence contracts")),
         })
@@ -118,26 +100,6 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
         let t = Ty::parse(t)?;
         need(t.state_value(), "vector element must be a state value")?;
         return Ok(Some(Ty::Vector(Box::new(t))));
-    }
-    let map_source = s.strip_suffix('?').unwrap_or(s);
-    if let Some(t) = map_source
-        .strip_prefix("map<")
-        .and_then(|s| s.strip_suffix('>'))
-    {
-        let p = parts(t);
-        need(p.len() == 2, "map type needs key and value")?;
-        let key = Ty::parse(p[0])?;
-        let value = Ty::parse(p[1])?;
-        let t = if s.ends_with('?') {
-            Ty::NullableMap(Box::new(key.clone()), Box::new(value.clone()))
-        } else {
-            Ty::Map(Box::new(key.clone()), Box::new(value.clone()))
-        };
-        need(
-            key.map_key_value() && value.state_value(),
-            "map key must be scalar content or vector<i32>; value must be immutable state",
-        )?;
-        return Ok(Some(t));
     }
     if let Some(t) = s.strip_prefix("record<").and_then(|s| s.strip_suffix('>')) {
         let mut fields = BTreeMap::new();

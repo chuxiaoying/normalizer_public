@@ -63,8 +63,6 @@ pub(crate) enum Ty {
     Seq(Box<Ty>),
     Record(BTreeMap<String, Ty>),
     Vector(Box<Ty>),
-    Map(Box<Ty>, Box<Ty>),
-    NullableMap(Box<Ty>, Box<Ty>),
 }
 impl Ty {
     pub(crate) fn parse(s: &str) -> Result<Self> {
@@ -584,7 +582,7 @@ impl Loaded {
                 let ty = Ty::parse(value)?;
                 need(!matches!(c.full_name().as_str(), "Object" | "String")
                     && identifier(&c.full_name()) && c.methods().is_empty()
-                    && matches!(ty, Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) | Ty::Map(..)) && ty.state_value(),
+                    && matches!(ty, Ty::Task(_) | Ty::Vector(_) | Ty::Record(_)) && ty.state_value(),
                     "result value alias requires a declared empty carrier class and composite state type")?;
             }
             if c.is_interface() {
@@ -835,7 +833,7 @@ fn host_input_symbol(name: &str) -> String {
 fn symbolic(name: &str, t: &Ty, heap: &mut Heap) -> Result<Value> {
     Ok(match t {
         Ty::Unit => Value::Term(Ty::Unit, b::lit_null()),
-        Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) | Ty::Map(..) => Value::Term(
+        Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) => Value::Term(
             t.clone(),
             math::domains::composite::apply(
                 "value.input",
