@@ -115,7 +115,7 @@ impl Engine<'_> {
                 Self::bind_local(
                     env,
                     name,
-                    Value::Term(Ty::Task(Box::new(ty)), b::value_t(bind)),
+                    Value::Term(Ty::Task(Box::new(ty)), b::pending_task_handle(bind)),
                 )?;
             }
             Action::TaskWait { name, task } => {

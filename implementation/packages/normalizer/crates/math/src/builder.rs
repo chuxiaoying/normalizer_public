@@ -271,9 +271,8 @@ pub fn external_completion(binding_id: u64) -> Expr {
     })
 }
 
-/// A closed immutable recurrence result with a definition owned by the caller.
-/// Does not admit composite P/E or disguise Java Pojo identities as scalar symbols.
-pub fn value_t(binding_id: u64) -> Expr {
+/// Internal handle for one issued asynchronous task, never a PERS definition.
+pub fn pending_task_handle(binding_id: u64) -> Expr {
     Expr::new(ExprKind::SymVar {
         origin: SymVarOrigin::Temporal {
             binding_id,

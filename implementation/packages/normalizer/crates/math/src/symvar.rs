@@ -15,7 +15,7 @@
 //!
 //! 三个变体都必填 `primitive_type: String`——Java 原生 primitive（int/long/boolean/...）
 //! 或归一化 primitive（String/Wrapper/Date 等）。业务 Pojo 必须用 HeapRef 表达。
-//! 唯一额外类型是专用 value_t 构造器产生的内部不可变复合 T；它必须有完整折叠定义。
+//! 内部 pending_task_handle 可携带专用任务句柄，不能作为公开 T 定义；纯递推结果另有精确整数构造器。
 //!
 //! param/sym_e/sym_t 做 assert 验证（release mode 也生效），非 primitive panic。
 
@@ -48,7 +48,7 @@ pub enum SymVarOrigin {
     },
 
     /// 临时绑定。binding_id 由外部发放。
-    /// value_t构造的normalized.composite仅代表已定义折叠的不可变值结果，
+    /// pending_task_handle 构造的 normalized.composite 只代表内部待完成任务，
     /// 不代表业务Pojo，也不允许作为P/E输入或外部响应。
     /// 例如：T(binding=5) 显示为 `$t_5`
     Temporal {
