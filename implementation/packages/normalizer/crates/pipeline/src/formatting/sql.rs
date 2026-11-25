@@ -217,7 +217,12 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
 
         let l = format_binop_child_with_precedence(op, left, false, ctx);
         let r = format_binop_child_with_precedence(op, right, true, ctx);
-        return format!("{} {} {}", l, binop_display_token(op), r);
+        let token = if op == BinOpKind::Or && ctx.business_inputs.is_some() {
+            "OR"
+        } else {
+            binop_display_token(op)
+        };
+        return format!("{l} {token} {r}");
     }
     if let Some(branches) = expr.as_case_when() {
         return format_case_when(branches, ctx);

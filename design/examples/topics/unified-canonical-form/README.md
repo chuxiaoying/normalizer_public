@@ -5,7 +5,7 @@
 | 规则族 | 必须有的成对例子 | 对照反例或限制 | 种子与正式验收 |
 |---|---|---|---|
 | 精确整数 Add／Mul | 同一组符号的排列、不同括号、重复项与常量；固定左折叠，重复归约不变 | 文本拼接、浮点、word 运算、未取得值 | [加法种子](java-associative-normal-form.md)已验收 Java Add／Mul 的排列、括号与重复因子；关联 [JavaScript 模块种子](../language-entries/javascript-module.md)验证相同 Add 规则；[文本顺序反例](java-text-order.md)证明不能按运算符外观排序。浮点、word 和完整再次规范化仍待逐项核对 |
-| 总 Boolean AND／OR 与有序比较 | 交换两端且同步翻转符号；布尔排列和不同括号汇合 | 短路、可空和 NaN 不推出额外互补 | 关联[布尔代数](../expression-simplification/java-boolean-algebra.md)；专项成对覆盖待核对 |
+| 总 Boolean AND／OR 与有序比较 | 交换两端且同步翻转符号；布尔排列和不同括号汇合 | 短路、可空和 NaN 不推出额外互补 | [总布尔排序种子](java-total-boolean-order.md)验证 AND／OR 各自的排列、括号和业务差异；[短路种子](../control-flow/java-short-circuit.md)验证保护边界；比较换边仍需扩充独立对照 |
 | 完整二分 CASE | 正反条件与交换两臂得到同一代表；数值指示器、普通计数、min／max、Vector 各按其域 | 只取反不换臂、互换嵌套 CASE、部分 CASE 不补 ELSE、nullable 保留惰性 | [二分 CASE 种子](java-binary-case.md)已验收计数的两种互补写法、比较换边和阈值反例；[取小取大种子](java-number-selection.md)验收严格／非严格、同时翻转和不同目标的对照；数值指示器、Vector 与保护域须逐项验收 |
 | 多分支 CASE、区间和 LET | 相邻同值合并、非相邻同值按有效域汇聚、区间交并补、合法提取和归约不动点 | 有重叠 guard 的首命中不能重排；禁止无 CASE 或仅出现一次的 LET | 关联[分支种子](../../series-1/java-static-case-when.md)；专项逐项补齐 |
 | 纯总不可变构造与序列观察 | 总 CASE 外提的唯一方向、零索引统一为 FIRST | 不跨惰性／部分域；保留首项 null、顺序和越界异常 | 关联[集合主题](../collections/README.md)；专项逐项补齐 |

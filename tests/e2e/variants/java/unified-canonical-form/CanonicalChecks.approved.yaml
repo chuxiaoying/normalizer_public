@@ -1,0 +1,26 @@
+- name: permute-and-reassociate-conjunction
+  edits:
+    - from: '(balance && address) && consent'
+      to: 'consent && (address && balance)'
+- name: canonical-conjunction-is-stable
+  edits:
+    - from: '(balance && address) && consent'
+      to: '(address && balance) && consent'
+- name: redundant-total-conjunct
+  edits:
+    - from: '(balance && address) && consent'
+      to: '(balance && address) && (address && consent)'
+- name: disjunction-has-different-truth-set
+  edits:
+    - from: '(balance && address) && consent'
+      to: 'consent || (balance || address)'
+  expect:
+    - path: [R]
+      value: address OR balance OR consent
+- name: permute-and-reassociate-disjunction
+  edits:
+    - from: '(balance && address) && consent'
+      to: '(balance || consent) || address'
+  expect:
+    - path: [R]
+      value: address OR balance OR consent
