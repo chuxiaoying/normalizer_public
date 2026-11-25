@@ -75,12 +75,7 @@ pub(crate) struct Parser<'a> {
     pub(crate) package: String,
     /// 显式 import 的 FQN 列表（`import x.y.Z;`）——parser 只收集，不做 FQN 化
     pub(crate) imports: Vec<String>,
-    /// 通配 import 的包前缀列表（`import x.y.*;` → 存 `"x.y"`）
-    pub(crate) imports_wildcard: Vec<String>,
-    /// 显式 static import 的完整成员名列表（`import static x.y.C.F;`）
-    pub(crate) static_imports: Vec<String>,
-    /// 通配 static import 的类型 FQN 列表（`import static x.y.C.*;` → 存 `"x.y.C"`）
-    pub(crate) static_imports_wildcard: Vec<String>,
+    pub(crate) has_unbound_imports: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -91,9 +86,7 @@ impl<'a> Parser<'a> {
             file: file_hint.to_string(),
             package: String::new(),
             imports: Vec::new(),
-            imports_wildcard: Vec::new(),
-            static_imports: Vec::new(),
-            static_imports_wildcard: Vec::new(),
+            has_unbound_imports: false,
         }
     }
 
@@ -531,53 +524,28 @@ impl<'a> Parser<'a> {
             self.eat_char(b';');
         }
 
-        // 收集 import 语句为 FQN 列表（普通 import 和通配 import 分开）。
-        // parser 只保留原始语法信息，FQN 化决策由 resolver 在类型推断收口点完成。
-        // `import static` 是合法 Java 语法；它不参与类型 FQN 化，不能因为
-        // source-root 下无关文件含 static import 就阻断目标 entry 的解析。
-        loop {
-            self.skip_ws();
-            if self.eat_keyword("import") {
-                self.skip_ws();
-                let is_static = self.eat_keyword("static");
-                self.skip_ws();
-                let mut fqn = String::new();
-                let mut is_wildcard = false;
-                // 读 qualified ident，允许结尾 .*
-                while let Some(c) = self.peek() {
-                    if c == b';' {
-                        break;
-                    }
-                    if c == b'*' {
-                        // 末尾可能是 `.*`——去掉最后的 `.`（fqn 最后字符）
-                        if fqn.ends_with('.') {
-                            fqn.pop();
-                        }
-                        is_wildcard = true;
-                        self.pos += 1;
-                    } else if c.is_ascii_whitespace() {
-                        self.pos += 1;
-                    } else {
-                        fqn.push(c as char);
-                        self.pos += 1;
-                    }
+        // Keep the exact ordinary imports. The closed input profile only
+        // needs the presence, not the strings, of static or wildcard imports.
+        while self.eat_keyword("import") {
+            let is_static = self.eat_keyword("static");
+            let name = self.read_qualified_ident()
+                .ok_or_else(|| self.err("[JAVA-IMPORT] expected a qualified import name"))?;
+            let wildcard = if self.eat_char(b'.') {
+                if !self.eat_char(b'*') {
+                    return Err(self.err("[JAVA-IMPORT] expected wildcard after trailing dot"));
                 }
-                self.eat_char(b';');
-                if !fqn.is_empty() {
-                    if is_static {
-                        if is_wildcard {
-                            self.static_imports_wildcard.push(fqn);
-                        } else {
-                            self.static_imports.push(fqn);
-                        }
-                    } else if is_wildcard {
-                        self.imports_wildcard.push(fqn);
-                    } else {
-                        self.imports.push(fqn);
-                    }
-                }
+                true
+            } else { false };
+            if !wildcard && !name.contains('.') {
+                return Err(self.err("[JAVA-IMPORT] expected a qualified import name"));
+            }
+            if !self.eat_char(b';') {
+                return Err(self.err("[JAVA-IMPORT] expected semicolon"));
+            }
+            if is_static || wildcard {
+                self.has_unbound_imports = true;
             } else {
-                break;
+                self.imports.push(name);
             }
         }
 
@@ -647,9 +615,7 @@ impl<'a> Parser<'a> {
             source_file: Some(self.file.clone()),
             package: self.package.clone(),
             imports: self.imports.clone(),
-            imports_wildcard: self.imports_wildcard.clone(),
-            static_imports: self.static_imports.clone(),
-            static_imports_wildcard: self.static_imports_wildcard.clone(),
+            has_unbound_imports: self.has_unbound_imports,
             simple_name,
             type_params,
             annotations,
@@ -703,11 +669,6 @@ fn parse_class_body(
     file: &str,
 ) -> Result<(), ParseError> {
     let mut p = Parser::new(body, file);
-    p.package = package.to_string();
-    p.imports = class.imports.clone();
-    p.imports_wildcard = class.imports_wildcard.clone();
-    p.static_imports = class.static_imports.clone();
-    p.static_imports_wildcard = class.static_imports_wildcard.clone();
 
     loop {
         p.skip_ws();
@@ -786,9 +747,7 @@ fn parse_class_body(
                 source_file: Some(file.to_owned()),
                 package: package.to_string(),
                 imports: class.imports.clone(),
-                imports_wildcard: class.imports_wildcard.clone(),
-                static_imports: class.static_imports.clone(),
-                static_imports_wildcard: class.static_imports_wildcard.clone(),
+                has_unbound_imports: class.has_unbound_imports,
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
                 type_params: nested_type_params,
                 annotations: annotations.clone(),
@@ -839,9 +798,6 @@ fn parse_class_body(
                     Some(crate::body_parser::parse_method_body_text(
                         &text,
                         file,
-                        package,
-                        class.imports.clone(),
-                        class.imports_wildcard.clone(),
 
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
@@ -927,9 +883,6 @@ fn parse_class_body(
                 Some(crate::body_parser::parse_method_body_text(
                     &text,
                     file,
-                    package,
-                    class.imports.clone(),
-                    class.imports_wildcard.clone(),
 
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {

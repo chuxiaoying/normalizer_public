@@ -597,9 +597,7 @@ impl Loaded {
                     && c.annotations().is_empty()
                     && c.type_params().is_empty()
                     && (c.imports().is_empty() || crate::normalized::supported_source_imports(c))
-                    && c.imports_wildcard().is_empty()
-                    && c.static_imports().is_empty()
-                    && c.static_imports_wildcard().is_empty(),
+                    && !c.has_unbound_imports(),
                 "unsupported class shape",
             )?;
             if let Some(value) = self

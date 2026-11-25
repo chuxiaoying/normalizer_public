@@ -11,14 +11,8 @@ use crate::parser::{parse_type, ParseError, Parser};
 pub(crate) fn parse_method_body_text(
     body_text: &str,
     file: &str,
-    package: &str,
-    imports: Vec<String>,
-    imports_wildcard: Vec<String>,
 ) -> Result<Vec<JavaStatement>, ParseError> {
     let mut p = Parser::new(body_text, file);
-    p.package = package.to_string();
-    p.imports = imports;
-    p.imports_wildcard = imports_wildcard;
     p.parse_statements_until_end()
 }
 
@@ -37,14 +31,9 @@ impl<'a> Parser<'a> {
         Ok(out)
     }
 
-    /// 创建继承当前解析上下文的子 parser。
-    ///
+    /// A statement slice keeps the source file, not unused name bindings.
     fn child_parser<'b>(&self, text: &'b str) -> Parser<'b> {
-        let mut sub = Parser::new(text, &self.file);
-        sub.package = self.package.clone();
-        sub.imports = self.imports.clone();
-        sub.imports_wildcard = self.imports_wildcard.clone();
-        sub
+        Parser::new(text, &self.file)
     }
 
     /// 解析单个语句。

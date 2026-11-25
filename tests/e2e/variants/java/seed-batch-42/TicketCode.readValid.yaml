@@ -43,3 +43,22 @@
 - name: each-named-parameter-survives-a-comment-and-final
   edits:
     - { from: 'int readValid(int value)', to: 'int readValid(final /* input */ int value)' }
+- name: empty-import-is-not-dropped
+  edits:
+    - { from: 'class TicketCode {', to: 'import ; class TicketCode {' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-IMPORT]', 'expected a qualified import name']
+- name: import-statement-requires-its-own-semicolon
+  edits:
+    - { from: 'class TicketCode {', to: 'import java.util.List class TicketCode {' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-IMPORT]', 'expected semicolon']
+- name: a-closed-source-contract-does-not-infer-wildcard-imports
+  edits:
+    - { from: 'class TicketCode {', to: 'import java.util.*; class TicketCode {' }
+  reject: ['[NORM-CLASS-SHAPE]', 'TicketCode']
+- name: a-closed-source-contract-does-not-infer-static-imports
+  edits:
+    - { from: 'class TicketCode {', to: 'import static java.lang.Math.abs; class TicketCode {' }
+  reject: ['[NORM-CLASS-SHAPE]', 'TicketCode']
+- name: comments-between-qualified-import-components-keep-the-explicit-type
+  edits:
+    - { from: 'class TicketCode {', to: 'import java.util /* explicit type */ . List; class TicketCode {' }

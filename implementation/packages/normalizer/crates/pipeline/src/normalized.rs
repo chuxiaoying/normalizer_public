@@ -343,9 +343,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
             || !c.annotations().is_empty()
             || !c.type_params().is_empty()
             || !supported_source_imports(c)
-            || !c.imports_wildcard().is_empty()
-            || !c.static_imports().is_empty()
-            || !c.static_imports_wildcard().is_empty()
+            || c.has_unbound_imports()
         {
             return Err(error("NORM-CLASS-SHAPE", &name));
         }

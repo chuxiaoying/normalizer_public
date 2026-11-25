@@ -45,14 +45,9 @@ pub struct JavaClass {
     ///
     /// parser 原始输出，不做 FQN 化决策——FQN 化由 resolver 在类型推断收口点完成。
     pub(crate) imports: Vec<String>,
-    /// 通配 import 的包前缀列表（`import x.y.*;` → 存 `"x.y"`）
-    ///
-    /// 通配匹配歧义由 resolver 在 FQN 化时按六层策略处理（多通配匹配 → Ambiguous）。
-    pub(crate) imports_wildcard: Vec<String>,
-    /// 显式 static import 的完整成员名列表（`import static x.y.C.F;`）
-    pub(crate) static_imports: Vec<String>,
-    /// 通配 static import 的类型 FQN 列表（`import static x.y.C.*;` → 存 `"x.y.C"`）
-    pub(crate) static_imports_wildcard: Vec<String>,
+    /// Static and wildcard imports are syntactically valid, but unresolved
+    /// bindings cannot be admitted to the closed source contract.
+    pub(crate) has_unbound_imports: bool,
     pub(crate) simple_name: String,
     pub(crate) type_params: Vec<String>,
     pub(crate) annotations: Vec<AnnotationRef>,
@@ -76,14 +71,8 @@ impl JavaClass {
     pub fn imports(&self) -> &[String] {
         &self.imports
     }
-    pub fn imports_wildcard(&self) -> &[String] {
-        &self.imports_wildcard
-    }
-    pub fn static_imports(&self) -> &[String] {
-        &self.static_imports
-    }
-    pub fn static_imports_wildcard(&self) -> &[String] {
-        &self.static_imports_wildcard
+    pub fn has_unbound_imports(&self) -> bool {
+        self.has_unbound_imports
     }
     pub fn simple_name(&self) -> &str {
         &self.simple_name
