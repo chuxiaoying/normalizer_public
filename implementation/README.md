@@ -7,7 +7,7 @@
 | 调用用户入口或分派场景 | [CLI](tools/normalizer) · [场景适配器](tools/scenarios/) |
 | 修改 JS 和 Vue 的语言适配 | [正式入口的内部适配](tools/frontend/README.md) |
 | 修改 Java 解析、符号执行、数学化简或输出 | [Rust workspace](packages/normalizer/Cargo.toml) |
-| 查阅 PERS、统一规范形式和模块交接细则 | [PERS schema](contracts/pers/schema.yaml) · [规范形式](contracts/kernel/normal-form-contract.md) · [三模块职责](docs/architecture-three-modules.md) |
+| 查阅 PERS、统一正则规范和模块交接细则 | [PERS schema](contracts/pers/schema.yaml) · [统一正则规范](../design/unified-canonical-form.md) · [三模块职责](docs/architecture-three-modules.md) |
 | 检查仓库结构和文档链接 | [架构检查](tools/architecture/) · [文档检查](tools/docs/) |
 
 从仓库根目录检查构建：

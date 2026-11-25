@@ -112,7 +112,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         return expr.clone();
     }
     if !total_integer(expr) {
-        if exact_business_integer(expr) && crate::ordering_axiom_compare(left, right, ctx).is_gt() {
+        if exact_business_integer(expr) && crate::canonical_order_compare(left, right, ctx).is_gt() {
             return b::binop_public(*op, right.clone(), left.clone());
         }
         return expr.clone();
@@ -163,7 +163,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         terms.push(b::lit_integer(constant));
     }
     // This shared structural comparator is legal only after the proof above.
-    terms.sort_by(|left, right| crate::ordering_axiom_compare(left, right, ctx));
+    terms.sort_by(|left, right| crate::canonical_order_compare(left, right, ctx));
     terms
         .into_iter()
         .reduce(|left, right| match op {

@@ -26,7 +26,7 @@ pub mod case_orientation;
 pub mod domains;
 pub mod expr;
 pub mod normalize;
-pub mod ordering_axiom;
+pub mod canonical_order;
 pub mod primitive;
 pub mod primitive_enum;
 mod profile;
@@ -41,8 +41,8 @@ pub use expr::{BinOpKind, Expr, Lit, RelationAggregateKind, UnaryOpKind};
 pub use normalize::{
     normalize, normalize_with, try_normalize_with, BudgetKind, NormalizationLimit,
 };
-pub use ordering_axiom::{
-    ordering_axiom_compare, ordering_axiom_key, ordering_axiom_ordered_comparison,
+pub use canonical_order::{
+    canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison,
 };
 pub use primitive::{is_any_primitive, is_java_primitive};
 pub use primitive_enum::Primitive;

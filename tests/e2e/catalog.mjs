@@ -33,7 +33,7 @@ export function loadSeeds(root) {
     assert.match(id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid seed ID');
     register(documents, relative, 'design document');
   }
-  const published = inventory(root, examples, file => file.endsWith('.md') && !/(^|\/)(README|coverage|normal-form)\.md$/.test(file));
+  const published = inventory(root, examples, file => file.endsWith('.md') && !/(^|\/)(README|coverage)\.md$/.test(file));
   assert.deepEqual([...documents].sort(), published, 'Design seed catalog must cover all example documents');
 
   return seeds;

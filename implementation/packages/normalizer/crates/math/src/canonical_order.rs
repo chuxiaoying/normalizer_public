@@ -1,4 +1,4 @@
-//! Ordering Axiom Kernel for micro-normalized expression presentation.
+//! 统一正则规范 (Unified Canonical Form): shared structural ordering.
 //!
 //! This module is the shared `expr.compareTo(ctx)` foundation.
 //! Callers may use it only after they have proven the surrounding expression
@@ -6,7 +6,7 @@
 //! to reorder CaseWhen arms, side-effect ledgers, arguments, list elements, or
 //! string concatenation.
 //!
-//! The kernel follows the PERST ordering-axiom consensus draft:
+//! The design contract is `design/unified-canonical-form.md`. The shared key is:
 //!
 //! ```text
 //! subject_key
@@ -30,15 +30,15 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 thread_local! {
-    static ORDERING_AXIOM_CACHE: RefCell<HashMap<Expr, String>> = RefCell::new(HashMap::new());
+    static CANONICAL_ORDER_CACHE: RefCell<HashMap<Expr, String>> = RefCell::new(HashMap::new());
 }
 /// Unified display comparison for peer expressions.
 ///
 /// This is the single micro-normalization ordering kernel: callers that have
 /// already proven a position is reorderable must compare expressions here,
 /// rather than inventing local rank/string rules.
-pub fn ordering_axiom_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> Ordering {
-    ordering_axiom_key(left, ctx).cmp(&ordering_axiom_key(right, ctx))
+pub fn canonical_order_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> Ordering {
+    canonical_order_key(left, ctx).cmp(&canonical_order_key(right, ctx))
 }
 
 /// Display-side orientation for comparison predicates.
@@ -46,7 +46,7 @@ pub fn ordering_axiom_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) 
 /// The expression semantics and boolean normal form are decided before display.
 /// This function only chooses which equivalent comparison spelling is printed,
 /// using the same display-order kernel and fixed operator reversal.
-pub fn ordering_axiom_ordered_comparison(
+pub fn canonical_order_ordered_comparison(
     op: BinOpKind,
     left: &Expr,
     right: &Expr,
@@ -54,14 +54,14 @@ pub fn ordering_axiom_ordered_comparison(
 ) -> Option<(BinOpKind, bool)> {
     match op {
         BinOpKind::Eq | BinOpKind::Ne => {
-            if ordering_axiom_orient_equality_to_rhs(left, right, ctx) {
+            if canonical_order_orient_equality_to_rhs(left, right, ctx) {
                 Some((op, true))
             } else {
                 None
             }
         }
         BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge => {
-            if ordering_axiom_orient_ordered_predicate_to_rhs(op, left, right, ctx) {
+            if canonical_order_orient_ordered_predicate_to_rhs(op, left, right, ctx) {
                 Some((flip_ordered_op(op), true))
             } else {
                 None
@@ -72,12 +72,12 @@ pub fn ordering_axiom_ordered_comparison(
 }
 
 /// Deterministic display-order key for peer terms in a proven commutative family.
-pub fn ordering_axiom_key(expr: &Expr, ctx: &dyn SortContext) -> String {
+pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     // Expr is immutable. Without HeapRef or function aliases this key is
     // independent of SortContext, so the bounded cache is semantics-preserving and
     // avoids recomputing the same DisplayIR key in high-frequency AND/OR sorts.
     if !expr.has_heap_ref() && ctx.function_aliases().is_none() {
-        if let Some(cached) = ORDERING_AXIOM_CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
+        if let Some(cached) = CANONICAL_ORDER_CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
             if crate::profile::cache_observation_enabled() {
                 crate::profile::cache_lookup(
                     "ordering",
@@ -100,10 +100,10 @@ pub fn ordering_axiom_key(expr: &Expr, ctx: &dyn SortContext) -> String {
                 "ordering_axiom_key",
             );
         }
-        let out = ordering_axiom_key_uncached(expr, ctx);
+        let out = canonical_order_key_uncached(expr, ctx);
         let cache_weight = expr.size();
         if cache_weight <= crate::profile::cache_entry_limit() {
-            ORDERING_AXIOM_CACHE.with(|cache| {
+            CANONICAL_ORDER_CACHE.with(|cache| {
                 let mut cache = cache.borrow_mut();
                 if cache.len() > 100_000 {
                     evict_half(&mut cache);
@@ -116,7 +116,7 @@ pub fn ordering_axiom_key(expr: &Expr, ctx: &dyn SortContext) -> String {
         return out;
     }
 
-    ordering_axiom_key_uncached(expr, ctx)
+    canonical_order_key_uncached(expr, ctx)
 }
 
 fn evict_half<K, V>(cache: &mut HashMap<K, V>)
@@ -132,7 +132,7 @@ where
     crate::profile::cache_eviction("ordering_axiom", before, remove, cache.len());
 }
 
-fn ordering_axiom_key_uncached(expr: &Expr, ctx: &dyn SortContext) -> String {
+fn canonical_order_key_uncached(expr: &Expr, ctx: &dyn SortContext) -> String {
     let canonical = orient_ordered_expression(expr, ctx);
     let expr = &canonical;
     let subject = subject_key(expr, ctx);
@@ -590,10 +590,10 @@ pub fn ordered_comparison_view(
     ) {
         return None;
     }
-    let ls = ordering_axiom_subject_strength(left, ctx);
-    let rs = ordering_axiom_subject_strength(right, ctx);
+    let ls = canonical_order_subject_strength(left, ctx);
+    let rs = canonical_order_subject_strength(right, ctx);
     let swap =
-        rs > ls || (rs == ls && ordering_axiom_key(right, ctx) < ordering_axiom_key(left, ctx));
+        rs > ls || (rs == ls && canonical_order_key(right, ctx) < canonical_order_key(left, ctx));
     Some((if swap { flip_ordered_op(op) } else { op }, swap))
 }
 
@@ -610,7 +610,7 @@ pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> E
     expr.clone()
 }
 
-fn ordering_axiom_orient_ordered_predicate_to_rhs(
+fn canonical_order_orient_ordered_predicate_to_rhs(
     op: BinOpKind,
     left: &Expr,
     right: &Expr,
@@ -638,9 +638,9 @@ fn needs_recursive_relation_key(expr: &Expr, ctx: &dyn SortContext) -> bool {
     ordered
 }
 
-fn ordering_axiom_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> bool {
-    let left_strength = ordering_axiom_subject_strength(left, ctx);
-    let right_strength = ordering_axiom_subject_strength(right, ctx);
+fn canonical_order_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> bool {
+    let left_strength = canonical_order_subject_strength(left, ctx);
+    let right_strength = canonical_order_subject_strength(right, ctx);
 
     if right_strength > left_strength {
         return true;
@@ -649,7 +649,7 @@ fn ordering_axiom_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn So
         return false;
     }
 
-    ordering_axiom_key(right, ctx) < ordering_axiom_key(left, ctx)
+    canonical_order_key(right, ctx) < canonical_order_key(left, ctx)
 }
 
 fn flip_ordered_op(op: BinOpKind) -> BinOpKind {
@@ -662,7 +662,7 @@ fn flip_ordered_op(op: BinOpKind) -> BinOpKind {
     }
 }
 
-fn ordering_axiom_subject_strength(expr: &Expr, ctx: &dyn SortContext) -> u8 {
+fn canonical_order_subject_strength(expr: &Expr, ctx: &dyn SortContext) -> u8 {
     match expr.kind() {
         ExprKind::Lit(_) | ExprKind::HeapRef(_) | ExprKind::RowValue { .. } => 10,
         ExprKind::RelationAggregate { .. } => 90,
@@ -691,7 +691,7 @@ fn ordering_axiom_subject_strength(expr: &Expr, ctx: &dyn SortContext) -> u8 {
             let _ = ctx;
             40
         }
-        ExprKind::UnaryOp { operand, .. } => ordering_axiom_subject_strength(operand, ctx),
+        ExprKind::UnaryOp { operand, .. } => canonical_order_subject_strength(operand, ctx),
         ExprKind::ArrayLit(_) => 40,
         ExprKind::Relation(_) => 45,
     }

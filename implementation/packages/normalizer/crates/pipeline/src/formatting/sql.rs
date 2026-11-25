@@ -206,7 +206,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
             }
         }
         if let Some((display_op, flip)) =
-            math::ordering_axiom_ordered_comparison(op, left, right, &math::DefaultSortContext)
+            math::canonical_order_ordered_comparison(op, left, right, &math::DefaultSortContext)
         {
             let (lhs, rhs) = if flip { (right, left) } else { (left, right) };
             let l = format_expr_with_ctx(lhs, ctx);
@@ -435,8 +435,8 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     parts.join("\n")
 }
 
-fn ordering_axiom_key_for_expr(expr: &Expr, _ctx: &FormatCtx) -> String {
-    math::ordering_axiom_key(expr, &math::DefaultSortContext)
+fn canonical_order_key_for_expr(expr: &Expr, _ctx: &FormatCtx) -> String {
+    math::canonical_order_key(expr, &math::DefaultSortContext)
 }
 
 fn stable_dedup_strings(items: &mut Vec<String>) {
@@ -451,7 +451,7 @@ fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<Stri
         return None;
     }
 
-    factors.sort_by_cached_key(|factor| ordering_axiom_key_for_expr(factor, ctx));
+    factors.sort_by_cached_key(|factor| canonical_order_key_for_expr(factor, ctx));
 
     let mut rendered: Vec<String> = factors
         .into_iter()

@@ -84,7 +84,7 @@ pub fn ordered_number_selection(
     let cost = |v: &Expr| (v.as_lit().is_some(), v.size());
     let order = cost(yes)
         .cmp(&cost(no))
-        .then_with(|| crate::ordering_axiom_compare(yes, no, context));
+        .then_with(|| crate::canonical_order_compare(yes, no, context));
     let (first, second) = if order.is_gt() { (no, yes) } else { (yes, no) };
     let cmp = if matches!(op, BinOpKind::Le | BinOpKind::Lt) {
         crate::builder::lt
@@ -139,7 +139,7 @@ fn candidate_precedes(
     let right_cost = (!right_no.is_null(), right_condition.size());
     left_cost < right_cost
         || (left_cost == right_cost
-            && crate::ordering_axiom_compare(left_condition, right_condition, context).is_lt())
+            && crate::canonical_order_compare(left_condition, right_condition, context).is_lt())
 }
 
 /// Return the preferred complement if the existing binary CASE direction

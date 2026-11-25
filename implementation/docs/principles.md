@@ -64,7 +64,7 @@ Maven、JAR、`node_modules`、框架装配和语言运行时材料属于预处�
 
 没有实现的业务方法或普通对象调用不构成 external。AI 可以交付有依据的规范源码或已定义的闭合语义，此时内核看到的是完整计算，不是无源码调用。真正离开观察范围的调用必须有合法 external 声明并进入 S。其余缺口应在预处理报告；若仍到达内核，Panic 并报告不支持，不产生 PERS。详见[规范源码合同](../contracts/normalized-source-contract.md)与[种子交付索引](../skills/normalizer-preprocess/references/seed-coverage.md)。
 
-## 5. 统一规范形式与 expected 原则
+## 5. 统一正则规范与 expected 原则
 
 每项支持的语义先用具体常量检查执行结果，再用符号输入检查归约和 PERS。常量写在源码里就原样交付；已知值不授权 AI 替内核出结果。见[规范源码合同](../contracts/normalized-source-contract.md)。
 

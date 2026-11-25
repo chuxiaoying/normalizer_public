@@ -33,7 +33,8 @@ control-if-else: topics/control-flow/java-clamp.md
 number-compare-boundaries: topics/number-domain/java-compare-boundary.md
 external-exception-propagation: topics/external-boundaries/java-exception-propagation.md
 basic-return-shape: topics/basic-contracts/java-return-shape.md
-expr-associative-commutative-normal-form: topics/expression-simplification/java-associative-normal-form.md
+expr-associative-commutative-normal-form: topics/unified-canonical-form/java-associative-normal-form.md
+canonical-binary-case: topics/unified-canonical-form/java-binary-case.md
 control-short-circuit: topics/control-flow/java-short-circuit.md
 basic-nullable-input: topics/basic-contracts/java-nullable-input.md
 external-object-success-failure: topics/external-boundaries/java-external-object.md

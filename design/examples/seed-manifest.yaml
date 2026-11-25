@@ -4,6 +4,7 @@ source: seeds.yaml
 
 # 主题注册表是 topic 引用的权威来源。每个目录至少有一个 README.md，说明该主题的语义合同和扩展路线。
 topics:
+  unified-canonical-form: { path: topics/unified-canonical-form }
   expression-simplification: { path: topics/expression-simplification }
   collections: { path: topics/collections }
   control-flow: { path: topics/control-flow }
@@ -57,7 +58,8 @@ seeds:
   number-compare-boundaries: { kind: topic, topic: number-domain, related: [expression-simplification] }
   external-exception-propagation: { kind: topic, topic: external-boundaries, related: [] }
   basic-return-shape: { kind: basic, topic: basic-contracts, related: [objects-and-types] }
-  expr-associative-commutative-normal-form: { kind: topic, topic: expression-simplification, related: [] }
+  expr-associative-commutative-normal-form: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
+  canonical-binary-case: { kind: topic, topic: unified-canonical-form, related: [expression-simplification, control-flow] }
   control-short-circuit: { kind: topic, topic: control-flow, related: [] }
   basic-nullable-input: { kind: basic, topic: basic-contracts, related: [] }
   external-object-success-failure: { kind: topic, topic: external-boundaries, related: [objects-and-types] }

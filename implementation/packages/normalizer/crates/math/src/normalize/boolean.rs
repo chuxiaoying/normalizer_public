@@ -1204,7 +1204,7 @@ fn trace_sort_compare(
 }
 
 fn commutative_order_key(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> String {
-    crate::ordering_axiom_key(expr, ctx)
+    crate::canonical_order_key(expr, ctx)
 }
 
 // =============================================================================

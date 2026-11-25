@@ -46,7 +46,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             };
             let ((left, left_alias), (right, right_alias)) = (join.left, join.right);
             let on = fmt_predicate(join.on, ctx);
-            join.filters.sort_by_key(|f| (rank(f), math::ordering_axiom_key(f, &math::DefaultSortContext)));
+            join.filters.sort_by_key(|f| (rank(f), math::canonical_order_key(f, &math::DefaultSortContext)));
             let mut out = format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM {left} AS {left_alias}\n    JOIN {right} AS {right_alias} ON {on}");
             for (i, f) in join.filters.into_iter().enumerate() {
                 out.push_str(if i == 0 { "\n    WHERE " } else { "\n      AND " });
@@ -138,7 +138,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     predicates.sort_by_key(|e| {
         (
             class(e),
-            math::ordering_axiom_key(e, &math::DefaultSortContext),
+            math::canonical_order_key(e, &math::DefaultSortContext),
         )
     });
     let mut select = vec![

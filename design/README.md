@@ -4,6 +4,8 @@
 
 [架构指导](architecture.md)用案例说明 AI、多语言解析器和符号执行内核如何分工，以及一次执行遇到未知条件时如何分裂、汇合和化简。
 
+[统一正则规范](unified-canonical-form.md)规定哪些等价表达式必须归到同一种形态，以及排序、CASE WHEN 和观察边界如何验收。
+
 [设计种子目录](examples/README.md)按基础主题和联合主题组织案例。[种子分母与覆盖模型](examples/coverage.md)说明应该覆盖哪些语义场景。[种子清单](examples/seeds.yaml)给每篇案例一个稳定 ID，[种子语义清单](examples/seed-manifest.yaml)记录主主题和关联主题；[测试区](../tests/README.md)按这个 ID 关联入口与变体。移动案例时更新清单里的路径，保留 ID。
 
 ## 从一段业务代码读到 PERS

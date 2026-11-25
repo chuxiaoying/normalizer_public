@@ -1,0 +1,12 @@
+- name: complement-and-swap-arms
+  edits:
+    - from: |-
+        if (count <= 0) return 0;
+                return count;
+      to: |-
+        if (count > 0) return count;
+                return 0;
+- name: swap-comparison-operands
+  edits:
+    - from: 'if (count <= 0) return 0;'
+      to: 'if (0 >= count) return 0;'

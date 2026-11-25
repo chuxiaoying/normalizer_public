@@ -2,13 +2,13 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 101
-  seeded: 86
+  total: 102
+  seeded: 87
   planned: 15
 topics:
   expression-simplification:
     title: 表达式化简
-    scope: 算术、布尔、等式、不等式和条件表达式的唯一规范形式
+    scope: 算术折叠、布尔归约、等式和不等式求解
     seeds:
       - id: java-static
         status: seeded
@@ -29,12 +29,6 @@ topics:
         status: seeded
         surface: java/javascript/typescript
         focus: 常量折叠与恒等值传播
-        test_status: covered
-        review_status: cli-passed
-      - id: expr-associative-commutative-normal-form
-        status: seeded
-        surface: java/javascript/typescript
-        focus: 加法乘法的结合律、交换律和唯一排序
         test_status: covered
         review_status: cli-passed
       - id: expr-boolean-algebra
@@ -67,6 +61,22 @@ topics:
         focus: 无法判定的条件保留为路径约束
         test_status: covered
         review_status: cli-passed
+  unified-canonical-form:
+    title: 统一正则规范
+    scope: 可交换表达式、CASE 与观察边界的唯一结构和反例
+    seeds:
+      - id: expr-associative-commutative-normal-form
+        status: seeded
+        surface: java/javascript/typescript
+        focus: 加法乘法的结合律、交换律和唯一排序
+        test_status: covered
+        review_status: cli-passed
+      - id: canonical-binary-case
+        status: seeded
+        surface: java
+        focus: 完整二分 CASE 的互补方向与比较换边
+        test_status: covered
+        review_status: proposed
   collections:
     title: 集合
     scope: 数组、Collection、Tuple 的元素、顺序、重复、空值和集合操作

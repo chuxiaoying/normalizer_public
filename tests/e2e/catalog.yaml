@@ -4,6 +4,8 @@
 version: 1
 # 每个种子要么登记本轮派生的完整入口，要么显式列为待派生。
 groups:
+  java/unified-canonical-form:
+    canonical-binary-case: [CanonicalCount.clamp]
   java/pure:
     java-static: [HelloWorld.addOne]
     java-static-case-when: [Decision.choose]

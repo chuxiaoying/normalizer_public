@@ -13,6 +13,7 @@
 
 ## 当前主题
 
+- [统一正则规范](unified-canonical-form/README.md)
 - [表达式化简](expression-simplification/README.md)
 - [集合](collections/README.md)
 - [控制流](control-flow/README.md)

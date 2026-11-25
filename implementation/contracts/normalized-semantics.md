@@ -170,4 +170,4 @@ Skill：划定观察边界 → 阅读原始来源 → 显式化装配和调用�
 
 正式回归使用小而完整的 feature fixture，Java 主线同时覆盖解析器和内核；多语言补充解析及语言特有规则，不复制全部内核矩阵。完整业务页面、欠费单 handler 及其大型 oracle 不属于常规必过门禁。fixture 不得删掉目标特性所需的可达计算，内部 helper 不得改成假端口。
 
-完整 PERS 断言采用统一规范形式及稳定命名，独立推导唯一 expected，不按测试项目或 expected 的偶然风格选择改写规则。规范排序只应用于语义域允许的变换；状态、调用、CASE 首匹配和观察获取依赖必须保留。详见[规范形式合同](kernel/normal-form-contract.md)。
+完整 PERS 断言采用统一正则规范及稳定命名，独立推导唯一 expected，不按测试项目或 expected 的偶然风格选择改写规则。规范排序只应用于语义域允许的变换；状态、调用、CASE 首匹配和观察获取依赖必须保留。详见[统一正则规范](../../design/unified-canonical-form.md)。
