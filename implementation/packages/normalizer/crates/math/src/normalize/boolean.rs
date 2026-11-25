@@ -279,10 +279,8 @@ fn factor_common_and_conjuncts_under_or(disjuncts: &[Expr]) -> Option<Expr> {
         return None;
     }
 
+    // Every input produces at least one term, including an atomic input.
     let all_conjs: Vec<Vec<Expr>> = disjuncts.iter().map(flatten_and).collect();
-    if all_conjs.iter().any(|conjs| conjs.is_empty()) {
-        return None;
-    }
 
     let mut common: Vec<Expr> = Vec::new();
     for candidate in &all_conjs[0] {
@@ -298,27 +296,12 @@ fn factor_common_and_conjuncts_under_or(disjuncts: &[Expr]) -> Option<Expr> {
         return None;
     }
 
-    let mut remainders: Vec<Expr> = Vec::with_capacity(all_conjs.len());
-    let mut changed = false;
-    for conjs in all_conjs {
-        let rest: Vec<Expr> = conjs
-            .into_iter()
-            .filter(|expr| !common.iter().any(|common| common == expr))
+    let remainders: Vec<Expr> = all_conjs.into_iter().map(|conjs| {
+        let rest: Vec<Expr> = conjs.into_iter()
+            .filter(|expr| !common.contains(expr))
             .collect();
-        if rest.is_empty() {
-            remainders.push(builder::lit_bool(true));
-        } else if rest.len() == 1 {
-            remainders.push(rest.into_iter().next().unwrap());
-        } else {
-            remainders.push(rebuild_and(&rest));
-        }
-        changed = true;
-    }
-
-    if !changed {
-        return None;
-    }
-
+        rebuild_and(&rest)
+    }).collect();
     let common_expr = rebuild_and(&common);
     let remainder_expr = rebuild_or(&remainders);
     Some(builder::and(common_expr, remainder_expr))
@@ -366,7 +349,7 @@ fn factor_common_or_disjunct_under_and(conjuncts: &[Expr]) -> Option<Expr> {
 
             // Guard against blind distribution.  This rewrite is most useful
             // when the remainders can immediately simplify, e.g.
-            // `(C || X || Y) && (C || !Y) -> C || (X && Y && !Y) -> C || X`.
+            // `(C || X || Y) && (C || !Y) -> C || ((X || Y) && !Y) -> C || (X && !Y)`.
             if !left_rest
                 .iter()
                 .any(|left| right_rest.iter().any(|right| is_complement(left, right)))
@@ -988,45 +971,17 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
                 if conjs_j.len() > conjs_i.len() {
                     return false;
                 }
-                // OR 吸收：A || B 中若 A => B，则 A 被 B 吸收。
-                //
-                // 注意：这里不能调用 path_implies；本函数本身就在 boolean normalize
-                // 内部，重入 normalize 会造成递归自咬。只使用当前层已有的
-                // context/互补/DeMorgan 判定，覆盖 `A || (A && X)` 以及少量已知
-                // 布尔上下文蕴含形态。
-                let i_implies_j = conjunction_implies(conjs_i, conjs_j);
-                if i_implies_j {
-                    let j_implies_i = conjunction_implies(conjs_j, conjs_i);
-                    return !j_implies_i || i > j;
-                }
-
-                // conjs_j ⊆ conjs_i ?
-                let subset = conjs_j.iter().all(|cj| conjs_i.iter().any(|ci| ci == cj));
-                if !subset {
-                    return false;
-                }
-                if conjs_j.len() < conjs_i.len() {
-                    true // 真子集：i 被 j 吸收
-                } else {
-                    // 合取集合相等：i > j 的一方被吸收（tiebreaker）
-                    i > j
-                }
+                // The context proof already includes literal equality,
+                // so the exact subset case needs no second search.
+                conjunction_implies(conjs_i, conjs_j)
+                    && (!conjunction_implies(conjs_j, conjs_i) || i > j)
             })
         })
         .collect();
-    let out: Vec<Expr> = out
-        .into_iter()
-        .zip(absorbed.iter())
-        .filter_map(|(e, &abs)| if abs { None } else { Some(e) })
+    // Removing terms does not change the remaining canonical order.
+    let out: Vec<Expr> = out.into_iter().zip(absorbed)
+        .filter_map(|(expr, absorbed)| (!absorbed).then_some(expr))
         .collect();
-    let out = sort_commutative(out, ctx);
-
-    if out.is_empty() {
-        return Some(builder::lit_bool(false));
-    }
-    if out.len() == 1 {
-        return Some(out.into_iter().next().unwrap());
-    }
     let canonical = rebuild_or(&out);
     (canonical != *expr).then_some(canonical)
 }

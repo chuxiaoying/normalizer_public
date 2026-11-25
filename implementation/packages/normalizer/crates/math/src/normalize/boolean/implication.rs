@@ -3,12 +3,7 @@
 use super::*;
 
 pub(super) fn conjunction_implies(conjs_left: &[Expr], conjs_right: &[Expr]) -> bool {
-    conjs_right.iter().all(|right| {
-        expr_is_true_under_and_context(right, conjs_left)
-            || conjs_left
-                .iter()
-                .any(|left| relation_exists_conjunct_implies(left, right))
-    })
+    conjs_right.iter().all(|right| expr_is_true_under_and_context(right, conjs_left))
 }
 
 pub(super) fn or_implication_tautology(left: &Expr, right: &Expr) -> bool {
