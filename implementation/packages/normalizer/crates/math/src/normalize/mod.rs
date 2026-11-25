@@ -72,7 +72,7 @@ impl std::fmt::Display for BudgetKind {
 /// Per-root workload accounting. The defaults preserve the existing iteration
 /// and proof guards while making the aggregate work visible and configurable.
 #[derive(Clone, Debug)]
-pub struct NormalizeBudget {
+struct NormalizeBudget {
     pub max_steps: usize,
     pub max_candidate_nodes: usize,
     pub max_proof_nodes: usize,
@@ -205,22 +205,12 @@ fn run_with_budget<F>(run: F) -> Result<Expr, NormalizationLimit>
 where
     F: FnOnce() -> Result<Expr, NormalizationLimit>,
 {
-    run_with_budget_config(NormalizeBudget::default(), run)
-}
-
-fn run_with_budget_config<F>(
-    budget_config: NormalizeBudget,
-    run: F,
-) -> Result<Expr, NormalizationLimit>
-where
-    F: FnOnce() -> Result<Expr, NormalizationLimit>,
-{
     ACTIVE_BUDGET.with(|slot| {
         if slot.borrow().is_some() {
             return run();
         }
         let run_scope = crate::profile::begin_run();
-        let scope = BudgetScope::install(budget_config);
+        let scope = BudgetScope::install(NormalizeBudget::default());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
         let budget = scope.take();
         let deferred_error = ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow_mut().take());
@@ -292,21 +282,6 @@ pub fn try_normalize_with(
     ctx: &dyn crate::sort_context::SortContext,
 ) -> Result<Expr, NormalizationLimit> {
     run_with_budget(|| normalize_with_impl(expr, ctx, false, MAX_ITERATIONS))
-}
-
-/// Checked normalization with an explicit per-run workload budget.
-///
-/// This is primarily useful for callers that own a resource contract or for
-/// deterministic stress tests. A nested proof-triggered normalize reuses the
-/// same active budget rather than starting an independent allowance.
-pub fn try_normalize_with_budget(
-    expr: Expr,
-    ctx: &dyn crate::sort_context::SortContext,
-    budget: NormalizeBudget,
-) -> Result<Expr, NormalizationLimit> {
-    run_with_budget_config(budget, || {
-        normalize_with_impl(expr, ctx, false, MAX_ITERATIONS)
-    })
 }
 
 fn normalize_with_impl(
@@ -518,14 +493,6 @@ impl JsonValue for String {
     }
 }
 
-/// Simplify a value only on an already proven observation domain. The caller
-/// must retain that domain separately (e.g. normal completion versus throws).
-/// This does not make partial values defined outside their original domain.
-pub fn normalize_in_domain(value: Expr, domain: &Expr) -> Expr {
-    let value = normalize(value);
-    normalize(casewhen::project_value_under_domain(&value, domain))
-}
-
 /// 归一化 / 化简（便捷版，使用 DefaultSortContext）。
 pub fn normalize(expr: Expr) -> Expr {
     if ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow().is_some()) {
@@ -607,34 +574,6 @@ pub fn normalize(expr: Expr) -> Expr {
         crate::profile::cache_admission_skip("normalize", cache_weight);
     }
     out
-}
-
-/// Normalize integer boundary comparisons after the caller has supplied a
-/// width proof. The helper deliberately does not infer a width from Expr.
-pub fn normalize_integer_with_width(expr: Expr, bits: u8) -> Expr {
-    assert!(matches!(bits, 32 | 64), "integer width must be 32 or 64");
-    fn rewrite(expr: Expr) -> Expr {
-        if let Some((op, left, right)) = expr.as_binop() {
-            let left = rewrite(left.clone());
-            let right = rewrite(right.clone());
-            return match (op, right.as_lit()) {
-                (crate::BinOpKind::Lt, Some(crate::Lit::Int(0))) => {
-                    crate::builder::le(left, crate::builder::lit_int(-1))
-                }
-                _ => crate::builder::binop_public(op, left, right),
-            };
-        }
-        if let Some(branches) = expr.as_case_when() {
-            return crate::builder::normal_return_case_when(
-                branches
-                    .iter()
-                    .map(|(condition, value)| (rewrite(condition.clone()), rewrite(value.clone())))
-                    .collect(),
-            );
-        }
-        expr
-    }
-    normalize(rewrite(expr))
 }
 
 /// 单次完整化简：rebuild-with-children + simplify_self。

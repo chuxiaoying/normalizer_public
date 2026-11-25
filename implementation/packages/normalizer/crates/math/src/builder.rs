@@ -35,7 +35,6 @@ static CONDITIONS_COVER_DISJUNCTION_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_DIRECT_COMPLEMENTS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_TRUTH_TABLE_PRECHECKS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_BUDGET_SKIPS: AtomicU64 = AtomicU64::new(0);
-static CONDITIONS_COVER_UNDER_DOMAIN_CALLS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 static PATH_IMPLIES_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -943,35 +942,6 @@ fn independent_condition_groups(conds: &[Expr]) -> Option<Vec<Vec<Expr>>> {
     }
 
     (groups.len() > 1).then_some(groups)
-}
-
-/// Prove that `conds` cover every path inside `domain`.
-///
-/// This is equivalent to proving `!domain || conds[0] || ... || conds[n]`
-/// covers the global boolean space. The proof belongs to math/builder rather
-/// than executor/display call sites: callers supply the domain they are
-/// evaluating under, and math decides whether the branch conditions are
-/// exhaustive within that domain.
-pub fn conditions_cover_all_under_domain(conds: &[Expr], domain: &Expr) -> bool {
-    crate::profile::count(
-        &CONDITIONS_COVER_UNDER_DOMAIN_CALLS,
-        "math.proof.conditions_cover_all_under_domain.call",
-        |_| {
-            format!(
-                "conds={} domain_size={} domain_depth={}",
-                conds.len(),
-                domain.size(),
-                domain.depth()
-            )
-        },
-    );
-    if conds.is_empty() {
-        return false;
-    }
-    let mut scoped_conds = Vec::with_capacity(conds.len() + 1);
-    scoped_conds.push(not(domain.clone()));
-    scoped_conds.extend(conds.iter().cloned());
-    conditions_cover_all(&scoped_conds)
 }
 
 /// Fast profile gate for proof checks.

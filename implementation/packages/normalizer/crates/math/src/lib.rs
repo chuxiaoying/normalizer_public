@@ -39,13 +39,12 @@ pub use domains::primitive::registry::{
 };
 pub use expr::{BinOpKind, Expr, Lit, RelationAggregateKind, UnaryOpKind};
 pub use normalize::{
-    normalize, normalize_in_domain, normalize_integer_with_width, normalize_with,
-    try_normalize_with, try_normalize_with_budget, BudgetKind, NormalizationLimit, NormalizeBudget,
+    normalize, normalize_with, try_normalize_with, BudgetKind, NormalizationLimit,
 };
 pub use ordering_axiom::{
     ordering_axiom_compare, ordering_axiom_key, ordering_axiom_ordered_comparison,
 };
-pub use primitive::{erase_generic, is_any_primitive, is_java_primitive};
+pub use primitive::{is_any_primitive, is_java_primitive};
 pub use primitive_enum::Primitive;
 pub use sort_context::{DefaultSortContext, SortContext};
 pub use symvar::SymVarOrigin;

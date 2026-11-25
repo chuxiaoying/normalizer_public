@@ -358,11 +358,6 @@ impl Expr {
         }
     }
 
-    /// 是否是 Call 表达式。
-    pub fn is_call(&self) -> bool {
-        matches!(self.0.as_ref(), ExprKind::Call { .. })
-    }
-
     /// 如果是 Call，返回 (FuncKey, args 切片)；否则 None。
     ///
     /// FuncKey 是值类型（内部为 u32 id 包装），拷贝成本可忽略。
@@ -487,13 +482,6 @@ impl Expr {
     /// It is not an identity shortcut: `Eq` remains full structural equality.
     pub fn structural_hash(&self) -> u64 {
         self.1.structural_hash
-    }
-
-    /// Template hash that ignores literal values and external binding IDs.
-    /// Two expressions differing only in Lit values or $e_N binding IDs
-    /// will have the same template_hash — used for loop induction detection.
-    pub fn template_hash(&self) -> u64 {
-        template_hash_from_kind(self.kind())
     }
 
     /// Walk all sub-expressions (including self) depth-first, calling `f` on each.
@@ -807,140 +795,6 @@ fn structural_hash_from_kind(kind: &ExprKind) -> u64 {
         Relation(relation) => {
             10u8.hash(&mut h);
             relation.hash(&mut h);
-        }
-    }
-    h.finish()
-}
-
-/// Template hash: same as structural_hash but ignores Lit values and
-/// External binding IDs. This makes expressions from different loop iterations
-/// (which differ only in date literals or $e_N binding IDs) hash identically.
-fn template_hash_from_kind(kind: &ExprKind) -> u64 {
-    let mut h = DefaultHasher::new();
-    use ExprKind::*;
-    match kind {
-        Lit(_) => {
-            // All literals hash to same value — ignore concrete value
-            200u8.hash(&mut h);
-        }
-        SymVar { origin } => {
-            1u8.hash(&mut h);
-            match origin {
-                SymVarOrigin::Parameter { name, .. } => {
-                    0u8.hash(&mut h);
-                    name.hash(&mut h);
-                }
-                SymVarOrigin::External { path, .. } => {
-                    // Ignore binding_id — different loop iterations get different IDs
-                    1u8.hash(&mut h);
-                    path.hash(&mut h);
-                }
-                SymVarOrigin::Temporal { .. } => {
-                    // Ignore binding_id for temporals too
-                    2u8.hash(&mut h);
-                }
-            }
-        }
-        HeapRef(_id) => {
-            // Ignore HeapRef id — same structure with different object IDs should match
-            2u8.hash(&mut h);
-        }
-        RowValue { alias } => {
-            11u8.hash(&mut h);
-            alias.hash(&mut h);
-        }
-        Call {
-            key,
-            args,
-        } => {
-            3u8.hash(&mut h);
-            key.hash(&mut h);
-            for arg in args {
-                arg.template_hash().hash(&mut h);
-            }
-        }
-        BinOp { op, left, right } => {
-            4u8.hash(&mut h);
-            op.hash(&mut h);
-            left.template_hash().hash(&mut h);
-            right.template_hash().hash(&mut h);
-        }
-        UnaryOp { op, operand } => {
-            5u8.hash(&mut h);
-            op.hash(&mut h);
-            operand.template_hash().hash(&mut h);
-        }
-        CaseWhen { branches } => {
-            6u8.hash(&mut h);
-            for (cond, value) in branches {
-                cond.template_hash().hash(&mut h);
-                value.template_hash().hash(&mut h);
-            }
-        }
-        ArrayLit(items) => {
-            7u8.hash(&mut h);
-            for item in items {
-                item.template_hash().hash(&mut h);
-            }
-        }
-        RelationAggregate {
-            kind,
-            relation,
-            select_expr,
-            default_expr,
-        } => {
-            9u8.hash(&mut h);
-            kind.hash(&mut h);
-            template_hash_relation(relation).hash(&mut h);
-            select_expr.as_ref().map(|e| e.template_hash()).hash(&mut h);
-            default_expr
-                .as_ref()
-                .map(|e| e.template_hash())
-                .hash(&mut h);
-        }
-        Relation(relation) => {
-            10u8.hash(&mut h);
-            template_hash_relation(relation).hash(&mut h);
-        }
-    }
-    h.finish()
-}
-
-fn template_hash_relation(rel: &crate::domains::relation::RelationExpr) -> u64 {
-    use crate::domains::relation::RelationExpr;
-    let mut h = DefaultHasher::new();
-    match rel {
-        RelationExpr::Empty => {
-            0u8.hash(&mut h);
-        }
-        RelationExpr::Base { name, alias } => {
-            1u8.hash(&mut h);
-            name.hash(&mut h);
-            alias.hash(&mut h);
-        }
-        RelationExpr::Vector { value, alias } => {
-            13u8.hash(&mut h);
-            value.template_hash().hash(&mut h);
-            alias.hash(&mut h);
-        }
-        RelationExpr::Select { predicate, input } => {
-            5u8.hash(&mut h);
-            predicate.template_hash().hash(&mut h);
-            template_hash_relation(input).hash(&mut h);
-        }
-        RelationExpr::Project {
-            value,
-            alias,
-            input,
-        } => {
-            6u8.hash(&mut h);
-            value.template_hash().hash(&mut h);
-            alias.hash(&mut h);
-            template_hash_relation(input).hash(&mut h);
-        }
-        RelationExpr::Distinct(inner) => {
-            8u8.hash(&mut h);
-            template_hash_relation(inner).hash(&mut h);
         }
     }
     h.finish()
