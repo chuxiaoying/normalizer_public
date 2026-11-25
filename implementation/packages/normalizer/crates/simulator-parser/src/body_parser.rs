@@ -704,7 +704,7 @@ impl<'a> Parser<'a> {
                 });
             }
             Some(b'-') => {
-                if let Some(lit) = self.try_parse_negative_long_min_literal() {
+                if let Some(lit) = self.try_parse_negative_min_literal() {
                     return Ok(lit);
                 }
                 self.pos += 1;
@@ -729,28 +729,34 @@ impl<'a> Parser<'a> {
         self.parse_postfix()
     }
 
-    /// Java 允许十进制 long literal `9223372036854775808L` 只作为一元负号的
-    /// 操作数出现，用来表示 `Long.MIN_VALUE`。它不是普通正数字面量，不能
-    /// 在 `read_number_literal` 里当作兜底放开；只在真实 `-literal` 位置折叠。
-    fn try_parse_negative_long_min_literal(&mut self) -> Option<JavaExpr> {
+    /// The decimal int and long lower-bound magnitudes are legal only as the
+    /// direct token operand of unary minus. They are not positive literals.
+    fn try_parse_negative_min_literal(&mut self) -> Option<JavaExpr> {
         let save = self.pos;
         debug_assert_eq!(self.peek(), Some(b'-'));
         self.pos += 1;
         self.skip_ws();
         let start = self.pos;
-        // A leading underscore is a Java identifier, not a digit separator.
-        if self.peek() == Some(b'9') {
+        if matches!(self.peek(), Some(b'2' | b'9')) {
             while self.peek().is_some_and(|c| c.is_ascii_digit() || c == b'_') {
                 self.pos += 1;
             }
             let digits = &self.src[start..self.pos];
-            if digits.last() == Some(&b'8')
-                && matches!(self.peek(), Some(b'L' | b'l'))
-                && !self.peek_at(1).is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$')
-                && digits.iter().copied().filter(|c| *c != b'_').eq(b"9223372036854775808".iter().copied())
-            {
-                self.pos += 1;
-                return Some(JavaExpr::Lit(JavaLit::Long(i64::MIN)));
+            if digits.last().is_some_and(u8::is_ascii_digit) {
+                let long = matches!(self.peek(), Some(b'L' | b'l'));
+                let next = if long { self.peek_at(1) } else { self.peek() };
+                if !next.is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'.')) {
+                    let magnitude = if long { b"9223372036854775808".as_slice() } else { b"2147483648".as_slice() };
+                    if digits.iter().copied().filter(|c| *c != b'_').eq(magnitude.iter().copied()) {
+                        let literal = if long {
+                            self.pos += 1;
+                            JavaLit::Long(i64::MIN)
+                        } else {
+                            JavaLit::Int(i64::from(i32::MIN))
+                        };
+                        return Some(JavaExpr::Lit(literal));
+                    }
+                }
             }
         }
         self.pos = save;
@@ -1325,7 +1331,9 @@ impl<'a> Parser<'a> {
             if is_long {
                 Ok(JavaLit::Long(v))
             } else {
-                Ok(JavaLit::Int(v))
+                let v = i32::try_from(v)
+                    .map_err(|_| self.err("decimal int literal exceeds its source range"))?;
+                Ok(JavaLit::Int(i64::from(v)))
             }
         }
     }

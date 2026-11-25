@@ -88,3 +88,20 @@
 - name: overwide-hex-int-rejects-instead-of-guessing-width
   edits: [{from: 'return value + 1;', to: 'return 0x1_0000_0000;'}]
   reject: ['SOURCE-PARSE-FAILED', 'nondecimal int literal exceeds 32 bits']
+- name: unsuffixed-positive-int-boundary-is-not-a-legal-source-token
+  edits: [{from: 'return value + 1;', to: 'return 2147483648;'}]
+  reject: ['SOURCE-PARSE-FAILED', 'decimal int literal exceeds its source range']
+
+- name: parentheses-do-not-make-the-positive-int-boundary-a-direct-minus-operand
+  edits: [{from: 'return value + 1;', to: 'return -(2147483648);'}]
+  reject: ['SOURCE-PARSE-FAILED', 'decimal int literal exceeds its source range']
+
+- name: int-minimum-token-does-not-wrap-later-exact-arithmetic
+  edits: [{from: 'return value + 1;', to: 'return -2_147_483_648 - 1;'}]
+  expect: [{path: [R], value: '-2147483649'}]
+
+- name: the-same-positive-magnitude-is-legal-with-a-long-suffix
+  edits:
+    - {from: 'static int addOne(int value)', to: 'static long addOne(int value)'}
+    - {from: 'return value + 1;', to: 'return 2147483648L;'}
+  expect: [{path: [R], value: '2147483648'}]
