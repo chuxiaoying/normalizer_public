@@ -600,7 +600,7 @@ impl Loaded {
                         || self.project.source_exception_parents.contains_key(&c.full_name())
                         || self.project.source_layouts.contains_key(&c.full_name()))
                     && c.annotations().is_empty()
-                    && c.type_params().is_empty()
+
                     && (c.imports().is_empty() || crate::normalized::supported_source_imports(c))
                     && !c.has_unbound_imports(),
                 "unsupported class shape",
@@ -627,8 +627,7 @@ impl Loaded {
                 )?;
                 need(
                     !m.is_varargs()
-                        && (m.annotations().is_empty() || self.project.direct_source && crate::normalized::nullable_text_return(c, m))
-                        && m.type_params().is_empty(),
+                        && (m.annotations().is_empty() || self.project.direct_source && crate::normalized::nullable_text_return(c, m)),
                     "unsupported method shape",
                 )?;
                 let id = format!("{}.{}", c.full_name(), m.name());

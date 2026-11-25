@@ -69,3 +69,7 @@ R: value + 1
 `new java.util.ArrayList<String>()` 和 `new java.util.ArrayList<>()` 都有完整的类型语法；`<>` 是构造调用的类型推断写法，不是声明类型的一部分（[JLS 15.9](https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.9)）。这不表示直接源码入口已经支持通用集合构造。当前源码合同仍可要求 AI 按已支持的业务种子预处理实际集合操作。
 
 `new java.util.ArrayList<String()` 缺少 `>`，`new java.util.ArrayList<String,>()` 缺少逗号后的类型。两者必须在源码解析阶段拒绝，即使声明不在所选入口的调用路径上；不能吞掉残缺类型再报“构造操作不支持”。解析 `new int[n]` 时，`[n]` 仍由数组构造消费，不当作声明类型的 `[]`。
+
+## 泛型声明与类型参数写法不能混为一谈
+
+当前源码合同不接纳自定义类、嵌套类或方法的泛型声明，`<T>` 必须指到原处报告需预处理，不能当成非泛型声明或创建半成品 AST。这不改变已经支持的具体类型写法，例如局部映射声明里的 `HashMap<String,String>`；后者仍由各自的闭合类型和操作合同验收。

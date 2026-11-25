@@ -459,50 +459,12 @@ impl<'a> Parser<'a> {
         Ok((supertype, interfaces))
     }
 
-    fn parse_class_type_params(&mut self) -> Result<Vec<String>, ParseError> {
+    fn require_closed_declaration(&mut self) -> Result<(), ParseError> {
         self.skip_ws();
-        if self.peek() != Some(b'<') {
-            return Ok(Vec::new());
+        if self.peek() == Some(b'<') {
+            return Err(self.err("[JAVA-TYPE-PARAMETERS] generic declarations require explicit preprocessing"));
         }
-
-        self.pos += 1;
-        let mut params = Vec::new();
-        loop {
-            self.skip_ws();
-            let name = self
-                .read_ident()
-                .ok_or_else(|| self.err("expected type parameter name"))?;
-            params.push(name);
-
-            let mut depth: i32 = 0;
-            loop {
-                self.skip_ws();
-                match self.peek() {
-                    Some(b'<') => {
-                        depth += 1;
-                        self.pos += 1;
-                    }
-                    Some(b'>') if depth == 0 => {
-                        self.pos += 1;
-                        return Ok(params);
-                    }
-                    Some(b'>') => {
-                        depth -= 1;
-                        self.pos += 1;
-                    }
-                    Some(b',') if depth == 0 => {
-                        self.pos += 1;
-                        break;
-                    }
-                    Some(b'"') => self.skip_string_lit(),
-                    Some(b'\'') => self.skip_char_lit(),
-                    Some(_) => {
-                        self.pos += 1;
-                    }
-                    None => return Err(self.err("unclosed '<'")),
-                }
-            }
-        }
+        Ok(())
     }
 
     pub(crate) fn read_annotations(&mut self) -> Result<Vec<AnnotationRef>, ParseError> {
@@ -621,7 +583,7 @@ impl<'a> Parser<'a> {
             .read_ident()
             .ok_or_else(|| self.err("expected class name"))?;
 
-        let type_params = self.parse_class_type_params()?;
+        self.require_closed_declaration()?;
 
         let (supertype, interfaces) = self.parse_class_hierarchy(is_interface)?;
 
@@ -635,7 +597,7 @@ impl<'a> Parser<'a> {
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
             simple_name,
-            type_params,
+
             annotations,
             fields: Vec::new(),
             methods: Vec::new(),
@@ -753,7 +715,7 @@ fn parse_class_body(
             let nested_simple = p
                 .read_ident()
                 .ok_or_else(|| p.err("expected nested class name"))?;
-            let nested_type_params = p.parse_class_type_params()?;
+            p.require_closed_declaration()?;
 
             let (nested_supertype, nested_interfaces) =
                 p.parse_class_hierarchy(nested_is_interface)?;
@@ -767,7 +729,6 @@ fn parse_class_body(
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
-                type_params: nested_type_params,
                 annotations: annotations.clone(),
                 fields: Vec::new(),
                 methods: Vec::new(),
@@ -824,7 +785,6 @@ fn parse_class_body(
                 class.methods.push(JavaMethod {
                     throws,
                     name: first,
-                    type_params: Vec::new(),
                     params,
                     param_annotations,
                     return_type: JavaType::Void,
@@ -841,7 +801,7 @@ fn parse_class_body(
         }
 
         p.pos = save;
-        let method_type_params = p.parse_class_type_params()?;
+        p.require_closed_declaration()?;
         let java_type = match parse_type(&mut p) {
             Some(t) => t,
             None => {
@@ -909,7 +869,6 @@ fn parse_class_body(
             class.methods.push(JavaMethod {
                 throws,
                 name: member_name,
-                type_params: method_type_params,
                 params,
                 param_annotations,
                 return_type: java_type,

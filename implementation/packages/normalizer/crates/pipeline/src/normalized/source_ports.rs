@@ -67,7 +67,7 @@ pub(crate) fn declarations(
                     || method.is_varargs()
                     || method.is_constructor()
                     || !method.annotations().is_empty()
-                    || !method.type_params().is_empty()
+
                     || method
                         .params()
                         .iter()

@@ -49,7 +49,6 @@ pub struct JavaClass {
     /// bindings cannot be admitted to the closed source contract.
     pub(crate) has_unbound_imports: bool,
     pub(crate) simple_name: String,
-    pub(crate) type_params: Vec<String>,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) fields: Vec<JavaField>,
     pub(crate) methods: Vec<JavaMethod>,
@@ -76,9 +75,6 @@ impl JavaClass {
     }
     pub fn simple_name(&self) -> &str {
         &self.simple_name
-    }
-    pub fn type_params(&self) -> &[String] {
-        &self.type_params
     }
     pub fn full_name(&self) -> String {
         if self.package.is_empty() {
@@ -155,7 +151,6 @@ impl JavaField {
 #[derive(Debug, Clone)]
 pub struct JavaMethod {
     pub(crate) name: String,
-    pub(crate) type_params: Vec<String>,
     pub(crate) params: Vec<(JavaType, String)>,
     pub(crate) param_annotations: std::collections::BTreeMap<String, Vec<AnnotationRef>>,
     pub(crate) throws: Vec<String>,
@@ -183,9 +178,6 @@ impl JavaMethod {
 
     pub fn name(&self) -> &str {
         &self.name
-    }
-    pub fn type_params(&self) -> &[String] {
-        &self.type_params
     }
     pub fn param_annotations(&self, name: &str) -> &[AnnotationRef] {
         self.param_annotations.get(name).map(Vec::as_slice).unwrap_or_default()

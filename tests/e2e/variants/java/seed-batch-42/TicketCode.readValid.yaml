@@ -213,3 +213,16 @@
                 return 1;
             }
   reject: ['[NORM-STATEMENT]', 'PREPROCESS_REQUIRED', 'TicketCode.helper']
+
+- name: a-generic-source-class-does-not-become-a-concrete-class
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode<T> {' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-TYPE-PARAMETERS]']
+- name: a-generic-source-method-does-not-become-a-concrete-method
+  edits:
+    - { from: 'static int readValid', to: 'static <T> int readValid' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-TYPE-PARAMETERS]']
+- name: an-unused-generic-nested-class-is-not-discarded
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { static class Extra<T> {}' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-TYPE-PARAMETERS]']

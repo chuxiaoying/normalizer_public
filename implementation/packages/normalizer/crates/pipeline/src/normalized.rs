@@ -46,7 +46,7 @@ pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> boo
         && !class.methods().is_empty()
         && class.methods().iter().all(|method| !method.is_static() && !method.is_constructor()
             && !method.is_varargs() && method.body().is_none() && method.throws().is_empty()
-            && method.annotations().is_empty() && method.type_params().is_empty()
+            && method.annotations().is_empty()
             && scalar(method.return_type()) && method.params().iter().all(|(ty, _)| scalar(ty)))
 }
 
@@ -250,7 +250,7 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
                 || !class.methods().is_empty()
                 || !class.annotations().is_empty()
                 || !class.interfaces().is_empty()
-                || !class.type_params().is_empty()
+
                 || class.is_interface()
             {
                 return Err(error("NORM-EXCEPTION-DECLARATION", &class.full_name()));
@@ -343,7 +343,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || (!c.fields().is_empty() && !layouts.contains_key(&name) && !exceptions.contains_key(&name))
             || !c.annotations().is_empty()
-            || !c.type_params().is_empty()
+
             || !supported_source_imports(c)
             || c.has_unbound_imports()
         {
@@ -359,7 +359,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
             }
             if m.is_varargs()
                 || (!m.annotations().is_empty() && !nullable_text_return(c, m))
-                || !m.type_params().is_empty()
+
                 || (!m.is_constructor() && !supported(m.return_type()))
                 || m.params().iter().any(|(t, _)| !supported(t))
             {
