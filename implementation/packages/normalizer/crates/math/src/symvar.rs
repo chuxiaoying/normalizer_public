@@ -29,7 +29,7 @@ pub enum SymVarOrigin {
     ///
     /// `primitive_type` 示例：
     /// - Java 原生：`"int"` / `"long"` / `"boolean"` / `"double"` / ...
-    /// - 归一化 primitive：`"java.lang.String"` / `"java.lang.Integer"` / `"java.util.Date"` 等
+    /// - 归一化 primitive：`"java.lang.String"` / `"integer"` 等
     Parameter {
         name: String,
         primitive_type: String,

@@ -132,13 +132,13 @@ thread_local! {
 
 /// 断言 primitive_type 是合法 primitive。
 ///
-/// debug 模式 panic，release 模式跳过（zero-cost）。
+/// Both debug and release builds validate the type.
 /// 用户指示：SymVar 必须 primitive，业务 Pojo 用 HeapRef。
 #[inline]
 fn assert_primitive_type(ty: &str) {
     assert!(
         is_any_primitive(ty),
-        "[MATH-BUILDER] SymVar primitive_type must be primitive (Java primitive or normalization whitelist), got: '{}'. Pojo types must use HeapRef, not SymVar.",
+        "[MATH-BUILDER] SymVar primitive_type must be primitive (closed scalar encoding), got: '{}'. Pojo types must use HeapRef, not SymVar.",
         ty
     );
 }
@@ -192,10 +192,9 @@ pub fn lit(l: Lit) -> Expr {
 /// use math::builder::param;
 /// let x = param("x", "int");                        // Java 原生 primitive
 /// let s = param("s", "java.lang.String");           // 归一化 primitive
-/// let d = param("d", "java.util.Date");             // Date 也是 primitive
 /// ```
 ///
-/// # Panics（debug 模式）
+/// # Panics
 /// 如果 primitive_type 不是 primitive（如传入 `"biz.Pojo"`），assert panic（release mode 也生效）。
 /// Pojo 值必须用 HeapRef 表达。
 pub fn param<N: Into<String>, T: Into<String>>(name: N, primitive_type: T) -> Expr {
@@ -211,7 +210,7 @@ pub fn param<N: Into<String>, T: Into<String>>(name: N, primitive_type: T) -> Ex
 
 /// 外部寄存符号（E）。binding_id 由外部发放（P0：必填 primitive_type）。
 ///
-/// # Panics（debug 模式）
+/// # Panics
 /// primitive_type 必须是 primitive。Boundary 返回 Pojo 场景应改走 HeapRef
 /// （方向1独立 PR 处理）。
 pub fn sym_e<T: Into<String>>(binding_id: u64, primitive_type: T) -> Expr {

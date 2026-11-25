@@ -148,3 +148,8 @@
   edits:
     - { from: 'return value;', to: 'for (int i = 0, j = 1; i < 2; i++) { value = value + j; } return value;' }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-FOR-INITIALIZER]']
+- name: an-imported-host-date-does-not-imply-a-source-domain
+  edits:
+    - { from: 'class TicketCode {', to: 'import java.time.LocalDate; class TicketCode {' }
+    - { from: 'int readValid(int value)', to: 'LocalDate readValid(LocalDate value)' }
+  reject: ['[NORM-CLASS-SHAPE]', 'TicketCode']
