@@ -71,15 +71,9 @@ throws:
     when: completion.is_throw($e_0, RiskUnavailable)
 ```
 
-**预处理 diff**
+**预处理要点**
 
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 只有 Java 字段声明，new 只增加 `@External` 和对应导入。 | 外部身份由 Normalizer 自身标记提供，Java parser 不需要理解具体库。 |
-| old 与 new 都保留调用和未捕获异常声明。 | 预处理补边界身份，但不吞掉异常或代替工程推导完成路径。 |
+- 外部身份由 Normalizer 自身标记提供，Java parser 不需要理解具体库。
+- 预处理补边界身份，但不吞掉异常或代替工程推导完成路径。
 
-**PERS 结果 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 只看到 `return client.fetch(...)`，new 在 S 中绑定外部调用和完成值，在 `throws` 中保留异常传播。 | 外部调用的成功值、失败类型和入口完成关系必须同时可观察。 |
+**PERS 验收要点**：外部调用的成功值、失败类型和入口完成关系必须同时可观察。

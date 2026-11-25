@@ -6,13 +6,13 @@
 implementation/tools/normalizer test business-examples
 ```
 
-首批恢复自备份版本的业务测试清单，覆盖系列一的 14 篇种子、17 个入口。每个入口先运行原例，再分别运行自己的派生变体。未派生的设计种子明确列在目录的 `pending` 中，不是 CLI 跳过的用例。当前执行范围以该目录的 `groups` 为准。
+实际运行范围由 [CLI 测试清单](e2e/catalog.yaml) 的 `groups` 定义。每个入口独立运行原例和各个变体。`pending` 列出尚未派生的设计种子，不是运行时跳过的用例。
 
 ## 种子和测试的双重登记
 
 [设计种子清单](../design/examples/seeds.yaml)只负责稳定 ID 与案例路径。[种子语义清单](../design/examples/seed-manifest.yaml)负责基础主题、联合主题或基础合同的分类，以及相关主题。[种子分母计划](../design/examples/seed-plan.yaml)登记应该覆盖的全部语义场景，`planned` 条目暂时没有源码和测试。[CLI 测试清单](e2e/catalog.yaml)只负责执行入口、场景和派生状态。收集测试时会把这些资料按种子 ID 连接，并检查已实现种子都位于分母计划内。
 
-种子设计与 Normalizer 重构按批次对抗，状态和审核边界见[种子审核协作协议](e2e/seed-review-protocol.md)。
+种子与实现相互独立审核，状态和审核边界见[种子审核协作协议](e2e/seed-review-protocol.md)。
 
 topic 表示单个基础语义能力，basic 表示常规合同和防御边界，composition 只表示专门测试多个主题交互的联合种子。一个测试依赖其他主题，不会因为依赖关系自动变成 composition。测试入口所在的 groups 是执行路径，不承担设计主题归档职责。
 

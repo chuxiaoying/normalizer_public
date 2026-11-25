@@ -32,4 +32,4 @@ P:
 R: initial + COALESCE(SUM(SELECT value FROM values), 0)
 ```
 
-**升级思想**　reduce 的初值是业务输入，不能在空集合或非空集合中被内核丢掉。
+**验收要点**：reduce 的初值是业务输入，不能在空集合或非空集合中被内核丢掉。

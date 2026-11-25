@@ -30,12 +30,6 @@ class Pricing {
 
 **原样通过。** 三个被调用的方法均在当前类中定义，可以沿原 Java 调用逐层解析。上面的 Java 即为 Normalizer 的输入。
 
-**预处理 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 与 new 都保留三个 helper 和原入口，不改写 Java；无本例预处理差异。 | — |
-
 ## 归一化最终结果
 
 ```yaml
@@ -65,9 +59,3 @@ R: |-
 ```
 
 三个 helper 均为纯计算，最终的额度判断只读取 `value`、`base` 和 `limit`。
-
-**PERS 结果 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| 无本例独有差异。old 已能穿透三个 helper；共性变化见[基础案例](java-static.md#归一化最终结果)。 | — |

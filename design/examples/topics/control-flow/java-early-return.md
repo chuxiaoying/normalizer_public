@@ -41,14 +41,6 @@ P:
 R: CASE WHEN useFallback THEN fallback ELSE value END
 ```
 
-**预处理 diff**
+**预处理要点**：工程能理解的有限控制流继续由工程归一化，AI 不把普通 Java 翻译成扩展语法。
 
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 与 new 都保留 `if` 和两个 `return`。 | 工程能理解的有限控制流继续由工程归一化，AI 不把普通 Java 翻译成扩展语法。 |
-
-**PERS 结果 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 需要按程序顺序阅读早返回，new 用 CASE 明确开关、fallback 和默认值。 | 多出口正常路径统一为一个结果表达式，同时保留选择顺序。 |
+**PERS 验收要点**：多出口正常路径统一为一个结果表达式，同时保留选择顺序。

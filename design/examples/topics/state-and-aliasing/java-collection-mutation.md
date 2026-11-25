@@ -51,4 +51,4 @@ throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
 ```
 
-**升级思想**　集合别名必须观察同一状态身份，原地写入不能被复制成一个无关的新数组。
+**验收要点**：集合别名必须观察同一状态身份，原地写入不能被复制成一个无关的新数组。

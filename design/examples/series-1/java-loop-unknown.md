@@ -49,18 +49,6 @@ readWhenReady:
 
 同一类中的 `recursiveNormalize` 无法从 `readWhenReady` 到达，不参与此次入口分析。
 
-**预处理 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| 无本例新增差异：old 在预处理阶段因缺少外部就绪的完成合同而拒绝，未交付规范项目；new 同样拒绝。循环分工对照见[固定上限与变量循环](java-loop-bounded-retry.md)。 | — |
-
 ## 归一化最终结果
 
 未生成 PERS。
-
-**PERS 结果 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| 无本例新增差异：old 没有启动归一化 CLI、没有 PERS；new 也要求先闭合预处理合同，因此同样不进入归一化、不生成 PERS。 | — |

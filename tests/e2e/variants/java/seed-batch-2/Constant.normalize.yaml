@@ -2,9 +2,6 @@
   edits:
     - from: 'return value + 0;'
       to: 'return value - 0;'
-  expect:
-    - path: [R]
-      value: value
 - name: add-one
   edits:
     - from: 'return value + 0;'

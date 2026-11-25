@@ -37,4 +37,4 @@ P:
 R: COALESCE(SUM(SELECT profile.score FROM profiles AS profile), 0)
 ```
 
-**升级思想**　集合元素的记录类型和字段来源必须同时进入 PERS，不能只保留一个无类型的 `score` 列。
+**验收要点**：集合元素的记录类型和字段来源必须同时进入 PERS，不能只保留一个无类型的 `score` 列。
