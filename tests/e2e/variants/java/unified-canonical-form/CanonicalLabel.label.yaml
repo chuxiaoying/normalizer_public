@@ -9,3 +9,10 @@
   edits:
     - from: 'return "zone-" + "42";'
       to: 'return "zone-" + ("" + "42");'
+- name: preserves-newline-and-quote-in-ordered-content
+  edits:
+    - from: 'return "zone-" + "42";'
+      to: 'return "zone-\n\141\"" + "42";'
+  expect:
+    - path: [R]
+      value: '"zone-\na\"42"'

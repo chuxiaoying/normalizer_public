@@ -1,0 +1,11 @@
+- name: same-character-as-octal-escape
+  edits:
+    - from: "'\\141'"
+      to: "'a'"
+- name: utf8-source-character-keeps-its-code-unit
+  edits:
+    - from: "'\\141'"
+      to: "'中'"
+  expect:
+    - path: [R]
+      value: '20023'

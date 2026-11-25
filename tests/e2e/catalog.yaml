@@ -10,7 +10,7 @@ groups:
     canonical-integer-partition: [CanonicalQuantity.band]
     canonical-total-boolean-order: [CanonicalChecks.approved, CanonicalChecks.tier, CanonicalChecks.priority]
     canonical-number-selection: [CanonicalQuota.smaller]
-    canonical-text-order: [CanonicalLabel.label]
+    canonical-text-order: [CanonicalLabel.label, CanonicalLabel.charCode]
   java/pure:
     java-static: [HelloWorld.addOne]
     java-static-case-when: [Decision.choose]
