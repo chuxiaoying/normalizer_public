@@ -9,3 +9,16 @@
   expect:
     - path: [R]
       value: score >= 70
+- name: comparing-total-boolean-to-true-retains-the-predicate
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return active == true;'
+- name: comparing-total-boolean-to-false-negates-the-predicate
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return active == false;'
+  expect: [{path: [R], value: score < 60}]
+- name: explicit-false-default-is-the-same-boolean-predicate
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return active ? active : false;'
