@@ -44,6 +44,17 @@ impl SourceObjects {
             | (Some(Origin::Parameter(_) | Origin::State { .. }), Some(Origin::Allocation)))
     }
 
+    fn knows_identity(&self, value: &Expr) -> bool {
+        value.is_null() || self.owns(value)
+    }
+
+    pub(super) fn has_complete_identity_partition(&self, value: &Expr) -> bool {
+        value.as_case_when().is_some_and(|arms| {
+            arms.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true))
+                && arms.iter().all(|(_, identity)| self.knows_identity(identity))
+        })
+    }
+
     pub(super) fn owns(&self, reference: &Expr) -> bool {
         reference
             .as_heap_ref()
@@ -345,16 +356,15 @@ impl Engine<'_> {
         // identity can be compared branchwise with an already acquired root
         // without re-running a branch or comparing its object's contents.
         let selected = match (left.as_case_when(), right.as_case_when()) {
-            (Some(arms), None) if self.source_objects.owns(&right) => Some((arms, &right, true)),
-            (None, Some(arms)) if self.source_objects.owns(&left) => Some((arms, &left, false)),
+            (Some(arms), None) if self.source_objects.knows_identity(&right)
+                && self.source_objects.has_complete_identity_partition(&left) => Some((arms, &right, true)),
+            (None, Some(arms)) if self.source_objects.knows_identity(&left)
+                && self.source_objects.has_complete_identity_partition(&right) => Some((arms, &left, false)),
             _ => None,
         };
         if let Some((arms, other, selected_left)) = selected {
-            need(arms.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true)),
-                "conditional reference requires a complete alias partition")?;
             let mut result = Vec::with_capacity(arms.len());
             for (guard, value) in arms {
-                need(self.source_objects.owns(value), "conditional source identity requires a bound reference")?;
                 let (a, z) = if selected_left { (value, other) } else { (other, value) };
                 result.push((guard.clone(), self.compare_reference_roots(a.clone(), z.clone(), different)?));
             }
@@ -364,6 +374,17 @@ impl Engine<'_> {
     }
 
     fn compare_reference_roots(&mut self, mut left: Expr, mut right: Expr, different: bool) -> Result<Expr> {
+        let null_peer = if left.is_null() && self.source_objects.owns(&right) {
+            Some(&right)
+        } else if right.is_null() && self.source_objects.owns(&left) {
+            Some(&left)
+        } else {
+            None
+        };
+        if let Some(peer) = null_peer {
+            let is_null = self.source_object_null(peer);
+            return Ok(if different { b::not(is_null) } else { is_null });
+        }
         if self.source_objects.fresh_and_acquired(&left, &right) { return Ok(b::lit_bool(different)); }
         self.check_borrowed_identity(&left, &right)?;
         let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };

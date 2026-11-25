@@ -62,3 +62,35 @@
     - path: [P, parameters]
       value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
     - { path: [R], value: replace }
+- name: null-replacement-is-not-the-same-as-a-nonnull-input
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return alias == left;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: 'NOT (replace)' }
+- name: a-null-replacement-uses-the-original-input-nullability
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return left == alias;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: 'Box?' }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: 'left == null OR NOT (replace)' }
+- name: a-local-conditional-reference-keeps-its-null-guard
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return alias == null;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: replace }
+- name: null-inequality-keeps-the-complement-of-the-real-branch
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return null != alias;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: 'NOT (replace)' }

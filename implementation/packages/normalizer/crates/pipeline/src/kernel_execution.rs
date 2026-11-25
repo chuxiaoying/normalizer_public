@@ -848,9 +848,10 @@ impl Engine<'_> {
                 if let Some(operand) = nullable {
                     let v = self.java_expr(operand, id, env, path)?;
                     let presence = match &v { Value::Term(Ty::Ref,r)=>self.row_presence(r),_=>None };
-                    let null = if let Some(present)=presence { b::not(present) } else if matches!(&v, Value::Term(Ty::Ref, reference) if self.source_objects.owns(reference))
+                    let null = if let Some(present)=presence { b::not(present) } else if matches!(&v, Value::Term(Ty::Ref, reference)
+                        if self.source_objects.owns(reference) || self.source_objects.has_complete_identity_partition(reference))
                     {
-                        self.source_object_null(&v.scalar()?)
+                        self.source_reference_equality(v.scalar()?, b::lit_null(), false)?
                     } else {
                         match v {
                             Value::Sequence { null, .. } => null,
