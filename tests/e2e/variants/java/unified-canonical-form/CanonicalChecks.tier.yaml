@@ -1,0 +1,12 @@
+- name: demorgan-complement-with-swapped-arms
+  edits:
+    - from: |-
+        if (a == 0 && b == 0) return 10;
+                return 20;
+      to: |-
+        if (b != 0 || a != 0) return 20;
+                return 10;
+- name: reorder-acquired-guards
+  edits:
+    - from: 'a == 0 && b == 0'
+      to: 'b == 0 && a == 0'

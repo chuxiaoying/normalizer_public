@@ -6,7 +6,7 @@ version: 1
 groups:
   java/unified-canonical-form:
     canonical-binary-case: [CanonicalCount.clamp]
-    canonical-total-boolean-order: [CanonicalChecks.approved]
+    canonical-total-boolean-order: [CanonicalChecks.approved, CanonicalChecks.tier]
     canonical-number-selection: [CanonicalQuota.smaller]
     canonical-text-order: [CanonicalLabel.label]
   java/pure:
