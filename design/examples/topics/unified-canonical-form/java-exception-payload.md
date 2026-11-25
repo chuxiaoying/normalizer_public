@@ -35,6 +35,8 @@ throws:
 
 改变独立 guard 的源码顺序不改变这份结果；改变某个消息或引入重叠 guard 则会改变对应的异常结果。没有声明的消息不占据 payload 字段；用 `(java.lang.String) null` 显式选择 String 构造器并交付 null 则发布 `payload: 'null'`，不是遗漏字段。本切片仅测试直接 Java 的 RuntimeException 及其字面量消息，不替代外部端口载荷或任意异常对象的观察合同。带 cause 的构造器不得当作文本消息解释。
 
+若只在编号 1、2、3 正常返回 10、20、30，其余编号抛出 `"invalid"`，执行层证明 `R` 只在这三个正常编号上有定义，才可以在 `R` 内把第三个值写成 `ELSE 30`。其余编号仍只走 `throws`；不能给通用部分 CASE 补一个默认返回值。
+
 ## 外部回执只在取得后进入异常 guard
 
 ```java

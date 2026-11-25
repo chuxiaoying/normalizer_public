@@ -74,12 +74,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
         // An exhaustive binary partition may be complemented only together
         // with swapping its values. Use the shared predicate ordering so source
         // branch order cannot choose two different normal forms.
-        if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(
-            &Expr::new(ExprKind::CaseWhen {
-                branches: branches.clone(),
-            }),
-            ctx,
-        ) {
+        if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(expr, ctx) {
             return oriented;
         }
 
@@ -116,17 +111,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
         if flatten_size.is_none_or(|size| size > 32_768) || flatten_depth > 16 {
             return expr.clone();
         }
-        let (flattened_branches, flatten_changed) = if flatten_size
-            .is_some_and(|size| size <= 32_768)
-            // Flattening a deep value CASE duplicates every outer guard into
-            // each nested arm. Keep that structure when its depth already
-            // exceeds the bounded canonicalization budget.
-            && flatten_depth <= 16
-        {
-            flatten_nested_value_branches(branches)
-        } else {
-            (Vec::new(), false)
-        };
+        let (flattened_branches, flatten_changed) = flatten_nested_value_branches(branches);
         let branches_ref: &[(Expr, Expr)] = if flatten_changed {
             &flattened_branches
         } else {
@@ -222,7 +207,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
 
         // 2. 过滤掉 condition = false 的死分支，并在 true 分支处截断后续分支。
         let mut filtered: Vec<(Expr, Expr)> = Vec::new();
-        let mut truncated = false;
         for (c, v) in &canonicalized {
             if let ExprKind::Lit(Lit::Bool(false)) = c.kind() {
                 continue; // 死分支，跳过
@@ -230,23 +214,9 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
             filtered.push((c.clone(), v.clone()));
             if let ExprKind::Lit(Lit::Bool(true)) = c.kind() {
                 // 一旦遇到 true 分支，后续所有分支都是死分支
-                truncated = true;
                 break;
             }
         }
-
-        // 2': prior-failure implied guard elimination:
-        //     如果最后一个 branch 的 guard 不是 true，且被 prior-failure domain 蕴含，
-        //     则替换为 true（变为 ELSE/default branch）。
-        //
-        //     例：CASE WHEN x>0 THEN 1 WHEN x<0 THEN -1 WHEN x==0 THEN 0 END
-        //        → CASE WHEN x>0 THEN 1 WHEN x<0 THEN -1 ELSE 0 END
-        //
-        //     数学依据：prior-failure = !(x>0) && !(x<0) = x<=0 && x>=0，
-        //     约束求解器可证明蕴含 x==0，故 last guard 在 first-match 域下恒真。
-        let (implied_folded, implied_folded_changed) =
-            fold_last_branch_implied_by_prior_failure(&filtered);
-        let filtered = implied_folded;
 
         // 2a. 在 first-match 有效域下投影布尔 branch value：
         //     CASE WHEN C THEN C WHEN true THEN X END -> CASE WHEN C THEN true WHEN true THEN X END
@@ -331,9 +301,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
             || dedup_changed
             || covered_changed
             || canonicalized_changed
-            || implied_folded_changed
             || projected_values_changed
-            || truncated
             || filtered.len() != branches_ref.len()
             || filtered.len() != domain_simplified.len()
             || filtered.len() != same_value_grouped.len()
@@ -479,52 +447,6 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
         return None;
     }
     Some(Expr::new(ExprKind::CaseWhen { branches: out }))
-}
-
-/// Prior-failure implied guard elimination:
-/// If the last branch's guard is not `true` and is implied by the prior-failure domain
-/// (i.e., all previous branches failing guarantees the last guard is true),
-/// replace the last guard with `true` (making it a default/ELSE branch).
-///
-/// Example: CASE WHEN x>0 THEN 1 WHEN x<0 THEN -1 WHEN x==0 THEN 0 END
-///        → CASE WHEN x>0 THEN 1 WHEN x<0 THEN -1 ELSE 0 END
-///
-/// Mathematical basis: prior-failure = !(x>0) && !(x<0) = x<=0 && x>=0,
-/// and the constraint solver proves this implies x==0.
-fn fold_last_branch_implied_by_prior_failure(
-    branches: &[(Expr, Expr)],
-) -> (Vec<(Expr, Expr)>, bool) {
-    // Only fire when there are 3+ branches. For exactly 2 complementary branches,
-    // the canonical form choice (which value becomes default) is better handled by
-    // collapse_two_value_exhaustive_to_default which has proper heuristics.
-    if branches.len() < 3 {
-        return (branches.to_vec(), false);
-    }
-    let (last_cond, _last_value) = &branches[branches.len() - 1];
-    // Already a default branch — nothing to do
-    if last_cond.as_bool() == Some(true) {
-        return (branches.to_vec(), false);
-    }
-    // Compute prior-failure domain for the last branch:
-    // AND(NOT(cond[0]), NOT(cond[1]), ..., NOT(cond[n-2]))
-    let mut prior_failure = crate::builder::lit_bool(true);
-    for (cond, _) in &branches[..branches.len() - 1] {
-        prior_failure = crate::normalize(crate::builder::and(
-            prior_failure,
-            crate::builder::not(cond.clone()),
-        ));
-    }
-    // Check if prior-failure implies the last guard
-    if crate::builder::path_implies(&prior_failure, last_cond) {
-        let mut out = branches[..branches.len() - 1].to_vec();
-        out.push((
-            crate::builder::lit_bool(true),
-            branches.last().unwrap().1.clone(),
-        ));
-        (out, true)
-    } else {
-        (branches.to_vec(), false)
-    }
 }
 
 fn project_values_under_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {

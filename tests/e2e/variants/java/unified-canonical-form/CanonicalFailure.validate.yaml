@@ -46,3 +46,26 @@
     - from: 'RuntimeException("alpha")'
       to: 'RuntimeException(new RuntimeException())'
   reject: ['NORM-STATEMENT']
+- name: three-return-arms-do-not-turn-the-throw-domain-into-a-return
+  edits:
+    - from: |-
+        if (code == 2) throw new RuntimeException("zeta");
+                if (code == 1) throw new RuntimeException("alpha");
+                if (code == 3) throw new RuntimeException();
+                return code;
+      to: |-
+        if (code == 1) return 10;
+                if (code == 2) return 20;
+                if (code == 3) return 30;
+                throw new RuntimeException("invalid");
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN code == 1 THEN 10
+          WHEN code == 2 THEN 20
+          ELSE 30
+        END
+    - path: [throws]
+      value:
+        - { type: java.lang.RuntimeException, when: 'code != 1 and code != 2 and code != 3', payload: '"invalid"' }
