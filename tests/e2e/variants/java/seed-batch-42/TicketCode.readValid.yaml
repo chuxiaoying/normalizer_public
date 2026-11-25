@@ -96,3 +96,19 @@
   edits:
     - { from: 'return value;', to: '/* return value;' }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-COMMENT]', 'unclosed block comment']
+- name: missing-return-terminator-is-not-a-successful-result
+  edits:
+    - { from: 'return value;', to: 'return value' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-SEMICOLON]', 'return value']
+- name: missing-terminator-in-an-unused-field-is-not-ignored
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { int cache' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-SEMICOLON]', 'field declaration']
+- name: assignment-must-not-absorb-its-missing-terminator
+  edits:
+    - { from: 'return value;', to: 'int result = value; result = result + 1 return result;' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-SEMICOLON]', 'assignment']
+- name: a-field-cannot-use-a-reserved-method-keyword
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { int return;' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-FIELD-NAME]']

@@ -280,6 +280,11 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub(crate) fn require_semicolon(&mut self, position: &str) -> Result<(), ParseError> {
+        if self.eat_char(b';') { return Ok(()); }
+        Err(self.err(&format!("[JAVA-SEMICOLON] expected ';' after {position}")))
+    }
+
     pub(crate) fn eat_keyword(&mut self, kw: &str) -> bool {
         self.skip_ws();
         let save = self.pos;
@@ -533,9 +538,8 @@ impl<'a> Parser<'a> {
             let name = self
                 .read_qualified_ident()
                 .ok_or_else(|| self.err("expected package name"))?;
+            self.require_semicolon("package declaration")?;
             self.package = name;
-            self.skip_ws();
-            self.eat_char(b';');
         }
 
         // Keep the exact ordinary imports. The closed input profile only
@@ -815,8 +819,7 @@ fn parse_class_body(
 
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
-                    p.eat_char(b';');
-                    None
+                    return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
                 };
                 class.methods.push(JavaMethod {
                     throws,
@@ -900,7 +903,7 @@ fn parse_class_body(
 
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {
-                p.eat_char(b';');
+                p.require_semicolon("bodyless method declaration")?;
                 None
             };
             class.methods.push(JavaMethod {
@@ -920,6 +923,9 @@ fn parse_class_body(
 
         } else {
             if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] field cannot be native")); }
+            if is_reserved_identifier(&member_name) {
+                return Err(p.err_at(member_at, "[JAVA-RESERVED-FIELD-NAME] reserved keyword used as a Java field name"));
+            }
             p.skip_ws();
             // Java 语义：interface 字段隐式 public static final。
             // Parser 不建 public flag，但 static/final 必须在 AST 中体现，否则 class init
@@ -943,7 +949,7 @@ fn parse_class_body(
             } else {
                 None
             };
-            p.eat_char(b';');
+            p.require_semicolon("field declaration")?;
             class.fields.push(JavaField {
                 name: member_name,
                 java_type,

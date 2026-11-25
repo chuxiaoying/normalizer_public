@@ -117,13 +117,13 @@ impl<'a> Parser<'a> {
         // 赋值表达式在 statement 位置仍归一为 JavaStatement::Assign，
         // 让 loop lift / 静态分析等 statement-level 语义继续看到赋值信号。
         if let JavaExpr::Assign { target, value } = expr {
-            self.eat_char(b';');
+            self.require_semicolon("assignment")?;
             return Ok(JavaStatement::Assign {
                 target: *target,
                 value: *value,
             });
         }
-        self.eat_char(b';');
+        self.require_semicolon("expression statement")?;
         Ok(JavaStatement::ExprStmt(expr))
     }
 
@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
                 } else {
                     let e = self.parse_expression()?;
                     self.skip_ws();
-                    self.eat_char(b';');
+                    self.require_semicolon("for initializer")?;
                     JavaStatement::ExprStmt(e)
                 };
                 Some(Box::new(stmt))
@@ -246,7 +246,7 @@ impl<'a> Parser<'a> {
             Some(self.parse_expression()?)
         };
         self.skip_ws();
-        self.eat_char(b';');
+        self.require_semicolon("for condition")?;
         self.skip_ws();
         let update = if self.peek() == Some(b')') {
             None
@@ -309,14 +309,14 @@ impl<'a> Parser<'a> {
         }
         let expr = self.parse_expression()?;
         self.skip_ws();
-        self.eat_char(b';');
+        self.require_semicolon("return value")?;
         Ok(JavaStatement::Return(Some(expr)))
     }
 
     fn parse_throw(&mut self) -> Result<JavaStatement, ParseError> {
         let expr = self.parse_expression()?;
         self.skip_ws();
-        self.eat_char(b';');
+        self.require_semicolon("throw expression")?;
         Ok(JavaStatement::Throw(expr))
     }
 
@@ -488,7 +488,7 @@ impl<'a> Parser<'a> {
             });
             self.skip_ws();
         }
-        self.eat_char(b';');
+        self.require_semicolon("local variable declaration")?;
 
         let main = JavaStatement::VarDecl {
             name,
