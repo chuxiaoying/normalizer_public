@@ -14,5 +14,6 @@
 - `NORMALIZER_PROFILE_LOG` 写入流水线阶段和当前启用的执行计数。需要细粒度采样时使用 `NORMALIZER_DEBUG_CATEGORIES` 与 `NORMALIZER_DEBUG_MAX_EVENTS`。
 - `NORMALIZER_MATH_PROFILE_LOG` 开启数学内核事件，`NORMALIZER_MATH_PROFILE_SLOW_MS` 调整慢事件阈值。默认不打开采样。
 - 数学化简的资源预算与规范形式见[统一正则规范](../../design/unified-canonical-form.md)。临时提高预算只能辅助定位，不能当作修复。
+- 规范工程表达式的结构深度在加载时受限，过深时 CLI 不产生 PERS。执行期仍限制 Java 活跃调用栈与总工作量；性能日志记录真实表达式访问深度，不再另设不可达的语义函数递归上限。
 
 没有另设产品 CLI 或自动压测发布门禁。发现性能回退时，先确认瓶颈属于输入准备、语义执行、数学化简还是出口输出，再选择对应的最小复现。

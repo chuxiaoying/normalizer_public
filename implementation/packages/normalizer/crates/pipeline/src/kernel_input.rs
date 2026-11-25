@@ -65,6 +65,7 @@ pub(crate) enum Ty {
     Vector(Box<Ty>),
     OrderedTextMap,
     LocalTextMap,
+    LocalRelation,
 }
 impl Ty {
     pub(crate) fn parse(s: &str) -> Result<Self> {
@@ -146,7 +147,7 @@ impl Value {
     fn ty(&self) -> Ty {
         match self {
             Self::Term(t, _) => t.clone(),
-            Self::Rows(rows)=>rows.ty(),
+            Self::Rows(_) => Ty::LocalRelation,
             Self::LocalTextMap(_) => Ty::LocalTextMap,
             Self::LocalIntArray(_) | Self::EagerIntProjection { .. } => Ty::Seq(Box::new(Ty::Integer)),
             Self::Sequence { item, .. } => Ty::Seq(Box::new(item.clone())),
@@ -532,9 +533,7 @@ impl Loaded {
     }
     fn engine(&self) -> Engine<'_> {
         Engine {
-            semantic_depth: 0,
             node_depth: 0,
-            max_semantic_depth: 0,
             max_node_depth: 0,
             program: &self.program,
             source_objects: source_objects::SourceObjects::default(),

@@ -6,13 +6,9 @@ pub(super) struct Engine<'a> {
     pub(super) source_relations:super::business_relation::Relations,
     pub(super) source_objects: super::source_objects::SourceObjects,
     pub(super) source_array_writes: BTreeMap<String, BTreeSet<i64>>,
-    // These are deliberately separate from the work budget.  A run can do
-    // relatively few logical steps while still building a native Rust call
-    // chain deep enough to abort the process.  Keep the first guard
-    // conservative until the evaluator is moved to an explicit worklist.
-    pub(super) semantic_depth: usize,
+    // Observability counters; normalized expression depth is bounded at the
+    // only deserialization boundary, and Java calls have their own active stack.
     pub(super) node_depth: usize,
-    pub(super) max_semantic_depth: usize,
     pub(super) max_node_depth: usize,
     pub(super) project: &'a Project,
     pub(super) methods: BTreeMap<String, &'a JavaMethod>,
@@ -49,11 +45,6 @@ pub(super) struct Engine<'a> {
     pub(super) max_active_calls: usize,
     pub(super) budget_reported: bool,
 }
-
-const MAX_SAFE_SEMANTIC_DEPTH: usize = 48;
-const MAX_SAFE_NODE_DEPTH: usize = 128;
-
-
 
 impl Engine<'_> {
     fn node_inner(&mut self, n: &Node, env: &mut Env, path: Expr) -> Result<Value> {
@@ -450,6 +441,7 @@ impl Engine<'_> {
                     need(!env.contains_key(name), "duplicate local")?;
                     self.source_reference_assignment(java_type, expr, id)?;
                     let v = self.java_expr(expr, id, env, path.clone())?;
+                    need(v.ty() != Ty::LocalRelation, "local relation requires a typed query, not a Java scalar binding")?;
                     need(
                         v.ty() == self.project.result_type(java_type)?
                             || (matches!(v.ty(), Ty::Record(_)) && self.project.source_owner(java_type).is_some()
@@ -925,7 +917,7 @@ impl Engine<'_> {
 
     pub(super) fn profile_metrics(&self, status: &str) -> String {
         format!(
-            "phase=kernel_execution status={status} steps={} semantic_calls={} java_calls={} node_visits={} branch_splits={} branch_collapses={} max_active_calls={} active_calls={} observable_boundary={} semantic_depth={} max_semantic_depth={} node_depth={} max_node_depth={} depth_limits=semantic:{MAX_SAFE_SEMANTIC_DEPTH},node:{MAX_SAFE_NODE_DEPTH}",
+            "phase=kernel_execution status={status} steps={} semantic_calls={} java_calls={} node_visits={} branch_splits={} branch_collapses={} max_active_calls={} active_calls={} observable_boundary={} node_depth={} max_node_depth={}",
             self.steps,
             self.semantic_calls,
             self.java_calls,
@@ -935,8 +927,6 @@ impl Engine<'_> {
             self.max_active_calls,
             self.active.len(),
             self.has_observable_boundary(),
-            self.semantic_depth,
-            self.max_semantic_depth,
             self.node_depth,
             self.max_node_depth,
         )
@@ -1028,42 +1018,6 @@ impl Engine<'_> {
                 self.steps, self.active.len()
             )))
         }
-    }
-
-    pub(super) fn depth_failure(&mut self, kind: &str, depth: usize, limit: usize) -> String {
-        if !self.budget_reported {
-            self.budget_reported = true;
-            self.emit_profile_metrics("depth_exceeded");
-        }
-        fail(format!(
-            "normalized depth budget exceeded: depth_kind={kind}; depth={depth}; limit={limit}; result=not-produced"
-        ))
-    }
-
-    pub(super) fn enter_semantic_depth(&mut self) -> Result<()> {
-        if self.semantic_depth >= MAX_SAFE_SEMANTIC_DEPTH {
-            return Err(self.depth_failure(
-                "semantic_call",
-                self.semantic_depth + 1,
-                MAX_SAFE_SEMANTIC_DEPTH,
-            ));
-        }
-        self.semantic_depth += 1;
-        self.max_semantic_depth = self.max_semantic_depth.max(self.semantic_depth);
-        Ok(())
-    }
-
-    pub(super) fn enter_node_depth(&mut self) -> Result<()> {
-        if self.node_depth >= MAX_SAFE_NODE_DEPTH {
-            return Err(self.depth_failure(
-                "expression_node",
-                self.node_depth + 1,
-                MAX_SAFE_NODE_DEPTH,
-            ));
-        }
-        self.node_depth += 1;
-        self.max_node_depth = self.max_node_depth.max(self.node_depth);
-        Ok(())
     }
 
     fn invoke_interface(
@@ -1182,14 +1136,7 @@ impl Engine<'_> {
         self.active.remove(&format!("java:{id}"));
         Ok(value)
     }
-    pub(super) fn call(&mut self, name: &str, args: Vec<Value>, path: Expr) -> Result<Value> {
-        self.enter_semantic_depth()?;
-        let result = self.call_inner(name, args, path);
-        self.semantic_depth -= 1;
-        result
-    }
-
-    pub(super) fn call_inner(&mut self, name: &str, args: Vec<Value>, path: Expr) -> Result<Value> {
+    fn call(&mut self, name: &str, args: Vec<Value>, path: Expr) -> Result<Value> {
         self.budget()?;
         self.semantic_calls += 1;
         need(
@@ -1240,7 +1187,8 @@ impl Engine<'_> {
         Ok(value)
     }
     pub(super) fn node(&mut self, n: &Node, env: &mut Env, path: Expr) -> Result<Value> {
-        self.enter_node_depth()?;
+        self.node_depth += 1;
+        self.max_node_depth = self.max_node_depth.max(self.node_depth);
         let result = self.node_inner(n, env, path);
         self.node_depth -= 1;
         result

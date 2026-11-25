@@ -13,16 +13,6 @@ pub(super) struct Rows {
     fields: BTreeMap<String, Value>,
     ordering: Vec<Expr>,
 }
-impl Rows {
-    pub(super) fn ty(&self) -> Ty {
-        Ty::Vector(Box::new(Ty::Record(
-            self.fields
-                .iter()
-                .map(|(k, v)| (k.clone(), v.ty()))
-                .collect(),
-        )))
-    }
-}
 #[derive(Default)]
 pub(super) struct Relations {
     pub(super) tables: BTreeMap<String, BTreeMap<String, String>>,

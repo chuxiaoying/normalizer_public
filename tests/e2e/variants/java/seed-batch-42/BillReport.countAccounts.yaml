@@ -48,3 +48,7 @@
     - from: 'int accountId;'
       to: 'String accountId;'
   reject: ['projected union field must be a declared nonnullable integer']
+- name: an-internal-relation-is-not-a-scalar-java-value
+  edits:
+    - { from: 'return count;', to: 'long result = pending; return result;' }
+  reject: ['local relation requires a typed query, not a Java scalar binding']

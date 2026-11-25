@@ -98,3 +98,26 @@ for (const [name, setup, diagnostic] of [
     assert.ok(!stderr.includes('panicked'), stderr);
   });
 }
+
+test('module CLI ingress / expression nesting is bounded before execution', t => {
+  const project = mkdtempSync(join(tmpdir(), 'normalizer-module-depth-'));
+  t.after(() => rmSync(project, {recursive: true, force: true}));
+  const source = count => '/**\n * @param {number} x\n * @returns {number}\n */\n'
+    + 'export function sum(x) { return x' + ' + 1'.repeat(count) + '; }\n';
+  const module = join(root, 'implementation/tools/normalizer');
+  for (const count of [120, 200]) {
+    writeFileSync(join(project, 'sum.js'), source(count));
+    const result = invoke(module, ['module', project, 'sum.js', 'sum'], root);
+    if (count === 120) {
+      assert.equal(result.status, 0, result.stderr);
+      const actual = YAML.parse(result.stdout);
+      assertPers(actual, 'large but valid exact addition');
+      assert.equal(actual.R, 'x + 120');
+    } else {
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /recursion limit exceeded/);
+      assert.doesNotMatch(result.stderr, /panicked/);
+    }
+  }
+});
