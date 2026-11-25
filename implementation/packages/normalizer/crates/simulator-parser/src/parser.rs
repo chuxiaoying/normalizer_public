@@ -970,64 +970,55 @@ pub(crate) fn parse_type(p: &mut Parser) -> Option<JavaType> {
     if p.eat_keyword("void") {
         return Some(JavaType::Void);
     }
-    for prim in &[
+    let mut ty = parse_type_atom(p, false)?;
+    while p.eat_char(b'[') {
+        if !p.eat_char(b']') {
+            return None;
+        }
+        ty = JavaType::Array(Box::new(ty));
+    }
+    Some(ty)
+}
+
+pub(crate) fn parse_creation_type(p: &mut Parser) -> Option<JavaType> {
+    // In `new T[n]`, the caller consumes the sized dimension. An
+    // empty generic list is the diamond only before a constructor call.
+    parse_type_atom(p, true)
+}
+
+fn parse_type_atom(p: &mut Parser, allow_diamond: bool) -> Option<JavaType> {
+    p.skip_ws();
+    for prim in [
         "boolean", "byte", "short", "int", "long", "float", "double", "char",
     ] {
         if p.eat_keyword(prim) {
-            let mut t = JavaType::Primitive(prim.to_string());
-            p.skip_ws();
-            while p.peek() == Some(b'[') {
-                p.pos += 1;
-                p.skip_ws();
-                if p.eat_char(b']') {
-                    t = JavaType::Array(Box::new(t));
-                } else {
-                    return None;
-                }
-                p.skip_ws();
-            }
-            return Some(t);
+            return Some(JavaType::Primitive(prim.to_owned()));
         }
     }
+
     let name = p.read_qualified_ident()?;
-    let mut t = JavaType::Class(name);
-    p.skip_ws();
-    if p.peek() == Some(b'<') {
-        p.pos += 1;
-        let mut args: Vec<JavaType> = Vec::new();
-        loop {
-            p.skip_ws();
-            if p.peek() == Some(b'?') {
-                p.pos += 1;
-                p.skip_ws();
-                if p.eat_keyword("extends") || p.eat_keyword("super") { parse_type(p)?; }
-                args.push(JavaType::Class("?".to_string()));
-            } else {
-                args.push(parse_type(p)?);
+    if !p.eat_char(b'<') {
+        return Some(JavaType::Class(name));
+    }
+    if allow_diamond && p.eat_char(b'>') {
+        p.skip_ws();
+        return (p.peek() == Some(b'(')).then(|| JavaType::Generic(name, Vec::new()));
+    }
+
+    let mut args = Vec::new();
+    loop {
+        if p.eat_char(b'?') {
+            if p.eat_keyword("extends") || p.eat_keyword("super") {
+                parse_type(p)?;
             }
-            if p.eat_char(b',') { continue; }
-            if !p.eat_char(b'>') { return None; }
-            break;
-        }
-        let class_name = if let JavaType::Class(n) = t {
-            n
+            args.push(JavaType::Class("?".to_owned()));
         } else {
-            String::new()
-        };
-        t = JavaType::Generic(class_name, args);
-    }
-    p.skip_ws();
-    while p.peek() == Some(b'[') {
-        p.pos += 1;
-        p.skip_ws();
-        if p.eat_char(b']') {
-            t = JavaType::Array(Box::new(t));
-        } else {
-            return None;
+            args.push(parse_type(p)?);
         }
-        p.skip_ws();
+        if !p.eat_char(b',') {
+            return p.eat_char(b'>').then(|| JavaType::Generic(name, args));
+        }
     }
-    Some(t)
 }
 
 /// 解析参数列表，返回 (参数列表, 最后一个参数是否 varargs)。

@@ -183,3 +183,33 @@
     - from: 'return value;'
       to: "try {\r\n            return value;\r\n        } catch (RuntimeException ignored) {\r\n            return 7;\r\n        } finally {\r\n            {\r\n                boolean unsupported = null instanceof TicketCode;\r\n            }\r\n        }"
   reject: ['[SOURCE-PARSE-FAILED]', 'src/TicketCode.java:8:44:', '[JAVA-UNSUPPORTED-TYPE-TEST]']
+- name: constructor-generic-arguments-require-a-closing-delimiter
+  edits:
+    - from: 'static native int booleanValue();'
+      to: |-
+        static native int booleanValue();
+            static int helper() {
+                java.util.List<String> values = new java.util.ArrayList<String();
+                return 1;
+            }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CREATION-TYPE]', 'expected a complete type']
+- name: constructor-generic-arguments-require-a-type-after-the-comma
+  edits:
+    - from: 'static native int booleanValue();'
+      to: |-
+        static native int booleanValue();
+            static int helper() {
+                java.util.List<String> values = new java.util.ArrayList<String,>();
+                return 1;
+            }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CREATION-TYPE]', 'expected a complete type']
+- name: a-valid-diamond-reaches-the-existing-source-contract
+  edits:
+    - from: 'static native int booleanValue();'
+      to: |-
+        static native int booleanValue();
+            static int helper() {
+                java.util.List<String> values = new java.util.ArrayList<>();
+                return 1;
+            }
+  reject: ['[NORM-STATEMENT]', 'PREPROCESS_REQUIRED', 'TicketCode.helper']

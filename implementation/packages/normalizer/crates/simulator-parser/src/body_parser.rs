@@ -6,7 +6,7 @@
 //! - 复用 parser.rs 的 Parser struct 和 helper（通过 pub(crate)）
 
 use crate::ast::*;
-use crate::parser::{parse_type, ParseError, Parser};
+use crate::parser::{parse_creation_type, parse_type, ParseError, Parser};
 
 pub(crate) fn parse_method_body_text(
     body_text: &str,
@@ -963,9 +963,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_new_expr(&mut self) -> Result<JavaExpr, ParseError> {
-        self.skip_ws();
-        let ty = Self::parse_new_element_type(self)
-            .ok_or_else(|| self.err("expected type after 'new'"))?;
+        let ty = parse_creation_type(self)
+            .ok_or_else(|| self.err("[JAVA-CREATION-TYPE] expected a complete type after 'new'"))?;
         self.skip_ws();
         if self.eat_char(b'[') {
             if self.eat_char(b']') {
@@ -1022,62 +1021,6 @@ impl<'a> Parser<'a> {
             break;
         }
         Ok(JavaExpr::ArrayInitializer { element_type: element_type.clone(), elements })
-    }
-
-    fn parse_new_element_type(p: &mut Parser) -> Option<JavaType> {
-        p.skip_ws();
-
-        // `new T[expr]` 的 T 是元素类型；不能调用 parse_type，
-        // 因为 parse_type 会把紧随其后的 `[expr]` 误当作类型数组后缀 `[]` 去消费。
-        // 这里只解析 primitive/class/generic 本体，数组维度由 parse_new_expr 统一处理。
-        for prim in &[
-            "boolean", "byte", "short", "int", "long", "float", "double", "char",
-        ] {
-            if p.eat_keyword(prim) {
-                return Some(JavaType::Primitive(prim.to_string()));
-            }
-        }
-
-        let name = p.read_qualified_ident()?;
-        let mut t = JavaType::Class(name);
-        p.skip_ws();
-
-        if p.peek() == Some(b'<') {
-            p.pos += 1;
-            let mut args: Vec<JavaType> = Vec::new();
-            loop {
-                p.skip_ws();
-                if p.peek() == Some(b'?') {
-                    p.pos += 1;
-                    p.skip_ws();
-                    if p.eat_keyword("extends") || p.eat_keyword("super") {
-                        let _ = parse_type(p);
-                    }
-                    args.push(JavaType::Class("?".to_string()));
-                } else if let Some(inner) = parse_type(p) {
-                    args.push(inner);
-                }
-
-                p.skip_ws();
-                if p.eat_char(b',') {
-                    continue;
-                }
-                if p.peek() == Some(b'>') {
-                    p.pos += 1;
-                    break;
-                }
-                break;
-            }
-
-            let class_name = if let JavaType::Class(n) = t {
-                n
-            } else {
-                String::new()
-            };
-            t = JavaType::Generic(class_name, args);
-        }
-
-        Some(t)
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<JavaExpr>, ParseError> {
