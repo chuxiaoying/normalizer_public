@@ -34,3 +34,48 @@ throws:
 ```
 
 改变独立 guard 的源码顺序不改变这份结果；改变某个消息或引入重叠 guard 则会改变对应的异常结果。没有声明的消息不占据 payload 字段；用 `(java.lang.String) null` 显式选择 String 构造器并交付 null 则发布 `payload: 'null'`，不是遗漏字段。本切片仅测试直接 Java 的 RuntimeException 及其字面量消息，不替代外部端口载荷或任意异常对象的观察合同。带 cause 的构造器不得当作文本消息解释。
+
+## 外部回执只在取得后进入异常 guard
+
+```java
+import normalizer.annotations.External;
+
+class GuardedCanonicalFailure {
+    @External
+    private final Classifier classifier;
+
+    GuardedCanonicalFailure(Classifier classifier) {
+        this.classifier = classifier;
+    }
+
+    int validate(boolean enabled, int code) {
+        if (enabled) {
+            int rank = classifier.rank(code);
+            if (rank == 2) throw new RuntimeException("zeta");
+            if (rank == 1) throw new RuntimeException("alpha");
+        }
+        return code;
+    }
+}
+
+interface Classifier {
+    int rank(int code);
+}
+```
+
+**原样通过。** 端口只给出数值，异常和消息由当前 Java 方法决定。关闭入口开关时既没有 S 调用，也没有任何异常；交换两个独立 guard 时不重编号或复制回执。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.validate, returns: number }
+P:
+  parameters:
+    enabled: { position: 0, type: bool }
+    code: { position: 1, type: number }
+R: code
+S:
+  - call: { external: classifier.rank, args: [code], returns: number, result: '$e_0', when: enabled }
+throws:
+  - { type: java.lang.RuntimeException, when: 'enabled and $e_0 == 1', payload: '"alpha"' }
+  - { type: java.lang.RuntimeException, when: 'enabled and $e_0 == 2', payload: '"zeta"' }
+```

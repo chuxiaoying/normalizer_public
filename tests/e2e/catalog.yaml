@@ -12,7 +12,7 @@ groups:
     canonical-number-selection: [CanonicalQuota.smaller]
     canonical-text-order: [CanonicalLabel.label, CanonicalLabel.charCode]
     canonical-constant-array: [CanonicalArray.digits, CanonicalArray.sized, CanonicalArray.guarded]
-    canonical-exception-payload: [CanonicalFailure.validate]
+    canonical-exception-payload: [CanonicalFailure.validate, GuardedCanonicalFailure.validate]
   java/pure:
     java-static: [HelloWorld.addOne]
     java-static-case-when: [Decision.choose]
