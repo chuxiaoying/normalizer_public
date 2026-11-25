@@ -74,3 +74,5 @@ throws:
     return observer == quota ? 7 : prior;
 
 同一对象、不同对象两种正常返回和上例相同；传 null 也仍抛同一种异常，但这次写入没有执行，额度保留原值 3。因此验收不能只对比 R 和异常类型：上例的 S 在 null 路径上也有写入，对照版本的 S 只允许在 observer 非空的路径上写入。
+
+**类型匹配对照**　写 7 后用 `try` 读 `observer.units`。捕获 `NullPointerException` 时，传 null 返回 handler 的 11，S 仍恰好写 7 一次；同一引用仍返回 7，另一个初值为 3 的对象仍返回 3。只捕获无关的 `IndexOutOfBoundsException` 时，null 仍抛出，不执行该 handler。

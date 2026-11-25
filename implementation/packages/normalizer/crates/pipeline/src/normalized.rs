@@ -190,16 +190,25 @@ fn declared_reference(t: &JavaType, layouts: &BTreeMap<String, BTreeMap<String, 
 }
 
 pub(crate) const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
-fn builtin_exception_name(name: &str) -> Option<&'static str> {
-    Some(match name.strip_prefix("java.lang.").unwrap_or(name) {
-        "RuntimeException" => RUNTIME_EXCEPTION,
-        "NullPointerException" => "java.lang.NullPointerException",
-        "ArithmeticException" => "java.lang.ArithmeticException",
-        "IndexOutOfBoundsException" => "java.lang.IndexOutOfBoundsException",
-        "ArrayIndexOutOfBoundsException" => "java.lang.ArrayIndexOutOfBoundsException",
-        "NegativeArraySizeException" => "java.lang.NegativeArraySizeException",
-        _ => return None,
+// The direct source profile models only this closed subset of the Java
+// exception hierarchy. Qualified names are also the published identities.
+const SOURCE_BUILTIN_EXCEPTIONS: &[(&str, Option<&str>)] = &[
+    (RUNTIME_EXCEPTION, None),
+    ("java.lang.NullPointerException", Some(RUNTIME_EXCEPTION)),
+    ("java.lang.ArithmeticException", Some(RUNTIME_EXCEPTION)),
+    ("java.lang.IndexOutOfBoundsException", Some(RUNTIME_EXCEPTION)),
+    ("java.lang.ArrayIndexOutOfBoundsException", Some("java.lang.IndexOutOfBoundsException")),
+    ("java.lang.NegativeArraySizeException", Some(RUNTIME_EXCEPTION)),
+];
+
+fn builtin_exception(name: &str) -> Option<(&'static str, Option<&'static str>)> {
+    SOURCE_BUILTIN_EXCEPTIONS.iter().copied().find(|(qualified, _)| {
+        *qualified == name || qualified.strip_prefix("java.lang.") == Some(name)
     })
+}
+
+pub(crate) fn builtin_exception_name(name: &str) -> Option<&'static str> {
+    builtin_exception(name).map(|(qualified, _)| qualified)
 }
 
 pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String, String>) -> Option<String> {
@@ -270,29 +279,18 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
     Ok(parents)
 }
 pub(crate) fn subtype(child: &str, parent: &str, parents: &BTreeMap<String, String>) -> bool {
-    if child == parent {
-        return true;
-    }
-    if child == "java.lang.ArrayIndexOutOfBoundsException" {
-        return matches!(parent, "java.lang.IndexOutOfBoundsException" | RUNTIME_EXCEPTION);
-    }
-    if matches!(
-        child,
-        "java.lang.NullPointerException"
-            | "java.lang.ArithmeticException"
-            | "java.lang.IndexOutOfBoundsException"
-            | "java.lang.NegativeArraySizeException"
-    ) {
-        return parent == RUNTIME_EXCEPTION;
-    }
     let mut current = child;
-    while let Some(next) = parents.get(current) {
-        if next == parent {
+    loop {
+        if current == parent {
             return true;
         }
+        let Some(next) = parents.get(current).map(String::as_str)
+            .or_else(|| builtin_exception(current).and_then(|(_, parent)| parent))
+        else {
+            return false;
+        };
         current = next;
     }
-    false
 }
 /// A protected expression may bind local temporaries in evaluation order. An
 /// exception can leave at any binding. Such temporaries are out of scope in

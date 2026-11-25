@@ -70,3 +70,21 @@
   edits:
     - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.\u004eullable ' }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-UNICODE-ESCAPE]', 'expand raw Java Unicode escapes before parsing']
+
+- name: catching-null-uses-the-type-and-preserves-the-prior-write
+  edits:
+    - from: 'return observer.units;'
+      to: 'try { return observer.units; } catch (NullPointerException ignored) { return 11; }'
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN observer != null AND observer == quota THEN 7
+          WHEN observer == null THEN 11
+          ELSE observer.units
+        END
+    - { path: [throws], absent: true }
+- name: an-unrelated-builtin-catch-keeps-the-actual-throw
+  edits:
+    - from: 'return observer.units;'
+      to: 'try { return observer.units; } catch (IndexOutOfBoundsException ignored) { return 99; }'

@@ -194,16 +194,10 @@ impl Project {
     }
 }
 pub(super) fn builtin_exception(name: &str) -> bool {
-    matches!(
-        name,
-        "java.lang.NullPointerException"
-            | "java.lang.RuntimeException"
-            | "java.lang.IllegalArgumentException"
-            | "java.lang.IndexOutOfBoundsException"
-            | "java.lang.ArrayIndexOutOfBoundsException"
-            | "java.lang.NegativeArraySizeException"
-            | "java.lang.ArithmeticException"
-    )
+    // The normalized action wire has one additional declared type with
+    // no implicit source operation. Wire names remain fully qualified.
+    name == "java.lang.IllegalArgumentException"
+        || crate::normalized::builtin_exception_name(name) == Some(name)
 }
 impl Engine<'_> {
     pub(super) fn fresh_binding(&mut self) -> u64 {
