@@ -49,3 +49,15 @@
     - path: [P, parameters]
       value: { score: { position: 0, type: number }, alternate: { position: 1, type: number } }
     - { path: [R], value: 'alternate == 0 OR score < 0 OR score > 0' }
+- name: known-integer-comparisons-execute-with-exact-endpoints
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return 3 <= 4 && 3 <= 3 && 3 == 3 && 3 != 4 && -4 < -3 && 4 >= 3 && 4 > 3;'
+  expect:
+    - { path: [R], value: 'true' }
+- name: known-adjacent-and-equal-points-do-not-match-strict-comparisons
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return 3 < 3 || 4 <= 3 || 3 == 4;'
+  expect:
+    - { path: [R], value: 'false' }
