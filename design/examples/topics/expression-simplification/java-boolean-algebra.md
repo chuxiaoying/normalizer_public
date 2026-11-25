@@ -46,6 +46,8 @@ R: score >= 60
 
 `(active && preferred) || (active && !preferred)` 中，`preferred || !preferred` 恒为真，结果只保留 `active`。`preferred` 仍然是完整入口参数，因此保留在 P 中。
 
+另一个验收对照：`(score == 1 || score == 2) && preferred && score != 3` 可以去掉 `score != 3`，因为两个可行值都不是 3，`preferred` 则必须保留。若排除的是 2，就必须失去值 2 的分支，简化成 `preferred AND score == 1`；不能删除这个排除条件后返回原并集。
+
 **PERS 结果 diff**
 
 | 差异点（old → new） | 升级思想 |

@@ -22,3 +22,15 @@
   edits:
     - from: 'return (active && preferred) || (active && !preferred);'
       to: 'return active ? active : false;'
+- name: every-valid-score-implies-the-redundant-exclusion
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return (score == 1 || score == 2) && preferred && score != 3;'
+  expect:
+    - { path: [R], value: 'preferred AND (score == 1 OR score == 2)' }
+- name: an-exclusion-matching-a-real-alternative-cannot-be-absorbed
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return (score == 1 || score == 2) && preferred && score != 2;'
+  expect:
+    - { path: [R], value: 'preferred AND score == 1' }

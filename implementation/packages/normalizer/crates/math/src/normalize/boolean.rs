@@ -318,7 +318,7 @@ fn factor_common_and_conjuncts_under_or(disjuncts: &[Expr]) -> Option<Expr> {
         return None;
     }
 
-    let common_expr = rebuild_and_or_single(&common);
+    let common_expr = rebuild_and(&common);
     let remainder_expr = rebuild_or(&remainders);
     Some(builder::and(common_expr, remainder_expr))
 }
@@ -669,46 +669,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }
     }
 
-    // Narrow row-domain absorption:
-    //   a row-scoped value for R proves the source relation row exists.
-    //
-    // Therefore, inside the same row-scoped expression, explicit outer source
-    // guards such as `R != null` and `Count(R) != 0` are redundant.  This is not
-    // broad implication over arbitrary expressions: it only fires when another
-    // conjunct contains a row value projected from the exact same relation base.
-    let before_row_source_absorb_len = out.len();
-    let relation_base_sources: Vec<String> = out
-        .iter()
-        .flat_map(relation_nonempty_source_names)
-        .collect();
-    let absorbed_by_row_source: Vec<bool> = (0..out.len())
-        .map(|i| {
-            relation_source_guard_candidates(out.get(i).expect("index"), &relation_base_sources)
-                .into_iter()
-                .any(|source| {
-                    out.iter().enumerate().any(|(j, peer)| {
-                        i != j && expr_references_relation_source_row(peer, &source)
-                    })
-                })
-        })
-        .collect();
-    if absorbed_by_row_source.iter().any(|absorbed| *absorbed) {
-        out = out
-            .into_iter()
-            .zip(absorbed_by_row_source.iter())
-            .filter_map(|(expr, absorbed)| if *absorbed { None } else { Some(expr) })
-            .collect();
-        if out.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
-        if out.len() == 1 {
-            return Some(out.into_iter().next().unwrap());
-        }
-        if out.len() != before_row_source_absorb_len {
-            return Some(rebuild_and(&out));
-        }
-    }
-
     // Solve same-subject ordered comparison constraints as an interval system:
     //
     //   x > 0 && x > 1   -> x > 1
@@ -735,14 +695,10 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }
     }
 
-    // Narrow OR-implies-Ne absorption: if an OR conjunct (where all branches
-    // are positive HeapRef equalities on the same subject) is present, remove
-    // any Ne(same_subject, ...) or Ne(same_subject, null) conjuncts that are
-    // implied by it.  This is safe because HeapRef identity is definitive —
-    // Eq(x, A) && Eq(x, B) || ... implies Ne(x, C) when A,B,... are all
-    // distinct from C.
+    // An OR conjunct can absorb an inequality only if every alternative
+    // implies it. Literal equality and certified fresh HeapRef identity are
+    // distinct evidence, not interchangeable with displayed names.
     {
-        let before_or_implies_len = out.len();
         let or_implies_absorbed: Vec<bool> = (0..out.len())
             .map(|i| {
                 if matches!(
@@ -768,20 +724,11 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
             })
             .collect();
         if or_implies_absorbed.iter().any(|a| *a) {
-            out = out
-                .into_iter()
-                .zip(or_implies_absorbed.iter())
-                .filter_map(|(e, absorbed)| if *absorbed { None } else { Some(e) })
+            // The witnessing OR term is never marked for removal.
+            let remaining: Vec<_> = out.into_iter().zip(or_implies_absorbed)
+                .filter_map(|(expr, absorbed)| (!absorbed).then_some(expr))
                 .collect();
-            if out.is_empty() {
-                return Some(builder::lit_bool(true));
-            }
-            if out.len() == 1 {
-                return Some(out.into_iter().next().unwrap());
-            }
-            if out.len() != before_or_implies_len {
-                return Some(rebuild_and(&out));
-            }
+            return Some(rebuild_and(&remaining));
         }
     }
 
@@ -1392,23 +1339,15 @@ fn common_factor_if_remainders_complement(left: &[Expr], right: &[Expr]) -> Opti
         return None;
     }
 
-    let left_expr = rebuild_and_or_single(&left_remainder);
-    let right_expr = rebuild_and_or_single(&right_remainder);
+    let left_expr = rebuild_and(&left_remainder);
+    let right_expr = rebuild_and(&right_remainder);
     if profile_pair_can_skip_proof_check(&left_expr, &right_expr)
         || !is_complement(&left_expr, &right_expr)
     {
         return None;
     }
 
-    Some(rebuild_and_or_single(&common))
-}
-
-fn rebuild_and_or_single(conjuncts: &[Expr]) -> Expr {
-    if conjuncts.len() == 1 {
-        conjuncts[0].clone()
-    } else {
-        rebuild_and(conjuncts)
-    }
+    Some(rebuild_and(&common))
 }
 
 // =============================================================================
