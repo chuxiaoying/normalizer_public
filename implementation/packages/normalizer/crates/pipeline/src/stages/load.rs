@@ -7,9 +7,15 @@ use std::{fs, path::{Path, PathBuf}};
 fn collect_java_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), PipelineError> {
     let path_error = |error| PipelineError::Io(format!("[SOURCE-WALK-FAILED] {}: {error}", dir.display()));
     for entry in fs::read_dir(dir).map_err(path_error)? {
-        let path = entry.map_err(path_error)?.path();
-        if path.is_dir() {
+        let entry = entry.map_err(path_error)?;
+        let kind = entry.file_type().map_err(path_error)?;
+        let path = entry.path();
+        if kind.is_dir() {
             collect_java_paths(&path, paths)?;
+        } else if kind.is_symlink() && path.is_dir() {
+            return Err(PipelineError::Io(format!(
+                "[SOURCE-SYMLINK-DIRECTORY] source walk does not follow {}", path.display()
+            )));
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("java") {
             paths.push(path);
         }
@@ -18,6 +24,9 @@ fn collect_java_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), Pipeli
 }
 
 pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError> {
+    let scope = fs::canonicalize(root).map_err(|error| PipelineError::Io(
+        format!("[SOURCE-WALK-FAILED] {}: {error}", root.display()),
+    ))?;
     let mut paths = Vec::new();
     collect_java_paths(root, &mut paths)?;
     if paths.is_empty() {
@@ -30,9 +39,14 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
         let file = path.to_str().ok_or_else(|| PipelineError::Io(
             format!("[SOURCE-PATH-FAILED] source path is not valid UTF-8: {}", path.display()),
         ))?;
-        let bytes = fs::read(&path).map_err(|error| PipelineError::Io(
-            format!("[SOURCE-READ-FAILED] {file}: {error}"),
-        ))?;
+        let read_error = |error| PipelineError::Io(format!("[SOURCE-READ-FAILED] {file}: {error}"));
+        let resolved = fs::canonicalize(&path).map_err(read_error)?;
+        if !resolved.starts_with(&scope) {
+            return Err(PipelineError::Io(format!(
+                "[SOURCE-OUTSIDE-ROOT] {file} resolves outside the selected source directory"
+            )));
+        }
+        let bytes = fs::read(resolved).map_err(read_error)?;
         let content = std::str::from_utf8(&bytes).map_err(|_| {
             PipelineError::Io(format!("[SOURCE-DECODE-FAILED] failed to decode {file} as UTF-8"))
         })?;

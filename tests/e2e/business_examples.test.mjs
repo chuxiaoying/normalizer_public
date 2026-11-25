@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyVariant } from './business_example_series.mjs';
@@ -82,6 +82,18 @@ for (const [name, setup, diagnostic] of [
     symlinkSync(join(project, 'missing.java'), join(project, 'Dangling.java'));
     return project;
   }, /\[SOURCE-READ-FAILED\].*Dangling\.java/],
+  ['linked-directory-is-not-walked-recursively', project => {
+    symlinkSync(project, join(project, 'Loop'));
+    return project;
+  }, /\[SOURCE-SYMLINK-DIRECTORY\].*Loop/],
+  ['linked-file-must-not-leave-the-selected-root', project => {
+    const root = join(project, 'selected');
+    mkdirSync(root);
+    const neighbor = join(project, 'Neighbor.java');
+    writeFileSync(neighbor, 'class Probe { static int run() { return 7; } }');
+    symlinkSync(neighbor, join(root, 'Probe.java'));
+    return root;
+  }, /\[SOURCE-OUTSIDE-ROOT\].*Probe\.java/],
   ['non-utf8-source-name-is-a-diagnostic-not-a-panic', project => {
     writeFileSync(Buffer.concat([Buffer.from(project + '/'), Buffer.from([0xff]), Buffer.from('.java')]), '');
     return project;
@@ -161,4 +173,20 @@ test('source CLI execution / bounded cache eviction does not change normalizatio
   assert.equal(actual.R, 'x + ' + count);
   assert.match(readFileSync(profile, 'utf8'),
     /math\.cache\.evict category=simplify_once before=100000 removed=50000 after=50000/);
+});
+
+
+test('source CLI ingress / in-root source links keep the declared source path', t => {
+  const project = mkdtempSync(join(tmpdir(), 'normalizer-source-link-'));
+  t.after(() => rmSync(project, {recursive: true, force: true}));
+  const content = join(project, 'content.txt');
+  writeFileSync(content, 'class Probe { static int run() { return 7; } }');
+  symlinkSync(content, join(project, 'Probe.java'));
+  const result = invoke(join(root, 'implementation/tools/normalizer'),
+    ['source', project, 'Probe.run'], root);
+  assert.equal(result.status, 0, result.stderr);
+  const actual = YAML.parse(result.stdout);
+  assertPers(actual, 'in-root source link');
+  assert.equal(actual.entry.function, 'Probe.java#Probe.run');
+  assert.equal(actual.R, '7');
 });

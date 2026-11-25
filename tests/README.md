@@ -58,4 +58,4 @@ node --test --test-name-pattern='^java-static / ' tests/e2e/business_examples.te
 
 ### 源码入口的文件边界
 
-`normalizer test business-examples` 同时经过正式源码 CLI 验收文件入口错误。缺失来源、空目录、读取失败、非法 UTF-8 文件名或内容都不得生成 PERS；错误应区分阶段，并在有来源文件时包含其名字。此组测试的是 CLI 读取合同，不把文件系统错误伪造为业务种子或异常记录。
+`normalizer test business-examples` 同时经过正式源码 CLI 验收文件入口错误。缺失来源、空目录、读取失败、非法 UTF-8 文件名或内容都不得生成 PERS；错误应区分阶段，并在有来源文件时包含其名字。 源码遍历不跟随目录软链接；文件软链接只能指向所选源码根内，仍使用提交的链接路径作为来源。此组测试的是 CLI 读取合同，不把文件系统错误伪造为业务种子或异常记录。
