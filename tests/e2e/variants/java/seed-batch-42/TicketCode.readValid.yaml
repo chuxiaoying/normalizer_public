@@ -83,3 +83,16 @@
     - from: 'class TicketCode {'
       to: "class TicketCode {\r    static int return() { return 0; }\r"
   reject: ['[SOURCE-PARSE-FAILED]', 'src/TicketCode.java:2:16:', 'TicketCode.return']
+- name: unterminated-trailing-comment-cannot-hide-invalid-source
+  edits:
+    - from: |-
+        static native int booleanValue();
+        }
+      to: |-
+        static native int booleanValue();
+        } /*
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-COMMENT]', 'unclosed block comment']
+- name: unclosed-comment-in-a-method-points-to-the-comment
+  edits:
+    - { from: 'return value;', to: '/* return value;' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-COMMENT]', 'unclosed block comment']

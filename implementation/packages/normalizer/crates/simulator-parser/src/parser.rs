@@ -49,7 +49,9 @@ pub fn parse(
     if let Some(offset) = first_raw_unicode_escape(source) {
         return Err(p.err_at(offset, "[JAVA-UNICODE-ESCAPE] expand raw Java Unicode escapes before parsing"));
     }
-    let mut prog = p.parse_program()?;
+    let parsed = p.parse_program();
+    if let Some(error) = p.lexical_error.take() { return Err(error); }
+    let mut prog = parsed?;
     flatten_inner_classes(&mut prog);
 
     Ok(prog)
@@ -92,6 +94,7 @@ fn collect_inner_classes(class: &mut JavaClass, out: &mut Vec<JavaClass>) {
 pub(crate) struct Parser<'a> {
     pub(crate) src: &'a [u8],
     pub(crate) pos: usize,
+    lexical_error: Option<ParseError>,
     pub(crate) file: String,
     pub(crate) package: String,
     /// 显式 import 的 FQN 列表（`import x.y.Z;`）——parser 只收集，不做 FQN 化
@@ -104,6 +107,7 @@ impl<'a> Parser<'a> {
         Self {
             src: source.as_bytes(),
             pos: 0,
+            lexical_error: None,
             file: file_hint.to_string(),
             package: String::new(),
             imports: Vec::new(),
@@ -176,6 +180,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn skip_block_comment(&mut self) -> Result<(), ParseError> {
+        let start = self.pos;
+        self.pos += 2;
+        while self.pos + 1 < self.src.len() {
+            if self.src[self.pos] == b'*' && self.src[self.pos + 1] == b'/' {
+                self.pos += 2;
+                return Ok(());
+            }
+            self.pos += 1;
+        }
+        self.pos = self.src.len();
+        Err(self.err_at(start, "[JAVA-COMMENT] unclosed block comment"))
+    }
+
     pub(crate) fn skip_ws(&mut self) {
         loop {
             match self.peek() {
@@ -189,13 +207,9 @@ impl<'a> Parser<'a> {
                     if self.local_ir_start().is_some() {
                         break;
                     }
-                    self.pos += 2;
-                    while self.pos + 1 < self.src.len() {
-                        if self.src[self.pos] == b'*' && self.src[self.pos + 1] == b'/' {
-                            self.pos += 2;
-                            break;
-                        }
-                        self.pos += 1;
+                    if let Err(error) = self.skip_block_comment() {
+                        self.lexical_error = Some(error);
+                        break;
                     }
                 }
                 _ => break,
@@ -355,14 +369,7 @@ impl<'a> Parser<'a> {
                 }
                 b'/' if self.peek_at(1) == Some(b'*') => {
                     // block comment (incl. JavaDoc): skip to */
-                    self.pos += 2;
-                    while self.pos + 1 < self.src.len() {
-                        if self.src[self.pos] == b'*' && self.src[self.pos + 1] == b'/' {
-                            self.pos += 2;
-                            break;
-                        }
-                        self.pos += 1;
-                    }
+                    self.skip_block_comment()?;
                 }
                 _ => {
                     self.pos += 1;
@@ -405,14 +412,7 @@ impl<'a> Parser<'a> {
                     self.skip_line_comment();
                 }
                 b'/' if self.peek_at(1) == Some(b'*') => {
-                    self.pos += 2;
-                    while self.pos + 1 < self.src.len() {
-                        if self.src[self.pos] == b'*' && self.src[self.pos + 1] == b'/' {
-                            self.pos += 2;
-                            break;
-                        }
-                        self.pos += 1;
-                    }
+                    self.skip_block_comment()?;
                 }
                 _ => {
                     self.pos += 1;
