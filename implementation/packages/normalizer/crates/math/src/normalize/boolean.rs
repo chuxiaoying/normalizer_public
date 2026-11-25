@@ -1811,47 +1811,6 @@ fn is_complement(a: &Expr, b: &Expr) -> bool {
         return true;
     }
 
-    // 3. PERST null-safe predicate complement:
-    //
-    // `StringUtil.isBlank(x)` is represented by ordinary Java hack execution as
-    // `x == null || isBlank(x)`, while the good path is often
-    // `x != null && NOT(isBlank(x))`. In PERST display this pair is simply
-    // `x.isBlank()` / `NOT(x.isBlank())`; boolean algebra must understand the
-    // same typed predicate relation, otherwise path coverage proofs and
-    // max-complexity guards are inflated by implementation-level null checks.
-    if let (Some(pos), Some(neg)) = (
-        null_safe_positive_predicate(a),
-        null_safe_negative_predicate(b),
-    ) {
-        if pos == neg {
-            return true;
-        }
-    }
-    if let (Some(pos), Some(neg)) = (
-        null_safe_positive_predicate(b),
-        null_safe_negative_predicate(a),
-    ) {
-        if pos == neg {
-            return true;
-        }
-    }
-    if let (Some(pos), Some(neg)) = (
-        null_safe_positive_predicate(a),
-        null_safe_negative_predicate_atom(b),
-    ) {
-        if pos == neg {
-            return true;
-        }
-    }
-    if let (Some(pos), Some(neg)) = (
-        null_safe_positive_predicate(b),
-        null_safe_negative_predicate_atom(a),
-    ) {
-        if pos == neg {
-            return true;
-        }
-    }
-
     false
 }
 
@@ -1871,55 +1830,6 @@ fn predicate_covers_null_subject(expr: &Expr) -> Option<Expr> {
     }
     if let Some((_key, subject)) = negated_call_subject_with_null_result(expr, false) {
         return Some(subject);
-    }
-    None
-}
-
-fn null_safe_positive_predicate(
-    expr: &Expr,
-) -> Option<(Expr, crate::domains::primitive::registry::FuncKey)> {
-    let terms = flatten_or(expr);
-    if terms.len() != 2 {
-        return None;
-    }
-
-    for i in 0..2 {
-        let null_subject = null_comparison_subject(&terms[i], BinOpKind::Eq)?;
-        let (key, subject) = call_subject_with_null_result(&terms[1 - i], true)?;
-        if subject == null_subject {
-            return Some((subject, key));
-        }
-    }
-    None
-}
-
-fn null_safe_negative_predicate(
-    expr: &Expr,
-) -> Option<(Expr, crate::domains::primitive::registry::FuncKey)> {
-    let terms = flatten_and(expr);
-    if terms.len() != 2 {
-        return None;
-    }
-
-    for i in 0..2 {
-        let non_null_subject = null_comparison_subject(&terms[i], BinOpKind::Ne)?;
-        if let Some((subject, key)) = null_safe_negative_predicate_atom(&terms[1 - i]) {
-            if subject == non_null_subject {
-                return Some((subject, key));
-            }
-        }
-    }
-    None
-}
-
-fn null_safe_negative_predicate_atom(
-    expr: &Expr,
-) -> Option<(Expr, crate::domains::primitive::registry::FuncKey)> {
-    if let Some((key, subject)) = negated_call_subject_with_null_result(expr, true) {
-        return Some((subject, key));
-    }
-    if let Some((key, subject)) = call_subject_with_null_result(expr, false) {
-        return Some((subject, key));
     }
     None
 }

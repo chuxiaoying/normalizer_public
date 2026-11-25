@@ -82,3 +82,15 @@
   expect:
     - path: [R]
       value: '"上海🙂"'
+
+- name: explicit-null-guard-uses-the-registered-blank-predicate
+  edits:
+    - { from: 'return NormalizedText.defaultIfBlank(', to: 'return raw == null ? fallback : NormalizedText.defaultIfBlank(' }
+    - { from: 'NormalizedText.trim(raw)', to: raw }
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN blank(raw) THEN fallback
+          ELSE raw
+        END

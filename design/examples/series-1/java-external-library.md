@@ -89,3 +89,5 @@ R: |-
 | 差异点（old → new） | 升级思想 |
 |---|---|
 | old R 返回可逆的字符串内容编码，三个 T 分别定位末端、收集裁剪码元、判定空白；new 直接以 `blank(TRIM(raw))` 选择 fallback 或裁剪文本。 | 最终表达应呈现文本操作的业务含义，字符遍历与编码结构留在操作合同内；公共文本语义仍须覆盖完整原始字符域，不能用更简短的公式掩盖孤立代理项。 |
+
+**空值守卫对照**　将内层换为原始 `raw`，再显式写成 `raw == null ? fallback : NormalizedText.defaultIfBlank(raw, fallback)`。注册的空白谓词自身已经覆盖 null，因此 R 是 `CASE WHEN blank(raw) THEN fallback ELSE raw END`。非空但属于空白的文本仍返回 fallback；非空白文本仍保留原值。无需额外识别旧 Java 库实现里的空值写法。
