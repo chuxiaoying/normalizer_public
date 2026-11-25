@@ -48,3 +48,86 @@
     - from: 'first = choose from values'
       to: 'first += choose from values'
   reject: ['member choice must initialize its binding with =']
+- name: known-length-zero-uses-fallback-without-choice
+  edits:
+    - from: 'int first;'
+      to: 'int[] local = new int[0]; int first;'
+    - from: 'first = choose from values'
+      to: 'first = choose from local'
+    - from: 'second = choose from values'
+      to: 'second = choose from local'
+  expect:
+    - path: [T]
+      absent: true
+    - path: [R]
+      value: backup + backup
+- name: singleton-literal-is-a-known-result-without-choice
+  edits:
+    - from: 'int first;'
+      to: 'int[] local = {7}; int first;'
+    - from: 'first = choose from values'
+      to: 'first = choose from local'
+    - from: 'second = choose from values'
+      to: 'second = choose from local'
+  expect:
+    - path: [T]
+      absent: true
+    - path: [R]
+      value: '14'
+- name: heterogeneous-literal-is-known-but-each-selection-remains-independent
+  edits:
+    - from: 'int first;'
+      to: 'int[] local = {2, 7}; int first;'
+    - from: 'first = choose from values'
+      to: 'first = choose from local'
+    - from: 'second = choose from values'
+      to: 'second = choose from local'
+  expect:
+    - path: [T, 0, members]
+      value: '[2, 7]'
+    - path: [T, 1, members]
+      value: '[2, 7]'
+- name: zero-filled-array-is-homogeneous-without-materialization
+  edits:
+    - from: 'int first;'
+      to: 'int[] local = new int[2000000]; int first;'
+    - from: 'first = choose from values'
+      to: 'first = choose from local'
+    - from: 'second = choose from values'
+      to: 'second = choose from local'
+  expect:
+    - path: [T]
+      absent: true
+    - path: [R]
+      value: '0'
+- name: explicit-empty-initializer-is-distinct-from-zero-filled-length
+  edits:
+    - from: 'int first;'
+      to: 'int[] local = {}; int first;'
+    - from: 'first = choose from values'
+      to: 'first = choose from local'
+    - from: 'second = choose from values'
+      to: 'second = choose from local'
+  expect:
+    - path: [T]
+      absent: true
+    - path: [R]
+      value: backup + backup
+- name: text-is-not-an-integer-choice-fallback
+  edits:
+    - from: 'second = choose from values else backup'
+      to: 'second = choose from values else "not a number"'
+  reject: ['member choice requires one integer empty fallback']
+- name: literal-order-and-duplicate-values-do-not-change-the-choice-support
+  edits:
+    - from: 'int first;'
+      to: 'int[] local = {7, 2, 7}; int first;'
+    - from: 'first = choose from values'
+      to: 'first = choose from local'
+    - from: 'second = choose from values'
+      to: 'second = choose from local'
+  expect:
+    - path: [T, 0, members]
+      value: '[2, 7]'
+    - path: [T, 1, members]
+      value: '[2, 7]'

@@ -7,7 +7,7 @@ pub mod decimal;
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalIr {
     SqlWrite(SqlWrite),
-    MemberChoice { binding: String, members: String, empty: ScalarOperand },
+    MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
     CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
     FoldIndexRange {
         binding: String,
@@ -35,6 +35,12 @@ pub enum SqlOperation {
     Insert,
     Update { predicates: Vec<(String, ScalarOperand)> },
     Delete { predicates: Vec<(String, ScalarOperand)> },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum MemberChoiceFallback {
+    Local(String),
+    Integer(num_bigint::BigInt),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,10 +172,12 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         tokens.expect("from")?;
         let members = tokens.name()?;
         tokens.expect("else")?;
-        let empty = tokens.value()?;
-        if !tokens.rest().is_empty() || matches!(empty, ScalarOperand::Text(_)) {
-            return Err("member choice requires one integer empty fallback".into());
-        }
+        let empty = match tokens.value()? {
+            ScalarOperand::Local(name) => MemberChoiceFallback::Local(name),
+            ScalarOperand::Integer(value) => MemberChoiceFallback::Integer(value),
+            ScalarOperand::Text(_) => return Err("member choice requires one integer empty fallback".into()),
+        };
+        if !tokens.rest().is_empty() { return Err("trailing member choice clauses".into()); }
         return Ok(LocalIr::MemberChoice { binding, members, empty });
     }
     if tokens.take("fold") {

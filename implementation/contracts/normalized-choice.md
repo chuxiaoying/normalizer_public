@@ -14,4 +14,4 @@
 
 以 `T.member_choice` 声明内部选择，每个真实发生位置具有独立的 `$t_n`。对相同的候选和缺省值也不合并；输出公式可复用同一选择的结果，不能把两次选择改成一次。 `members` 引用候选来源，`empty` 表示空数组采用的结果，`when` 表示发生域。
 
-目前[整数数组入口](../../design/examples/topics/unified-canonical-form/java-member-choice.md)闭合的是直接、无条件的单次或多次标量选择：声明一个未初始化整数局部值，下一条规范注释为 `binding = choose from array else fallback`。fallback 是已取得的入口整数或整数常量。整记录、条件选择、混合递推、状态及外部调用仍是目标合同，不能用当前窄入口掩盖缺口。
+目前[整数数组入口](../../design/examples/topics/unified-canonical-form/java-member-choice.md)闭合的是直接、无条件的单次或多次标量选择：声明一个未初始化整数局部值，下一条规范注释为 `binding = choose from array else fallback`。fallback 是已取得的入口整数或整数常量。已知空数组直接用 fallback，只有一个可能值的数组直接得到该值；已知异质数组仍可以作为独立 T 的字面量候选。整记录、条件选择、混合递推、状态及外部调用仍是目标合同，不能用当前窄入口掩盖缺口。

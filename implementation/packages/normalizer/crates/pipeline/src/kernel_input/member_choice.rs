@@ -1,36 +1,73 @@
 //! Independent source-owned choices. Unlike a pure fold, every occurrence has
 //! an identity and stays in execution order even when candidate sets agree.
 use super::*;
-use normalizer_ir::local::ScalarOperand;
+use normalizer_ir::local::MemberChoiceFallback;
+use super::source_arrays::LocalIntArray;
 use serde_json::json;
 
 #[derive(Clone)]
+enum Candidates {
+    Input(String),
+    Literal(Vec<i32>),
+}
+
+#[derive(Clone)]
 pub(super) struct Occurrence {
-    members: String,
+    members: Candidates,
     empty: Expr,
 }
 
 impl Engine<'_> {
     pub(super) fn choose_source_member(
-        &mut self, binding: &str, members: &str, empty: &ScalarOperand,
+        &mut self, binding: &str, members: &str, empty: &MemberChoiceFallback,
         method: &str, env: &mut Env, path: Expr,
     ) -> Result<()> {
-        need(path.as_bool() == Some(true), "conditional member choice needs a guarded T contract")?;
-        let Some(Value::Sequence {item: Ty::Integer, relation: RelationExpr::Base {name, ..}, ..}) =
-            env.get(members) else { return Err(fail("member choice requires a direct integer source array")); };
-        need(self.methods[method].params().iter().any(|(ty, param)|
-            param == name && crate::normalized::numeric_array(ty)),
-            "member choice requires an acquired entry array")?;
         let empty = match empty {
-            ScalarOperand::Integer(value) => b::lit_integer(value.clone()),
-            ScalarOperand::Local(name) => {
+            MemberChoiceFallback::Integer(value) => b::lit_integer(value.clone()),
+            MemberChoiceFallback::Local(name) => {
                 let value = env.get(name).ok_or_else(|| fail("unbound member choice empty fallback"))?;
                 need(value.ty() == Ty::Integer, "member choice empty fallback must be an exact integer")?;
                 value.scalar()?
             }
-            ScalarOperand::Text(_) => return Err(fail("member choice empty fallback must be an exact integer")),
         };
-        let occurrence = Occurrence {members: name.clone(), empty};
+        enum Choice {
+            Fixed(Expr),
+            Independent(Candidates),
+        }
+        let choice = match env.get(members) {
+            Some(Value::LocalIntArray(LocalIntArray::Zeroed(0))) => Choice::Fixed(empty.clone()),
+            Some(Value::LocalIntArray(LocalIntArray::Zeroed(_))) => Choice::Fixed(b::lit_int(0)),
+            Some(Value::LocalIntArray(LocalIntArray::Initialized(values))) => match values.as_slice() {
+                [] => Choice::Fixed(empty.clone()),
+                [value, rest @ ..] if rest.iter().all(|other| other == value) =>
+                    Choice::Fixed(b::lit_int(i64::from(*value))),
+                _ => {
+                    // The array has already been evaluated. For a choice with
+                    // no order or distribution promise, only the support set
+                    // of this literal is observable.
+                    let mut support = values.clone();
+                    support.sort_unstable();
+                    support.dedup();
+                    Choice::Independent(Candidates::Literal(support))
+                }
+            },
+            Some(Value::Sequence {item: Ty::Integer, relation: RelationExpr::Base {name, ..}, ..}) => {
+                need(self.methods[method].params().iter().any(|(ty, param)|
+                    param == name && crate::normalized::numeric_array(ty)),
+                    "member choice requires an acquired entry array")?;
+                Choice::Independent(Candidates::Input(name.clone()))
+            }
+            _ => return Err(fail("member choice requires a direct integer source array")),
+        };
+        let members = match choice {
+            Choice::Fixed(value) => {
+                env.insert(binding.into(), Value::Term(Ty::Integer, value));
+                return Ok(());
+            }
+            Choice::Independent(members) => members,
+        };
+        need(path.as_bool() == Some(true), "conditional member choice needs a guarded T contract")?;
+        let occurrence = Occurrence {members, empty};
         let id = self.member_choices.len();
         self.member_choices.push(occurrence);
         env.insert(binding.into(), Value::Term(Ty::Integer, b::integer_temporal_result(id as u64)));
@@ -44,9 +81,11 @@ pub(super) fn publish(
     let mut aliases = BTreeMap::new();
     let mut definitions = Vec::new();
     for (position, occurrence) in choices.iter().enumerate() {
-        let source = names.get(&occurrence.members)
-            .filter(|_| arrays.contains(&occurrence.members))
-            .ok_or_else(|| fail("member choice source must be a published array parameter"))?;
+        let source = match &occurrence.members {
+            Candidates::Input(name) => names.get(name).filter(|_| arrays.contains(name)).cloned()
+                .ok_or_else(|| fail("member choice source must be a published array parameter"))?,
+            Candidates::Literal(values) => format!("[{}]", values.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")),
+        };
         let empty = if let Some(integer) = occurrence.empty.as_lit().and_then(math::Lit::as_integer) {
             integer.to_string()
         } else if let Some(SymVarOrigin::Parameter { name, primitive_type }) = occurrence.empty.as_sym_var() {
