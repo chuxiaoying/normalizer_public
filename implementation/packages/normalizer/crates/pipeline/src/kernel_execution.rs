@@ -125,34 +125,6 @@ impl Engine<'_> {
                 then,
                 otherwise,
             } => {
-                // A pure false-guard chain is a short-circuit conjunction.
-                // Materialize that guard once and evaluate the leaf under the
-                // accumulated path instead of recursively exploring every
-                // false branch.  This is deliberately restricted to projects
-                // without observable heap/port/exception boundaries; those
-                // retain the full ordered branch semantics below.
-                if !self.has_observable_boundary() {
-                    if let Some((conditions, leaf)) = boolean_guard_chain(n) {
-                        let mut guard = b::lit_bool(true);
-                        for condition in conditions {
-                            let value = self.node(condition, env, path.clone())?;
-                            need(value.ty() == Ty::Bool, "boolean guard requires bool")?;
-                            guard = math::normalize(b::and(guard, value.scalar()?));
-                        }
-                        if guard.as_bool() == Some(false) {
-                            self.branch_collapses += 1;
-                            return Ok(Value::Term(Ty::Bool, b::lit_bool(false)));
-                        }
-                        let value = self.node(leaf, env, b::and(path.clone(), guard.clone()))?;
-                        if value.ty() == Ty::Bool {
-                            self.branch_collapses += 1;
-                            return Ok(Value::Term(
-                                Ty::Bool,
-                                math::normalize(b::and(guard, value.scalar()?)),
-                            ));
-                        }
-                    }
-                }
                 let c = self.node(cond, env, path.clone())?;
                 need(c.ty() == Ty::Bool, "if requires boolean")?;
                 let c = self.condition_under_path(c.scalar()?, &path);
@@ -165,16 +137,6 @@ impl Engine<'_> {
                     };
                     let mut branch_env = env.clone();
                     return self.node(branch, &mut branch_env, path);
-                }
-                // `if (c) B else B` is the same path-sensitive computation as
-                // `B`: both worlds evaluate the identical immutable subtree,
-                // with identical effects and exception order.  Collapse it
-                // before forking so repeated guard noise cannot consume the
-                // definition expansion budget before math simplification.
-                if then == otherwise || equivalent_nodes(then, otherwise) {
-                    self.branch_collapses += 1;
-                    let mut branch_env = env.clone();
-                    return self.node(then, &mut branch_env, path);
                 }
                 self.branch_splits += 1;
                 let yes = self.node(then, &mut env.clone(), b::and(path.clone(), c.clone()))?;
