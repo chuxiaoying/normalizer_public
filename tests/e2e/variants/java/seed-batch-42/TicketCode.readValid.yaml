@@ -20,3 +20,7 @@
   edits:
     - { from: 'static native int', to: 'static abstract native int' }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-NATIVE-DECLARATION]', 'incompatible native method modifier']
+- name: a-reached-native-call-in-a-return-uses-the-same-kernel-failure
+  edits:
+    - { from: 'return value;', to: 'return booleanValue();' }
+  reject: ['panicked', '[NORM-OUT-OF-SOURCE]', 'target=TicketCode.booleanValue']

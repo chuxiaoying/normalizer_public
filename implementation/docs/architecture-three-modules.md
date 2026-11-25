@@ -158,7 +158,7 @@ Java 函数、Java Bean、前端 VO 生产、前端 VO 消费、组件监听、�
 
 ## 已验收的正式入口
 
-Java 使用 `source`，独立 JavaScript 使用 `module`，Vue 生产和消费使用 `scenario`。参数和输入条件见[CLI 参考](../../usage/cli.md)，覆盖范围见[CLI 回归](../../tests/README.md)。场景适配器使用规范工程接入内核，规范工程格式是模块间交付，不是另一条公开 CLI。
+Java 使用 `source`，已闭合的独立 JavaScript 和 TypeScript 使用同一个 `module`，Vue 生产和消费使用 `scenario`。参数和输入条件见[CLI 参考](../../usage/cli.md)，覆盖范围见[CLI 回归](../../tests/README.md)。场景适配器使用规范工程接入内核，规范工程格式是模块间交付，不是另一条公开 CLI。
 
 AI 阅读和闭合业务源码，不依赖额外预处理工具。语义改写以[设计种子](../skills/normalizer-preprocess/references/seed-coverage.md)为准。语言模块和内核处理、校验已交付输入，不替 AI 猜缺失语义。
 

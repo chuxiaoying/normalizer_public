@@ -296,39 +296,10 @@ fn validate_protected_try(body: &[S], id: &str) -> Result<(), String> {
     Err(error("NORM-CATCH-BODY", id))
 }
 
-/// Resolve the provably encountered, direct return call before the subset
-/// gate discards interface declarations. With no preceding statements the
-/// receiver still denotes the entry parameter, not a locally bound object.
-fn check_direct_entry_target(program: &JavaProgram, entry: &str) {
-    let Some((owner, name)) = entry.rsplit_once('.') else { return; };
-    let Some(class) = program.find_class(owner) else { return; };
-    let mut entries = class.methods().iter().filter(|m| m.name() == name);
-    let Some(entry_method) = entries.next() else { return; };
-    if entries.next().is_some() { return; }
-    let Some([S::Return(Some(E::MethodCall { target, method, args }))]) =
-        entry_method.body() else { return; };
-    let target = match target.as_deref() {
-        Some(E::Ident(name)) => {
-            let Some((JavaType::Class(typ), _)) = entry_method.params().iter().find(|(_, n)| n == name)
-                else { return; };
-            let Some(interface) = program.find_class(typ).filter(|d| d.is_interface())
-                else { return; };
-            interface
-        }
-        None => class,
-        _ => return,
-    };
-    let mut methods = target.methods().iter().filter(|m| m.name() == method && m.arity() == args.len());
-    if methods.next().is_some_and(|m| m.body().is_none()) && methods.next().is_none() {
-        crate::preprocess::out_of_source(entry, &format!("{}.{method}", target.full_name()));
-    }
-}
-
 /// Validate ALL supplied methods, including unused helpers. Explicitly reject
 /// unsupported shapes instead of sending them to legacy semantic inference.
 pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
     external_polling::validate_entry(program, entry)?;
-    check_direct_entry_target(program, entry);
     let exceptions = source_exceptions(program)?;
     let layouts = source_layouts(program)?;
     let ports = source_ports::declarations(program, &exceptions)?;
