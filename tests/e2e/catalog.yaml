@@ -8,7 +8,7 @@ groups:
     canonical-binary-case: [CanonicalCount.clamp, CanonicalCount.present]
     canonical-pure-fold-definitions: [CanonicalFolds.difference, CanonicalFolds.fromState]
     canonical-integer-partition: [CanonicalQuantity.band, CanonicalQuantity.signGuarded]
-    canonical-total-boolean-order: [CanonicalChecks.approved, CanonicalChecks.tier, CanonicalChecks.priority]
+    canonical-total-boolean-order: [CanonicalChecks.approved, CanonicalChecks.tier, CanonicalChecks.priority, CanonicalChecks.remainder]
     canonical-number-selection: [CanonicalQuota.smaller]
     canonical-text-order: [CanonicalLabel.label, CanonicalLabel.charCode]
     canonical-constant-array: [CanonicalArray.digits, CanonicalArray.sized, CanonicalArray.guarded]

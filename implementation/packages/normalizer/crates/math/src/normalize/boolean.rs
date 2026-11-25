@@ -922,21 +922,9 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         return Some(factored);
     }
 
-    // 共识律（consensus law）：(C ∧ X) || (C ∧ ¬X) → C
-    // 更一般：两个 OR 分支的 AND 合取集，除恰好一对互补因子外其余完全相同，
-    // 可合并为去掉该对互补因子后的剩余合取。
-    //
-    // 例：A || (¬A ∧ X) || (¬A ∧ ¬X)
-    //   分支 {¬A, X} 和 {¬A, ¬X} 互补消元 → {¬A}
-    //   新 OR = A || ¬A → true（由互补检测命中）
-    //
-    // 这是路径覆盖证明的关键：Java 方法 if(p){return} if(q){return} return 产生三条 path condition
-    // p、¬p∧q、¬p∧¬q，OR 起来应为 true。
-    out = consensus_reduce(&out);
-    // 公因子 + De Morgan 互补消元：
-    // (C ∧ X ∧ Y) || (C ∧ (!X || !Y)) → C
-    // 这是 `if (list non-empty && item != null) OK else BAD` 这类
-    // Java 分支覆盖证明的核心形态，不能靠 snapshot 补 default 遮羞。
+    // Two products sharing a factor can merge when their remainders
+    // are complementary: (C && X) || (C && !X) == C. One pass handles
+    // atomic remainders and compound De Morgan pairs alike.
     out = common_factor_complement_reduce(&out);
     // 逆吸收律 resolution absorption：A || (!A ∧ X) → A || X
     // 对每个 anchor disjunct d_i，从其它 disjunct d_j 的 conjuncts 中删除与 d_i 互补的因子
@@ -951,7 +939,7 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
     if out.len() == 1 {
         return Some(out.into_iter().next().unwrap());
     }
-    // consensus 后再做一次吸收元/互补检测（因为合并可能产生新的 x 和 ¬x）
+    // Recheck complements created by factoring, resolution, or interval absorption.
     let mut out2: Vec<Expr> = Vec::with_capacity(out.len());
     for item in &out {
         if let ExprKind::Lit(Lit::Bool(true)) = item.kind() {
@@ -1134,94 +1122,6 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
 // =============================================================================
 // 共识律消元
 // =============================================================================
-
-/// consensus_reduce：遍历 OR 分支对 (i, j)，若两个分支的 AND 合取集合除恰好一对
-/// 互补因子外其余完全相同，则合并为去掉该对后的剩余合取（保留 j 位置）。
-///
-/// 算法（O(n^2 * avg_len) 朴素实现）：
-/// 1. 对每个分支 flatten_and 得到 conjuncts
-/// 2. 两两比较分支 (i, j)，长度相同才考虑
-/// 3. 找恰好一对互补 (x ∈ Ci, y ∈ Cj) 使 Ci - {x} == Cj - {y}
-/// 4. 合并为 Ci - {x}，i 位置删除，j 位置替换为合并结果
-///
-/// 每轮最多消一对，若发生合并返回剩余列表，外层继续调用直到不再变化。
-fn consensus_reduce(disjuncts: &[Expr]) -> Vec<Expr> {
-    let mut current = disjuncts.to_vec();
-    loop {
-        let conjs: Vec<Vec<Expr>> = current.iter().map(flatten_and).collect();
-        let n = current.len();
-        let mut merged: Option<(usize, usize, Vec<Expr>)> = None;
-        'outer: for i in 0..n {
-            for j in (i + 1)..n {
-                let ci = &conjs[i];
-                let cj = &conjs[j];
-                if ci.len() != cj.len() || ci.is_empty() {
-                    continue;
-                }
-                // 找 ci 中恰好一个元素 x，cj 中恰好一个元素 y，x 和 y 互补；
-                // 其余元素按集合等价（忽略顺序）完全相同。
-                for (xi, x) in ci.iter().enumerate() {
-                    // 找 cj 中与 x 互补的 y
-                    let mut y_candidates: Vec<usize> = (0..cj.len())
-                        .filter(|&yi| {
-                            !profile_pair_can_skip_proof_check(x, &cj[yi])
-                                && is_complement(x, &cj[yi])
-                        })
-                        .collect();
-                    while let Some(yi) = y_candidates.pop() {
-                        // ci - {xi} 和 cj - {yi} 必须按集合相等
-                        let rest_i: Vec<&Expr> = ci
-                            .iter()
-                            .enumerate()
-                            .filter(|(k, _)| *k != xi)
-                            .map(|(_, e)| e)
-                            .collect();
-                        let rest_j: Vec<&Expr> = cj
-                            .iter()
-                            .enumerate()
-                            .filter(|(k, _)| *k != yi)
-                            .map(|(_, e)| e)
-                            .collect();
-                        if rest_i.len() != rest_j.len() {
-                            continue;
-                        }
-                        // 集合等价：rest_i 的每个元素在 rest_j 中都能找到对应
-                        let all_match = rest_i.iter().all(|a| rest_j.iter().any(|b| a == b))
-                            && rest_j.iter().all(|b| rest_i.iter().any(|a| a == b));
-                        if !all_match {
-                            continue;
-                        }
-                        // 合并：rest_i 重建为 AND
-                        let merged_conjs: Vec<Expr> = rest_i.into_iter().cloned().collect();
-                        let new_expr = if merged_conjs.is_empty() {
-                            builder::lit_bool(true)
-                        } else if merged_conjs.len() == 1 {
-                            merged_conjs.into_iter().next().unwrap()
-                        } else {
-                            rebuild_and(&merged_conjs)
-                        };
-                        merged = Some((i, j, vec![new_expr]));
-                        break 'outer;
-                    }
-                }
-            }
-        }
-        match merged {
-            None => return current,
-            Some((i, j, new_exprs)) => {
-                // 删除 i 和 j，插入 new_exprs
-                let mut next: Vec<Expr> = Vec::with_capacity(current.len());
-                for (k, e) in current.into_iter().enumerate() {
-                    if k != i && k != j {
-                        next.push(e);
-                    }
-                }
-                next.extend(new_exprs);
-                current = next;
-            }
-        }
-    }
-}
 
 fn common_factor_complement_reduce(disjuncts: &[Expr]) -> Vec<Expr> {
     let mut current = disjuncts.to_vec();

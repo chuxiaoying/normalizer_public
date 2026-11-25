@@ -1,0 +1,10 @@
+- name: an-atomic-complement-uses-the-same-factoring-rule
+  edits:
+    - from: '(common && first && second) || (other || (common && (!first || !second)))'
+      to: '(common && first) || (other || (common && !first))'
+- name: different-predicates-are-not-complements
+  edits:
+    - from: '(common && first && second) || (other || (common && (!first || !second)))'
+      to: '(common && first) || (other || (common && !second))'
+  expect:
+    - { path: [R], value: 'common AND (first OR NOT (second)) OR other' }

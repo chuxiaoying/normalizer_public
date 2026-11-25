@@ -90,3 +90,31 @@ R: |-
     ELSE 30
   END
 ```
+
+## 两个分支的公因子与互补余项
+
+四个输入都是已取得的原生布尔值。第一项和第三项同有 `common`，余下的 `first && second` 与 `!first || !second` 互补；中间的 `other` 不依赖这三个值。整体唯一结果为 `common OR other`。不能把只有同时为真与只有部分为假的两种分支当成额外的业务事件。
+
+```java
+class CanonicalChecks {
+    static boolean remainder(boolean common, boolean first, boolean second, boolean other) {
+        return (common && first && second) || (other || (common && (!first || !second)));
+    }
+}
+```
+
+**原样通过。** AI 不预先提取公因子或判断两个余项是否互补。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/CanonicalChecks.java#CanonicalChecks.remainder, returns: bool }
+P:
+  parameters:
+    common: { position: 0, type: bool }
+    first: { position: 1, type: bool }
+    second: { position: 2, type: bool }
+    other: { position: 3, type: bool }
+R: common OR other
+```
+
+**对照**　把两个余项分别换成 `first` 与 `!first`，结果相同。若改成 `first` 与 `!second`，则不互补：例如 `common=true, first=false, second=true, other=false` 时原式为假，直接化成 `common OR other` 却为真。
