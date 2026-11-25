@@ -14,7 +14,7 @@ mod relation_query;
 pub(crate) mod business_value;
 
 use crate::canonical_names::CanonicalHeapNames;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
 use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKind};
 
@@ -432,11 +432,6 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     parts.join("\n")
 }
 
-fn stable_dedup_strings(items: &mut Vec<String>) {
-    let mut seen = HashSet::new();
-    items.retain(|item| seen.insert(item.clone()));
-}
-
 fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {
     let mut factors = Vec::new();
     collect_and_peer_terms(expr, &mut factors);
@@ -447,7 +442,7 @@ fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<Stri
     let sort_names = CanonicalHeapNames(&ctx.business_identities);
     factors.sort_by_cached_key(|factor| math::canonical_order_key(factor, &sort_names));
 
-    let mut rendered: Vec<String> = factors
+    let rendered: Vec<String> = factors
         .into_iter()
         .map(|factor| {
             let rendered = format_expr_with_ctx(&factor, ctx);
@@ -458,7 +453,6 @@ fn try_format_and_ordered_peers(expr: &Expr, ctx: &mut FormatCtx) -> Option<Stri
             }
         })
         .collect();
-    stable_dedup_strings(&mut rendered);
     Some(rendered.join(if ctx.business_inputs.is_some() { " AND " } else { " && " }))
 }
 
