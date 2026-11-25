@@ -24,3 +24,18 @@
   expect:
     - path: [R]
       value: address OR balance OR consent
+- name: same-total-guard-with-complementary-routes-is-one-factor
+  edits:
+    - { from: '(balance && address) && consent', to: '(address && balance) || (address && !balance)' }
+  expect:
+    - { path: [R], value: address }
+- name: complementary-total-clauses-share-only-the-common-disjunct
+  edits:
+    - { from: '(balance && address) && consent', to: '(address || balance) && (address || !balance)' }
+  expect:
+    - { path: [R], value: address }
+- name: different-inputs-are-not-a-complementary-pair
+  edits:
+    - { from: '(balance && address) && consent', to: '(address && balance) || (address && !consent)' }
+  expect:
+    - { path: [R], value: 'address AND (balance OR NOT (consent))' }

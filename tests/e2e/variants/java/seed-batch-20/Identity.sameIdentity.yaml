@@ -18,3 +18,23 @@
       value: 1
     - path: [P, parameters, right, position]
       value: 0
+- name: fresh-allocation-is-distinct-from-an-entry-reference
+  edits:
+    - { from: 'return left == right;', to: 'Box created = new Box(); return left == created;' }
+  expect:
+    - { path: [R], value: 'false' }
+- name: freshness-is-symmetric-and-preserves-the-inequality
+  edits:
+    - { from: 'return left == right;', to: 'Box created = new Box(); return created != left;' }
+  expect:
+    - { path: [R], value: 'true' }
+- name: a-local-alias-of-the-same-allocation-is-equal
+  edits:
+    - { from: 'return left == right;', to: 'Box created = new Box(); Box alias = created; return created == alias;' }
+  expect:
+    - { path: [R], value: 'true' }
+- name: equal-fields-do-not-merge-two-fresh-allocations
+  edits:
+    - { from: 'return left == right;', to: 'Box first = new Box(); Box second = new Box(); first.value = 7; second.value = 7; return first == second;' }
+  expect:
+    - { path: [R], value: 'false' }

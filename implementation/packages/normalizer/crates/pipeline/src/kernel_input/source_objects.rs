@@ -33,6 +33,17 @@ impl SourceObjects {
         Some((owner, name))
     }
 
+    // Fresh local allocations cannot equal an identity acquired from the
+    // entry snapshot. Private heap IDs alone do not prove this relation.
+    pub(super) fn fresh_and_acquired(&self, left: &Expr, right: &Expr) -> bool {
+        let origin = |value: &Expr| {
+            value.as_heap_ref().and_then(|id| self.objects.get(&id)).map(|(_, origin)| origin)
+        };
+        matches!((origin(left), origin(right)),
+            (Some(Origin::Allocation), Some(Origin::Parameter(_) | Origin::State { .. }))
+            | (Some(Origin::Parameter(_) | Origin::State { .. }), Some(Origin::Allocation)))
+    }
+
     pub(super) fn owns(&self, reference: &Expr) -> bool {
         reference
             .as_heap_ref()

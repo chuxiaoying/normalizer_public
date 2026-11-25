@@ -37,3 +37,9 @@
   expect:
     - { path: [R], value: '7' }
     - { path: [throws], absent: true }
+- name: fresh-object-does-not-alias-entry-state-or-erase-its-write
+  edits:
+    - { from: 'return observer.units;', to: 'Quota fresh = new Quota(); return quota == fresh ? 1 : 2;' }
+  expect:
+    - { path: [R], value: '2' }
+    - { path: [throws], absent: true }

@@ -880,6 +880,9 @@ impl Engine<'_> {
                 need(!matches!(ty, Ty::Record(_)),
                     "member choice record has content but no Java reference identity")?;
                 if ty == Ty::Ref {
+                    if self.source_objects.fresh_and_acquired(&a, &z) {
+                        return Ok(Value::Term(Ty::Bool, b::lit_bool(*op == B::Ne)));
+                    }
                     self.check_borrowed_identity(&a, &z)?;
                     // Both operands have already been obtained in source order.
                     // Reorient only the pure comparison, never the evaluations.
