@@ -190,12 +190,21 @@ fn declared_reference(t: &JavaType, layouts: &BTreeMap<String, BTreeMap<String, 
 }
 
 pub(crate) const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
+fn builtin_exception_name(name: &str) -> Option<&'static str> {
+    Some(match name.strip_prefix("java.lang.").unwrap_or(name) {
+        "RuntimeException" => RUNTIME_EXCEPTION,
+        "NullPointerException" => "java.lang.NullPointerException",
+        "ArithmeticException" => "java.lang.ArithmeticException",
+        "IndexOutOfBoundsException" => "java.lang.IndexOutOfBoundsException",
+        "ArrayIndexOutOfBoundsException" => "java.lang.ArrayIndexOutOfBoundsException",
+        "NegativeArraySizeException" => "java.lang.NegativeArraySizeException",
+        _ => return None,
+    })
+}
+
 pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String, String>) -> Option<String> {
-    if matches!(name, "RuntimeException" | "java.lang.RuntimeException") {
-        return Some(RUNTIME_EXCEPTION.into());
-    }
-    if matches!(name, "ArithmeticException" | "java.lang.ArithmeticException") {
-        return Some("java.lang.ArithmeticException".into());
+    if let Some(canonical) = builtin_exception_name(name) {
+        return Some(canonical.into());
     }
     if parents.contains_key(name) {
         return Some(name.into());
@@ -224,15 +233,7 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
     for class in program.classes() {
         // The tiny builtin hierarchy is authoritative only when source cannot
         // shadow one of its names. Reject rather than guess lexical rebinding.
-        if matches!(
-            class.simple_name().rsplit('.').next().unwrap(),
-            "RuntimeException"
-                | "NullPointerException"
-                | "ArithmeticException"
-                | "IndexOutOfBoundsException"
-                | "ArrayIndexOutOfBoundsException"
-                | "NegativeArraySizeException"
-        ) {
+        if builtin_exception_name(class.simple_name().rsplit('.').next().unwrap()).is_some() {
             return Err(error("NORM-EXCEPTION-SHADOW", &class.full_name()));
         }
         if let Some(parent) = class.supertype() {

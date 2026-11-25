@@ -44,3 +44,36 @@
       absent: true
     - path: [throws]
       absent: true
+
+- name: catch-the-actual-array-index-exception
+  edits:
+    - from: |-
+        if (fail) return (new int[]{2, 7})[-1];
+                return 7;
+      to: 'try { return (new int[]{2, 7})[2]; } catch (ArrayIndexOutOfBoundsException ignored) { return 17; }'
+  expect:
+    - { path: [R], value: '17' }
+    - { path: [S], absent: true }
+    - { path: [throws], absent: true }
+
+- name: catch-the-qualified-index-supertype
+  edits:
+    - from: |-
+        if (fail) return (new int[]{2, 7})[-1];
+                return 7;
+      to: 'try { return (new int[]{2, 7})[2]; } catch (java.lang.IndexOutOfBoundsException ignored) { return 19; }'
+  expect:
+    - { path: [R], value: '19' }
+    - { path: [S], absent: true }
+    - { path: [throws], absent: true }
+
+- name: catch-the-actual-negative-array-size-type
+  edits:
+    - from: |-
+        if (fail) return (new int[]{2, 7})[-1];
+                return 7;
+      to: 'try { return (new int[-1]).length; } catch (NegativeArraySizeException ignored) { return 23; }'
+  expect:
+    - { path: [R], value: '23' }
+    - { path: [S], absent: true }
+    - { path: [throws], absent: true }

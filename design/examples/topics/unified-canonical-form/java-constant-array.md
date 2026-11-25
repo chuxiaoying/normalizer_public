@@ -61,7 +61,7 @@ class CanonicalArray {
 }
 ```
 
-**原样通过。** 唯一正常结果是 7；仅在 `fail` 为真时发生下标越界。它不会生成一个值为 0、null 或 7 的正常分支。若改为求 `(new int[-1]).length`，异常变成负长度分配，guard 仍然相同。在入口内捕获该运行时异常则按源码执行 fallback。
+**原样通过。** 唯一正常结果是 7；仅在 `fail` 为真时发生下标越界。它不会生成一个值为 0、null 或 7 的正常分支。若改为求 `(new int[-1]).length`，异常变成负长度分配，guard 仍然相同。在入口内捕获该运行时异常则按源码执行 fallback。 已能由数组操作隐式产生的异常可按其已知 Java 类型捕获：越界可匹配 `ArrayIndexOutOfBoundsException` 或其[父类 `IndexOutOfBoundsException`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/ArrayIndexOutOfBoundsException.html)，负长度匹配 `NegativeArraySizeException`。这是类型名称解析，不额外接纳这些类的任意构造或载荷。
 
 ```yaml
 schema: normalizer.pers/1
