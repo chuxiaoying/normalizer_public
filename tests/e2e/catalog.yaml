@@ -76,7 +76,7 @@ groups:
   java/seed-batch-16:
     java-explicit-rollover: [Sequence.next]
   java/seed-batch-17:
-    expr-case-when-let-extraction: [CaseReuse.cap]
+    expr-case-when-let-extraction: [CaseReuse.cap, CaseReuse.square]
   java/seed-batch-18:
     object-nested-record: [Nested.read]
   java/seed-batch-19:

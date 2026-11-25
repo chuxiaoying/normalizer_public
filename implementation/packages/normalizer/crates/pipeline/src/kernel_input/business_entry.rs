@@ -425,7 +425,7 @@ impl EntryContext {
             ctx.set_nested_arrays(nested_arrays.clone());
             ctx.set_record_arrays(record_inputs.keys().cloned().collect());
             ctx.set_business_identities(identities.clone());
-            Ok(crate::format_expr_with_ctx(&expression, &mut ctx))
+            Ok(crate::formatting::sql::business_value::format_value(&expression, &mut ctx))
         };
 
         let value = if let Some(observations) = &observations { observations.returned.clone() } else if let Some(record) = &result.source_record_return {

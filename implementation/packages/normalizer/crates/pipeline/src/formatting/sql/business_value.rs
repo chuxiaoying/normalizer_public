@@ -1,20 +1,44 @@
 use super::FormatCtx;
 use math::Expr;
 
-// A repeated row query may have one lexical definition only if the query
-// itself contains a CASE. A surrounding CASE does not qualify the query.
-// Bindings belong to this R or S value; they never cross an operation boundary.
-pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
-    let mut queries = Vec::<(Expr, usize)>::new();
-    value.walk(&mut |node| {
-        if node.as_relation_aggregate().is_some() && node.has_case_when() {
-            if let Some((_, count)) = queries.iter_mut().find(|(expr, _)| expr == node) {
+// Count only eager uses of a closed, CASE-bearing sum over an acquired
+// numeric input array. Never take a projection out of a guarded CASE or move
+// a partial E/T observation. A row binder remains local to its query.
+fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<(Expr, usize)>) {
+    use math::{domains::relation::RelationExpr, BinOpKind, RelationAggregateKind, SymVarOrigin};
+
+    if let Some((RelationAggregateKind::Sum, RelationExpr::Base { name, alias }, Some(select), None)) =
+        value.as_relation_aggregate()
+    {
+        let mut closed = !name.starts_with('$') && ctx.scalar_arrays.contains(name) && select.has_case_when();
+        select.walk(&mut |part| {
+            closed &= match part.as_sym_var() {
+                Some(SymVarOrigin::Parameter { name, .. }) => !name.starts_with('$') && !name.contains('.')
+                    && ctx.business_inputs.as_ref().is_some_and(|inputs| inputs.contains_key(name)),
+                Some(_) => false,
+                None => part.as_row_value().is_some_and(|row| row == alias)
+                    || part.as_lit().is_some() || part.as_binop().is_some()
+                    || part.as_unary_op().is_some()
+                    || part.as_case_when().is_some_and(|branches|
+                        branches.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true))),
+            };
+        });
+        if closed {
+            if let Some((_, count)) = queries.iter_mut().find(|(expr, _)| expr == value) {
                 *count += 1;
             } else {
-                queries.push((node.clone(), 1));
+                queries.push((value.clone(), 1));
             }
         }
-    });
+    } else if let Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right)) = value.as_binop() {
+        collect_closed_repetitions(left, ctx, queries);
+        collect_closed_repetitions(right, ctx, queries);
+    }
+}
+
+pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
+    let mut queries = Vec::new();
+    collect_closed_repetitions(value, ctx, &mut queries);
     let mut definitions = Vec::new();
     for (query, count) in queries {
         if count < 2 {
