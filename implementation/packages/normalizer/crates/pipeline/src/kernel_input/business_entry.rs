@@ -384,12 +384,23 @@ impl EntryContext {
                 }
             });
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
+            // All object identities in this value have been validated. Give
+            // their published names to the shared typed math normalizer;
+            // the text formatter must not sort or merge the resulting terms.
+            let expression = if expression.has_heap_ref() {
+                math::try_normalize_with(
+                    expression.clone(),
+                    &crate::canonical_names::CanonicalHeapNames(&identities),
+                ).map_err(|error| error.to_string())?
+            } else {
+                expression.clone()
+            };
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.set_nested_arrays(nested_arrays.clone());
             ctx.set_record_arrays(record_inputs.keys().cloned().collect());
             ctx.set_business_identities(identities.clone());
-            Ok(crate::format_expr_with_ctx(expression, &mut ctx))
+            Ok(crate::format_expr_with_ctx(&expression, &mut ctx))
         };
 
         let value = if let Some(observations) = &observations { observations.returned.clone() } else if let Some(record) = &result.source_record_return {

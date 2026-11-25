@@ -81,7 +81,7 @@ groups:
   java/seed-batch-19:
     object-optional-field: [OptionalField.hasLabel]
   java/seed-batch-20:
-    object-structural-vs-identity: [Identity.sameValue, Identity.sameIdentity]
+    object-structural-vs-identity: [Identity.sameValue, Identity.sameIdentity, Identity.samePairs]
   java/seed-batch-21:
     control-try-catch-finally: [FinallyService.read]
   java/seed-batch-22:

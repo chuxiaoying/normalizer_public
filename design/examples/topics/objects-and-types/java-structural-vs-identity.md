@@ -109,3 +109,32 @@ R: left == right
 | 差异点（old → new） | 升级思想 |
 |---|---|
 | 结构入口的 R 是 `left.value == right.value`，身份入口的 R 是 `left == right`。 | PERS 必须保留比较对象的层级。相同字段内容可以来自两个不同对象，身份判断不能被结构化简化吞掉。 |
+
+## 多个身份判断的顺序也与引用分配顺序无关
+
+每个对象引用都是已经取得的输入。这里保留两个真实身份判断，不把不同对象合并；只对两个总布尔项按公开名字排序。即使声明从 zebra 开始，amber 所在的判断仍排第一。
+
+```java
+class Box { int value; }
+class Identity {
+    static boolean samePairs(Box zebra, Box yellow, Box blue, Box amber) {
+        return zebra == yellow && blue == amber;
+    }
+}
+```
+
+**原样通过。** 不改源码求值次序；符号取得后的纯布尔结果才可排序。
+
+```yaml
+schema: normalizer.pers/1
+types:
+  Box: { fields: { value: number } }
+entry: { function: src/Identity.java#Identity.samePairs, returns: bool }
+P:
+  parameters:
+    zebra: { position: 0, type: Box }
+    yellow: { position: 1, type: Box }
+    blue: { position: 2, type: Box }
+    amber: { position: 3, type: Box }
+R: amber == blue AND yellow == zebra
+```
