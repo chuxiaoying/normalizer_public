@@ -850,6 +850,27 @@ fn host_input_symbol(name: &str) -> String {
     format!("$host.{name}")
 }
 
+fn temporal_definition_id(expr: &Expr) -> Option<u64> {
+    match expr.as_sym_var() {
+        Some(SymVarOrigin::Temporal { binding_id, primitive_type })
+            if matches!(primitive_type.as_str(), "integer" | b::RECORD_TEMPORAL_TAG) => Some(*binding_id),
+        _ => None,
+    }
+}
+
+fn is_record_choice(expr: &Expr) -> bool {
+    matches!(expr.as_sym_var(), Some(SymVarOrigin::Temporal { primitive_type, .. })
+        if primitive_type == b::RECORD_TEMPORAL_TAG)
+}
+
+fn record_choice_projection(expr: &Expr) -> Option<&Expr> {
+    let (key, args) = expr.as_call()?;
+    let [record, field] = args else { return None; };
+    math::domains::composite::field_intrinsic_result(key)?;
+    matches!(field.as_lit(), Some(math::Lit::Str(_))).then_some(())?;
+    is_record_choice(record).then_some(record)
+}
+
 fn integer_definition_id(expr: &Expr) -> Option<u64> {
     match expr.as_sym_var() {
         Some(SymVarOrigin::Temporal { binding_id, primitive_type }) if primitive_type == "integer" => Some(*binding_id),

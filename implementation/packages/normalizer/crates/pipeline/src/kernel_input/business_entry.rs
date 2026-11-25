@@ -279,9 +279,9 @@ impl EntryContext {
         &self, result: &ExecutionResult, returned: &Expr, names: &BTreeMap<String, String>,
         acquired_path: impl Fn(u64, &[String]) -> Option<String>,
     ) -> Result<super::temporal_graph::Publication> {
-        let numbers = self.parameters.iter().filter(|(_, p)| p.ty == "number").map(|(n, _)| n.clone()).collect();
+        let domains = self.parameters.iter().map(|(n, p)| (n.clone(), p.ty.clone())).collect();
         super::temporal_graph::publish(&result.temporal_definitions, returned,
-            &self.scalar_array_symbols(), &numbers, names, acquired_path)
+            &self.scalar_array_symbols(), &domains, names, acquired_path)
     }
 
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
@@ -290,10 +290,11 @@ impl EntryContext {
         let certified_composite_return = (typed == super::Ty::Vector(Box::new(super::Ty::Integer))
             && self.returns == "number[]") || (typed == super::Ty::OrderedTextMap
             && self.returns == "map<text,text>");
-        if !result.temporal_definitions.is_empty() && (result.source_record_return.is_some()
-            || result.realtime_completion.return_value().is_none())
+        if !result.temporal_definitions.is_empty()
+            && (result.realtime_completion.return_value().is_none()
+                || result.source_record_return.is_some() && !events.is_empty())
         {
-            return Err("temporal publication requires a closed scalar entry without throws".into());
+            return Err("temporal publication requires a closed normal entry; record results cannot mix with effects".into());
         }
         if events.is_empty() && result.realtime_completion.return_value().is_some() {
             return self.render_observations(None, result, method, certified_composite_return);
@@ -342,8 +343,12 @@ impl EntryContext {
         let publication = if observations.is_some() || result.temporal_definitions.is_empty() {
             super::temporal_graph::Publication::default()
         } else {
-            self.publish_temporals(result, &result.business_return()?, &names,
-                |id, path| self.acquired_state_path(result, id, path))?
+            let returned = if let Some(fields) = &result.source_record_return {
+                math::builder::array_lit(fields.iter().map(|(_, expression)| expression.clone()).collect())
+            } else {
+                result.business_return()?
+            };
+            self.publish_temporals(result, &returned, &names, |id, path| self.acquired_state_path(result, id, path))?
         };
         let definition_names = &publication.aliases;
         let render_value = |expression: &Expr| -> Result<String> {
@@ -412,12 +417,13 @@ impl EntryContext {
                             .and_then(|state| state.ty.as_ref())
                             .is_some_and(|ty| self.has_field(ty, path.iter().map(String::as_str)))
                     }
-                    Some(SymVarOrigin::Temporal { .. }) => super::integer_definition_id(node)
+                    Some(SymVarOrigin::Temporal { .. }) => super::temporal_definition_id(node)
                         .is_some_and(|id| definition_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &join_tables, &record_inputs, &record_rows)
                         || node.as_array_lit().is_some_and(|items| certified_composite_return || group_tuples.iter().any(|keys| keys == items))
                         || (certified_composite_return && self.returns == "map<text,text>"
                             && math::domains::composite::ordered_text_map_entries(node).is_some())
+                        || super::record_choice_projection(node).is_some()
                         || node.as_heap_ref().is_some_and(|id| identities.contains_key(&id))
                         || node.as_lit().is_some() || node.as_binop().is_some() || node.as_unary_op().is_some()
                         || node.as_case_when().is_some() || math::domains::decimal::is_decimal(node)

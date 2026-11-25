@@ -24,6 +24,13 @@ impl SourceObjects {
         matches!(origin, Origin::Allocation).then_some(owner.as_str())
     }
 
+    pub(super) fn borrowed_parameter(&self, reference: &Expr) -> Option<(&str, &str)> {
+        let (owner, Origin::Parameter(name)) = self.objects.get(&reference.as_heap_ref()?)? else {
+            return None;
+        };
+        Some((owner, name))
+    }
+
     pub(super) fn owns(&self, reference: &Expr) -> bool {
         reference
             .as_heap_ref()
@@ -153,7 +160,7 @@ impl Engine<'_> {
             let default = match self.project.parameter_type(field.java_type())? {
                 Ty::Integer => b::lit_int(0),
                 Ty::Bool => b::lit_bool(false),
-                Ty::Ref => b::lit_null(),
+                Ty::Ref | Ty::Text => b::lit_null(),
                 _ => return Err(fail("unsupported source field initializer")),
             };
             self.realtime_store
@@ -356,10 +363,12 @@ impl Engine<'_> {
             .fields()
             .iter()
             .map(|f| {
-                Ok((
-                    f.name().into(),
-                    self.read_source_field(&reference, f.name())?.scalar()?,
-                ))
+                let field = self.read_source_field(&reference, f.name())?;
+                let scalar = field.scalar()?;
+                if field.ty() == Ty::Text && !crate::normalized::nullable_text_field(class, f) {
+                    need(!scalar.is_null(), "nonnullable record text field was not initialized")?;
+                }
+                Ok((f.name().into(), scalar))
             })
             .collect::<Result<_>>()?;
         Ok(Some(fields))

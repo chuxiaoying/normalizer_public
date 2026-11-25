@@ -358,7 +358,8 @@ impl Engine<'_> {
                 } => {
                     let binds = match body.get(i+1) {
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. })) =>
-                            binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
+                            binding == name && (self.project.parameter_type(java_type)? == Ty::Integer
+                                || self.project.source_owner(java_type).is_some()),
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(w))) => &w.binding == name && self.project.parameter_type(java_type)?==Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::CountRange { binding, accumulate: false, .. })) => binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Relation(q))) => &q.binding==name && !q.accumulate,
@@ -474,10 +475,11 @@ impl Engine<'_> {
                     self.execute_source_try(body,catches,finally_block.as_deref(),id,env,path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
-                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
-                        Some(S::VarDecl { name, initializer: None, .. }) if name == binding),
-                        "member choice must follow its uninitialized local declaration")?;
-                    self.choose_source_member(binding, members, empty, id, env, path)?;
+                    let Some(S::VarDecl { name, java_type, initializer: None }) = i.checked_sub(1).and_then(|i| body.get(i)) else {
+                        return Err(fail("member choice must follow its uninitialized local declaration"));
+                    };
+                    need(name == binding, "member choice must follow its uninitialized local declaration")?;
+                    self.choose_source_member(binding, members, empty, java_type, id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after }) => {
                     self.execute_index_fold(binding, lower, upper, skip_before, stop_after, env)?;
@@ -831,6 +833,8 @@ impl Engine<'_> {
                 )?;
                 let mut a = l.scalar()?;
                 let mut z = r.scalar()?;
+                need(!matches!(ty, Ty::Record(_)),
+                    "member choice record has content but no Java reference identity")?;
                 if ty == Ty::Ref {
                     self.check_borrowed_identity(&a, &z)?;
                     // Both operands have already been obtained in source order.

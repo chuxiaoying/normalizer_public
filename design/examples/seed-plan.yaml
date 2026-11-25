@@ -136,7 +136,7 @@ topics:
         focus: 完整取数后读取首项的空集合边界
       - id: java-independent-choice
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 从集合中独立选择完整记录
       - id: java-map-present-null

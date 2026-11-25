@@ -283,7 +283,7 @@ fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortCo
             }
         }
         crate::symvar::SymVarOrigin::Temporal { binding_id, primitive_type } => {
-            let aliases = (primitive_type == "integer").then(|| ctx.temporal_aliases()).flatten();
+            let aliases = (matches!(primitive_type.as_str(), "integer" | crate::builder::RECORD_TEMPORAL_TAG)).then(|| ctx.temporal_aliases()).flatten();
             let slot = aliases.and_then(|aliases| aliases.get(binding_id))
                 .map_or(*binding_id, |slot| *slot as u64);
             format!("02|$t_{slot:020}")

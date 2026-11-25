@@ -492,7 +492,7 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
             }
         }
         SymVarOrigin::Temporal { binding_id, primitive_type } => {
-            let slot = if primitive_type == "integer" && ctx.business_inputs.is_some() {
+            let slot = if matches!(primitive_type.as_str(), "integer" | math::builder::RECORD_TEMPORAL_TAG) && ctx.business_inputs.is_some() {
                 ctx.temporal_names.get(binding_id).copied().expect("closed temporal definition")
             } else { *binding_id as usize };
             format!("$t_{slot}")

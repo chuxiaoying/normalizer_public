@@ -21,29 +21,41 @@ class Offers {
 
 ## AI 预处理结果
 
-在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留构造 Pick 的 Java。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../implementation/contracts/normalized-choice.md)
+在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留 Pick 的三个结果字段和原构造顺序；将只观察内容的 record 写为同布局的规范 Java 类及字段投影。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../implementation/contracts/normalized-choice.md)
 
 ```diff
 --- a/src/Offers.java
 +++ b/src/Offers.java
-@@ -1,10 +1,11 @@
+@@ -1,10 +1,20 @@
 -import java.util.Arrays;
- record Offer(String code, int price) {}
- record Pick(String firstCode, int firstPrice, String secondCode) {}
+-record Offer(String code, int price) {}
+-record Pick(String firstCode, int firstPrice, String secondCode) {}
++class Offer { String code; int price; }
++class Pick {
++    String firstCode;
++    int firstPrice;
++    String secondCode;
++    Pick(String firstCode, int firstPrice, String secondCode) {
++        this.firstCode = firstCode;
++        this.firstPrice = firstPrice;
++        this.secondCode = secondCode;
++    }
++}
  class Offers {
      static Pick sample(Offer[] offers, Offer backup) {
 -        Offer first = Arrays.stream(offers).unordered().findAny().orElse(backup);
 -        Offer second = Arrays.stream(offers).unordered().findAny().orElse(backup);
+-        return new Pick(first.code(), first.price(), second.code());
 +        Offer first;
-+        /* @normalizer-ir choose first from offers else backup */
++        /* @normalizer-ir first = choose from offers else backup */
 +        Offer second;
-+        /* @normalizer-ir choose second from offers else backup */
-         return new Pick(first.code(), first.price(), second.code());
++        /* @normalizer-ir second = choose from offers else backup */
++        return new Pick(first.code, first.price, second.code);
      }
  }
 ```
 
-注释中的 choose 是原位交接示意：两个源码位置分别代表独立的选择位置、候选和缺省值；下方 `T.member_choice` 是整记录目标。当前正式入口只验收[整数数组的独立成员选择](../topics/unified-canonical-form/java-member-choice.md)，此整记录种子尚待派生。
+注释中的 choose 是原位交接示意：两个源码位置分别代表独立的选择位置、候选和缺省值；下方 `T.member_choice` 是经过正式 CLI 验收的整记录选择。只允许已声明的标量字段投影；不能把选中的记录当作可写引用。
 
 ## 归一化最终结果
 
@@ -62,7 +74,11 @@ T:
   - { id: $t_0, op: member_choice, when: 'true', members: offers, empty: backup }
   - { id: $t_1, op: member_choice, when: 'true', members: offers, empty: backup }
 R: |-
-  { firstCode: $t_0.code, firstPrice: $t_0.price, secondCode: $t_1.code }
+  {
+    firstCode: $t_0.code,
+    firstPrice: $t_0.price,
+    secondCode: $t_1.code
+  }
 ```
 
 `$t_0.code` 和 `$t_0.price` 来自同一份报价。第二次选择绑定到 `$t_1`，可以与第一份相同，也可以不同。

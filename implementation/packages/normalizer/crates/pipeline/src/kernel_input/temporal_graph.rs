@@ -1,6 +1,6 @@
 //! One identity and publication graph for deterministic folds and independent choices.
 use super::*;
-use super::member_choice::{Candidates, Occurrence};
+use super::member_choice::{Candidates, Fallback, Occurrence};
 use serde_json::{json, Value as Json};
 
 #[derive(PartialEq, Eq)]
@@ -10,10 +10,13 @@ pub(super) enum Definition {
 }
 
 impl Definition {
-    fn operand(&self) -> &Expr {
+    fn operand(&self) -> Option<&Expr> {
         match self {
-            Self::Fold(node) => &node.initial,
-            Self::Choice(node) => &node.empty,
+            Self::Fold(node) => Some(&node.initial),
+            Self::Choice(node) => match &node.empty {
+                Fallback::Integer(value) => Some(value),
+                Fallback::RecordParameter {..} => None,
+            },
         }
     }
 
@@ -58,16 +61,16 @@ enum Ready {
 
 pub(super) fn publish(
     nodes: &[Definition], expression: &Expr, arrays: &BTreeSet<String>,
-    numbers: &BTreeSet<String>, names: &BTreeMap<String, String>,
+    domains: &BTreeMap<String, String>, names: &BTreeMap<String, String>,
     acquired_path: impl Fn(u64, &[String]) -> Option<String>,
 ) -> Result<Publication> {
     let mut pending: BTreeSet<_> = nodes.iter().enumerate().filter_map(|(id, node)|
         matches!(node, Definition::Choice(_)).then_some(id as u64)).collect();
-    expression.walk(&mut |node| { pending.extend(integer_definition_id(node)); });
+    expression.walk(&mut |node| { pending.extend(temporal_definition_id(node)); });
     let mut inspect: Vec<_> = pending.iter().copied().collect();
     while let Some(id) = inspect.pop() {
         let node = nodes.get(id as usize).ok_or_else(|| fail("undefined temporal definition"))?;
-        if let Some(dep) = integer_definition_id(node.operand()) {
+        if let Some(dep) = node.operand().and_then(integer_definition_id) {
             need(dep < id, "temporal dependency must already be defined")?;
             if pending.insert(dep) { inspect.push(dep); }
         }
@@ -81,32 +84,37 @@ pub(super) fn publish(
         for &id in &pending {
             let node = &nodes[id as usize];
             if matches!(node, Definition::Choice(_)) && !std::mem::take(&mut first_choice) { continue; }
-            let operand = node.operand();
-            let value = if let Some(dep) = integer_definition_id(operand) {
-                let Some(&slot) = published.aliases.get(&dep) else { continue; };
-                if let Definition::Choice(prior) = &nodes[dep as usize] {
-                    let available = match node {
-                        Definition::Choice(choice) => b::path_implies(&choice.guard, &prior.guard),
-                        Definition::Fold(_) => prior.guard.as_bool() == Some(true),
-                    };
-                    need(available, "temporal operand is not acquired on this definition's path")?;
-                }
-                Operand::Prior(slot)
-            } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
-                Operand::Integer(n)
-            } else if let Some(SymVarOrigin::Parameter {name, primitive_type}) = operand.as_sym_var() {
-                need(primitive_type == "integer" && numbers.contains(name),
-                    "temporal parameter must be a declared number")?;
-                Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid temporal input name"))?)
-            } else if let Some(SymVarOrigin::External {binding_id, path, primitive_type}) = operand.as_sym_var() {
-                need(primitive_type == "integer", "temporal acquired value must be a declared number")?;
-                Operand::Acquired(acquired_path(*binding_id, path)
-                    .ok_or_else(|| fail("temporal input requires an acquired declared integer"))?)
+            let value = if let Definition::Choice(Occurrence {empty: Fallback::RecordParameter {owner, name}, ..}) = node {
+                need(domains.get(name) == Some(owner), "record choice fallback needs its published record parameter")?;
+                Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid record fallback name"))?)
             } else {
-                return Err(fail(match node {
-                    Definition::Fold(_) => "pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold",
-                    Definition::Choice(_) => "member choice fallback must be a constant or an acquired integer",
-                }));
+                let operand = node.operand().ok_or_else(|| fail("missing scalar temporal operand"))?;
+                if let Some(dep) = integer_definition_id(operand) {
+                    let Some(&slot) = published.aliases.get(&dep) else { continue; };
+                    if let Definition::Choice(prior) = &nodes[dep as usize] {
+                        let available = match node {
+                            Definition::Choice(choice) => b::path_implies(&choice.guard, &prior.guard),
+                            Definition::Fold(_) => prior.guard.as_bool() == Some(true),
+                        };
+                        need(available, "temporal operand is not acquired on this definition's path")?;
+                    }
+                    Operand::Prior(slot)
+                } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
+                    Operand::Integer(n)
+                } else if let Some(SymVarOrigin::Parameter {name, primitive_type}) = operand.as_sym_var() {
+                    need(primitive_type == "integer" && domains.get(name).is_some_and(|domain| domain == "number"),
+                        "temporal parameter must be a declared number")?;
+                    Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid temporal input name"))?)
+                } else if let Some(SymVarOrigin::External {binding_id, path, primitive_type}) = operand.as_sym_var() {
+                    need(primitive_type == "integer", "temporal acquired value must be a declared number")?;
+                    Operand::Acquired(acquired_path(*binding_id, path)
+                        .ok_or_else(|| fail("temporal input requires an acquired declared integer"))?)
+                } else {
+                    return Err(fail(match node {
+                        Definition::Fold(_) => "pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold",
+                        Definition::Choice(_) => "member choice fallback must be a constant or an acquired integer",
+                    }));
+                }
             };
             let key = match node {
                 Definition::Fold(fold) => Ready::Fold(array_name(&fold.source)?.clone(), value.clone(),
@@ -135,7 +143,14 @@ pub(super) fn publish(
                 });
                 need(entry_guard, "member choice guard requires acquired entry scalars")?;
                 let members = match &choice.members {
-                    Candidates::Input(name) => array_name(name)?.clone(),
+                    Candidates::Input(name) => match &choice.empty {
+                        Fallback::Integer(_) => array_name(name)?.clone(),
+                        Fallback::RecordParameter {owner, ..} => {
+                            need(domains.get(name).is_some_and(|domain| domain == &format!("{owner}[]")),
+                                "record choice needs its published record array parameter")?;
+                            names.get(name).cloned().ok_or_else(|| fail("invalid record array name"))?
+                        }
+                    },
                     Candidates::Literal(values) => format!("[{}]", values.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")),
                 };
                 let mut ctx = crate::FormatCtx::for_business(names.clone(), BTreeMap::new());
@@ -154,13 +169,16 @@ pub(super) fn publish(
 /// Prove every partial reference is reached only after its occurrence.
 pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<()> {
     fn check(expression: &Expr, active: &Expr, nodes: &[Definition]) -> Result<()> {
-        if let Some(id) = integer_definition_id(expression) {
+        if let Some(id) = temporal_definition_id(expression) {
             let def = nodes.get(id as usize).ok_or_else(|| fail("unknown temporal reference"))?;
             return match def {
                 Definition::Fold(_) => Ok(()),
                 Definition::Choice(choice) => need(b::path_implies(active, &choice.guard),
                     "member choice read outside its acquisition guard"),
             };
+        }
+        if let Some(record) = record_choice_projection(expression) {
+            return check(record, active, nodes);
         }
         if let Some(branches) = expression.as_case_when() {
             let mut remaining = active.clone();
@@ -182,7 +200,7 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
         } else {
             let mut partial = false;
             expression.walk(&mut |node| {
-                if let Some(id) = integer_definition_id(node) {
+                if let Some(id) = temporal_definition_id(node) {
                     partial |= nodes.get(id as usize).is_none_or(|node| !node.is_total());
                 }
             });

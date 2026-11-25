@@ -281,6 +281,14 @@ pub fn pending_task_handle(binding_id: u64) -> Expr {
     })
 }
 
+pub const RECORD_TEMPORAL_TAG: &str = "normalized.choice_record";
+
+pub fn record_temporal_result(binding_id: u64) -> Expr {
+    Expr::new(ExprKind::SymVar {
+        origin: SymVarOrigin::Temporal { binding_id, primitive_type: RECORD_TEMPORAL_TAG.into() },
+    })
+}
+
 /// Exact integer produced by a closed, caller-owned temporal definition.
 pub fn integer_temporal_result(binding_id: u64) -> Expr {
     Expr::new(ExprKind::SymVar {

@@ -142,10 +142,11 @@ groups:
     frontend-vo-production-vue:
       scene: frontend-vo-production
       entries: [onLoad]
+  java/seed-batch-42:
+    java-independent-choice: [Offers.sample]
 pending:
   - frontend-deferred-listener
   - java-eager-first
-  - java-independent-choice
   - java-invalid-declaration
   - java-lifo-release
   - java-map-present-null

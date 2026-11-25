@@ -13,15 +13,24 @@ pub(super) enum Candidates {
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Occurrence {
     pub(super) members: Candidates,
-    pub(super) empty: Expr,
+    pub(super) empty: Fallback,
     pub(super) guard: Expr,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(super) enum Fallback {
+    Integer(Expr),
+    RecordParameter { owner: String, name: String },
 }
 
 impl Engine<'_> {
     pub(super) fn choose_source_member(
         &mut self, binding: &str, members: &str, empty: &MemberChoiceFallback,
-        method: &str, env: &mut Env, path: Expr,
+        declared: &JavaType, method: &str, env: &mut Env, path: Expr,
     ) -> Result<()> {
+        if let Some(owner) = self.project.source_owner(declared) {
+            return self.choose_record_member(binding, members, empty, owner, method, env, path);
+        }
         let empty = match empty {
             MemberChoiceFallback::Integer(value) => b::lit_integer(value.clone()),
             MemberChoiceFallback::Local(name) => {
@@ -66,10 +75,48 @@ impl Engine<'_> {
             }
             Choice::Independent(members) => members,
         };
-        let occurrence = Occurrence {members, empty, guard: path};
+        let occurrence = Occurrence {members, empty: Fallback::Integer(empty), guard: path};
         let id = self.temporal_definitions.len();
         self.temporal_definitions.push(super::temporal_graph::Definition::Choice(occurrence));
         env.insert(binding.into(), Value::Term(Ty::Integer, b::integer_temporal_result(id as u64)));
         Ok(())
     }
+
+    fn choose_record_member(
+        &mut self, binding: &str, members: &str, empty: &MemberChoiceFallback,
+        owner: &str, method: &str, env: &mut Env, path: Expr,
+    ) -> Result<()> {
+        let Some(Value::Sequence {item: Ty::Ref, relation: RelationExpr::Base {name, ..}, ..}) =
+            env.get(members) else { return Err(fail("record choice requires a declared record array parameter")); };
+        need(self.methods[method].params().iter().any(|(ty, param)|
+            param == name && matches!(ty, JavaType::Array(item) if self.project.source_owner(item) == Some(owner))),
+            "record choice requires an array of its declared record type")?;
+        let MemberChoiceFallback::Local(fallback) = empty else {
+            return Err(fail("record choice needs a same-type record parameter fallback"));
+        };
+        let fallback = env.get(fallback).ok_or_else(|| fail("unbound record choice fallback"))?.scalar()?;
+        let (fallback_owner, fallback_name) = self.source_objects.borrowed_parameter(&fallback)
+            .ok_or_else(|| fail("record choice needs a same-type record parameter fallback"))?;
+        need(fallback_owner == owner && self.methods[method].params().iter()
+            .any(|(ty, name)| name == fallback_name && self.project.source_owner(ty) == Some(owner))
+            && self.methods[method].param_annotations(fallback_name).is_empty(),
+            "record choice needs a same-type nonnullable record parameter fallback")?;
+        let class = self.program.find_class(owner).ok_or_else(|| fail("missing record choice layout"))?;
+        let fields = class.fields().iter().map(|field| {
+            let ty = self.project.parameter_type(field.java_type())?;
+            need(matches!(ty, Ty::Integer | Ty::Bool | Ty::Text),
+                "record choice supports only declared immutable scalar fields")?;
+            Ok((field.name().to_owned(), ty))
+        }).collect::<Result<BTreeMap<_,_>>>()?;
+        let occurrence = Occurrence {
+            members: Candidates::Input(name.clone()),
+            empty: Fallback::RecordParameter {owner: owner.into(), name: fallback_name.into()},
+            guard: path,
+        };
+        let id = self.temporal_definitions.len();
+        self.temporal_definitions.push(super::temporal_graph::Definition::Choice(occurrence));
+        env.insert(binding.into(), Value::Term(Ty::Record(fields), b::record_temporal_result(id as u64)));
+        Ok(())
+    }
+
 }
