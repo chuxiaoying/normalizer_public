@@ -875,24 +875,13 @@ impl Engine<'_> {
                     matches!(op, B::Eq | B::Ne) || matches!(ty, Ty::Integer | Ty::I32 | Ty::I64),
                     "ordered comparison type",
                 )?;
-                let mut a = l.scalar()?;
-                let mut z = r.scalar()?;
+                let a = l.scalar()?;
+                let z = r.scalar()?;
                 need(!matches!(ty, Ty::Record(_)),
                     "member choice record has content but no Java reference identity")?;
                 if ty == Ty::Ref {
-                    if self.source_objects.fresh_and_acquired(&a, &z) {
-                        return Ok(Value::Term(Ty::Bool, b::lit_bool(*op == B::Ne)));
-                    }
-                    self.check_borrowed_identity(&a, &z)?;
-                    // Both operands have already been obtained in source order.
-                    // Reorient only the pure comparison, never the evaluations.
-                    let kind = if *op == B::Eq { math::BinOpKind::Eq } else { math::BinOpKind::Ne };
-                    let names = crate::canonical_names::CanonicalNames {
-                        heap: &self.source_objects.compared_parameters, external: None, total_temporals: None, temporals: None,
-                    };
-                    if math::canonical_order_ordered_comparison(kind, &a, &z, &names).is_some() {
-                        std::mem::swap(&mut a, &mut z);
-                    }
+                    let identity = self.source_reference_equality(a, z, *op == B::Ne)?;
+                    return Ok(Value::Term(Ty::Bool, identity));
                 }
                 Ok(Value::Term(
                     Ty::Bool,

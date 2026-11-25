@@ -38,3 +38,27 @@
     - { from: 'return left == right;', to: 'Box first = new Box(); Box second = new Box(); first.value = 7; second.value = 7; return first == second;' }
   expect:
     - { path: [R], value: 'false' }
+- name: fresh-replacement-identity-is-decided-by-the-source-branch
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = new Box(); } return alias == left;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: 'NOT (replace)' }
+- name: acquired-replacement-keeps-the-original-input-alias-test
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = right; } return left == alias;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: 'left == right OR NOT (replace)' }
+- name: a-definitely-fresh-replacement-is-the-only-inequality-path
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
+    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = new Box(); } return left != alias;' }
+  expect:
+    - path: [P, parameters]
+      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
+    - { path: [R], value: replace }

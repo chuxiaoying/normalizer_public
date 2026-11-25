@@ -35,7 +35,7 @@ impl SourceObjects {
 
     // Fresh local allocations cannot equal an identity acquired from the
     // entry snapshot. Private heap IDs alone do not prove this relation.
-    pub(super) fn fresh_and_acquired(&self, left: &Expr, right: &Expr) -> bool {
+    fn fresh_and_acquired(&self, left: &Expr, right: &Expr) -> bool {
         let origin = |value: &Expr| {
             value.as_heap_ref().and_then(|id| self.objects.get(&id)).map(|(_, origin)| origin)
         };
@@ -338,6 +338,42 @@ impl Engine<'_> {
         }
         self.realtime_store.store_guarded(path, reference.clone(), field, value);
         Ok(())
+    }
+
+    pub(super) fn source_reference_equality(&mut self, left: Expr, right: Expr, different: bool) -> Result<Expr> {
+        // Both operands have been evaluated. A complete conditional local
+        // identity can be compared branchwise with an already acquired root
+        // without re-running a branch or comparing its object's contents.
+        let selected = match (left.as_case_when(), right.as_case_when()) {
+            (Some(arms), None) if self.source_objects.owns(&right) => Some((arms, &right, true)),
+            (None, Some(arms)) if self.source_objects.owns(&left) => Some((arms, &left, false)),
+            _ => None,
+        };
+        if let Some((arms, other, selected_left)) = selected {
+            need(arms.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true)),
+                "conditional reference requires a complete alias partition")?;
+            let mut result = Vec::with_capacity(arms.len());
+            for (guard, value) in arms {
+                need(self.source_objects.owns(value), "conditional source identity requires a bound reference")?;
+                let (a, z) = if selected_left { (value, other) } else { (other, value) };
+                result.push((guard.clone(), self.compare_reference_roots(a.clone(), z.clone(), different)?));
+            }
+            return Ok(math::normalize(b::case_when(result)));
+        }
+        self.compare_reference_roots(left, right, different)
+    }
+
+    fn compare_reference_roots(&mut self, mut left: Expr, mut right: Expr, different: bool) -> Result<Expr> {
+        if self.source_objects.fresh_and_acquired(&left, &right) { return Ok(b::lit_bool(different)); }
+        self.check_borrowed_identity(&left, &right)?;
+        let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };
+        let names = crate::canonical_names::CanonicalNames {
+            heap: &self.source_objects.compared_parameters, external: None, total_temporals: None, temporals: None,
+        };
+        if math::canonical_order_ordered_comparison(kind, &left, &right, &names).is_some() {
+            std::mem::swap(&mut left, &mut right);
+        }
+        Ok(if different { b::ne(left, right) } else { b::eq(left, right) })
     }
 
     pub(super) fn check_borrowed_identity(&mut self, a: &Expr, b: &Expr) -> Result<()> {
