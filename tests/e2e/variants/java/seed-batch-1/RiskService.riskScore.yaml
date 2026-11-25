@@ -44,3 +44,13 @@
           WHEN completion.is_throw($e_0, Timeout) THEN 0
           ELSE $e_0
         END
+
+- name: explicit-this-still-selects-the-declared-external-field
+  edits:
+    - from: 'return riskClient.fetchScore(accountId);'
+      to: 'return this.riskClient.fetchScore(accountId);'
+- name: an-ordinary-shadowing-parameter-is-not-the-external-field
+  edits:
+    - from: 'int riskScore(int accountId)'
+      to: 'int riskScore(RiskClient riskClient, int accountId)'
+  reject: ['panicked', '[NORM-OUT-OF-SOURCE]', 'target=RiskClient.fetchScore']

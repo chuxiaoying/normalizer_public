@@ -24,6 +24,13 @@ pub(crate) fn receiver(expr: &E) -> Option<&str> {
     }
 }
 
+pub(crate) fn declares_bodyless_member(class: &JavaClass, member: &str, arity: usize) -> bool {
+    let mut declarations = class.methods().iter()
+        .filter(|method| method.name() == member && method.arity() == arity);
+    declarations.next().is_some_and(|method| method.body().is_none())
+        && declarations.next().is_none()
+}
+
 #[derive(Clone)]
 pub(crate) struct SourcePort {
     pub interface: String,

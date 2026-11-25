@@ -138,11 +138,6 @@ fn external_call(
     {
         return None;
     }
-    let mut declarations = interface
-        .methods()
-        .iter()
-        .filter(|m| m.name() == method && m.arity() == args.len());
-    let declaration = declarations.next()?;
-    (declaration.body().is_none() && declarations.next().is_none())
+    super::source_ports::declares_bodyless_member(interface, method, args.len())
         .then(|| format!("{qualified}.{method}"))
 }

@@ -658,6 +658,22 @@ impl Engine<'_> {
                                     .collect::<Result<Vec<_>>>()?;
                                 return self.invoke_interface(&interface, method, receiver, values, path);
                             }
+                            // An ordinary input that shadows a marked receiver
+                            // does not inherit the field's external contract.
+                            if self.program.find_class(&interface).is_some_and(|class| {
+                                class.is_interface()
+                                    && crate::normalized::source_ports::declares_bodyless_member(
+                                        class, method, args.len(),
+                                    )
+                            }) && receiver.scalar().is_ok_and(|reference| {
+                                reference.as_heap_ref().is_some()
+                                    && self.source_objects.allocation_owner(&reference).is_none()
+                            }) {
+                                crate::preprocess::out_of_source(
+                                    self.selected_entry.unwrap_or(id),
+                                    &format!("{interface}.{method}"),
+                                );
+                            }
                         }
                     }
                 }
