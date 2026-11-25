@@ -13,8 +13,8 @@ import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/ind
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
-function invoke(command, args, cwd, input) {
-  const result = spawnSync(command, args, { cwd, input, encoding: 'utf8', timeout: 120_000 });
+function invoke(command, args, cwd, input, env = process.env) {
+  const result = spawnSync(command, args, { cwd, input, env, encoding: 'utf8', timeout: 120_000 });
   if (result.error) throw result.error;
   assert.equal(result.signal, null, command + ' terminated by signal');
   return result;
@@ -99,14 +99,15 @@ for (const [name, setup, diagnostic] of [
   });
 }
 
+const additionSource = count => '/**\n * @param {number} x\n * @returns {number}\n */\n'
+  + 'export function sum(x) { return x' + ' + 1'.repeat(count) + '; }\n';
+
 test('module CLI ingress / expression nesting is bounded before execution', t => {
   const project = mkdtempSync(join(tmpdir(), 'normalizer-module-depth-'));
   t.after(() => rmSync(project, {recursive: true, force: true}));
-  const source = count => '/**\n * @param {number} x\n * @returns {number}\n */\n'
-    + 'export function sum(x) { return x' + ' + 1'.repeat(count) + '; }\n';
   const module = join(root, 'implementation/tools/normalizer');
   for (const count of [120, 200]) {
-    writeFileSync(join(project, 'sum.js'), source(count));
+    writeFileSync(join(project, 'sum.js'), additionSource(count));
     const result = invoke(module, ['module', project, 'sum.js', 'sum'], root);
     if (count === 120) {
       assert.equal(result.status, 0, result.stderr);
@@ -120,4 +121,23 @@ test('module CLI ingress / expression nesting is bounded before execution', t =>
       assert.doesNotMatch(result.stderr, /panicked/);
     }
   }
+});
+
+
+test('module CLI execution / exhausted normalization leaves no misleading PERS', t => {
+  const project = mkdtempSync(join(tmpdir(), 'normalizer-module-budget-'));
+  t.after(() => rmSync(project, {recursive: true, force: true}));
+  writeFileSync(join(project, 'sum.js'), additionSource(64));
+  const command = join(root, 'implementation/tools/normalizer');
+  const args = ['module', project, 'sum.js', 'sum'];
+  const ordinary = invoke(command, args, root);
+  assert.equal(ordinary.status, 0, ordinary.stderr);
+  const full = YAML.parse(ordinary.stdout);
+  assertPers(full, 'fully normalized exact addition');
+  assert.equal(full.R, 'x + 64');
+  const constrained = invoke(command, args, root, undefined, {...process.env, NORMALIZER_MATH_MAX_STEPS: '1'});
+  assert.notEqual(constrained.status, 0);
+  assert.equal(constrained.stdout, '');
+  assert.match(constrained.stderr, /normalization steps budget exhausted/);
+  assert.match(constrained.stderr, /no canonical result was produced/);
 });

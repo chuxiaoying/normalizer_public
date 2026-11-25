@@ -3,7 +3,6 @@
 
 use crate::expr::Lit;
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::{Arc, OnceLock, RwLock};
 
 /// Func 身份凭证。字段私有，无 public 构造函数。
@@ -42,20 +41,6 @@ pub struct FuncSemantics {
     pub symbolic_reducer:
         Option<Arc<dyn Fn(FuncKey, &[crate::Expr]) -> Option<crate::Expr> + Send + Sync>>,
 
-}
-
-impl fmt::Debug for FuncSemantics {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FuncSemantics")
-            .field("pure", &self.pure)
-            .field("null_behavior", &self.null_behavior)
-            .field("evaluator", &self.evaluator.as_ref().map(|_| "<fn>"))
-            .field(
-                "symbolic_reducer",
-                &self.symbolic_reducer.as_ref().map(|_| "<fn>"),
-            )
-            .finish()
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -119,7 +104,7 @@ impl FuncSemantics {
 ///
 /// `param_types` 是 **封闭枚举 `Primitive` 列表**，不允许 Object / 泛型 / 业务类。
 /// 这样编译器强制：只有 primitive 演算函数能注册 Primitive Functions。
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct FuncEntry {
     pub name: String,
     pub param_types: Vec<crate::primitive_enum::Primitive>,
