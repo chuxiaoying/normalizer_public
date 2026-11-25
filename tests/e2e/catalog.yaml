@@ -99,7 +99,7 @@ groups:
   java/seed-batch-27:
     relation-order-limit: [DueDateService.firstDueDate]
   java/seed-batch-28:
-    relation-null-semantics: [NullMemoService.missingMemoCount]
+    relation-null-semantics: [NullMemoService.missingMemoCount, NullMemoService.firstRowHasNullMemo, NullMemoService.fallbackStillPreservesNull]
   java/seed-batch-29:
     relation-join: [JoinService.openBillCount]
   java/seed-batch-30:

@@ -21,6 +21,7 @@ use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKin
 /// Formatting context shared by one business result and its boundary events.
 pub struct FormatCtx {
     business_inputs: Option<std::collections::BTreeMap<String, String>>,
+    nullable_columns: std::collections::BTreeSet<String>,
     scalar_arrays: std::collections::BTreeSet<String>,
     nested_arrays: std::collections::BTreeSet<String>,
     record_arrays: std::collections::BTreeSet<String>,
@@ -41,6 +42,7 @@ impl Default for FormatCtx {
     fn default() -> Self {
         FormatCtx {
             business_inputs: None,
+            nullable_columns: Default::default(),
             scalar_arrays: Default::default(),
             nested_arrays: Default::default(),
             record_arrays: Default::default(),
@@ -82,6 +84,15 @@ impl FormatCtx {
 
     pub(crate) fn set_record_arrays(&mut self, arrays: std::collections::BTreeSet<String>) {
         self.record_arrays = arrays;
+    }
+
+    pub(crate) fn declare_nullable_columns(
+        &mut self, tables: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    ) {
+        self.nullable_columns = tables.iter().flat_map(|(table, columns)| {
+            columns.iter().filter(|(_, ty)| ty.ends_with('?'))
+                .map(move |(column, _)| format!("{table}.{column}"))
+        }).collect();
     }
 
     pub(crate) fn set_scalar_arrays(&mut self, arrays: std::collections::BTreeSet<String>) {

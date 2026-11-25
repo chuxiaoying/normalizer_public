@@ -1,0 +1,15 @@
+- name: equivalent-empty-guard-closes-the-same-observation
+  edits:
+    - from: |-
+        if (match != null) return match.memo == null;
+                return false;
+      to: |-
+        if (match == null) return false;
+                return match.memo == null;
+- name: known-empty-relation-is-not-a-selected-null
+  edits:
+    - from: 'where b.account_id == accountId'
+      to: 'where b.account_id == accountId and false'
+  expect:
+    - path: [R]
+      value: 'false'

@@ -1,0 +1,14 @@
+- name: known-empty-uses-nonnull-fallback
+  edits:
+    - from: 'where b.account_id == accountId'
+      to: 'where b.account_id == accountId and false'
+  expect:
+    - path: [R]
+      value: 'false'
+- name: fallback-change-does-not-erase-a-selected-null
+  edits:
+    - from: String value = "missing";
+      to: String value = "backup";
+  expect:
+    - path: [R]
+      value: (CASE WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) ELSE "backup" END) == null

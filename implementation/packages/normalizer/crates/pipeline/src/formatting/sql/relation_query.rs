@@ -212,6 +212,13 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             predicate_text(p, ctx)
         ))
     }
+    let nullable_first = kind == math::RelationAggregateKind::FirstValue
+        && value.as_row_value().is_some_and(|column| ctx.nullable_columns.contains(column))
+        && default.is_some_and(|fallback| !fallback.is_null());
+    let presence = nullable_first.then(|| {
+        let from = select[1..].iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ");
+        format!("EXISTS (SELECT 1 {from})")
+    });
     if !keys.is_empty() {
         select.push(format!(
             "ORDER BY {}",
@@ -229,9 +236,15 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     if kind == math::RelationAggregateKind::Exists {
         return Some(format!("EXISTS ({})", select.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ")));
     }
-    if kind == math::RelationAggregateKind::FirstValue && default.is_some_and(Expr::is_null) {
+    if kind == math::RelationAggregateKind::FirstValue && (default.is_some_and(Expr::is_null) || nullable_first) {
         let query = select.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ");
-        return Some(format!("FIRST({})", query.strip_prefix("SELECT ")?));
+        let first = format!("FIRST({})", query.strip_prefix("SELECT ")?);
+        if let Some(presence) = presence {
+            let fallback = fmt(default?, ctx);
+            // CASE distinguishes a NULL on the selected row from absent rows.
+            return Some(format!("(CASE WHEN {presence} THEN {first} ELSE {fallback} END)"));
+        }
+        return Some(first);
     }
     let (lead, default) = match kind {
         math::RelationAggregateKind::Sum => ("SUM(", "0".into()),

@@ -646,15 +646,17 @@ impl Engine<'_> {
             .fields
             .get(field)
             .ok_or_else(|| fail("unknown selected field"))?;
-        need(
-            field.ty() == Ty::Integer,
-            "first scalar projection requires a number",
-        )?;
+        let ty = field.ty();
+        let select = field.scalar()?;
+        let declared_text_column = || select.as_row_value().and_then(|value| value.split_once('.'))
+            .and_then(|(table, column)| self.source_relations.tables.get(table)?.get(column))
+            .is_some_and(|ty| matches!(ty.as_str(), "text" | "text?"));
+        // Permit text only when the table declaration also certifies its
+        // nullability to the boundary renderer.
+        need(ty == Ty::Integer || (ty == Ty::Text && declared_text_column()),
+            "first scalar projection requires a number or declared text column")?;
         let ordered = r::order_by(row.input.clone(), row.ordering.clone());
-        Ok(Some(Value::Term(
-            Ty::Integer,
-            r::relation_first_value(ordered, field.scalar()?, b::lit_null()),
-        )))
+        Ok(Some(Value::Term(ty, r::relation_first_value(ordered, select, b::lit_null()))))
     }
 }
 

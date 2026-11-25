@@ -64,6 +64,7 @@ pub(super) fn observations(
     let arrays = entry.scalar_array_symbols();
     let mut ctx = crate::FormatCtx::for_business(names.clone(), states);
     ctx.set_scalar_arrays(arrays.clone());
+    ctx.declare_nullable_columns(&result.source_tables);
     let mut issued = BTreeSet::new();
     let mut effects = Vec::new();
     let mut tables = result.source_tables.clone();
