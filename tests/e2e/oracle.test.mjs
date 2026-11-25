@@ -38,6 +38,10 @@ test('reject guards match the primary phase and diagnostic kind, not an incident
   assert.throws(() => verify('[BOOTSTRAP-FAILED] undeclared query input b\n' + fragments.join(' ')), /wrong primary diagnostic/);
   assert.throws(() => verify('[NORM-PROJECT] kind=ABORT\nproblem=undeclared query input b'), /wrong diagnostic kind/);
   assert.throws(() => verify('[NORM-PROJECT] kind=PREPROCESS_REQUIRED\nproblem=unknown source'), /missing/);
+  assert.throws(() => verify('[NORM-PROJECT] kind=PREPROCESS_REQUIRED\nproblem=unknown source\n[SECONDARY-FAILURE] undeclared query input b'), /missing.*primary diagnostic/);
+  assert.throws(() => assertRejection({
+    status: 1, stdout: '', stderr: '[NORM-PROJECT] kind=PREPROCESS_REQUIRED\nproblem=undeclared query input b\n[SECONDARY-FAILURE] JoinService.count',
+  }, 'JoinService.count', fragments, 'PREPROCESS_REQUIRED'), /missing entry in primary diagnostic/);
   assert.doesNotThrow(() => verify('[NORM-PROJECT] kind=PREPROCESS_REQUIRED\nproblem=undeclared query input b'));
   assert.throws(() => verify('[NORM-PROJECT] kind=PREPROCESS_REQUIRED\nproblem=undeclared query input b', 'R: 0'), /must not emit PERS/);
 });

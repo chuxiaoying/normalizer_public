@@ -41,7 +41,6 @@ function checkExample(project, scene, entry, fixture, variant, seedReject) {
   if (fragments) {
     const kind = !variant?.reject ? fixture.rejection.split('\n')[0] : undefined;
     assertRejection({ status, stdout, stderr }, entry, fragments, kind);
-    if (kind) assert.ok(stderr.includes(entry), stderr);
     return;
   }
   assert.equal(status, 0, stderr.trim() || 'Normalizer failed without a diagnostic');
