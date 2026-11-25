@@ -18,6 +18,7 @@
 //! 是归一化 equals 的基础前提——语法结构 `((A && A) && B) && A` 通过二元 `x && x`
 //! 规则无法完全 dedupe，必须 flatten 到扁平 conjuncts 列表后统一去重。
 
+use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
 use crate::builder;
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, RelationAggregateKind, UnaryOpKind};
 use crate::symvar::SymVarOrigin;
@@ -1042,63 +1043,7 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
     (canonical != *expr).then_some(canonical)
 }
 
-// =============================================================================
-// Flatten / Rebuild 工具
-// =============================================================================
-
 mod implication;
-
-fn flatten_and(expr: &Expr) -> Vec<Expr> {
-    let mut out = Vec::new();
-    flatten_and_into(expr, &mut out);
-    out
-}
-
-fn flatten_and_into(expr: &Expr, out: &mut Vec<Expr>) {
-    match expr.kind() {
-        ExprKind::BinOp {
-            op: BinOpKind::And,
-            left,
-            right,
-        } => {
-            flatten_and_into(left, out);
-            flatten_and_into(right, out);
-        }
-        _ => out.push(expr.clone()),
-    }
-}
-
-fn flatten_or(expr: &Expr) -> Vec<Expr> {
-    let mut out = Vec::new();
-    flatten_or_into(expr, &mut out);
-    out
-}
-
-fn flatten_or_into(expr: &Expr, out: &mut Vec<Expr>) {
-    match expr.kind() {
-        ExprKind::BinOp {
-            op: BinOpKind::Or,
-            left,
-            right,
-        } => {
-            flatten_or_into(left, out);
-            flatten_or_into(right, out);
-        }
-        _ => out.push(expr.clone()),
-    }
-}
-
-fn rebuild_and(conjuncts: &[Expr]) -> Expr {
-    let mut iter = conjuncts.iter().cloned();
-    let first = iter.next().expect("rebuild_and: empty conjuncts");
-    iter.fold(first, builder::and)
-}
-
-fn rebuild_or(disjuncts: &[Expr]) -> Expr {
-    let mut iter = disjuncts.iter().cloned();
-    let first = iter.next().expect("rebuild_or: empty disjuncts");
-    iter.fold(first, builder::or)
-}
 
 fn sort_commutative(
     mut factors: Vec<Expr>,

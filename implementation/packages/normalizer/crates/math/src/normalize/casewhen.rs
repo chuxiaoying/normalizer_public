@@ -6,6 +6,7 @@
 //! - 相邻互补 else 归一：CaseWhen [(c, v1), (NOT(c), v2)] / [(NOT(c), v1), (c, v2)] → [(first, v1), (true, v2)]
 //! - 路径守卫冗余消除：branch[k].cond 里 AND 项匹配 NOT(branch[j].cond) (j<k) 剥除
 
+use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 use std::collections::HashSet;
 
@@ -788,35 +789,6 @@ fn strip_prev_disjuncts_from_or_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr,
     (out, changed)
 }
 
-fn flatten_or(expr: &Expr) -> Vec<Expr> {
-    let mut out = Vec::new();
-    flatten_or_into(expr, &mut out);
-    out
-}
-
-fn flatten_or_into(expr: &Expr, out: &mut Vec<Expr>) {
-    match expr.kind() {
-        ExprKind::BinOp {
-            op: BinOpKind::Or,
-            left,
-            right,
-        } => {
-            flatten_or_into(left, out);
-            flatten_or_into(right, out);
-        }
-        _ => out.push(expr.clone()),
-    }
-}
-
-fn rebuild_or(disjuncts: &[Expr]) -> Expr {
-    if disjuncts.is_empty() {
-        return crate::builder::lit_bool(false);
-    }
-    let mut iter = disjuncts.iter().cloned();
-    let first = iter.next().unwrap();
-    iter.fold(first, crate::builder::or)
-}
-
 fn merge_adjacent_same_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
     if branches.len() < 2 {
         return (branches.to_vec(), false);
@@ -1096,38 +1068,6 @@ fn strip_redundant_path_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>,
     }
 
     (out, changed)
-}
-
-/// 将 BinOp(And, ...) 递归展平为扁平 conjuncts 列表。
-/// 非 And 节点作为单元素返回。
-fn flatten_and(expr: &Expr) -> Vec<Expr> {
-    let mut out = Vec::new();
-    flatten_and_into(expr, &mut out);
-    out
-}
-
-fn flatten_and_into(expr: &Expr, out: &mut Vec<Expr>) {
-    match expr.kind() {
-        ExprKind::BinOp {
-            op: BinOpKind::And,
-            left,
-            right,
-        } => {
-            flatten_and_into(left, out);
-            flatten_and_into(right, out);
-        }
-        _ => out.push(expr.clone()),
-    }
-}
-
-/// 从 conjuncts 重建 And 链。空列表 → true 字面量，单项 → 该项，多项 → 左折叠。
-fn rebuild_and(conjuncts: &[Expr]) -> Expr {
-    if conjuncts.is_empty() {
-        return crate::builder::lit_bool(true);
-    }
-    let mut iter = conjuncts.iter().cloned();
-    let first = iter.next().unwrap();
-    iter.fold(first, crate::builder::and)
 }
 
 /// 检查 cond 是否是 NOT(expected) 对任一 prev_cond 成立。

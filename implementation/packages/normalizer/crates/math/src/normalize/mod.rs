@@ -21,6 +21,7 @@ pub(crate) mod constraint;
 mod integer_ac;
 mod integer_equations;
 mod integer_ranges;
+mod logical_chain;
 mod rebuild;
 pub(crate) mod relation;
 use crate::expr::{Expr, ExprKind};

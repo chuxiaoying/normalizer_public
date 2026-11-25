@@ -50,6 +50,7 @@
 //! 只展开"全分支布尔语义"的 CaseWhen，不做部分展开；不对非布尔 CaseWhen 触发。
 //! 展开后交还给后续化简链处理（AND false → false，false OR x → x 等）。
 
+use super::logical_chain::{rebuild_and, rebuild_or};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 
 pub(crate) fn simplify(expr: &Expr) -> Expr {
@@ -168,24 +169,4 @@ pub(crate) fn is_boolean_expr(expr: &Expr) -> bool {
         }
         _ => false,
     }
-}
-
-/// 从 conjuncts 重建 And 链。空→true，单项→该项，多项→左折叠。
-fn rebuild_and(conjuncts: &[Expr]) -> Expr {
-    if conjuncts.is_empty() {
-        return crate::builder::lit_bool(true);
-    }
-    let mut iter = conjuncts.iter().cloned();
-    let first = iter.next().unwrap();
-    iter.fold(first, crate::builder::and)
-}
-
-/// 从 or_terms 重建 Or 链。空→false，单项→该项，多项→左折叠。
-fn rebuild_or(or_terms: &[Expr]) -> Expr {
-    if or_terms.is_empty() {
-        return crate::builder::lit_bool(false);
-    }
-    let mut iter = or_terms.iter().cloned();
-    let first = iter.next().unwrap();
-    iter.fold(first, crate::builder::or)
 }
