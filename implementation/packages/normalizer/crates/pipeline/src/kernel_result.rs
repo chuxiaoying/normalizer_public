@@ -7,8 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(crate) const PERS_SCHEMA: &str = "normalizer.pers/1";
 
 pub(super) struct ExecutionResult {
-    pub(super) member_choices: Vec<super::member_choice::Occurrence>,
-    pub(super) pure_folds: Vec<super::pure_fold::Definition>,
+    pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
     pub(super) source_tables: BTreeMap<String, BTreeMap<String, String>>,
     pub(super) source_record_return: Option<Vec<(String, Expr)>>,
     pub(super) source_state_bindings: BTreeMap<u64, String>,

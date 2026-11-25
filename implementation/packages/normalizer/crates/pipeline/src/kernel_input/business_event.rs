@@ -69,7 +69,7 @@ pub(super) fn observations(
     let mut effects = Vec::new();
     let mut tables = result.source_tables.clone();
     let mut sql_exceptions = BTreeSet::new();
-    let mut choice_receipts = BTreeMap::new();
+    let mut temporal_receipts = BTreeMap::new();
     let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>, temporals: Option<&BTreeMap<u64, usize>>| -> Result<()> {
         let mut closed = true;
         expr.walk(&mut |node| {
@@ -121,13 +121,13 @@ pub(super) fn observations(
                     "external business result disagrees with port type",
                 )?;
                 let (response, output) = bind_receipt(event, &mut issued, &mut ctx)?;
-                if !result.member_choices.is_empty() && event.guard.as_bool() == Some(true)
+                if !result.temporal_definitions.is_empty() && event.guard.as_bool() == Some(true)
                     && spec.returns == Ty::Integer && !spec.throwing()
                 {
                     let Some(SymVarOrigin::External { binding_id, .. }) = response.as_sym_var() else {
-                        return Err(fail("missing already bound member choice receipt"));
+                        return Err(fail("missing already bound temporal receipt"));
                     };
-                    choice_receipts.insert(*binding_id, output.clone());
+                    temporal_receipts.insert(*binding_id, output.clone());
                 }
                 if spec.returns != Ty::Unit {
                     let value = spec.awaited_value(response)?;
@@ -176,16 +176,19 @@ pub(super) fn observations(
         wrapper[label] = item;
         effects.push(wrapper);
     }
-    let (temporal_names, definitions) = if result.member_choices.is_empty() {
-        (BTreeMap::new(), Vec::new())
+    let returned = result.realtime_completion.value_on_normal_exit()
+        .ok_or_else(|| fail("no normal settled return"))?;
+    let publication = if result.temporal_definitions.is_empty() {
+        super::temporal_graph::Publication::default()
     } else {
-        need(choice_receipts.len() == effects.len(),
-            "member choices with effects require unconditional nonthrowing integer receipts")?;
-        super::member_choice::publish(&result.member_choices, &arrays, &names, |id, path| {
+        need(temporal_receipts.len() == effects.len(),
+            "temporal definitions with effects require unconditional nonthrowing integer receipts")?;
+        entry.publish_temporals(result, &returned, &names, |id, path| {
             entry.acquired_state_path(result, id, path)
-                .or_else(|| if path.is_empty() { choice_receipts.get(&id).cloned() } else { None })
+                .or_else(|| if path.is_empty() { temporal_receipts.get(&id).cloned() } else { None })
         })?
     };
+    let temporal_names = &publication.aliases;
     let alternatives = result
         .realtime_completion
         .terminal_alternatives()
@@ -214,7 +217,7 @@ pub(super) fn observations(
                 }
             }
             CompletionOutcome::Return(value) => {
-                validate_ids(&value, &issued, Some(&temporal_names))?;
+                validate_ids(&value, &issued, Some(temporal_names))?;
             }
             CompletionOutcome::Continue => return Err(fail("incomplete settled return")),
         }
@@ -257,26 +260,21 @@ pub(super) fn observations(
             record
         })
         .collect();
-    let returned = result
-        .realtime_completion
-        .value_on_normal_exit()
-        .ok_or_else(|| fail("no normal settled return"))?;
-    validate_ids(&returned, &issued, Some(&temporal_names))?;
+    validate_ids(&returned, &issued, Some(temporal_names))?;
     let returned = if temporal_names.is_empty() {
         returned
     } else {
         let external_names = ctx.published_external_names();
-        super::member_choice::validate_return_choices(&returned, &result.member_choices)?;
-        let total_temporals = super::member_choice::total_choices(&result.member_choices);
+        super::temporal_graph::validate_reads(&returned, &result.temporal_definitions)?;
         let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
             external: Some(&external_names),
-            total_temporals: Some(&total_temporals), temporals: Some(&temporal_names),
+            total_temporals: Some(&publication.total), temporals: Some(temporal_names),
         }).map_err(|error| fail(error.to_string()))?;
-        super::member_choice::validate_return_choices(&normalized, &result.member_choices)?;
+        super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
         normalized
     };
-    ctx.set_temporal_names(temporal_names);
+    ctx.set_temporal_names(publication.aliases);
     ctx.protect_business_return();
     let returned = if entry.return_type() == "void" {
         need(returned.is_null(), "non-void return in void event")?;
@@ -289,6 +287,6 @@ pub(super) fn observations(
         returned,
         effects,
         throws,
-        definitions,
+        definitions: publication.rows,
     })
 }

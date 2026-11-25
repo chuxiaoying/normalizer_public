@@ -140,3 +140,32 @@ R: $t_0
 ### 只在入口条件成立时发生的选择
 
 如果 `backup == 0` 时执行第一次选择并直接返回，那么第二处选择只在 `backup != 0` 时发生。两个 T 分别记录互补的 `when`，R 用同一条件取对应的 T，不能为未发生的选择补造值。公开编号只证明引用的名字稳定；还必须证明该值在使用路径上已经取得。条件依赖另一次非确定选择时，当前入口明确拒绝而不是编造顺序或可用域。
+
+## 同一 T 依赖图中的选择与严格递推
+
+```java
+class MixedTemporal {
+    static int settle(int[] values, int backup) {
+        int picked;
+        /* @normalizer-ir picked = choose from values else backup */
+        int total;
+        /* @normalizer-ir total = reduce values from picked as (acc, item) yield acc * 2 + item */
+        return total + picked;
+    }
+}
+```
+
+**原样通过。** 递推的初值来自已取得的选择；先发布该选择，再发布依赖它的递推。选择和递推共享一次编号。调换相加的写法不改变编号或依赖；若反过来由选择使用递推结果作缺省值，则递推必须在前。没有依赖时纯递推按其结构键取稳定顺序，实际选择之间仍按发生顺序。只在部分路径取得的选择不允许直接作为无条件递推初值。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/MixedTemporal.java#MixedTemporal.settle, returns: number }
+P:
+  parameters:
+    values: { position: 0, type: 'number[]' }
+    backup: { position: 1, type: number }
+T:
+  - { id: $t_0, op: member_choice, when: 'true', members: values, empty: backup }
+  - { id: $t_1, op: fold, type: number, source: values, initial: '$t_0', accumulator: acc, element: item, body: 'acc * 2 + item' }
+R: '$t_0 + $t_1'
+```

@@ -2,8 +2,7 @@ use super::*;
 
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
-    pub(super) member_choices: Vec<super::member_choice::Occurrence>,
-    pub(super) pure_folds: Vec<super::pure_fold::Definition>,
+    pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
     pub(super) source_relations:super::business_relation::Relations,
     pub(super) source_objects: super::source_objects::SourceObjects,
     pub(super) source_array_writes: BTreeMap<String, BTreeSet<i64>>,

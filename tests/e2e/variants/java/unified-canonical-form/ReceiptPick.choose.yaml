@@ -15,7 +15,7 @@
   edits:
     - from: 'int first = checkpoints.read(code);'
       to: 'int first = code; if (code > 0) first = checkpoints.read(code);'
-  reject: ['member choices with effects require unconditional nonthrowing integer receipts']
+  reject: ['temporal definitions with effects require unconditional nonthrowing integer receipts']
 - name: receipt-and-choice-order-by-public-structural-keys
   edits:
     - from: 'return selected;'
@@ -91,3 +91,11 @@
           WHEN code == 0 THEN $t_0
           ELSE $e_1
         END
+- name: a-strict-fold-can-use-the-actually-acquired-receipt
+  edits:
+    - from: 'selected = choose from values else second'
+      to: 'selected = reduce values from second as (acc, item) yield acc * 2 + item'
+  expect:
+    - path: [T]
+      value:
+        - { id: $t_0, op: fold, type: number, source: values, initial: '$e_1', accumulator: acc, element: item, body: 'acc * 2 + item' }

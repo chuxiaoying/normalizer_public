@@ -275,22 +275,25 @@ impl EntryContext {
         Some(std::iter::once(label.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join("."))
     }
 
+    pub(super) fn publish_temporals(
+        &self, result: &ExecutionResult, returned: &Expr, names: &BTreeMap<String, String>,
+        acquired_path: impl Fn(u64, &[String]) -> Option<String>,
+    ) -> Result<super::temporal_graph::Publication> {
+        let numbers = self.parameters.iter().filter(|(_, p)| p.ty == "number").map(|(n, _)| n.clone()).collect();
+        super::temporal_graph::publish(&result.temporal_definitions, returned,
+            &self.scalar_array_symbols(), &numbers, names, acquired_path)
+    }
+
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
         let events = result.realtime_effects.events();
         let typed = project.result_type(method.return_type())?;
         let certified_composite_return = (typed == super::Ty::Vector(Box::new(super::Ty::Integer))
             && self.returns == "number[]") || (typed == super::Ty::OrderedTextMap
             && self.returns == "map<text,text>");
-        if !result.member_choices.is_empty() && (!result.pure_folds.is_empty()
-            || result.source_record_return.is_some() || result.realtime_completion.return_value().is_none())
-        {
-            return Err("member choice publication requires a closed scalar entry without throws or folds".into());
-        }
-        if !result.pure_folds.is_empty() && (!events.is_empty()
-            || result.source_record_return.is_some()
+        if !result.temporal_definitions.is_empty() && (result.source_record_return.is_some()
             || result.realtime_completion.return_value().is_none())
         {
-            return Err("pure fold publication requires a closed scalar entry with no effects or throws".into());
+            return Err("temporal publication requires a closed scalar entry without throws".into());
         }
         if events.is_empty() && result.realtime_completion.return_value().is_some() {
             return self.render_observations(None, result, method, certified_composite_return);
@@ -336,26 +339,16 @@ impl EntryContext {
             let param = self.parameters.get(root)?;
             self.types.contains_key(&param.ty).then(|| (*id, self.qualified("P", root)))
         }).collect::<BTreeMap<_, _>>();
-        let state_path = |id, path: &[String]| self.acquired_state_path(result, id, path);
-        let (definition_names, definitions) = if let Some(observed) = &observations {
-            (BTreeMap::new(), observed.definitions.clone())
-        } else if !result.member_choices.is_empty() {
-            super::member_choice::publish(&result.member_choices, &arrays, &names, state_path)?
-        } else if result.pure_folds.is_empty() {
-            (BTreeMap::new(), Vec::new())
+        let publication = if observations.is_some() || result.temporal_definitions.is_empty() {
+            super::temporal_graph::Publication::default()
         } else {
-            let numbers = self.parameters.iter().filter(|(_, p)| p.ty == "number").map(|(n, _)| n.clone()).collect();
-            super::pure_fold::publish(&result.pure_folds, &result.business_return()?, &arrays, &numbers, &names,
-                state_path)?
+            self.publish_temporals(result, &result.business_return()?, &names,
+                |id, path| self.acquired_state_path(result, id, path))?
         };
-        let total_temporals = if result.member_choices.is_empty() {
-            definition_names.keys().copied().collect()
-        } else {
-            super::member_choice::total_choices(&result.member_choices)
-        };
+        let definition_names = &publication.aliases;
         let render_value = |expression: &Expr| -> Result<String> {
-            if !result.member_choices.is_empty() {
-                super::member_choice::validate_return_choices(expression, &result.member_choices)?;
+            if !result.temporal_definitions.is_empty() {
+                super::temporal_graph::validate_reads(expression, &result.temporal_definitions)?;
             }
             let mut closed = true;
             let mut scalar_element = false;
@@ -441,15 +434,15 @@ impl EntryContext {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &identities,
                     external: (!states.is_empty()).then_some(&states),
-                    total_temporals: Some(&total_temporals), temporals: (!definition_names.is_empty()).then_some(&definition_names),
+                    total_temporals: Some(&publication.total), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
                     .map_err(|error| error.to_string())?
             } else {
                 expression.clone()
             };
-            if !result.member_choices.is_empty() {
-                super::member_choice::validate_return_choices(&expression, &result.member_choices)?;
+            if !result.temporal_definitions.is_empty() {
+                super::temporal_graph::validate_reads(&expression, &result.temporal_definitions)?;
             }
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_temporal_names(definition_names.clone());
@@ -475,6 +468,7 @@ impl EntryContext {
         } else { render_value(&result.business_return()?)? };
         let mut doc = json!({"schema": super::kernel_result::PERS_SCHEMA, "entry": {"function": self.function, "returns": self.returns},
             "P": {"parameters": self.parameters}, "R": value});
+        let definitions = observations.as_ref().map_or(&publication.rows, |o| &o.definitions);
         if !definitions.is_empty() { doc["T"] = json!(definitions); }
         if !self.types.is_empty() { doc["types"] = json!(self.types); }
         if !self.environment.is_empty() { doc["E"] = json!(self.environment); }
