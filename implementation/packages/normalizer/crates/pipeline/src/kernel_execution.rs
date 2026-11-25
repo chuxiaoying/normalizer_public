@@ -357,6 +357,10 @@ impl Engine<'_> {
                     initializer: None,
                 } => {
                     let binds = match body.get(i+1) {
+                        Some(S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding })) =>
+                            binding == name && super::source_map::declared_map(java_type),
+                        Some(S::LocalIr(normalizer_ir::local::LocalIr::LocalMapGet { binding, .. })) =>
+                            binding == name && super::source_map::declared_text(java_type),
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. })) =>
                             binding == name && (self.project.parameter_type(java_type)? == Ty::Integer
                                 || self.project.source_owner(java_type).is_some()),
@@ -370,6 +374,33 @@ impl Engine<'_> {
                         _=>false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
+                }
+                S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding }) => {
+                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
+                        Some(S::VarDecl { name, java_type, initializer: None }) if name == binding
+                            && super::source_map::declared_map(java_type)), "local map requires a fresh typed local declaration")?;
+                    env.insert(binding.clone(), Value::LocalTextMap(Default::default()));
+                }
+                S::LocalIr(normalizer_ir::local::LocalIr::LocalMapPut { binding, key, value }) => {
+                    let value = super::source_map::text_operand(value, env)?;
+                    let Some(Value::LocalTextMap(map)) = env.get_mut(binding) else {
+                        return Err(fail("local map update requires its fresh map binding"));
+                    };
+                    map.put(key.clone(), value);
+                }
+                S::LocalIr(normalizer_ir::local::LocalIr::LocalMapGet { binding, source, key, fallback }) => {
+                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
+                        Some(S::VarDecl { name, java_type, initializer: None }) if name == binding
+                            && super::source_map::declared_text(java_type)), "local map read requires an uninitialized text local")?;
+                    let method = self.methods[id];
+                    let owner = id.rsplit_once('.').and_then(|(owner, _)| self.program.find_class(owner));
+                    need(owner.is_some_and(|owner| crate::normalized::nullable_text_return(owner, method)),
+                        "local map text result must declare a nullable return")?;
+                    let fallback = super::source_map::text_operand(fallback, env)?;
+                    let Some(Value::LocalTextMap(map)) = env.get(source) else {
+                        return Err(fail("local map read requires its fresh map binding"));
+                    };
+                    env.insert(binding.clone(), Value::Term(Ty::Text, map.get_or(key, fallback)));
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, branches }) => {
                     need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
@@ -428,6 +459,7 @@ impl Engine<'_> {
                 S::Assign {target: J::Ident(name), value} => {
                     if let Some(local) = env.get(name) {
                         let ty = local.ty();
+                        need(ty != Ty::LocalTextMap, "local map binding cannot be reassigned as a Java alias")?;
                         let value = self.java_expr(value,id,env,path)?;
                         need(value.ty() == ty,"local assignment type mismatch")?;
                         env.insert(name.clone(),value);

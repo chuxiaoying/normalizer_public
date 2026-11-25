@@ -157,6 +157,14 @@ pub(crate) fn nullable_text_field(
     matches!(field.java_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
         && source_nullable_field(class, field)
 }
+pub(crate) fn nullable_text_return(class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod) -> bool {
+    let [annotation] = method.annotations() else { return false; };
+    matches!(method.return_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
+        && annotation.args().is_empty()
+        && (annotation.name() == "normalizer.annotations.Nullable"
+            || (annotation.name() == "Nullable" && class.imports().iter().any(|name| name == "normalizer.annotations.Nullable")))
+}
+
 pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> bool {
     class.imports().iter().all(|name| {
         matches!(
@@ -367,7 +375,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
                 return Err(error("NORM-OVERLOAD", &id));
             }
             if m.is_varargs()
-                || !m.annotations().is_empty()
+                || (!m.annotations().is_empty() && !nullable_text_return(c, m))
                 || !m.type_params().is_empty()
                 || (!m.is_constructor() && !supported(m.return_type()))
                 || m.params().iter().any(|(t, _)| !supported(t))
@@ -501,7 +509,10 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
                 for handler in catches { statements(handler.body(), at, calls)?; }
                 if let Some(finally) = finally_block { statements(finally, at, calls)?; }
             }
-            S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { .. } | normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
+            S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { .. }
+                | normalizer_ir::local::LocalIr::LocalMapPut { .. }
+                | normalizer_ir::local::LocalIr::LocalMapGet { .. }
+                | normalizer_ir::local::LocalIr::ProjectedUnionCount { .. } | normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
             S::LocalIr(normalizer_ir::local::LocalIr::Unsupported(_)) => {
                 return Err(error("NORM-UNSUPPORTED-LOCAL-IR", at));
             }

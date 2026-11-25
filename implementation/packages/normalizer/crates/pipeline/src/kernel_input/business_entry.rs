@@ -132,7 +132,11 @@ impl Loaded {
             external_results,
             function: format!("{}#{entry}", path.display()),
             types,
-            returns: source_type(method.return_type())?.into(),
+            returns: {
+                let mut domain = source_type(method.return_type())?;
+                if crate::normalized::nullable_text_return(class, method) { domain.push('?'); }
+                domain
+            },
             parameters: method.params().iter().enumerate().map(|(position, (ty, name))| {
                 let mut domain = source_type(ty)?.to_owned();
                 for annotation in method.param_annotations(name) {

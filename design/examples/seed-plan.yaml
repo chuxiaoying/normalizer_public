@@ -141,7 +141,7 @@ topics:
         focus: 从集合中独立选择完整记录
       - id: java-map-present-null
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 映射中的缺失键和显式空值
       - id: typescript-tuple-slots

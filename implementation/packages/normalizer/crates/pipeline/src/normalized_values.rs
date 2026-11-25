@@ -14,6 +14,7 @@ impl Ty {
             Self::I64 => "i64".into(),
             Self::Text => "text?".into(),
             Self::OrderedTextMap => "map<text,text>".into(),
+            Self::LocalTextMap => "local nonescaping text map".into(),
             Self::Ref => "ref?".into(),
             Self::Vector(t) => format!("vector<{}>", t.describe()),
             Self::Record(f) => format!(

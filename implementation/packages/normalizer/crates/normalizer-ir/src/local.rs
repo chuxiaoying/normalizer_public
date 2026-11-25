@@ -7,6 +7,9 @@ pub mod decimal;
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalIr {
     SqlWrite(SqlWrite),
+    LocalMapEmpty { binding: String },
+    LocalMapPut { binding: String, key: String, value: MapText },
+    LocalMapGet { binding: String, source: String, key: String, fallback: MapText },
     ProjectedUnionCount { binding: String, branches: Vec<(String, String)> },
     MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
     CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
@@ -42,6 +45,13 @@ pub enum SqlOperation {
 pub enum MemberChoiceFallback {
     Local(String),
     Integer(num_bigint::BigInt),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum MapText {
+    Null,
+    Literal(String),
+    Local(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -151,6 +161,45 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         let mut exact = Tokens { source: tokens.source };
         if let Some(assignment) = decimal::parse(&binding, &mut exact)? {
             return Ok(LocalIr::Decimal(assignment));
+        }
+    }
+    let mut map = Tokens { source: tokens.source };
+    if map.take("value") && map.take(".") {
+        let key = |t: &mut Tokens<'_>| match t.value()? {
+            ScalarOperand::Text(text) => Ok(text),
+            _ => Err("local map key must be a text literal".to_owned()),
+        };
+        let value = |t: &mut Tokens<'_>| match t.value()? {
+            ScalarOperand::Local(name) if name == "null" => Ok(MapText::Null),
+            ScalarOperand::Local(name) => Ok(MapText::Local(name)),
+            ScalarOperand::Text(text) => Ok(MapText::Literal(text)),
+            _ => Err("local map requires a nullable text value".to_owned()),
+        };
+        let mut operation = None;
+        if map.take("map_empty") {
+            map.expect("(")?; map.expect("text")?; map.expect(",")?;
+            map.expect("text")?; map.expect("?")?;
+            operation = Some(LocalIr::LocalMapEmpty { binding: binding.clone() });
+        } else if map.take("map_put") {
+            map.expect("(")?;
+            let target = map.name()?;
+            if target != binding { return Err("local map update cannot alias to another binding".into()); }
+            map.expect(",")?;
+            let key = key(&mut map)?;
+            map.expect(",")?;
+            operation = Some(LocalIr::LocalMapPut { binding: binding.clone(), key, value: value(&mut map)? });
+        } else if map.take("map_get_or") {
+            map.expect("(")?;
+            let source = map.name()?;
+            map.expect(",")?;
+            let key = key(&mut map)?;
+            map.expect(",")?;
+            operation = Some(LocalIr::LocalMapGet { binding: binding.clone(), source, key, fallback: value(&mut map)? });
+        }
+        if let Some(operation) = operation {
+            map.expect(")")?;
+            if accumulate || !map.rest().is_empty() { return Err("local map requires a closed = definition".into()); }
+            return Ok(operation);
         }
     }
     let mut union = Tokens { source: tokens.source };

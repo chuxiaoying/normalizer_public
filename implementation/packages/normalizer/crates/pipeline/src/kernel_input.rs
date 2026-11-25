@@ -64,6 +64,7 @@ pub(crate) enum Ty {
     Record(BTreeMap<String, Ty>),
     Vector(Box<Ty>),
     OrderedTextMap,
+    LocalTextMap,
 }
 impl Ty {
     pub(crate) fn parse(s: &str) -> Result<Self> {
@@ -132,6 +133,7 @@ enum Value {
     Term(Ty, Expr),
     Rows(Box<business_relation::Rows>),
     LocalIntArray(source_arrays::LocalIntArray),
+    LocalTextMap(source_map::LocalTextMap),
     EagerIntProjection { base: RelationExpr, selected: Expr },
     Sequence {
         item: Ty,
@@ -145,6 +147,7 @@ impl Value {
         match self {
             Self::Term(t, _) => t.clone(),
             Self::Rows(rows)=>rows.ty(),
+            Self::LocalTextMap(_) => Ty::LocalTextMap,
             Self::LocalIntArray(_) | Self::EagerIntProjection { .. } => Ty::Seq(Box::new(Ty::Integer)),
             Self::Sequence { item, .. } => Ty::Seq(Box::new(item.clone())),
         }
@@ -616,7 +619,7 @@ impl Loaded {
                 )?;
                 need(
                     !m.is_varargs()
-                        && m.annotations().is_empty()
+                        && (m.annotations().is_empty() || self.project.direct_source && crate::normalized::nullable_text_return(c, m))
                         && m.type_params().is_empty(),
                     "unsupported method shape",
                 )?;
@@ -761,6 +764,7 @@ pub(crate) mod port_completion;
 mod business_sql;
 mod source_objects;
 mod source_arrays;
+mod source_map;
 mod source_decimal;
 pub mod standalone_closure;
 mod source_ports;
@@ -937,6 +941,11 @@ fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
             no.ty().describe()
         ),
     )?;
+    let (yes, no) = match (yes, no) {
+        (Value::LocalTextMap(yes), Value::LocalTextMap(no)) =>
+            return Ok(Value::LocalTextMap(yes.join(c, no))),
+        other => other,
+    };
     let ty = yes.ty();
     if ty == Ty::Integer {
         if let Some(extremum) = math::case_orientation::ordered_number_selection(

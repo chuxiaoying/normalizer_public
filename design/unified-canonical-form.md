@@ -94,6 +94,8 @@ case_key = (domain_policy, guard_key, then_value_key, else_value_key)
 
 `guard_key` 先使用当前 `SortContext` 统一比较两端，再使用语义域公布的关系顺序；`then_value_key` 与 `else_value_key` 只在 guard 平局时打破平局。语义域策略可以不同，但每个策略必须显式发布、可证明、幂等，并对所有语言入口相同。现有 typed Vector 长度合同的“空长度代表先行”策略继续有效；它不能被普通整数计数合同的策略悄悄覆盖。
 
+完整二分值 CASE 的语义域优先级依次是已认证的数值指示器／正域计数、`ELSE null`、普通结构键。某一结果为 null 时，只能通过取反并同时交换两臂将 null 放在 ELSE，不能把存在的 null 当作缺失或空域。
+
 实现收口在 `math::case_orientation`。普通完整二分 CASE 通过共享候选入口取向；宿主为 nullable 观察建立的 `CASE WHEN subject != null THEN value ELSE false END` 保护形态，通过同一模块的 nullable false-default 入口改成 `CASE WHEN subject == null THEN false ELSE value END`。pipeline、fold 和观察域只能调用这些共享入口，不能各自按 expected、入口名称或局部表达式形状重写 CASE。该 nullable 入口允许非 null 臂保留嵌套 normal-return CASE，并把外层 CASE 作为惰性保护边界。
 
 同一完整 CASE 的输入顺序不应影响候选集合，因此必须满足：
@@ -204,6 +206,8 @@ f(a, CASE WHEN C THEN x ELSE y END, b)
 [先完整投影后取首项](examples/series-2/java-eager-first.md)的 FIRST 只表达正常完成时的值。先扫描整个非空记录数组，后行的空工单仍能使投影失败；取索引的越界条件在投影成功之后。仅当确证同一输入为空时，才移除对过滤子集再次判空的守卫，不从同名别名猜测相同关系。
 
 [跨表投影去重](examples/series-2/sql-projected-distinct.md)先用已声明的非空标量列构造每条投影，再对同类无序集合做并集。交换或重复分支不改变可能值；同一分支重复时仍按投影值而非整行去重。改变投影列则是另一种业务结果。
+
+[显式空值覆盖缺省](examples/series-2/java-map-present-null.md)将键的存在性和可空载荷作为不同事实归一化：只有缺键才取 fallback；已存在的 null 不是缺键。不能用 COALESCE 或普通非空测试替换此规则。
 
 FIRST 的选中值若为 CASE，且同一行绑定的过滤域已蕴含某个显式分支的首匹配有效域，可用该分支的原行值或纯字面量替换选中 CASE。首批证明限 Base 与连续 Select、行值的 null 比较和总 Boolean 组合；未知调用、其他行绑定、技术观察根及未取得 E 不参与。原关系和空集默认值保留，后续既有规则可继续归约；部分 CASE 不补 ELSE，不跨投影绑定取用外层同名行，也不增加求值或改变身份。
 
