@@ -108,13 +108,7 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
     let (s, n) = if let Some(n) = z.as_lit().and_then(Lit::as_integer) {
         (a, n)
     } else if let Some(n) = a.as_lit().and_then(Lit::as_integer) {
-        op = match op {
-            B::Lt => B::Gt,
-            B::Le => B::Ge,
-            B::Gt => B::Lt,
-            B::Ge => B::Le,
-            other => other,
-        };
+        op = op.swapped_comparison()?;
         (z, n)
     } else {
         return None;

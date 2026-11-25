@@ -79,6 +79,21 @@ pub enum BinOpKind {
     Or,
 }
 
+impl BinOpKind {
+    /// Equivalent comparison after exchanging the already evaluated operands.
+    /// This does not negate the predicate or apply to arithmetic or logic.
+    pub(crate) fn swapped_comparison(self) -> Option<Self> {
+        Some(match self {
+            Self::Lt => Self::Gt,
+            Self::Le => Self::Ge,
+            Self::Gt => Self::Lt,
+            Self::Ge => Self::Le,
+            Self::Eq | Self::Ne => self,
+            _ => return None,
+        })
+    }
+}
+
 /// 一元运算符。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnaryOpKind {

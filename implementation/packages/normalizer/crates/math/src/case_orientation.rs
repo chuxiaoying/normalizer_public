@@ -59,13 +59,7 @@ pub fn selection_comparison(condition: &Expr, yes: &Expr, no: &Expr) -> Option<B
     if yes != right || no != left {
         return None;
     }
-    Some(match op {
-        Lt => Gt,
-        Le => Ge,
-        Gt => Lt,
-        Ge => Le,
-        _ => unreachable!(),
-    })
+    op.swapped_comparison()
 }
 
 /// For two values certified by the caller to have a total numeric order,

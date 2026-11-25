@@ -272,11 +272,14 @@ fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
     let ExprKind::BinOp { op, left, right } = expr.kind() else {
         return None;
     };
-    if !is_comparison(*op) {
+    let swapped = op.swapped_comparison()?;
+    let (cmp_op, lhs) = if is_lit_int_zero(right) {
+        (*op, left)
+    } else if is_lit_int_zero(left) {
+        (swapped, right)
+    } else {
         return None;
-    }
-
-    let (cmp_op, lhs, rhs) = normalize_zero_direction(*op, left, right)?;
+    };
     let ExprKind::BinOp {
         op: BinOpKind::Sub,
         left: x,
@@ -286,62 +289,11 @@ fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
         return None;
     };
 
-    if !is_lit_int_zero(&rhs) {
-        return None;
-    }
-
     Some(binop(cmp_op, x.clone(), y.clone()))
-}
-
-/// 规范化零值方向。
-///
-/// - `(x - y) < 0` 保持为 `((x - y), 0, Lt)`
-/// - `0 < (x - y)` 翻转为 `((x - y), 0, Gt)`
-///
-/// Eq/Ne 是对称比较，翻转后运算符不变。
-fn normalize_zero_direction(
-    op: BinOpKind,
-    left: &Expr,
-    right: &Expr,
-) -> Option<(BinOpKind, Expr, Expr)> {
-    if is_lit_int_zero(right) {
-        Some((op, left.clone(), right.clone()))
-    } else if is_lit_int_zero(left) {
-        Some((flip_comparison(op), right.clone(), left.clone()))
-    } else {
-        None
-    }
 }
 
 fn is_lit_int_zero(expr: &Expr) -> bool {
     matches!(expr.kind(), ExprKind::Lit(Lit::Int(0)))
-}
-
-fn is_comparison(op: BinOpKind) -> bool {
-    matches!(
-        op,
-        BinOpKind::Eq
-            | BinOpKind::Ne
-            | BinOpKind::Lt
-            | BinOpKind::Le
-            | BinOpKind::Gt
-            | BinOpKind::Ge
-    )
-}
-
-fn flip_comparison(op: BinOpKind) -> BinOpKind {
-    match op {
-        BinOpKind::Lt => BinOpKind::Gt,
-        BinOpKind::Gt => BinOpKind::Lt,
-        BinOpKind::Le => BinOpKind::Ge,
-        BinOpKind::Ge => BinOpKind::Le,
-        BinOpKind::Eq => BinOpKind::Eq,
-        BinOpKind::Ne => BinOpKind::Ne,
-        _ => panic!(
-            "[ARITHMETIC] flip_comparison called with non-comparison op: {:?}",
-            op
-        ),
-    }
 }
 
 fn binop(op: BinOpKind, left: Expr, right: Expr) -> Expr {

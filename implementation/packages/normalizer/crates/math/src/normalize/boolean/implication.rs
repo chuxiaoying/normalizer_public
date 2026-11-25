@@ -198,12 +198,7 @@ pub(super) fn relation_count_positive_lower_bound(
     let (query, n) = if let Some(crate::Lit::Int(n)) = right.as_lit() {
         (left, *n)
     } else if let Some(crate::Lit::Int(n)) = left.as_lit() {
-        op = match op {
-            BinOpKind::Lt => BinOpKind::Gt,
-            BinOpKind::Le => BinOpKind::Ge,
-            BinOpKind::Eq => BinOpKind::Eq,
-            _ => return None,
-        };
+        op = op.swapped_comparison()?;
         (right, *n)
     } else {
         return None;

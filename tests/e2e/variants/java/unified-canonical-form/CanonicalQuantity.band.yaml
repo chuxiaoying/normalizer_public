@@ -6,6 +6,11 @@
         if (quantity < 3) return 20;
                 if (quantity <= 5) return 20;
       to: 'if (quantity >= 0 && quantity <= 5) return 20;'
+- name: literal-first-comparisons-keep-the-same-effective-partition
+  edits:
+    - { from: 'quantity < 0', to: '0 > quantity' }
+    - { from: 'quantity < 3', to: '3 > quantity' }
+    - { from: 'quantity <= 5', to: '5 >= quantity' }
 - name: overlapping-priority-is-observable
   edits:
     - from: |-

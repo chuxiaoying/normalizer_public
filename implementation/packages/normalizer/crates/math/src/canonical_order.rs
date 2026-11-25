@@ -61,7 +61,7 @@ pub fn canonical_order_ordered_comparison(
         }
         BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge => {
             if canonical_order_orient_ordered_predicate_to_rhs(op, left, right, ctx) {
-                Some((flip_ordered_op(op), true))
+                Some((op.swapped_comparison()?, true))
             } else {
                 None
             }
@@ -570,7 +570,7 @@ pub fn ordered_comparison_view(
     let rs = canonical_order_subject_strength(right, ctx);
     let swap =
         rs > ls || (rs == ls && canonical_order_key(right, ctx) < canonical_order_key(left, ctx));
-    Some((if swap { flip_ordered_op(op) } else { op }, swap))
+    Some((if swap { op.swapped_comparison()? } else { op }, swap))
 }
 
 pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> Expr {
@@ -607,16 +607,6 @@ fn canonical_order_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn S
     }
 
     canonical_order_key(right, ctx) < canonical_order_key(left, ctx)
-}
-
-fn flip_ordered_op(op: BinOpKind) -> BinOpKind {
-    match op {
-        BinOpKind::Lt => BinOpKind::Gt,
-        BinOpKind::Le => BinOpKind::Ge,
-        BinOpKind::Gt => BinOpKind::Lt,
-        BinOpKind::Ge => BinOpKind::Le,
-        _ => op,
-    }
 }
 
 fn canonical_order_subject_strength(expr: &Expr, ctx: &dyn SortContext) -> u8 {

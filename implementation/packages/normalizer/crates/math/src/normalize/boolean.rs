@@ -1696,105 +1696,25 @@ struct Interval {
 }
 
 fn ordered_comparison_interval(expr: &Expr) -> Option<(Expr, Interval)> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+    let (op, left, right) = expr.as_binop()?;
+    let (op, subject, value) = if let Some(Lit::Int(n)) = right.as_lit() {
+        (op, left, *n)
+    } else if let Some(Lit::Int(n)) = left.as_lit() {
+        (op.swapped_comparison()?, right, *n)
+    } else {
         return None;
     };
-
-    if let Some(Lit::Int(rhs)) = right.as_lit() {
-        let interval = match op {
-            BinOpKind::Lt => Interval {
-                lower: None,
-                upper: Some(Bound {
-                    value: *rhs,
-                    inclusive: false,
-                }),
-            },
-            BinOpKind::Le => Interval {
-                lower: None,
-                upper: Some(Bound {
-                    value: *rhs,
-                    inclusive: true,
-                }),
-            },
-            BinOpKind::Gt => Interval {
-                lower: Some(Bound {
-                    value: *rhs,
-                    inclusive: false,
-                }),
-                upper: None,
-            },
-            BinOpKind::Ge => Interval {
-                lower: Some(Bound {
-                    value: *rhs,
-                    inclusive: true,
-                }),
-                upper: None,
-            },
-            BinOpKind::Eq => Interval {
-                lower: Some(Bound {
-                    value: *rhs,
-                    inclusive: true,
-                }),
-                upper: Some(Bound {
-                    value: *rhs,
-                    inclusive: true,
-                }),
-            },
-            _ => return None,
-        };
-        return Some((left.clone(), interval));
-    }
-
-    if let Some(Lit::Int(lhs)) = left.as_lit() {
-        let interval = match op {
-            // c < x  === x > c
-            BinOpKind::Lt => Interval {
-                lower: Some(Bound {
-                    value: *lhs,
-                    inclusive: false,
-                }),
-                upper: None,
-            },
-            // c <= x === x >= c
-            BinOpKind::Le => Interval {
-                lower: Some(Bound {
-                    value: *lhs,
-                    inclusive: true,
-                }),
-                upper: None,
-            },
-            // c > x  === x < c
-            BinOpKind::Gt => Interval {
-                lower: None,
-                upper: Some(Bound {
-                    value: *lhs,
-                    inclusive: false,
-                }),
-            },
-            // c >= x === x <= c
-            BinOpKind::Ge => Interval {
-                lower: None,
-                upper: Some(Bound {
-                    value: *lhs,
-                    inclusive: true,
-                }),
-            },
-            BinOpKind::Eq => Interval {
-                lower: Some(Bound {
-                    value: *lhs,
-                    inclusive: true,
-                }),
-                upper: Some(Bound {
-                    value: *lhs,
-                    inclusive: true,
-                }),
-            },
-            _ => return None,
-        };
-        return Some((right.clone(), interval));
-    }
-
-    None
+    let bound = |inclusive| Some(Bound { value, inclusive });
+    use BinOpKind::*;
+    let (lower, upper) = match op {
+        Lt => (None, bound(false)),
+        Le => (None, bound(true)),
+        Gt => (bound(false), None),
+        Ge => (bound(true), None),
+        Eq => (bound(true), bound(true)),
+        _ => return None,
+    };
+    Some((subject.clone(), Interval { lower, upper }))
 }
 
 fn intervals_are_disjoint(a: Interval, b: Interval) -> bool {

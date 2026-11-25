@@ -52,15 +52,7 @@ fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     let query = if right.as_lit() == Some(&crate::Lit::Int(0)) {
         left
     } else if left.as_lit() == Some(&crate::Lit::Int(0)) {
-        op = match op {
-            Lt => Gt,
-            Le => Ge,
-            Gt => Lt,
-            Ge => Le,
-            Eq => Eq,
-            Ne => Ne,
-            _ => return None,
-        };
+        op = op.swapped_comparison()?;
         right
     } else {
         return None;

@@ -52,67 +52,24 @@ pub(crate) struct LinearConstraint {
 ///
 /// 返回 None 如果表达式不是上述形式。
 pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-
-    match op {
-        BinOpKind::Lt
-        | BinOpKind::Gt
-        | BinOpKind::Le
-        | BinOpKind::Ge
-        | BinOpKind::Eq
-        | BinOpKind::Ne => {}
+    let (op, left, right) = expr.as_binop()?;
+    let (op, subject, value) = match (left.as_lit(), right.as_lit()) {
+        (None, Some(Lit::Int(n))) => (op, left, *n),
+        (Some(Lit::Int(n)), None) => (op.swapped_comparison()?, right, *n),
+        // Both literals are folded separately.
         _ => return None,
-    }
-
-    // Case 1: subject op literal
-    if let ExprKind::Lit(Lit::Int(c)) = right.kind() {
-        if matches!(left.kind(), ExprKind::Lit(_)) {
-            return None; // both literals → constant fold elsewhere
-        }
-        let bound = match op {
-            BinOpKind::Lt => ConstraintBound::Lt(*c),
-            BinOpKind::Gt => ConstraintBound::Gt(*c),
-            BinOpKind::Le => ConstraintBound::Le(*c),
-            BinOpKind::Ge => ConstraintBound::Ge(*c),
-            BinOpKind::Eq => ConstraintBound::Eq(*c),
-            BinOpKind::Ne => ConstraintBound::Ne(*c),
-            _ => return None,
-        };
-        return Some(LinearConstraint {
-            subject: left.clone(),
-            bound,
-        });
-    }
-
-    // Case 2: literal op subject → flip
-    if let ExprKind::Lit(Lit::Int(c)) = left.kind() {
-        if matches!(right.kind(), ExprKind::Lit(_)) {
-            return None;
-        }
-        let bound = match op {
-            // c < subject  →  subject > c
-            BinOpKind::Lt => ConstraintBound::Gt(*c),
-            // c > subject  →  subject < c
-            BinOpKind::Gt => ConstraintBound::Lt(*c),
-            // c <= subject →  subject >= c
-            BinOpKind::Le => ConstraintBound::Ge(*c),
-            // c >= subject →  subject <= c
-            BinOpKind::Ge => ConstraintBound::Le(*c),
-            // c == subject →  subject == c
-            BinOpKind::Eq => ConstraintBound::Eq(*c),
-            // c != subject →  subject != c
-            BinOpKind::Ne => ConstraintBound::Ne(*c),
-            _ => return None,
-        };
-        return Some(LinearConstraint {
-            subject: right.clone(),
-            bound,
-        });
-    }
-
-    None
+    };
+    use BinOpKind::*;
+    let bound = match op {
+        Lt => ConstraintBound::Lt(value),
+        Gt => ConstraintBound::Gt(value),
+        Le => ConstraintBound::Le(value),
+        Ge => ConstraintBound::Ge(value),
+        Eq => ConstraintBound::Eq(value),
+        Ne => ConstraintBound::Ne(value),
+        _ => return None,
+    };
+    Some(LinearConstraint { subject: subject.clone(), bound })
 }
 
 /// 检查两个同 subject 约束是否矛盾（域交集为空）。

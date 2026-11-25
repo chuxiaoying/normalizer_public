@@ -75,7 +75,7 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
     let (op, subject, point) = if vector_length_input(left).is_some() {
         (op, left, right)
     } else if vector_length_input(right).is_some() {
-        (match op { Lt => Gt, Le => Ge, Gt => Lt, Ge => Le, _ => op }, right, left)
+        (op.swapped_comparison()?, right, left)
     } else {
         return None;
     };
