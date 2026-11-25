@@ -21,3 +21,40 @@
           WHEN quantity <= 5 THEN 20
           ELSE 30
         END
+- name: partition-endpoint-beyond-signed-word
+  edits:
+    - from: 'band(int quantity)'
+      to: 'band(long quantity)'
+    - from: |-
+        if (quantity < 0) return 10;
+                if (quantity < 3) return 20;
+                if (quantity <= 5) return 20;
+      to: |-
+        if (quantity <= 9223372036854775807L) return 10;
+                if (quantity <= 9223372036854775807L + 1) return 20;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN quantity <= 9223372036854775807 THEN 10
+          WHEN quantity == 9223372036854775808 THEN 20
+          ELSE 30
+        END
+- name: nonadjacent-singletons-remain-disjoint
+  edits:
+    - from: |-
+        if (quantity < 0) return 10;
+                if (quantity < 3) return 20;
+                if (quantity <= 5) return 20;
+      to: |-
+        if (quantity == -2) return 10;
+                if (quantity == 0) return 20;
+                if (quantity == 2) return 10;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN quantity == -2 OR quantity == 2 THEN 10
+          WHEN quantity == 0 THEN 20
+          ELSE 30
+        END
