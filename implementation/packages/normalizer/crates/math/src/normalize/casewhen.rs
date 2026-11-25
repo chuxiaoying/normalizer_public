@@ -11,24 +11,30 @@ use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 use std::collections::HashSet;
 
 pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
-    if expr.as_case_when().is_none() {
-        return simplify_impl(expr, ctx);
-    }
+    let Some(branches) = expr.as_case_when() else {
+        return expr.clone();
+    };
     if let Some(value) = select_first_default(expr) {
         return value;
     }
-    let start = std::time::Instant::now();
-    let (branch_count, flatten_size, flatten_depth, nested_values) = casewhen_cost_estimate(expr);
-    let output = simplify_impl(expr, ctx);
+    let start = (branches.len() > 1 && crate::profile::enabled()).then(std::time::Instant::now);
+    let (flatten_size, flatten_depth) = branches.iter().fold(
+        (0usize, 0usize), |(size, depth), (condition, value)| {
+            (size.saturating_add(condition.size()).saturating_add(value.size()),
+             depth.max(value.depth()))
+        },
+    );
     let gate_skipped = flatten_size > 32_768 || flatten_depth > 16;
-    let skip_reason = if gate_skipped {
-        Some("flatten_cost_gate")
-    } else if output == *expr {
-        Some("no_rewrite")
-    } else {
-        None
-    };
-    if branch_count > 1 {
+    let output = simplify_impl(expr, ctx, gate_skipped);
+    if let Some(start) = start {
+        let skip_reason = if gate_skipped {
+            Some("flatten_cost_gate")
+        } else if output == *expr {
+            Some("no_rewrite")
+        } else {
+            None
+        };
+        let nested_values = branches.iter().filter(|(_, value)| value.as_case_when().is_some()).count();
         crate::profile::rule_event(
             "math.casewhen.group",
             expr.size(),
@@ -36,7 +42,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
             start.elapsed().as_micros(),
             skip_reason,
             &[
-                ("branch_count", branch_count.to_string()),
+                ("branch_count", branches.len().to_string()),
                 ("flatten_size", flatten_size.to_string()),
                 ("flatten_depth", flatten_depth.to_string()),
                 ("nested_values", nested_values.to_string()),
@@ -47,27 +53,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
     output
 }
 
-fn casewhen_cost_estimate(expr: &Expr) -> (usize, usize, usize, usize) {
-    let Some(branches) = expr.as_case_when() else {
-        return (0, 0, 0, 0);
-    };
-    let flatten_size = branches.iter().fold(0usize, |size, (cond, value)| {
-        size.saturating_add(cond.size())
-            .saturating_add(value.size())
-    });
-    let flatten_depth = branches
-        .iter()
-        .map(|(_, value)| value.depth())
-        .max()
-        .unwrap_or(0);
-    let nested_values = branches
-        .iter()
-        .filter(|(_, value)| value.as_case_when().is_some())
-        .count();
-    (branches.len(), flatten_size, flatten_depth, nested_values)
-}
-
-fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
+fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_skipped: bool) -> Expr {
     if let ExprKind::CaseWhen { branches } = expr.kind() {
         if let Some(value) = redundant_integer_point_arm(branches) {
             return value;
@@ -94,14 +80,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
         // arm. Keep the nested form once the complete branch tree is large;
         // this preserves first-match semantics and avoids exponential rebuilds
         // during fold substitution. Small trees retain the canonical flat form.
-        let flatten_size = branches.iter().try_fold(0usize, |size, (cond, value)| {
-            size.checked_add(cond.size())?.checked_add(value.size())
-        });
-        let flatten_depth = branches
-            .iter()
-            .map(|(_, value)| value.depth())
-            .max()
-            .unwrap_or(0);
         // The cost gate must cover the proof-heavy CaseWhen rules below as
         // well as nested-value flattening.  A large branch payload can make
         // first-match domain construction and coverage proofs repeatedly
@@ -109,7 +87,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
         // Keeping the immutable CaseWhen is semantics-preserving and lets
         // the caller's resource budget remain available for the surrounding
         // expression.  Small cases retain the full canonicalization rules.
-        if flatten_size.is_none_or(|size| size > 32_768) || flatten_depth > 16 {
+        if gate_skipped {
             return expr.clone();
         }
         let (flattened_branches, flatten_changed) = flatten_nested_value_branches(branches);
