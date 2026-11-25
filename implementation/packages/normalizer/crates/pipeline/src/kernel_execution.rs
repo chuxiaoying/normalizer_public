@@ -72,6 +72,15 @@ impl Engine<'_> {
             );
         }
         match n {
+            Node::OrderedTextMap { entries } => {
+                let acquired = entries.iter().map(|entry| {
+                    let value = env.get(&entry.input).ok_or_else(|| fail("unbound readonly Map entry"))?;
+                    need(value.ty() == Ty::Text, "readonly Map entry requires an acquired nullable text parameter")?;
+                    Ok((entry.key.clone(), value.scalar()?))
+                }).collect::<Result<Vec<_>>>()?;
+                let map = math::domains::composite::lifted_ordered_text_map(&acquired).map_err(fail)?;
+                Ok(Value::Term(Ty::OrderedTextMap, map))
+            }
             Node::NumberVector { items } => {
                 let mut values = Vec::with_capacity(items.len());
                 for item in items {

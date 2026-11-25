@@ -80,3 +80,48 @@ P:
     fixed: { position: 3, type: number }
 R: CASE WHEN enabled THEN [left, fixed] ELSE [right, fixed] END
 ```
+
+## 有序只读 Map：可空输入只在非空时插入
+
+三个输入都已取得，允许 null。返回值是有序的只读内容，不暴露 JavaScript Map 的可变身份。
+
+```javascript
+/**
+ * @param {string|null} a
+ * @param {string|null} b
+ * @param {string|null} c
+ * @returns {ReadonlyMap<string, string>}
+ */
+export function labels(a, b, c) {
+  return new Map([
+    ...(a === null ? [] : [['a', a]]),
+    ...(b === null ? [] : [['b', b]]),
+    ...(c === null ? [] : [['c', c]]),
+  ]);
+}
+```
+
+**原样通过。** 按 a、b、c 决定插入哪些键。省略键不等于把 null 插入 Map。每个结果保留真实的插入顺序，不能对键应用标量交换律；例如文本键 "10" 先于 "2" 插入时，不能按普通 JavaScript 对象的整数键规则重排，空文本也不等同于 null。最后一次可能插入的条件最外层，依次为 c、b、a。以下是八个完整结果域。输出采用首匹配 CASE：例如第二臂到达时已经排除三项全空，因而只检查 b、c 为空就必然证明 a 非空。同理，第四臂到达时，前三臂在 c 为空的域已经排除了 a 或 b 为空，只剩两项均在。后四臂由前三臂和第四臂已排除的 c 为空域取得 c 非空，不重复该条件。每个条件内可交换的合取按共享结构键排序。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/ordered-map.js#labels, returns: 'map<text,text>' }
+P:
+  parameters:
+    a: { position: 0, type: 'text?' }
+    b: { position: 1, type: 'text?' }
+    c: { position: 2, type: 'text?' }
+R: |-
+  CASE
+    WHEN a == null AND b == null AND c == null THEN MAP([])
+    WHEN b == null AND c == null THEN MAP([["a", a]])
+    WHEN a == null AND c == null THEN MAP([["b", b]])
+    WHEN c == null THEN MAP([["a", a], ["b", b]])
+    WHEN a == null AND b == null THEN MAP([["c", c]])
+    WHEN b == null THEN MAP([["a", a], ["c", c]])
+    WHEN a == null THEN MAP([["b", b], ["c", c]])
+    ELSE MAP([["a", a], ["b", b], ["c", c]])
+  END
+```
+
+本切片只接受当前入口中可认证的原生 Map 构造器、不同的字面量文本键、已取得可空文本和明确的 null 保护。不把同名实现、重复键覆盖、回调、可变引用或隐式转型解释为纯有序构造。超出展开预算时明确不产生 PERS。

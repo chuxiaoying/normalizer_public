@@ -58,6 +58,8 @@ P/E 叶子右侧使用统一内核的业务类型名，不使用 Java、TypeScri
 
 例如，TypeScript 的 `number` 需要由 AI 预处理根据业务合同收束为 `number` 或 `money`，日期语义收束为 `date`。欠费单里的账户编号使用 `number`，金额使用 `money`，状态标志使用 `bool`。这个选择属于进入统一 IR 前的类型确定，不能让 PERS 暴露 Java 的 `int`、TypeScript 的实现宽度或 SQL 的具体数值类型。
 
+有序只读文本 Map 的出口声明为 `map<text,text>`，表达式表示为 `MAP([["key", value], ...])`；空 Map 为 `MAP([])`。每个键只出现一次，列出的顺序就是值的迭代顺序。一个没插入的键不占槽位，不能把它改成 null 值或按键名重排。当前[正式示例](../../design/examples/topics/language-entries/javascript-module.md#有序只读-map可空输入只在非空时插入)仅认证已取得的可空文本条件构造，不宣布通用 Map 输入或可变 Map 语义。
+
 参数同时需要来源位置和内核类型时使用对象描述：
 
 ~~~yaml

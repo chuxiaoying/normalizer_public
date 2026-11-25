@@ -63,6 +63,7 @@ pub(crate) enum Ty {
     Seq(Box<Ty>),
     Record(BTreeMap<String, Ty>),
     Vector(Box<Ty>),
+    OrderedTextMap,
 }
 impl Ty {
     pub(crate) fn parse(s: &str) -> Result<Self> {
@@ -92,6 +93,7 @@ impl Ty {
             "i64" => Self::I64,
             "ref?" => Self::Ref,
             "text?" => Self::Text,
+            "map<text,text>" => Self::OrderedTextMap,
             "list<i32>?" => Self::Seq(Box::new(Self::I32)),
             "list<i64>?" => Self::Seq(Box::new(Self::I64)),
             "list<ref?>?" => Self::Seq(Box::new(Self::Ref)),
@@ -211,10 +213,19 @@ struct Origin {
     excerpt: String,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct OrderedMapEntry {
+    key: String,
+    input: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
     #[serde(rename = "value.number_vector")]
     NumberVector { items: Vec<Node> },
+    #[serde(rename = "value.ordered_text_map")]
+    OrderedTextMap { entries: Vec<OrderedMapEntry> },
     #[serde(rename = "value.field")]
     Field {
         value: Box<Node>,
@@ -587,7 +598,7 @@ impl Loaded {
                 let ty = Ty::parse(value)?;
                 need(!matches!(c.full_name().as_str(), "Object" | "String")
                     && identifier(&c.full_name()) && c.methods().is_empty()
-                    && matches!(ty, Ty::Task(_) | Ty::Vector(_) | Ty::Record(_)) && ty.state_value(),
+                    && matches!(ty, Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap) && ty.state_value(),
                     "result value alias requires a declared empty carrier class and composite state type")?;
             }
             if c.is_interface() {

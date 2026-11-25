@@ -11,14 +11,28 @@ import { localDirectives } from './local-directives.mjs';
 const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
 const scalar = domain => domains.get(domain)?.[1];
 const readonlyVector = 'ReadonlyArray<number>';
-const parameter = domain => scalar(domain) ?? (domain === readonlyVector ? 'number[]' : null);
-const carrier = domain => domain === readonlyVector ? 'int[]' : domains.get(domain)[0];
+const readonlyMap = 'ReadonlyMap<string,string>';
+const nullableText = 'string|null';
+const parameter = domain => scalar(domain) ?? (domain === readonlyVector ? 'number[]'
+  : domain === nullableText ? 'text?' : null);
+const carrier = domain => domain === readonlyVector ? 'int[]'
+  : domain === nullableText ? 'String' : domains.get(domain)[0];
+const valueType = domain => domain === readonlyVector ? 'vector<number>' : parameter(domain);
 function declaredParameter(node, sf) {
   if (node && ts.isTypeReferenceNode(node)
       && ts.isIdentifier(node.typeName) && node.typeName.text === 'ReadonlyArray'
       && node.typeArguments?.length === 1
       && node.typeArguments[0].kind === ts.SyntaxKind.NumberKeyword) return readonlyVector;
+  if (node && ts.isUnionTypeNode(node) && node.types.length === 2
+      && node.types.some(type => type.kind === ts.SyntaxKind.StringKeyword)
+      && node.types.some(type => ts.isLiteralTypeNode(type)
+        && type.literal.kind === ts.SyntaxKind.NullKeyword)) return nullableText;
   return node?.getText(sf);
+}
+function declaredOrderedMap(node) {
+  return node && ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
+    && node.typeName.text === 'ReadonlyMap' && node.typeArguments?.length === 2
+    && node.typeArguments.every(type => type.kind === ts.SyntaxKind.StringKeyword);
 }
 const internal = (op, fields) => ({op, ...fields});
 function fail(detail) { throw new Error('[NORM-JS-MODULE] ' + detail); }
@@ -65,6 +79,50 @@ function leadingParameterCall(fn) {
   return { parameters: params, call: {receiver: receiver.text, member: callee.name.text, awaited} };
 }
 
+function mapEntries(node, names) {
+  function unwrap(value) {
+    while (ts.isParenthesizedExpression(value)) value = value.expression;
+    return value;
+  }
+  node = unwrap(node);
+  if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression)
+      || node.expression.text !== 'Map' || node.arguments?.length !== 1) {
+    fail('readonly Map requires one built-in Map construction');
+  }
+  const rows = unwrap(node.arguments[0]);
+  if (!ts.isArrayLiteralExpression(rows)) fail('readonly Map requires literal entry assembly');
+  const seen = new Set();
+  return rows.elements.map(row => {
+    if (!ts.isSpreadElement(row)) fail('readonly Map requires explicitly null-guarded entries');
+    const candidate = unwrap(row.expression);
+    if (!ts.isConditionalExpression(candidate)) fail('readonly Map requires explicitly null-guarded entries');
+    const cond = unwrap(candidate.condition);
+    if (!ts.isBinaryExpression(cond)
+        || ![ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(cond.operatorToken.kind)) {
+      fail('readonly Map requires an exact null guard');
+    }
+    const left = unwrap(cond.left), right = unwrap(cond.right);
+    const subject = left.kind === ts.SyntaxKind.NullKeyword ? right
+      : right.kind === ts.SyntaxKind.NullKeyword ? left : null;
+    const nullFirst = cond.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
+    const empty = unwrap(nullFirst ? candidate.whenTrue : candidate.whenFalse);
+    const present = unwrap(nullFirst ? candidate.whenFalse : candidate.whenTrue);
+    if (!ts.isArrayLiteralExpression(empty) || empty.elements.length || !ts.isArrayLiteralExpression(present)
+        || present.elements.length !== 1) fail('readonly Map requires omission only in the null branch');
+    const entry = unwrap(present.elements[0]);
+    if (!ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2 || !ts.isStringLiteral(entry.elements[0])) {
+      fail('readonly Map requires literal text keys');
+    }
+    const [key, raw] = entry.elements;
+    const value = unwrap(raw);
+    if (!subject || !ts.isIdentifier(subject) || !ts.isIdentifier(value) || value.text !== subject.text
+        || names.get(value.text)?.type !== 'text?') fail('readonly Map requires each null guard to protect the inserted value');
+    if (seen.has(key.text)) fail('readonly Map requires unique literal keys');
+    seen.add(key.text);
+    return {key: key.text, input: names.get(value.text).name};
+  });
+}
+
 function compile(source, file, entry) {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
@@ -82,14 +140,20 @@ function compile(source, file, entry) {
   if (fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
-  const returnDomain = declaredParameter(ts.getJSDocReturnType(fn), sf);
-  if (!parameter(returnDomain)) fail('expected declared business scalar or non-null readonly Vector return type');
+  const declaredReturn = ts.getJSDocReturnType(fn);
+  const orderedMap = declaredOrderedMap(declaredReturn);
+  const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf);
+  if (!orderedMap && (!parameter(returnDomain) || returnDomain === nullableText)) fail('expected declared business scalar or non-null readonly Vector return type');
+  if (orderedMap && sf.statements.some(declaration => declaration.name?.text === 'Map')) {
+    fail('readonly Map requires an unshadowed built-in Map');
+  }
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
     if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken) fail('expected named required parameters');
     const [tag, ...more] = ts.getJSDocParameterTags(param);
     const domain = declaredParameter(tag?.typeExpression?.type, sf);
-    if (more.length || !parameter(domain)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
+    if (more.length || !parameter(domain) || (!orderedMap && domain === nullableText)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
+    if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     if (names.has(param.name.text)) fail('duplicate parameter ' + param.name.text);
     const binding = param.name.text;
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
@@ -140,19 +204,22 @@ function compile(source, file, entry) {
   }
   const [last, ...remaining] = fn.body.statements;
   if (remaining.length || !last || !ts.isReturnStatement(last) || !last.expression) fail('expected one closed return expression');
-  const result = expression(lowerExpression(last.expression, sf));
-  const returns = parameter(returnDomain);
+  const returns = orderedMap ? 'map<text,text>' : parameter(returnDomain);
+  const result = orderedMap
+    ? {type: returns, node: internal('value.ordered_text_map', {entries: mapEntries(last.expression, names)})}
+    : expression(lowerExpression(last.expression, sf));
   if (result.type !== returns) fail('return value differs from declared domain');
   const binding = 'Entry.run';
   const javaParams = params.map(param => carrier(param.domain));
-  const declarations = params.map((param, i) => javaParams[i] + ' ' + param.name);
-  const vectorReturn = returnDomain === readonlyVector;
-  const returnCarrier = vectorReturn ? 'ReadonlyNumbers' : carrier(returnDomain);
-  const javaSource = (vectorReturn ? 'class ReadonlyNumbers {}\n' : '') +
+  const declarations = javaParams.map((type, index) => type + ' ' + params[index].name);
+  const resultTypes = returnDomain === readonlyVector ? {ReadonlyNumbers: 'vector<number>'}
+    : orderedMap ? {ReadonlyLabels: returns} : {};
+  const returnCarrier = Object.keys(resultTypes)[0] ?? carrier(returnDomain);
+  const javaSource = Object.keys(resultTypes).map(name => 'class ' + name + ' {}\n').join('') +
     'class Entry { static native ' + returnCarrier + ' run(' + declarations.join(', ') + '); }\n';
   return {carrier: javaSource, binding, project: {
     schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: javaSource, entries: [binding],
-    result_value_types: vectorReturn ? {ReadonlyNumbers: 'vector<number>'} : {},
+    result_value_types: resultTypes,
     parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
@@ -160,8 +227,8 @@ function compile(source, file, entry) {
     }},
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
-      params: params.map(param => ({name: param.name, type: param.domain === readonlyVector ? 'vector<number>' : scalar(param.domain)})),
-      returns: vectorReturn ? 'vector<number>' : returns, origin: {path: 'Module.js', excerpt: fn.getText(sf)},
+      params: params.map(param => ({name: param.name, type: valueType(param.domain)})),
+      returns: resultTypes[returnCarrier] ?? returns, origin: {path: 'Module.js', excerpt: fn.getText(sf)},
       body: result.node,
     }},
   }};

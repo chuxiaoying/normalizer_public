@@ -139,6 +139,10 @@ pub fn format_expr_sql(expr: &Expr) -> String {
 /// Expr → 类 SQL 字符串（带 ctx，外部复用编号/heap）
 pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if ctx.business_inputs.is_some() {
+        if let Some(entries) = math::domains::composite::ordered_text_map_entries(expr) {
+            let rows = entries.iter().map(|entry| format_expr_with_ctx(entry, ctx)).collect::<Vec<_>>();
+            return format!("MAP([{}])", rows.join(", "));
+        }
         if let Some(vector) = math::domains::composite::vector_length_input(expr) {
             return format!("LENGTH({})", format_expr_with_ctx(vector, ctx));
         }

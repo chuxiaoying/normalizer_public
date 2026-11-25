@@ -98,6 +98,7 @@ $defs:
   return-type:
     oneOf:
       - const: void
+      - const: 'map<text,text>'
       - $ref: '#/$defs/value-type'
   value-expression:
     oneOf:

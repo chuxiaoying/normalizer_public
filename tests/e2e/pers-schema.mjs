@@ -7,7 +7,7 @@ const schemaFile = new URL('../../implementation/contracts/pers/schema.yaml', im
 const ajv = new Ajv2020({ allErrors: true, keywords: ['x-enums'] });
 const validate = ajv.compile(YAML.parse(readFileSync(schemaFile, 'utf8')));
 
-const scalar = new Set(['number', 'money', 'date', 'bool', 'text', 'void']);
+const scalar = new Set(['number', 'money', 'date', 'bool', 'text', 'void', 'map<text,text>']);
 
 export function assertPers(document, label) {
   assert.ok(validate(document), () => label + ': ' + ajv.errorsText(validate.errors));

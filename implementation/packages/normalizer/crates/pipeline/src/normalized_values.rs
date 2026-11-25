@@ -13,6 +13,7 @@ impl Ty {
             Self::I32 => "i32".into(),
             Self::I64 => "i64".into(),
             Self::Text => "text?".into(),
+            Self::OrderedTextMap => "map<text,text>".into(),
             Self::Ref => "ref?".into(),
             Self::Vector(t) => format!("vector<{}>", t.describe()),
             Self::Record(f) => format!(
@@ -33,6 +34,7 @@ impl Ty {
             | Self::I32
             | Self::I64
             | Self::Text
+            | Self::OrderedTextMap
             | Self::Ref => true,
             Self::Task(t) | Self::Vector(t) => t.state_value(),
             Self::Record(fields) => fields.values().all(Self::state_value),
@@ -58,7 +60,8 @@ impl Ty {
             Self::Ref => Primitive::ReferenceIdentity,
             Self::Task(_)
             | Self::Vector(_)
-            | Self::Record(_) => Primitive::Composite,
+            | Self::Record(_)
+            | Self::OrderedTextMap => Primitive::Composite,
             _ => return Err(fail("state values cannot erase source sequence contracts")),
         })
     }
