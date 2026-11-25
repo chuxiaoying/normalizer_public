@@ -18,9 +18,6 @@ pub fn output_name(name: &str) -> &str {
         _ => name,
     }
 }
-pub fn known(name: &str) -> bool {
-    name == "completion.is_throw" || (name.contains('@') && output_name(name) != name)
-}
 fn typed(
     name: &str,
     args: Vec<Expr>,
