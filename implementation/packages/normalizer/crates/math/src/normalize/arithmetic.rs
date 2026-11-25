@@ -39,12 +39,6 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     if let Some(r) = simplify_positive_heap_ref_compare_null(expr) {
         return r;
     }
-    if let Some(r) = simplify_string_concat_literals(expr) {
-        return r;
-    }
-    if let Some(r) = simplify_string_concat_compare_null(expr) {
-        return r;
-    }
     if let Some(r) = simplify_sub_compare_zero(expr) {
         return r;
     }
@@ -268,122 +262,6 @@ fn simplify_positive_heap_ref_compare_null(expr: &Expr) -> Option<Expr> {
     }
 
     Some(crate::builder::lit_bool(matches!(op, BinOpKind::Ne)))
-}
-
-/// Java 字符串拼接字面量聚合。
-///
-/// 真实 Java 字符串拼接是从左到右的 `String.valueOf` + concat。表达式已经进入
-/// 符号值层后，`(prefix + "A") + "B"` 与 `prefix + "AB"` 等价；该规则只合并
-/// 相邻的字符串字面量后缀，不改变非字面量操作数顺序，不猜测数值加法。
-fn simplify_string_concat_literals(expr: &Expr) -> Option<Expr> {
-    let ExprKind::BinOp {
-        op: BinOpKind::Add,
-        left,
-        right,
-    } = expr.kind()
-    else {
-        return None;
-    };
-
-    let ExprKind::Lit(Lit::Str(right_s)) = right.kind() else {
-        return None;
-    };
-    let ExprKind::BinOp {
-        op: BinOpKind::Add,
-        left: prefix,
-        right: left_suffix,
-    } = left.kind()
-    else {
-        return None;
-    };
-    let ExprKind::Lit(Lit::Str(left_s)) = left_suffix.kind() else {
-        return None;
-    };
-
-    Some(crate::builder::add(
-        prefix.clone(),
-        crate::builder::lit_str(format!("{}{}", left_s, right_s)),
-    ))
-}
-
-/// Java 字符串拼接结果非 null。
-///
-/// 真实 Java 语义：只要 `+` 表达式进入字符串拼接路径，运行时等价于
-/// `new StringBuilder().append(...).append(...).toString()`；即使某个操作数为
-/// null，也会经 `String.valueOf(null)` 变成字符串 "null"，整个拼接结果不是
-/// null。
-///
-/// 本规则保守识别两类 Java 字符串拼接：
-/// 1. 含字符串字面量的 `Add` 树（如 `"channel_" + code` / `x + ""`）；
-/// 2. `Add` 树任一侧静态/返回类型已是 `java.lang.String`。
-///
-/// 第二类用于承接 executor 已经证明为 String 的表达式，例如
-/// `DateUtil.getDateString(now) + endTime`。这仍然是 Java `+` 的真实类型语义，
-/// 不是根据变量名/业务类名猜测；没有 String 类型证据的 `Add` 仍不按拼接处理。
-fn simplify_string_concat_compare_null(expr: &Expr) -> Option<Expr> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-        return None;
-    }
-
-    let concat_side = if left.is_null() {
-        right
-    } else if right.is_null() {
-        left
-    } else {
-        return None;
-    };
-
-    if !is_string_concat_with_literal(concat_side) {
-        return None;
-    }
-
-    Some(crate::builder::lit_bool(matches!(op, BinOpKind::Ne)))
-}
-
-fn is_string_concat_with_literal(expr: &Expr) -> bool {
-    let ExprKind::BinOp {
-        op: BinOpKind::Add,
-        left,
-        right,
-    } = expr.kind()
-    else {
-        return false;
-    };
-
-    contains_string_literal(left)
-        || contains_string_literal(right)
-        || is_java_string_expr(left)
-        || is_java_string_expr(right)
-}
-
-fn contains_string_literal(expr: &Expr) -> bool {
-    match expr.kind() {
-        ExprKind::Lit(Lit::Str(_)) => true,
-        ExprKind::BinOp {
-            op: BinOpKind::Add,
-            left,
-            right,
-        } => contains_string_literal(left) || contains_string_literal(right),
-        _ => false,
-    }
-}
-
-fn is_java_string_expr(expr: &Expr) -> bool {
-    if let Some(origin) = expr.as_sym_var() {
-        let primitive_type = match origin {
-            crate::SymVarOrigin::Parameter { primitive_type, .. }
-            | crate::SymVarOrigin::External { primitive_type, .. }
-            | crate::SymVarOrigin::Temporal { primitive_type, .. } => primitive_type,
-        };
-        if primitive_type == "java.lang.String" {
-            return true;
-        }
-    }
-
-    false
 }
 
 /// `(x - y) op 0 → x op y`。
