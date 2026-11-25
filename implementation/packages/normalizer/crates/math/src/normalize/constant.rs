@@ -3,7 +3,7 @@
 use crate::builder;
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 
-/// 常量折叠：对运算符的所有子式都是 Lit 的情况求值。
+/// 常量折叠和已认证 Vector 的自然域边界事实。
 pub(crate) fn fold(expr: &Expr) -> Expr {
     if let Some(length) = crate::domains::composite::fold_vector_length_predicate(expr) {
         return length;
