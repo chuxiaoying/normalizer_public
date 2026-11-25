@@ -726,7 +726,7 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         // The interval solver produces lower/upper bounds in semantic order.
         // Peer Boolean terms still use the one shared canonical ordering;
         // otherwise interval reconstruction and AND sorting oscillate forever.
-        let solved = sort_commutative(solved, "AND", ctx);
+        let solved = sort_commutative(solved, ctx);
         let canonical = rebuild_and(&solved);
         if canonical != *expr {
             return Some(canonical);
@@ -849,8 +849,8 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     if out.len() == 1 {
         return Some(out.into_iter().next().unwrap());
     }
-    // 排序（主符号优先，tie-breaker B：递归字典序）—— 与 OR 共用 commutative_order_key
-    let out = sort_commutative(out, "AND", ctx);
+    // AND 和 OR 共用统一正则规范的结构排序键。
+    let out = sort_commutative(out, ctx);
     // Sorting the leaves is not enough: differently associated trees can
     // have identical flat order. Compare the complete canonical left fold.
     let canonical = rebuild_and(&out);
@@ -1026,7 +1026,7 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         return Some(out.into_iter().next().unwrap());
     }
 
-    let out = sort_commutative(out, "OR", ctx);
+    let out = sort_commutative(out, ctx);
 
     // 吸收律：A || (A ∧ X) = A
     // 若 OR 项 out[j] 的 AND 合取集合是 OR 项 out[i] 的 AND 合取集合的（真）子集，
@@ -1078,7 +1078,7 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         .zip(absorbed.iter())
         .filter_map(|(e, &abs)| if abs { None } else { Some(e) })
         .collect();
-    let out = sort_commutative(out, "OR-GUARD", ctx);
+    let out = sort_commutative(out, ctx);
 
     if out.is_empty() {
         return Some(builder::lit_bool(false));
@@ -1150,61 +1150,11 @@ fn rebuild_or(disjuncts: &[Expr]) -> Expr {
 
 fn sort_commutative(
     mut factors: Vec<Expr>,
-    op_label: &str,
     ctx: &dyn crate::sort_context::SortContext,
 ) -> Vec<Expr> {
-    // Expr is immutable; DisplayKey is pure for a fixed SortContext.  Cache keys
-    // once per peer term instead of recomputing the full recursive key on every
-    // comparator invocation.
-    if std::env::var("NORMALIZER_SORT_TRACE").ok().as_deref() == Some("1") {
-        factors.sort_by(|a, b| {
-            let ka = commutative_order_key(a, ctx);
-            let kb = commutative_order_key(b, ctx);
-            let ord = ka.cmp(&kb);
-            trace_sort_compare(op_label, a, b, &ka, &kb, ord);
-            ord
-        });
-    } else {
-        factors.sort_by_cached_key(|factor| commutative_order_key(factor, ctx));
-    }
+    // Cache each immutable expression's key once in the current context.
+    factors.sort_by_cached_key(|factor| crate::canonical_order_key(factor, ctx));
     factors
-}
-
-fn trace_sort_compare(
-    op_label: &str,
-    a: &Expr,
-    b: &Expr,
-    ka: &str,
-    kb: &str,
-    ord: std::cmp::Ordering,
-) {
-    if std::env::var("NORMALIZER_SORT_TRACE").ok().as_deref() != Some("1") {
-        return;
-    }
-    if let Ok(op_filter) = std::env::var("NORMALIZER_SORT_TRACE_OP") {
-        if !op_filter.is_empty() && op_filter != op_label {
-            return;
-        }
-    }
-
-    let haystack = format!(
-        "op={} lhs_key={:?} rhs_key={:?} lhs={:?} rhs={:?}",
-        op_label, ka, kb, a, b
-    );
-    if let Ok(contains) = std::env::var("NORMALIZER_SORT_TRACE_CONTAINS") {
-        if !contains.is_empty() && !haystack.contains(&contains) {
-            return;
-        }
-    }
-
-    eprintln!(
-        "[SORT-CMP] op={} ord={:?} lhs_key={:?} rhs_key={:?} lhs={:?} rhs={:?}",
-        op_label, ord, ka, kb, a, b
-    );
-}
-
-fn commutative_order_key(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> String {
-    crate::canonical_order_key(expr, ctx)
 }
 
 // =============================================================================
