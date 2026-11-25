@@ -217,138 +217,6 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
             .any(|d| expr_is_true_under_and_context(d, context))
 }
 
-fn project_case_when_under_and_context(expr: &Expr, context: &[Expr]) -> Option<Expr> {
-    if let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand,
-    } = expr.kind()
-    {
-        let projected = project_case_when_under_and_context(operand, context)?;
-        return Some(builder::not(projected));
-    }
-
-    let branches = expr.as_case_when()?;
-    let mut previous_conditions: Vec<&Expr> = Vec::new();
-    for (condition, value) in branches {
-        if previous_conditions
-            .iter()
-            .all(|previous| expr_is_false_under_and_context(previous, context))
-            && expr_is_true_under_and_context(condition, context)
-        {
-            return Some(value.clone());
-        }
-        previous_conditions.push(condition);
-    }
-
-    None
-}
-
-fn simplify_boolean_equality_under_and_context(expr: &Expr, context: &[Expr]) -> Option<Expr> {
-    let Some((op, left, right)) = expr.as_binop() else {
-        return None;
-    };
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-        return None;
-    }
-
-    let projected_left = project_boolean_operand_under_and_context(left, context);
-    let projected_right = project_boolean_operand_under_and_context(right, context);
-    if projected_left != *left || projected_right != *right {
-        let projected_equality = match op {
-            BinOpKind::Eq => builder::eq(projected_left, projected_right),
-            BinOpKind::Ne => builder::ne(projected_left, projected_right),
-            _ => unreachable!(),
-        };
-        let normalized = crate::normalize(projected_equality);
-        if &normalized != expr {
-            return Some(normalized);
-        }
-    }
-
-    let right_true = expr_is_true_under_and_context(right, context);
-    let right_false = !right_true && expr_is_false_under_and_context(right, context);
-    let left_true = expr_is_true_under_and_context(left, context);
-    let left_false = !left_true && expr_is_false_under_and_context(left, context);
-
-    let simplified = match (op, right_true, right_false, left_true, left_false) {
-        (BinOpKind::Eq, true, _, _, _) => Some(left.clone()),
-        (BinOpKind::Eq, _, true, _, _) => Some(builder::not(left.clone())),
-        (BinOpKind::Eq, _, _, true, _) => Some(right.clone()),
-        (BinOpKind::Eq, _, _, _, true) => Some(builder::not(right.clone())),
-        (BinOpKind::Ne, true, _, _, _) => Some(builder::not(left.clone())),
-        (BinOpKind::Ne, _, true, _, _) => Some(left.clone()),
-        (BinOpKind::Ne, _, _, true, _) => Some(builder::not(right.clone())),
-        (BinOpKind::Ne, _, _, _, true) => Some(right.clone()),
-        _ => None,
-    }?;
-
-    let normalized = crate::normalize(simplified);
-    if &normalized == expr {
-        None
-    } else {
-        Some(normalized)
-    }
-}
-
-/// Project a boolean equality operand under an already-established AND context.
-///
-/// In a path domain `A`, `(A && P)` has the same truth value as `P`, so
-/// `A && ((A && P) == (A && Q))` can shrink to `A && (P == Q)`.
-/// This is pure boolean domain algebra; it deliberately works on the equality
-/// operands instead of teaching formatter/output code about business shapes.
-fn project_boolean_operand_under_and_context(expr: &Expr, context: &[Expr]) -> Expr {
-    if expr_is_true_under_and_context(expr, context) {
-        return builder::lit_bool(true);
-    }
-    if expr_is_false_under_and_context(expr, context) {
-        return builder::lit_bool(false);
-    }
-
-    let conjuncts = flatten_and(expr);
-    if conjuncts.len() > 1 {
-        let mut kept: Vec<Expr> = Vec::with_capacity(conjuncts.len());
-        for conjunct in conjuncts {
-            if expr_is_true_under_and_context(&conjunct, context) {
-                continue;
-            }
-            if expr_is_false_under_and_context(&conjunct, context) {
-                return builder::lit_bool(false);
-            }
-            kept.push(conjunct);
-        }
-        if kept.is_empty() {
-            return builder::lit_bool(true);
-        }
-        if kept.len() == 1 {
-            return kept.into_iter().next().unwrap();
-        }
-        return rebuild_and(&kept);
-    }
-
-    let disjuncts = flatten_or(expr);
-    if disjuncts.len() > 1 {
-        let mut kept: Vec<Expr> = Vec::with_capacity(disjuncts.len());
-        for disjunct in disjuncts {
-            if expr_is_true_under_and_context(&disjunct, context) {
-                return builder::lit_bool(true);
-            }
-            if expr_is_false_under_and_context(&disjunct, context) {
-                continue;
-            }
-            kept.push(disjunct);
-        }
-        if kept.is_empty() {
-            return builder::lit_bool(false);
-        }
-        if kept.len() == 1 {
-            return kept.into_iter().next().unwrap();
-        }
-        return rebuild_or(&kept);
-    }
-
-    expr.clone()
-}
-
 fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     if matches!(expr.kind(), ExprKind::Lit(Lit::Bool(false))) {
         return true;
@@ -539,10 +407,7 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     }
 
     let mut out: Vec<Expr> = Vec::with_capacity(flat.len());
-    for raw_item in &flat {
-        let projected_item =
-            project_case_when_under_and_context(raw_item, &out).unwrap_or_else(|| raw_item.clone());
-        let item = &projected_item;
+    for item in &flat {
 
         // 吸收元：遇到 false 立即返回 false
         if let ExprKind::Lit(Lit::Bool(false)) = item.kind() {
@@ -770,44 +635,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }
 
         out.push(item.clone());
-    }
-
-    let mut equality_projected = false;
-    let mut projected_out: Vec<Expr> = Vec::with_capacity(out.len());
-    for (idx, item) in out.iter().enumerate() {
-        let context: Vec<Expr> = out
-            .iter()
-            .enumerate()
-            .filter_map(|(other_idx, other)| {
-                if other_idx == idx {
-                    None
-                } else {
-                    Some(other.clone())
-                }
-            })
-            .collect();
-        if let Some(projected) = simplify_boolean_equality_under_and_context(item, &context) {
-            equality_projected = true;
-            if projected.as_bool() == Some(false) {
-                return Some(builder::lit_bool(false));
-            }
-            if projected.as_bool() != Some(true)
-                && !projected_out.iter().any(|existing| existing == &projected)
-            {
-                projected_out.push(projected);
-            }
-        } else if !projected_out.iter().any(|existing| existing == item) {
-            projected_out.push(item.clone());
-        }
-    }
-    if equality_projected {
-        if projected_out.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
-        if projected_out.len() == 1 {
-            return Some(projected_out.into_iter().next().unwrap());
-        }
-        return Some(rebuild_and(&projected_out));
     }
 
     // Narrow RCL cardinality absorption:
