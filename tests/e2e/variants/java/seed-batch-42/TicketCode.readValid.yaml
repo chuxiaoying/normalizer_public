@@ -62,3 +62,13 @@
 - name: comments-between-qualified-import-components-keep-the-explicit-type
   edits:
     - { from: 'class TicketCode {', to: 'import java.util /* explicit type */ . List; class TicketCode {' }
+- name: an-escaped-line-terminator-is-not-silently-ignored-by-comment-lexing
+  edits:
+    - from: 'return value;'
+      to: |-
+        int result = value; // \u000a result = result + 1;
+        return result;
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-UNICODE-ESCAPE]']
+- name: doubled-backslash-remains-literal-and-is-not-a-java-source-escape
+  edits:
+    - { from: 'return value;', to: 'String literal = "\\u0061"; return value;' }

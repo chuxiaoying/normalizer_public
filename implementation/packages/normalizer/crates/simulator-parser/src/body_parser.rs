@@ -1161,7 +1161,6 @@ impl<'a> Parser<'a> {
                 }
                 Ok(char::from(value))
             }
-            b'u' => Err(self.err("Unicode escapes require lexical preprocessing before parsing")),
             _ => Err(self.err("invalid Java literal escape")),
         }
     }

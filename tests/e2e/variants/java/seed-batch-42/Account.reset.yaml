@@ -66,3 +66,7 @@
     - from: 'class Account {'
       to: 'class Account { static int helper(@normalizer.annotations.Nullable int amount) { return amount; }'
   reject: ['Account.helper.amount:', 'unsupported source parameter annotation normalizer.annotations.Nullable']
+- name: escaped-marker-requires-lexical-preprocessing-before-source-analysis
+  edits:
+    - { from: '@normalizer.annotations.Nullable ', to: '@normalizer.annotations.\u004eullable ' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-UNICODE-ESCAPE]', 'expand raw Java Unicode escapes before parsing']

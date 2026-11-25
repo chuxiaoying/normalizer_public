@@ -46,10 +46,31 @@ pub fn parse(
     _opts: &ParseOptions,
 ) -> Result<JavaProgram, ParseError> {
     let mut p = Parser::new(source, file_hint);
+    if let Some(offset) = first_raw_unicode_escape(source) {
+        return Err(p.err_at(offset, "[JAVA-UNICODE-ESCAPE] expand raw Java Unicode escapes before parsing"));
+    }
     let mut prog = p.parse_program()?;
     flatten_inner_classes(&mut prog);
 
     Ok(prog)
+}
+
+// We reject the first eligible escape, so no earlier translated backslash
+// can influence eligibility. An even run of preceding raw backslashes is
+// sufficient, unlike a substring search which would reject literal "\u".
+fn first_raw_unicode_escape(source: &str) -> Option<usize> {
+    if !source.contains("\\u") { return None; }
+    let bytes = source.as_bytes();
+    let mut odd_slashes = false;
+    for (offset, byte) in bytes.iter().copied().enumerate() {
+        if byte == b'\\' {
+            if !odd_slashes && bytes.get(offset + 1) == Some(&b'u') { return Some(offset); }
+            odd_slashes = !odd_slashes;
+        } else {
+            odd_slashes = false;
+        }
+    }
+    None
 }
 
 fn flatten_inner_classes(program: &mut JavaProgram) {
