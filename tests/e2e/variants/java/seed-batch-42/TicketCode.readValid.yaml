@@ -119,3 +119,32 @@
 - name: a-longer-identifier-is-not-the-instanceof-keyword
   edits:
     - { from: 'return value;', to: 'int instanceofValue = value; return instanceofValue;' }
+- name: comma-declarators-execute-concrete-initializers-in-source-order
+  edits:
+    - { from: 'return value;', to: 'int first = 3, second = first + 1, third = second * 2; return third;' }
+  expect:
+    - { path: [R], value: '8' }
+- name: comma-declarators-retain-the-surrounding-symbolic-scope
+  edits:
+    - { from: 'return value;', to: 'int first = value, second = first - 1; first = second + 1; return first;' }
+- name: literal-first-exact-offset-cancels-the-subtraction-too
+  edits:
+    - { from: 'return value;', to: 'return 1 + (value - 1);' }
+- name: combining-unequal-exact-offsets-preserves-the-sign
+  edits:
+    - { from: 'return value;', to: 'return 2 + (value - 5);' }
+  expect:
+    - { path: [R], value: 'value - 3' }
+- name: combining-unequal-exact-offsets-can-leave-an-addition
+  edits:
+    - { from: 'return value;', to: 'return (value - 2) + 5;' }
+  expect:
+    - { path: [R], value: 'value + 3' }
+- name: a-local-declaration-cannot-act-as-an-unbraced-if-body
+  edits:
+    - { from: 'return value;', to: 'if (true) int first = 3, second = first + 1; return value;' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-LOCAL-SCOPE]']
+- name: multi-induction-for-initializers-are-not-the-certified-loop-form
+  edits:
+    - { from: 'return value;', to: 'for (int i = 0, j = 1; i < 2; i++) { value = value + j; } return value;' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-FOR-INITIALIZER]']

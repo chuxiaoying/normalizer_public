@@ -125,6 +125,13 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         }
         return expr.clone();
     }
+    if *op == B::Add {
+        if let Some(offset) = combine_constant_offset(left, right)
+            .or_else(|| combine_constant_offset(right, left))
+        {
+            return offset;
+        }
+    }
     fn collect(expr: &Expr, op: B, out: &mut Vec<Expr>) {
         if let ExprKind::BinOp {
             op: inner,
@@ -180,4 +187,17 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
             _ => unreachable!(),
         })
         .unwrap()
+}
+
+// A proven total exact integer base is evaluated once. Combine only the two
+// literal offsets; do not commute subtraction or expand a symbolic sign.
+fn combine_constant_offset(difference: &Expr, addition: &Expr) -> Option<Expr> {
+    let (B::Sub, base, subtraction) = difference.as_binop()? else { return None; };
+    let offset = addition.as_lit()?.as_integer()? - subtraction.as_lit()?.as_integer()?;
+    let zero = BigInt::zero();
+    Some(match offset.cmp(&zero) {
+        std::cmp::Ordering::Equal => base.clone(),
+        std::cmp::Ordering::Less => b::sub(base.clone(), b::lit_integer(-offset)),
+        std::cmp::Ordering::Greater => b::add(base.clone(), b::lit_integer(offset)),
+    })
 }

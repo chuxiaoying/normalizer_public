@@ -261,13 +261,6 @@ pub enum JavaStatement {
         initializer: Option<JavaExpr>,
     },
 
-    /// parser 合成的同作用域语句序列。
-    ///
-    /// Java 多变量声明 `String a = null, b = null;` 声明的变量都属于当前
-    /// 语句所在作用域，不能包成普通 `Block`，否则 executor 会额外开 scope，
-    /// 后续 `b = ...` 会变成未声明。真实 `{ ... }` 仍使用 `Block`。
-    SameScope(Vec<JavaStatement>),
-
     /// 赋值：`x = expr;` / `obj.field = expr;` / `arr[i] = expr;`
     Assign { target: JavaExpr, value: JavaExpr },
 

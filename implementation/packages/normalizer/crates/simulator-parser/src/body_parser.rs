@@ -25,7 +25,7 @@ impl<'a> Parser<'a> {
             if self.peek().is_none() {
                 break;
             }
-            let stmt = self.parse_statement()?;
+            let stmt = self.parse_statement(&mut out)?;
             out.push(stmt);
         }
         Ok(out)
@@ -36,8 +36,9 @@ impl<'a> Parser<'a> {
         Parser::new(text, &self.file)
     }
 
-    /// 解析单个语句。
-    fn parse_statement(&mut self) -> Result<JavaStatement, ParseError> {
+    /// Return the last statement from this source position. A local declaration
+    /// with commas inserts earlier declarators into the same statement list.
+    fn parse_statement(&mut self, earlier: &mut Vec<JavaStatement>) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
 
         if let Some(start) = self.local_ir_start() {
@@ -106,8 +107,13 @@ impl<'a> Parser<'a> {
         }
         // 尝试变量声明：Type name ... 或 Type name = expr;
         let save = self.pos;
-        if let Some(stmt) = self.try_parse_vardecl()? {
-            return Ok(stmt);
+        if let Some((first, mut rest)) = self.try_parse_vardecl()? {
+            if let Some(last) = rest.pop() {
+                earlier.push(first);
+                earlier.extend(rest);
+                return Ok(last);
+            }
+            return Ok(first);
         }
         self.pos = save;
 
@@ -228,7 +234,10 @@ impl<'a> Parser<'a> {
                 None
             } else {
                 // init 可以是 vardecl 或 expression
-                let stmt = if let Some(v) = self.try_parse_vardecl()? {
+                let stmt = if let Some((v, rest)) = self.try_parse_vardecl()? {
+                    if !rest.is_empty() {
+                        return Err(self.err("[JAVA-FOR-INITIALIZER] only one induction declaration is supported"));
+                    }
                     v
                 } else {
                     let e = self.parse_expression()?;
@@ -387,8 +396,13 @@ impl<'a> Parser<'a> {
             let mut sub = self.child_parser(&body_text);
             sub.parse_statements_until_end()
         } else {
-            let stmt = self.parse_statement()?;
-            Ok(vec![stmt])
+            let mut body = Vec::new();
+            let stmt = self.parse_statement(&mut body)?;
+            if matches!(stmt, JavaStatement::VarDecl { .. }) {
+                return Err(self.err("[JAVA-LOCAL-SCOPE] a controlled local declaration requires braces"));
+            }
+            body.push(stmt);
+            Ok(body)
         }
     }
 
@@ -414,7 +428,7 @@ impl<'a> Parser<'a> {
         self.parse_expression()
     }
 
-    fn try_parse_vardecl(&mut self) -> Result<Option<JavaStatement>, ParseError> {
+    fn try_parse_vardecl(&mut self) -> Result<Option<(JavaStatement, Vec<JavaStatement>)>, ParseError> {
         let save = self.pos;
         self.skip_ws();
         // Local variable annotations are legal Java syntax (for example
@@ -464,7 +478,7 @@ impl<'a> Parser<'a> {
         };
         self.skip_ws();
 
-        // 多声明：`Type n1 = e1, n2, n3 = e3;` —— 第一个作为主语句，后续合成Block
+        // Additional declarators execute in the same scope and source order.
         let mut extras: Vec<JavaStatement> = Vec::new();
         while self.eat_char(b',') {
             self.skip_ws();
@@ -495,13 +509,7 @@ impl<'a> Parser<'a> {
             java_type: ty,
             initializer: init,
         };
-        if extras.is_empty() {
-            Ok(Some(main))
-        } else {
-            let mut stmts = vec![main];
-            stmts.extend(extras);
-            Ok(Some(JavaStatement::SameScope(stmts)))
-        }
+        Ok(Some((main, extras)))
     }
 
     fn parse_c_style_array_suffix(&mut self, mut ty: JavaType) -> Option<JavaType> {

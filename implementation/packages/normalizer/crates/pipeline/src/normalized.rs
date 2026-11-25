@@ -538,7 +538,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
             } => expr(value, at, calls)?,
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
-            S::Block(b) | S::SameScope(b) => statements(b, at, calls)?,
+            S::Block(b) => statements(b, at, calls)?,
             S::If {
                 cond,
                 then_block,
