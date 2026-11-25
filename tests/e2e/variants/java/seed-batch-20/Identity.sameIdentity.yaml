@@ -118,3 +118,19 @@
     - path: [P, parameters]
       value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, chooseA: { position: 2, type: bool }, chooseB: { position: 3, type: bool } }
     - { path: [R], value: 'chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)' }
+- name: independent-guards-selecting-distinct-allocations-only-match-on-the-original
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box prior, boolean p, boolean q)' }
+    - { from: 'return left == right;', to: 'Box x = new Box(); Box y = new Box(); Box a = prior; if (p) { a = x; } Box b = prior; if (q) { b = y; } return a == b;' }
+  expect:
+    - path: [P, parameters]
+      value: { prior: { position: 0, type: 'Box?' }, p: { position: 1, type: bool }, q: { position: 2, type: bool } }
+    - { path: [R], value: 'NOT (p) AND NOT (q)' }
+- name: independent-guards-selecting-the-same-allocation-match-on-both-diagonals
+  edits:
+    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box prior, boolean p, boolean q)' }
+    - { from: 'return left == right;', to: 'Box x = new Box(); Box a = prior; if (p) { a = x; } Box b = prior; if (q) { b = x; } return a == b;' }
+  expect:
+    - path: [P, parameters]
+      value: { prior: { position: 0, type: 'Box?' }, p: { position: 1, type: bool }, q: { position: 2, type: bool } }
+    - { path: [R], value: 'p AND q OR NOT (p) AND NOT (q)' }
