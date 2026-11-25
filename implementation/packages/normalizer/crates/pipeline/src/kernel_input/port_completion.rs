@@ -45,18 +45,18 @@ impl PortSpec {
                 .expect("certified closed response type"),
         )
     }
-    pub fn throw_variants(&self, response: &Expr) -> Vec<(String, Expr, Expr)> {
+    pub fn throw_variants(&self, response: &Expr) -> Vec<(String, Expr, Option<Expr>)> {
         self.exceptions
             .iter()
             .map(|(class, ty)| {
                 let payload = if *ty == Ty::Unit {
-                    b::lit_null()
+                    None
                 } else {
-                    completion::payload(
+                    Some(completion::payload(
                         response.clone(),
                         class,
                         ty.primitive_value().expect("certified closed payload type"),
-                    )
+                    ))
                 };
                 (
                     class.clone(),

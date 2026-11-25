@@ -161,7 +161,7 @@ fn declared_reference(t: &JavaType, layouts: &BTreeMap<String, BTreeMap<String, 
     matches!(t, JavaType::Class(name) if layouts.keys().any(|owner| owner == name || owner.rsplit('.').next() == Some(name.as_str())))
 }
 
-const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
+pub(crate) const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
 pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String, String>) -> Option<String> {
     if matches!(name, "RuntimeException" | "java.lang.RuntimeException") {
         return Some(RUNTIME_EXCEPTION.into());
@@ -440,6 +440,27 @@ enum SourceCall {
     Constructor(String),
 }
 
+/// Direct Java payload is the explicit String constructor argument, not an
+/// observed exception object or a guessed call to getMessage().
+pub(crate) enum RuntimeThrowMessage<'a> {
+    Absent,
+    Null,
+    Text(&'a str),
+}
+
+pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
+    let E::New { java_type: JavaType::Class(class), args } = e else { return None; };
+    if !matches!(class.as_str(), "RuntimeException" | RUNTIME_EXCEPTION) { return None; }
+    match args.as_slice() {
+        [] => Some(RuntimeThrowMessage::Absent),
+        [E::Lit(JavaLit::Str(text))] => Some(RuntimeThrowMessage::Text(text)),
+        [E::Cast { target_type: JavaType::Class(ty), operand }]
+            if ty == "java.lang.String"
+                && matches!(operand.as_ref(), E::Lit(JavaLit::Null)) => Some(RuntimeThrowMessage::Null),
+        _ => None,
+    }
+}
+
 fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
     for stmt in body {
         match stmt {
@@ -488,6 +509,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
                 target: E::Ident(_),
                 value,
             } => expr(value, at, calls)?,
+            S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
             S::Block(b) | S::SameScope(b) => statements(b, at, calls)?,
             S::If {

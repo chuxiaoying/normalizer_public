@@ -70,7 +70,7 @@ impl Engine<'_> {
         self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
             failed,
             &write.exception,
-            b::lit_null(),
+            None,
         );
         // A single-row atomic INSERT with no conflict clause affects one row
         // on normal completion. UPDATE preserves the actual matched row count.

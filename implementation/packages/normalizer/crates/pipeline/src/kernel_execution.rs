@@ -325,6 +325,23 @@ impl Engine<'_> {
                         .replace_continue(realtime_state::Completion::Return(realtime_value));
                     return Ok(Some(value));
                 }
+                S::Throw(expr) => {
+                    use crate::normalized::RuntimeThrowMessage;
+                    let payload = match crate::normalized::runtime_throw_message(expr)
+                        .ok_or_else(|| fail("source throw needs an explicit RuntimeException message contract"))?
+                    {
+                        RuntimeThrowMessage::Absent => None,
+                        RuntimeThrowMessage::Null => Some(b::lit_null()),
+                        RuntimeThrowMessage::Text(text) => Some(b::lit_str(text)),
+                    };
+                    self.realtime_throws.push(path);
+                    self.realtime_completion = self.realtime_completion.replace_continue(
+                        realtime_state::Completion::Throw {
+                            class: crate::normalized::RUNTIME_EXCEPTION.into(),
+                            payload,
+                        },
+                    );
+                }
                 S::VarDecl {
                     java_type,
                     name,

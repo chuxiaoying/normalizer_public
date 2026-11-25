@@ -76,7 +76,7 @@ impl Engine<'_> {
         let path = self.normal_path(path);
         if path.as_bool() != Some(false) {
             self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
-                path.clone(), exception, b::lit_null(),
+                path.clone(), exception, None,
             );
             self.realtime_throws.push(path);
         }

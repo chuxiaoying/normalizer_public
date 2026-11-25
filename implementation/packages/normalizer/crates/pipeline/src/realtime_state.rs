@@ -18,7 +18,7 @@ use math::{builder as b, Expr};
 pub(crate) enum Completion {
     Continue,
     Return(Expr),
-    Throw { class: String, payload: Expr },
+    Throw { class: String, payload: Option<Expr> },
     Guarded(Vec<CompletionAlternative>),
 }
 
@@ -32,7 +32,7 @@ pub(crate) struct CompletionAlternative {
 pub(crate) enum CompletionOutcome {
     Continue,
     Return(Expr),
-    Throw { class: String, payload: Expr },
+    Throw { class: String, payload: Option<Expr> },
 }
 
 impl Completion {
@@ -170,26 +170,8 @@ impl Completion {
         {
             return Self::Return(collapse_return_values(&alternatives));
         }
-        if covered {
-            let mut classes = alternatives.iter().filter_map(|alternative| {
-                let CompletionOutcome::Throw { class, .. } = &alternative.outcome else {
-                    return None;
-                };
-                Some(class.as_str())
-            });
-            if let Some(class) = classes.next() {
-                if classes.all(|other| other == class)
-                    && alternatives.iter().all(|alternative| {
-                        matches!(alternative.outcome, CompletionOutcome::Throw { .. })
-                    })
-                {
-                    let payload = collapse_throw_payloads(&alternatives);
-                    return Self::Throw {
-                        class: class.to_owned(),
-                        payload,
-                    };
-                }
-            }
+        if covered && alternatives.iter().all(|alternative| alternative.outcome == alternatives[0].outcome) {
+            return outcome_to_completion(alternatives[0].outcome.clone());
         }
         Self::Guarded(alternatives)
     }
@@ -241,7 +223,7 @@ impl Completion {
         &self,
         guard: Expr,
         class: impl Into<String>,
-        payload: Expr,
+        payload: Option<Expr>,
     ) -> Self {
         let guard = math::normalize(guard);
         let replacement = Self::from_alternatives(vec![
@@ -267,7 +249,7 @@ fn normalize_outcome(outcome: CompletionOutcome) -> CompletionOutcome {
         CompletionOutcome::Return(value) => CompletionOutcome::Return(math::normalize(value)),
         CompletionOutcome::Throw { class, payload } => CompletionOutcome::Throw {
             class,
-            payload: math::normalize(payload),
+            payload: payload.map(math::normalize),
         },
     }
 }
@@ -303,30 +285,6 @@ fn collapse_return_values(alternatives: &[CompletionAlternative]) -> Expr {
     for alternative in reversed {
         let CompletionOutcome::Return(branch) = &alternative.outcome else {
             unreachable!("return alternatives were checked before collapsing");
-        };
-        value = join_value(alternative.guard.clone(), branch.clone(), value);
-    }
-    value
-}
-
-fn collapse_throw_payloads(alternatives: &[CompletionAlternative]) -> Expr {
-    let mut reversed = alternatives.iter().rev();
-    let CompletionOutcome::Throw {
-        payload: mut value, ..
-    } = reversed
-        .next()
-        .expect("throw alternatives are nonempty")
-        .outcome
-        .clone()
-    else {
-        unreachable!("throw alternatives were checked before collapsing")
-    };
-    for alternative in reversed {
-        let CompletionOutcome::Throw {
-            payload: branch, ..
-        } = &alternative.outcome
-        else {
-            unreachable!("throw alternatives were checked before collapsing");
         };
         value = join_value(alternative.guard.clone(), branch.clone(), value);
     }
@@ -621,19 +579,6 @@ pub(crate) fn join_completion(
         (Completion::Return(then_value), Completion::Return(else_value)) => Some(
             Completion::Return(join_value(condition, then_value, else_value)),
         ),
-        (
-            Completion::Throw {
-                class: then_class,
-                payload: then_payload,
-            },
-            Completion::Throw {
-                class: else_class,
-                payload: else_payload,
-            },
-        ) if then_class == else_class => Some(Completion::Throw {
-            class: then_class,
-            payload: join_value(condition, then_payload, else_payload),
-        }),
         (then_completion, else_completion) => {
             let condition = math::normalize(condition);
             let inverse = math::normalize(b::not(condition.clone()));

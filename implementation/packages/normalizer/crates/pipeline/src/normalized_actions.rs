@@ -207,6 +207,7 @@ pub(super) fn builtin_exception(name: &str) -> bool {
     matches!(
         name,
         "java.lang.NullPointerException"
+            | "java.lang.RuntimeException"
             | "java.lang.IndexOutOfBoundsException"
             | "java.lang.ArrayIndexOutOfBoundsException"
             | "java.lang.NegativeArraySizeException"
@@ -511,7 +512,7 @@ impl Engine<'_> {
                                 .filter_map(|alt| match &alt.outcome {
                                     realtime_state::CompletionOutcome::Throw {
                                         payload, ..
-                                    } => Some((alt.guard.clone(), payload.clone())),
+                                    } => Some((alt.guard.clone(), payload.clone().unwrap_or_else(b::lit_null))),
                                     _ => None,
                                 })
                                 .rev();

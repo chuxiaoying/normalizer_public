@@ -74,6 +74,12 @@ impl FormatCtx {
         }
     }
 
+    pub(crate) fn published_external_names(&self) -> std::collections::BTreeMap<u64, String> {
+        let mut names = self.business_states.clone();
+        names.extend(self.e_renumber.iter().map(|(&id, position)| (id, format!("$e_{position}"))));
+        names
+    }
+
     pub(crate) fn set_pure_fold_names(&mut self, names: std::collections::BTreeMap<u64, usize>) {
         self.pure_fold_names = names;
     }

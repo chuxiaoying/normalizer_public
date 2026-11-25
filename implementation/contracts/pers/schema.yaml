@@ -314,3 +314,5 @@ $defs:
         $ref: '#/$defs/exception-type'
       when:
         $ref: '#/$defs/expression'
+      payload:
+        $ref: '#/$defs/expression'

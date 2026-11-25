@@ -170,19 +170,28 @@ pub(super) fn observations(
         .realtime_completion
         .terminal_alternatives()
         .ok_or_else(|| fail("entry has incomplete control flow"))?;
-    let mut exceptions = BTreeMap::new();
+    let mut exceptions: Vec<(String, Option<Expr>, Expr)> = Vec::new();
     for alternative in alternatives {
         validate_ids(&alternative.guard, &issued)?;
         match alternative.outcome {
             CompletionOutcome::Throw { class, payload } => {
-                need(
-                    project.type_only_exception(&class) && payload == b::lit_null(),
-                    "exception payload outside closed type-only entry",
-                )?;
-                let condition = exceptions
-                    .entry(class)
-                    .or_insert_with(|| b::lit_bool(false));
-                *condition = math::normalize(b::or(condition.clone(), alternative.guard));
+                if let Some(value) = &payload {
+                    need(
+                        project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
+                            && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))),
+                        "exception payload outside closed typed entry",
+                    )?;
+                    validate_ids(value, &issued)?;
+                } else {
+                    need(project.type_only_exception(&class), "undeclared type-only exception")?;
+                }
+                if let Some((_, _, guard)) = exceptions.iter_mut()
+                    .find(|(name, existing, _)| *name == class && *existing == payload)
+                {
+                    *guard = math::normalize(b::or(guard.clone(), alternative.guard));
+                } else {
+                    exceptions.push((class, payload, alternative.guard));
+                }
             }
             CompletionOutcome::Return(value) => {
                 validate_ids(&value, &issued)?;
@@ -190,15 +199,42 @@ pub(super) fn observations(
             CompletionOutcome::Continue => return Err(fail("incomplete settled return")),
         }
     }
+    if exceptions.iter().any(|(_, payload, _)| payload.is_some()) {
+        for (i, (_, left, left_guard)) in exceptions.iter().enumerate() {
+            for (_, right, right_guard) in &exceptions[i + 1..] {
+                if left.is_some() || right.is_some() {
+                    need(math::normalize(b::and(left_guard.clone(), right_guard.clone())).as_bool() == Some(false),
+                        "typed exception alternatives lack a disjoint terminal guard proof")?;
+                }
+            }
+        }
+        let public_names = ctx.published_external_names();
+        let public = crate::canonical_names::CanonicalNames {
+            heap: &BTreeMap::new(),
+            external: Some(&public_names),
+            folds: None,
+        };
+        exceptions.sort_by_cached_key(|(name, payload, cond)| (
+            name.clone(),
+            payload.as_ref().map(|value| math::canonical_order_key(value, &public)),
+            math::canonical_order_key(cond, &public),
+        ));
+    } else {
+        exceptions.sort_by(|a, b| a.0.cmp(&b.0));
+    }
     let throws = exceptions
         .into_iter()
-        .map(|(name, cond)| {
+        .map(|(name, payload, cond)| {
             let guard = if sql_exceptions.contains(name.as_str()) {
                 crate::format_expr_with_ctx(&cond, &mut ctx)
             } else {
                 condition_text(&cond, &mut ctx)
             };
-            json!({"type":name,"when":guard})
+            let mut record = json!({"type":name,"when":guard});
+            if let Some(value) = payload {
+                record["payload"] = json!(crate::format_expr_with_ctx(&value, &mut ctx));
+            }
+            record
         })
         .collect();
     let returned = result
