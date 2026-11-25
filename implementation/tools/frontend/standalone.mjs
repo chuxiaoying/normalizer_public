@@ -10,6 +10,16 @@ import { localDirectives } from './local-directives.mjs';
 
 const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
 const scalar = domain => domains.get(domain)?.[1];
+const readonlyVector = 'ReadonlyArray<number>';
+const parameter = domain => scalar(domain) ?? (domain === readonlyVector ? 'number[]' : null);
+const carrier = domain => domain === readonlyVector ? 'int[]' : domains.get(domain)[0];
+function declaredParameter(node, sf) {
+  if (node && ts.isTypeReferenceNode(node)
+      && ts.isIdentifier(node.typeName) && node.typeName.text === 'ReadonlyArray'
+      && node.typeArguments?.length === 1
+      && node.typeArguments[0].kind === ts.SyntaxKind.NumberKeyword) return readonlyVector;
+  return node?.getText(sf);
+}
 const internal = (op, fields) => ({op, ...fields});
 function fail(detail) { throw new Error('[NORM-JS-MODULE] ' + detail); }
 
@@ -78,12 +88,12 @@ function compile(source, file, entry) {
   const params = fn.parameters.map((param, position) => {
     if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken) fail('expected named required parameters');
     const [tag, ...more] = ts.getJSDocParameterTags(param);
-    const domain = tag?.typeExpression?.type.getText(sf);
-    if (more.length || !scalar(domain)) fail('expected declared business scalar for ' + param.name.text);
+    const domain = declaredParameter(tag?.typeExpression?.type, sf);
+    if (more.length || !parameter(domain)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (names.has(param.name.text)) fail('duplicate parameter ' + param.name.text);
     const binding = param.name.text;
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
-    names.set(param.name.text, {name: binding, type: scalar(domain)});
+    names.set(param.name.text, {name: binding, type: parameter(domain)});
     return {publicName: param.name.text, name: binding, domain, position};
   });
   function expression(expr) {
@@ -101,6 +111,20 @@ function compile(source, file, entry) {
       if (left.type !== 'number' || right.type !== 'number') fail('exact arithmetic requires two business numbers');
       return {type: 'number', node: internal(expr.operator === '+' ? 'add' : 'subtract', {left: left.node, right: right.node})};
     }
+    if (expr.op === 'read') {
+      const [name, field, ...rest] = expr.target.split('.');
+      const binding = names.get(name);
+      if (field !== 'length' || rest.length || binding?.type !== 'number[]') {
+        fail('length requires a direct declared non-null readonly Vector');
+      }
+      return {type: 'number', node: internal('value.field', {value: internal('var', {name: binding.name}), name: 'length'})};
+    }
+    if (expr.op === 'binary' && ['>', '<', '==='].includes(expr.operator)) {
+      const left = expression(expr.left), right = expression(expr.right);
+      if (left.type !== 'number' || right.type !== 'number') fail('comparison requires two business numbers');
+      const [a, b] = expr.operator === '<' ? [right, left] : [left, right];
+      return {type: 'bool', node: internal(expr.operator === '===' ? 'eq' : 'gt', {left: a.node, right: b.node})};
+    }
     if (expr.op === 'select') {
       const test = expression(expr.condition), yes = expression(expr.whenTrue), no = expression(expr.whenFalse);
       if (test.type !== 'bool' || yes.type !== no.type) fail('incompatible conditional types');
@@ -114,18 +138,19 @@ function compile(source, file, entry) {
   const returns = scalar(returnDomain);
   if (result.type !== returns) fail('return value differs from declared domain');
   const binding = 'Entry.run';
-  const javaParams = params.map(param => domains.get(param.domain)[0]);
+  const javaParams = params.map(param => carrier(param.domain));
   const declarations = params.map((param, i) => javaParams[i] + ' ' + param.name);
-  const carrier = 'class Entry { static native ' + domains.get(returnDomain)[0] + ' run(' + declarations.join(', ') + '); }\n';
-  return {carrier, binding, project: {
-    schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: carrier, entries: [binding],
+  const javaSource = 'class Entry { static native ' + domains.get(returnDomain)[0] + ' run(' + declarations.join(', ') + '); }\n';
+  return {carrier: javaSource, binding, project: {
+    schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: javaSource, entries: [binding],
+    parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
-      parameters: Object.fromEntries(params.map(param => [param.publicName, {position: param.position, type: scalar(param.domain)}])),
+      parameters: Object.fromEntries(params.map(param => [param.publicName, {position: param.position, type: parameter(param.domain)}])),
     }},
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
-      params: params.map(param => ({name: param.name, type: scalar(param.domain)})),
+      params: params.map(param => ({name: param.name, type: param.domain === readonlyVector ? 'vector<number>' : scalar(param.domain)})),
       returns, origin: {path: 'Module.js', excerpt: fn.getText(sf)},
       body: result.node,
     }},

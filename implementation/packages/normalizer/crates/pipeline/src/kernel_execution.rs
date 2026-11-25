@@ -72,7 +72,23 @@ impl Engine<'_> {
             );
         }
         match n {
-            Node::Field { value, name } => values::field(self.node(value, env, path)?, name),
+            Node::Field { value, name } => {
+                let acquired = self.node(value, env, path)?;
+                if name == "length" && matches!(&acquired, Value::Term(Ty::Vector(_), _)) {
+                    let input = acquired.scalar()?;
+                    let binding = math::domains::composite::input_name(&input)
+                        .ok_or_else(|| fail("length requires a direct readonly Vector input"))?;
+                    let entry = self.selected_entry.and_then(|full| full.rsplit('.').next())
+                        .ok_or_else(|| fail("length requires a declared entry"))?;
+                    need(acquired.ty() == Ty::Vector(Box::new(Ty::Integer))
+                        && self.project.parameter_value_types.get(entry).and_then(|params| params.get(binding))
+                            .is_some_and(|ty| ty == "vector<number>"),
+                        "length requires a declared non-null readonly numeric Vector")?;
+                    Ok(Value::Term(Ty::Integer, math::domains::composite::certified_vector_length(input)))
+                } else {
+                    values::field(acquired, name)
+                }
+            }
             Node::Settled { returns, steps } => {
                 tasks::validate_settled_scope(steps)?;
                 self.action_scope(returns, steps, env, path, true)

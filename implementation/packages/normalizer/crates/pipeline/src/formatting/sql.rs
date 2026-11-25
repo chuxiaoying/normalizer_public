@@ -133,6 +133,9 @@ pub fn format_expr_sql(expr: &Expr) -> String {
 /// Expr → 类 SQL 字符串（带 ctx，外部复用编号/heap）
 pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if ctx.business_inputs.is_some() {
+        if let Some(vector) = math::domains::composite::vector_length_input(expr) {
+            return format!("LENGTH({})", format_expr_with_ctx(vector, ctx));
+        }
         if let Some((_, label)) = ctx.business_projections.iter().rev().find(|(value, _)| value == expr) {
             return label.clone();
         }

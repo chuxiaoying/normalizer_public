@@ -5,6 +5,8 @@ import ts from 'typescript';
 
 const BINARY = new Map([
   [ts.SyntaxKind.PlusToken, '+'], [ts.SyntaxKind.MinusToken, '-'],
+  [ts.SyntaxKind.GreaterThanToken, '>'], [ts.SyntaxKind.LessThanToken, '<'],
+  [ts.SyntaxKind.EqualsEqualsEqualsToken, '==='],
 ]);
 
 function pathOf(node, sf) {

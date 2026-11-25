@@ -5,6 +5,9 @@ use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 
 /// 常量折叠：对运算符的所有子式都是 Lit 的情况求值。
 pub(crate) fn fold(expr: &Expr) -> Expr {
+    if let Some(length) = crate::domains::composite::fold_vector_length_predicate(expr) {
+        return length;
+    }
     match expr.kind() {
         ExprKind::BinOp { op, left, right } => {
             if let (ExprKind::Lit(a), ExprKind::Lit(b)) = (left.kind(), right.kind()) {

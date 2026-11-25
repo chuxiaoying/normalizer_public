@@ -1,0 +1,51 @@
+- name: explicit-empty-arm-is-the-same-natural-domain-case
+  edits:
+    - from: 'values.length > 0 ? 7 : 11'
+      to: 'values.length === 0 ? 11 : 7'
+- name: reversed-operands-preserve-the-length-predicate
+  edits:
+    - from: 'values.length > 0 ? 7 : 11'
+      to: '0 < values.length ? 7 : 11'
+- name: nullable-vector-is-not-a-certified-length
+  edits:
+    - from: '{ReadonlyArray<number>}'
+      to: '{ReadonlyArray<number>|null}'
+  reject:
+    - expected declared business scalar or non-null readonly Vector for values
+- name: readonly-declaration-whitespace-does-not-change-the-type
+  edits:
+    - from: '{ReadonlyArray<number>}'
+      to: '{ReadonlyArray< number >}'
+- name: another-length-threshold-keeps-one-item-in-the-empty-arm
+  edits:
+    - from: 'values.length > 0 ? 7 : 11'
+      to: 'values.length > 1 ? 7 : 11'
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN LENGTH(values) <= 1 THEN 11
+          ELSE 7
+        END
+- name: a-negative-length-comparison-is-provably-false
+  edits:
+    - from: 'values.length > 0 ? 7 : 11'
+      to: 'values.length < 0 ? 7 : 11'
+  expect:
+    - path: [R]
+      value: '11'
+- name: ordinary-business-number-does-not-acquire-the-natural-domain
+  edits:
+    - from: '{ReadonlyArray<number>}'
+      to: '{number}'
+    - from: 'values.length > 0 ? 7 : 11'
+      to: 'values > 0 ? 7 : 11'
+  expect:
+    - path: [P, parameters, values, type]
+      value: number
+    - path: [R]
+      value: |-
+        CASE
+          WHEN values <= 0 THEN 11
+          ELSE 7
+        END

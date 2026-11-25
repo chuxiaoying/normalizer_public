@@ -46,6 +46,60 @@ pub fn apply(name: &str, args: Vec<Expr>, params: Vec<Primitive>, result: Primit
     }
     crate::normalize(b::call(key, args))
 }
+// Provenance is kept at the intrinsic, separate from opaque function names.
+static VECTOR_LENGTH: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
+
+pub fn certified_vector_length(input: Expr) -> Expr {
+    let key = *VECTOR_LENGTH.get_or_init(|| crate::register_func(
+        "value.vector_length", vec![Primitive::Composite], Some(Primitive::Number),
+        FuncSemantics::pure_function(),
+    ));
+    b::call(key, vec![input])
+}
+
+pub fn vector_length_input(expr: &Expr) -> Option<&Expr> {
+    let (key, args) = expr.as_call()?;
+    let [input] = args else { return None; };
+    (VECTOR_LENGTH.get() == Some(&key)).then_some(input)
+}
+pub fn input_name(expr: &Expr) -> Option<&str> {
+    let (key, args) = expr.as_call()?;
+    let [name] = args else { return None; };
+    if crate::func_name(key) != "value.input" { return None; }
+    match name.as_lit()? { crate::Lit::Str(name) => Some(name), _ => None }
+}
+
+pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
+    use crate::BinOpKind::*;
+    let (op, left, right) = expr.as_binop()?;
+    let (op, subject, point) = if vector_length_input(left).is_some() {
+        (op, left, right)
+    } else if vector_length_input(right).is_some() {
+        (match op { Lt => Gt, Le => Ge, Gt => Lt, Ge => Le, _ => op }, right, left)
+    } else {
+        return None;
+    };
+    let n = point.as_lit()?.as_integer()?;
+    let zero: crate::Integer = 0.into();
+    let one: crate::Integer = 1.into();
+    let empty = || b::eq(subject.clone(), b::lit_int(0));
+    let nonempty = || b::ne(subject.clone(), b::lit_int(0));
+    Some(match op {
+        Gt if n < zero => b::lit_bool(true),
+        Ge if n <= zero => b::lit_bool(true),
+        Lt if n <= zero => b::lit_bool(false),
+        Le | Eq if n < zero => b::lit_bool(false),
+        Ne if n < zero => b::lit_bool(true),
+        Gt if n == zero => nonempty(),
+        Ge if n == one => nonempty(),
+        Lt if n == one => empty(),
+        Le if n == zero => empty(),
+        Gt => b::ge(subject.clone(), b::lit_integer(n + 1)),
+        Lt => b::le(subject.clone(), b::lit_integer(n - 1)),
+        _ => return None,
+    })
+}
+
 pub fn reduce(key: crate::FuncKey, args: &[Expr]) -> Option<Expr> {
     if let ("value.field", [record, field]) = (output_name(&crate::func_name(key)), args) {
         // Projection preserves the existing first-match domain. Only
