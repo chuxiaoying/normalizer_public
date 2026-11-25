@@ -1,0 +1,3 @@
+- name: an-equivalent-reversed-comparison-preserves-write-conditions
+  edits:
+    - { from: 'units > 0', to: '0 < units' }
