@@ -580,20 +580,10 @@ impl<'a> Parser<'a> {
         let mut left = self.parse_unary()?;
         loop {
             self.skip_ws();
-            // instanceof 优先级与比较运算符同级（9），不是常规 BinOp
-            if self.starts_with("instanceof") {
-                let after = self.src.get(self.pos + 10).copied();
-                let is_kw = !matches!(after, Some(c) if c.is_ascii_alphanumeric() || c == b'_' || c == b'$');
-                if is_kw && 9u8 >= min_prec {
-                    self.pos += 10;
-                    let ty = parse_type(self)
-                        .ok_or_else(|| self.err("expected type after instanceof"))?;
-                    left = JavaExpr::InstanceOf {
-                        operand: Box::new(left),
-                        java_type: ty,
-                    };
-                    continue;
-                }
+            let operator = self.pos;
+            if self.eat_keyword("instanceof") {
+                self.pos = operator;
+                return Err(self.err("[JAVA-UNSUPPORTED-TYPE-TEST] instanceof requires explicit preprocessing"));
             }
             let (op, prec, len) = match self.peek_binop() {
                 Some(t) => t,

@@ -436,12 +436,6 @@ pub enum JavaExpr {
         target: Box<JavaExpr>,
         index: Box<JavaExpr>,
     },
-
-    /// instanceof 判定
-    InstanceOf {
-        operand: Box<JavaExpr>,
-        java_type: JavaType,
-    },
 }
 
 /// Java 字面量。

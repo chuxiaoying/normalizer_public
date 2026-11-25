@@ -112,3 +112,10 @@
   edits:
     - { from: 'class TicketCode {', to: 'class TicketCode { int return;' }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-FIELD-NAME]']
+- name: unsupported-runtime-type-test-is-rejected-at-its-token
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { static boolean unused(TicketCode code) { return code instanceof TicketCode; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-UNSUPPORTED-TYPE-TEST]', 'instanceof']
+- name: a-longer-identifier-is-not-the-instanceof-keyword
+  edits:
+    - { from: 'return value;', to: 'int instanceofValue = value; return instanceofValue;' }
