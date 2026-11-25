@@ -73,10 +73,10 @@ pub fn canonical_order_ordered_comparison(
 
 /// Deterministic display-order key for peer terms in a proven commutative family.
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
-    // Expr is immutable. Without heap or scoped temporal names this key is
+    // Expr is immutable. Without scoped heap, environment or temporal names this key is
     // independent of SortContext, so the bounded cache is semantics-preserving and
     // avoids recomputing the same DisplayIR key in high-frequency AND/OR sorts.
-    if !expr.has_heap_ref() && ctx.temporal_aliases().is_none() {
+    if !expr.has_heap_ref() && ctx.temporal_aliases().is_none() && ctx.external_names().is_none() {
         if let Some(cached) = CANONICAL_ORDER_CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
             if crate::profile::cache_observation_enabled() {
                 crate::profile::cache_lookup(
@@ -273,10 +273,12 @@ fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortCo
         crate::symvar::SymVarOrigin::External {
             binding_id, path, ..
         } => {
+            let root = ctx.external_names().and_then(|names| names.get(binding_id)).cloned()
+                .unwrap_or_else(|| format!("$e_{binding_id}"));
             if path.is_empty() {
-                format!("01|$e_{binding_id}")
+                format!("01|{root}")
             } else {
-                format!("01|$e_{}.{}", binding_id, path.join("."))
+                format!("01|{root}.{}", path.join("."))
             }
         }
         crate::symvar::SymVarOrigin::Temporal { binding_id, primitive_type } => {

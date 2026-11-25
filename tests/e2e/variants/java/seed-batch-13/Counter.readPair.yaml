@@ -1,0 +1,17 @@
+- name: swap-read-and-declaration-order
+  edits:
+    - from: |-
+        @EntryState Quota zebra;
+            @EntryState Quota amber;
+      to: |-
+        @EntryState Quota amber;
+            @EntryState Quota zebra;
+    - from: zebra.units + amber.units
+      to: amber.units + zebra.units
+- name: noncommutative-state-difference-preserves-operands
+  edits:
+    - from: zebra.units + amber.units
+      to: zebra.units - amber.units
+  expect:
+    - path: [R]
+      value: zebra.units - amber.units

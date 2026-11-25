@@ -53,3 +53,33 @@ R: value + 1
 | 差异点（old → new） | 升级思想 |
 |---|---|
 | old 只能把实例字段看作未声明来源；new 在 E 中登记 `Counter.value`，R 直接读取该状态并计算 `value + 1`。 | E 记录入口已有状态的来源，P 只记录调用输入。状态与参数的职责由标记和来源合同决定，不靠 `this` 的语法形式推断。 |
+
+## 两条已取得的状态字段按公开路径排序
+
+```java
+import normalizer.annotations.EntryState;
+class Quota { int units; }
+class Counter {
+    @EntryState Quota zebra;
+    @EntryState Quota amber;
+
+    int readPair() {
+        return zebra.units + amber.units;
+    }
+}
+```
+
+**原样通过。** 两个状态均为入口已取得的对象，不读真正的端口，不执行写入。两条数值可以在计算结构中交换，记录仍各自引用原状态字段。调换源码读取或字段声明的先后，不改变唯一 R。
+
+```yaml
+schema: normalizer.pers/1
+types:
+  Quota: { fields: { units: number } }
+entry: { function: src/Counter.java#Counter.readPair, returns: number }
+P:
+  parameters: {}
+E:
+  zebra: { kind: state, source: src/Counter.java#Counter.zebra, type: Quota }
+  amber: { kind: state, source: src/Counter.java#Counter.amber, type: Quota }
+R: amber.units + zebra.units
+```

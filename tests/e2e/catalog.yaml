@@ -68,7 +68,7 @@ groups:
   java/seed-batch-11:
     expr-equation-inequality-normal-form: [System.consistent]
   java/seed-batch-13:
-    state-explicit-marker: [Counter.read]
+    state-explicit-marker: [Counter.read, Counter.readPair]
   java/seed-batch-14:
     state-nested-alias: [Alias.read]
   java/seed-batch-15:

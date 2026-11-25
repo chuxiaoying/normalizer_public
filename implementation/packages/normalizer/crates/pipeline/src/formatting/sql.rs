@@ -202,8 +202,13 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some(rendered) = business_value::format_guarded_boolean(op, left, right, ctx) {
             return rendered;
         }
+        let public = CanonicalNames {
+            heap: &ctx.business_identities,
+            external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
+            folds: (!ctx.pure_fold_names.is_empty()).then_some(&ctx.pure_fold_names),
+        };
         if let Some((display_op, flip)) =
-            math::canonical_order_ordered_comparison(op, left, right, &CanonicalNames { heap: &ctx.business_identities, folds: (!ctx.pure_fold_names.is_empty()).then_some(&ctx.pure_fold_names) })
+            math::canonical_order_ordered_comparison(op, left, right, &public)
         {
             let (lhs, rhs) = if flip { (right, left) } else { (left, right) };
             let l = format_expr_with_ctx(lhs, ctx);

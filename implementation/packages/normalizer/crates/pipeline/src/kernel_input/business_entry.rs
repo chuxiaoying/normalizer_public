@@ -399,9 +399,10 @@ impl EntryContext {
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
             // The boundary checks both identity and definition references
             // before passing their public names to the typed math normalizer.
-            let expression = if expression.has_heap_ref() || !fold_names.is_empty() {
+            let expression = if expression.has_heap_ref() || !fold_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &identities,
+                    external: (!states.is_empty()).then_some(&states),
                     folds: (!fold_names.is_empty()).then_some(&fold_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
