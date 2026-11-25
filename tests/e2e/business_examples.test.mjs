@@ -41,7 +41,10 @@ function checkExample(project, scene, entry, fixture, variant, seedReject) {
     assert.notEqual(status, 0, 'Expected a diagnostic');
     assert.equal(stdout, '');
     if (!variant?.reject) {
-      assert.ok(stderr.includes(entry), stderr);
+      // A declaration parser error precedes entry selection and instead
+      // must point to the supplied source file and the offending token.
+      const parseFailure = seedReject.includes('[SOURCE-PARSE-FAILED]');
+      assert.ok(stderr.includes(parseFailure ? fixture.sourceFile : entry), stderr);
       const kind = fixture.rejection.split('\n')[0];
       assert.ok(stderr.split(/\s+/).includes('kind=' + kind), stderr);
     }

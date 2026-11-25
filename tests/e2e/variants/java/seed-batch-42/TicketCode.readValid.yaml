@@ -1,0 +1,22 @@
+- name: an-identifier-that-starts-with-a-keyword-is-not-reserved
+  edits:
+    - { from: 'booleanValue', to: 'returnValue' }
+- name: constant-false-does-not-encounter-a-native-call
+  edits:
+    - { from: 'return value;', to: 'if (false) return booleanValue(); return value;' }
+- name: reaching-a-native-call-without-external-contract-panics
+  edits:
+    - { from: 'return value;', to: 'int result = booleanValue(); return result;' }
+  reject: ['panicked', '[NORM-OUT-OF-SOURCE]', 'target=TicketCode.booleanValue']
+- name: a-native-method-cannot-pretend-to-provide-a-java-body
+  edits:
+    - { from: 'booleanValue();', to: 'booleanValue() { return 5; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-NATIVE-DECLARATION]', 'requires a semicolon']
+- name: unmarked-bodyless-class-method-is-not-a-native-declaration
+  edits:
+    - { from: 'static native int', to: 'static int' }
+  reject: ['[NORM-MISSING-BODY]', 'TicketCode.booleanValue']
+- name: contradictory-modifiers-cannot-hide-an-illegal-declaration
+  edits:
+    - { from: 'static native int', to: 'static abstract native int' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-NATIVE-DECLARATION]', 'incompatible native method modifier']

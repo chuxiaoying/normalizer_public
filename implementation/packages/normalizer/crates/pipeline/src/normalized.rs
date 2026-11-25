@@ -382,7 +382,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
             {
                 return Err(error("NORM-METHOD-SHAPE", &id));
             }
-            if m.body().is_none() {
+            if m.body().is_none() && !m.is_native() {
                 return Err(error("NORM-MISSING-BODY", &id));
             }
         }
@@ -393,7 +393,12 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
     let mut graph = BTreeMap::new();
     for (id, m) in &methods {
         let mut calls = Vec::new();
-        let body = m.body().unwrap();
+        let Some(body) = m.body() else {
+            // A valid native declaration contributes no executable body.
+            // An actual call still reaches the kernel's out-of-source Panic.
+            graph.insert(id.clone(), Vec::new());
+            continue;
+        };
         validate_protected_try(body, id)?;
         statements(body, id, &mut calls)?;
         let mut targets = Vec::new();

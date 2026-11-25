@@ -698,7 +698,8 @@ impl Loaded {
         }
         for (id, m) in &e.methods {
             need(
-                m.body().is_some() || e.bindings.contains_key(id),
+                m.body().is_some() || e.bindings.contains_key(id)
+                    || self.project.direct_source && m.is_native(),
                 "unbound bodyless method",
             )?;
         }

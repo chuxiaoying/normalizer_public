@@ -161,7 +161,7 @@ impl JavaField {
 
 /// Java 方法。
 ///
-/// `body` 为 `None` 表示抽象方法或接口方法（无方法体）。
+/// `body` 为 `None` 表示没有 Java 方法体。
 #[derive(Debug, Clone)]
 pub struct JavaMethod {
     pub(crate) name: String,
@@ -172,6 +172,7 @@ pub struct JavaMethod {
     pub(crate) return_type: JavaType,
     pub(crate) is_static: bool,
     pub(crate) is_constructor: bool,
+    pub(crate) is_native: bool,
     /// 最后一个参数是否 varargs（Java 语义：varargs 只能是最后一个参数）
     ///
     /// 语义：若为 true，最后一个参数的 JavaType 是 Array（parser 已转换），
@@ -188,6 +189,8 @@ pub struct JavaMethod {
 }
 
 impl JavaMethod {
+    pub fn is_native(&self) -> bool { self.is_native }
+
     pub fn name(&self) -> &str {
         &self.name
     }

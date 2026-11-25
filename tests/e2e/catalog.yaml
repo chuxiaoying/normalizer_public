@@ -148,8 +148,8 @@ groups:
     sql-projected-distinct: [BillReport.countAccounts]
     java-map-present-null: [Caption.select]
     java-state-alias: [Account.reset]
+    java-invalid-declaration: [TicketCode.read, TicketCode.readValid]
 pending:
   - frontend-deferred-listener
-  - java-invalid-declaration
   - java-lifo-release
   - typescript-tuple-slots

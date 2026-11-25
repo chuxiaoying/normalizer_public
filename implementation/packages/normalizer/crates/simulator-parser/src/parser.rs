@@ -669,6 +669,19 @@ fn parse_throws(p: &mut Parser<'_>) -> Result<Vec<String>, ParseError> {
     Ok(names)
 }
 
+// Contextual keywords are not blanket reserved identifiers. Literal tokens
+// and the single underscore are also not permitted as ordinary method names.
+fn reserved_method_identifier(name: &str) -> bool {
+    matches!(name,
+        "_" | "abstract" | "assert" | "boolean" | "break" | "byte" | "case" | "catch" |
+        "char" | "class" | "const" | "continue" | "default" | "do" | "double" | "else" |
+        "enum" | "extends" | "final" | "finally" | "float" | "for" | "goto" | "if" |
+        "implements" | "import" | "instanceof" | "int" | "interface" | "long" | "native" |
+        "new" | "package" | "private" | "protected" | "public" | "return" | "short" |
+        "static" | "strictfp" | "super" | "switch" | "synchronized" | "this" | "throw" |
+        "throws" | "transient" | "try" | "void" | "volatile" | "while" | "true" | "false" | "null")
+}
+
 fn parse_class_body(
     body: &str,
     class: &mut JavaClass,
@@ -696,18 +709,26 @@ fn parse_class_body(
         let mut is_static = false;
         let mut is_final = false;
         let mut is_volatile = false;
+        let mut is_native = false;
+        let mut native_modifier_conflict = false;
         loop {
             p.skip_ws();
             if p.eat_keyword("public")
                 || p.eat_keyword("private")
                 || p.eat_keyword("protected")
-                || p.eat_keyword("abstract")
-                || p.eat_keyword("native")
                 || p.eat_keyword("synchronized")
-                || p.eat_keyword("default")
-                || p.eat_keyword("strictfp")
-                || p.eat_keyword("transient")
             {
+                continue;
+            }
+            if p.eat_keyword("abstract") || p.eat_keyword("default")
+                || p.eat_keyword("strictfp") || p.eat_keyword("transient")
+            {
+                native_modifier_conflict = true;
+                continue;
+            }
+            if p.eat_keyword("native") {
+                if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] duplicate native modifier")); }
+                is_native = true;
                 continue;
             }
             if p.eat_keyword("volatile") {
@@ -792,6 +813,7 @@ fn parse_class_body(
                 && simple_first == constructor_simple_name
                 && !first.contains('.')
             {
+                if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
                 let params_text = p.skip_balanced_parens()?;
                 let (params, is_varargs, param_annotations) = parse_params(&params_text)?;
                 p.skip_ws();
@@ -820,6 +842,7 @@ fn parse_class_body(
                     return_type: JavaType::Void,
                     is_static: false,
                     is_constructor: true,
+                    is_native: false,
                     is_varargs,
                     annotations: annotations.clone(),
                     body,
@@ -845,12 +868,24 @@ fn parse_class_body(
 
         p.skip_ws();
         if p.peek() == Some(b'(') {
+            if reserved_method_identifier(&member_name) {
+                return Err(p.err(&format!("[JAVA-RESERVED-METHOD-NAME] {}.{}: reserved keyword used as a Java method name", class.full_name(), member_name)));
+            }
+            if is_native && class.is_interface() {
+                return Err(p.err("[JAVA-NATIVE-DECLARATION] interface method cannot be native"));
+            }
+            if is_native && (native_modifier_conflict || is_volatile) {
+                return Err(p.err("[JAVA-NATIVE-DECLARATION] incompatible native method modifier"));
+            }
             let params_text = p.skip_balanced_parens()?;
             let (params, is_varargs, param_annotations) = parse_params(&params_text)?;
             p.skip_ws();
             let throws = parse_throws(&mut p)?;
             p.skip_ws();
             if p.eat_keyword("default") {
+                if is_native {
+                    return Err(p.err("[JAVA-NATIVE-DECLARATION] native method cannot have a default value"));
+                }
                 while let Some(c) = p.peek() {
                     if c == b';' {
                         break;
@@ -866,7 +901,12 @@ fn parse_class_body(
                 }
             }
             p.skip_ws();
-            let body = if p.peek() == Some(b'{') {
+            let body = if is_native {
+                if !p.eat_char(b';') {
+                    return Err(p.err("[JAVA-NATIVE-DECLARATION] native method requires a semicolon, not a method body"));
+                }
+                None
+            } else if p.peek() == Some(b'{') {
                 let text = p.skip_balanced_braces()?;
                 Some(crate::body_parser::parse_method_body_text(
                     &text,
@@ -889,12 +929,14 @@ fn parse_class_body(
                 return_type: java_type,
                 is_static,
                 is_constructor: false,
+                is_native,
                 is_varargs,
                 annotations,
                 body,
             });
 
         } else {
+            if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] field cannot be native")); }
             p.skip_ws();
             // Java 语义：interface 字段隐式 public static final。
             // Parser 不建 public flag，但 static/final 必须在 AST 中体现，否则 class init

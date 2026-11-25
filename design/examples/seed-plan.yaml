@@ -586,7 +586,7 @@ topics:
         focus: P、E 同名时的绑定消歧
       - id: java-invalid-declaration
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 合法入口旁的非法声明
       - id: basic-nonnull-input
