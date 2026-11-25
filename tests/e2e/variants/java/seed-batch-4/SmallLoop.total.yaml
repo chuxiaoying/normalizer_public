@@ -12,3 +12,28 @@
   expect:
     - path: [R]
       value: '1'
+- name: inclusive-ascending-bound-counts-the-final-element
+  edits:
+    - { from: 'int i = 0; i < 3; i++', to: 'int i = 0; i <= 2; ++i' }
+- name: inclusive-descending-bound-counts-zero-at-the-end
+  edits:
+    - { from: 'int i = 0; i < 3; i++', to: 'int i = 2; i >= 0; i--' }
+- name: strict-descending-bound-starts-with-the-supplied-counter
+  edits:
+    - { from: 'int i = 0; i < 3; i++', to: 'int i = 2; i > 0; --i' }
+- name: a-false-initial-condition-keeps-the-initial-accumulator
+  edits:
+    - { from: 'int i = 0; i < 3; i++', to: 'int i = 1; i < 0; i++' }
+  expect:
+    - { path: [R], value: '0' }
+- name: negative-long-constants-preserve-the-start-and-bound
+  edits:
+    - { from: 'static int total()', to: 'static long total()' }
+    - { from: 'int sum = 0;', to: 'long sum = 0L;' }
+    - { from: 'int i = 0; i < 3; i++', to: 'long i = -1L; i < 2L; ++i' }
+  expect:
+    - { path: [R], value: '0' }
+- name: a-constant-bound-with-the-wrong-step-does-not-prove-termination
+  edits:
+    - { from: 'int i = 0; i < 3; i++', to: 'int i = 0; i < 3; i--' }
+  reject: ['[NORM-LOOP]', 'SmallLoop.total']
