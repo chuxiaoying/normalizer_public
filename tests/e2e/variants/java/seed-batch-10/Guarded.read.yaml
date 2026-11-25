@@ -1,0 +1,12 @@
+reject: ['[NORM-CATCH-BODY]', 'kind=PREPROCESS_REQUIRED', 'Guarded.read']
+variants:
+  - name: raise-threshold
+    edits:
+      - from: 'value < 0'
+        to: 'value < 1'
+    reject: ['[NORM-CATCH-BODY]', 'kind=PREPROCESS_REQUIRED', 'Guarded.read']
+  - name: fallback-negative-one
+    edits:
+      - from: 'return 0;'
+        to: 'return -1;'
+    reject: ['[NORM-CATCH-BODY]', 'kind=PREPROCESS_REQUIRED', 'Guarded.read']

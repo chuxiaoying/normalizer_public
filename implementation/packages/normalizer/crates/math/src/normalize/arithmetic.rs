@@ -1,0 +1,471 @@
+//! 算术代数化简规则。
+//!
+//! 本模块放置 **非纯常量折叠** 的算术等价变换，例如
+//! `(x - y) op 0 → x op y`。它不同于 `constant.rs`（两侧均为 Lit
+//! 时直接求值），也不同于 `boolean.rs`（And/Or/Not 布尔代数）。
+//!
+//! ## 运算域
+//!
+//! 普通整数 Add/Sub/Mul 使用精确数学整数。源语言的位宽、回绕和窄化
+//! 由显式 word 算子表达，不能混用其代数规则。普通差值与零的比较
+//! 可比较两端，同一 subject 的精确偏移比较可消去共同项。
+
+use crate::expr::{BinOpKind, Expr, ExprKind, Lit};
+
+/// 算术代数化简入口。
+///
+/// 执行顺序：
+/// 1. 先做幺元/零元化简（`simplify_identity`）——简化结构后再做后续规则。
+/// 2. 再做 `(x - y) op 0 → x op y` 形变（`simplify_sub_compare_zero`）。
+///
+/// 幺元先行的理由：`x - 0` 先被规约为 `x`，避免后续 `(x - 0) op 0` 绕路；
+/// simplify_once 的不动点迭代保证整体收敛。
+pub(crate) fn simplify(expr: &Expr) -> Expr {
+    if let Some(r) = simplify_identity(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_reflexive_equality(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_positive_heap_ref_identity(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_same_subject_offset_comparison(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_symmetric_eq_ne_null_orientation(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_positive_heap_ref_compare_null(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_string_concat_literals(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_string_concat_compare_null(expr) {
+        return r;
+    }
+    if let Some(r) = simplify_sub_compare_zero(expr) {
+        return r;
+    }
+    expr.clone()
+}
+
+/// 算术幺元/零元化简。
+///
+/// 规则清单：
+/// - 加法幺元：`0 + x → x`、`x + 0 → x`
+/// - 减法右零元：`x - 0 → x`（`0 - x` 不处理，需引入 UnaryOp::Neg）
+/// - 乘法幺元：`1 * x → x`、`x * 1 → x`
+/// - 乘法零元：`0 * x → 0`、`x * 0 → 0`
+///
+/// 这里仅化简纯值。原调用、状态写入和异常由独立的边界／完成信息
+/// 保留；该规则不授权删除这些可观察行为，也不改变输入的运算域。
+fn simplify_identity(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    match op {
+        BinOpKind::Add => {
+            if is_lit_int_zero(left) {
+                return Some(right.clone());
+            }
+            if is_lit_int_zero(right) {
+                return Some(left.clone());
+            }
+        }
+        BinOpKind::Sub => {
+            if is_lit_int_zero(right) {
+                return Some(left.clone());
+            }
+            if super::integer_ac::total_integer(expr) {
+                if left == right {
+                    return Some(crate::builder::lit_int(0));
+                }
+                if let Some(value) = remove_additive_term(left, right) {
+                    return Some(value);
+                }
+            }
+            // 0 - x 不处理：需引入 UnaryOp::Neg push-down，本模块不扩展
+        }
+        BinOpKind::Mul => {
+            if is_lit_int_zero(left) || is_lit_int_zero(right) {
+                return Some(crate::builder::lit_int(0));
+            }
+            if is_lit_int_one(left) {
+                return Some(right.clone());
+            }
+            if is_lit_int_one(right) {
+                return Some(left.clone());
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+/// Remove one exact summand from a normalized sum without distributing any
+/// multiplication. The caller has proved both totality and exact integers.
+fn remove_additive_term(sum: &Expr, term: &Expr) -> Option<Expr> {
+    let (BinOpKind::Add, left, right) = sum.as_binop()? else { return None; };
+    if left == term { return Some(right.clone()); }
+    if right == term { return Some(left.clone()); }
+    if let Some(rest) = remove_additive_term(left, term) {
+        return Some(crate::builder::add(rest, right.clone()));
+    }
+    remove_additive_term(right, term).map(|rest| crate::builder::add(left.clone(), rest))
+}
+
+fn is_lit_int_one(expr: &Expr) -> bool {
+    matches!(expr.kind(), ExprKind::Lit(Lit::Int(1)))
+}
+
+/// 自反等式/不等式化简。
+///
+/// 规则：
+/// - `x == x -> true`
+/// - `x != x -> false`
+///
+/// 这是纯数学/Java 引用自反性定律：同一个表达式值与自身比较恒等；当前 math
+/// 不建模 NaN 浮点语义，且 Java reference self equality 也恒为 true。把该规则放在
+/// math normalize 层，而不是 executor 的某个 JavaBinOp 局部 fast path，能让 inline
+/// helper / CaseWhen / path condition 中已经形成的比较表达式统一受益，防止布尔条件
+/// 在 caller 侧继续膨胀。
+fn simplify_reflexive_equality(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    if left != right {
+        return None;
+    }
+    match op {
+        BinOpKind::Eq | BinOpKind::Le | BinOpKind::Ge => Some(crate::builder::lit_bool(true)),
+        BinOpKind::Ne | BinOpKind::Lt | BinOpKind::Gt => Some(crate::builder::lit_bool(false)),
+        _ => None,
+    }
+}
+
+/// Concrete positive HeapRefs carry executor-established object identity.
+/// Distinct positive ids are unequal, while different negative ids remain
+/// symbolic nullable references and must not be compared by shape alone.
+fn simplify_positive_heap_ref_identity(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    let (Some(left_id), Some(right_id)) = (left.as_heap_ref(), right.as_heap_ref()) else {
+        return None;
+    };
+    if left_id <= 0 || right_id <= 0 || left_id == right_id {
+        return None;
+    }
+    match op {
+        BinOpKind::Eq => Some(crate::builder::lit_bool(false)),
+        BinOpKind::Ne => Some(crate::builder::lit_bool(true)),
+        _ => None,
+    }
+}
+
+/// 同 subject 偏移量比较化简。
+///
+/// 精确整数加减保持平移不变；只在共同 subject 完全一致时消去。
+/// 常量偏移同样使用任意精度，不能在提取阶段发生宿主溢出。
+fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    if !matches!(
+        op,
+        BinOpKind::Lt | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge
+    ) {
+        return None;
+    }
+    fn decompose(e: &Expr) -> (&Expr, num_bigint::BigInt) {
+        if let ExprKind::BinOp { op, left, right } = e.kind() {
+            if let Some(c) = right.as_lit().and_then(Lit::as_integer) {
+                match op {
+                    BinOpKind::Add => return (left, c),
+                    BinOpKind::Sub => return (left, -c),
+                    _ => {}
+                }
+            }
+            if matches!(op, BinOpKind::Add) {
+                if let Some(c) = left.as_lit().and_then(Lit::as_integer) {
+                    return (right, c);
+                }
+            }
+        }
+        (e, 0.into())
+    }
+    let (base_l, off_l) = decompose(left);
+    let (base_r, off_r) = decompose(right);
+    if base_l != base_r {
+        return None;
+    }
+    let result = match op {
+        BinOpKind::Lt => off_l < off_r,
+        BinOpKind::Gt => off_l > off_r,
+        BinOpKind::Le => off_l <= off_r,
+        BinOpKind::Ge => off_l >= off_r,
+        _ => return None,
+    };
+    Some(crate::builder::lit_bool(result))
+}
+
+/// 对称 Eq/Ne 的 null 方向规范化。
+///
+/// `x == null` 与 `null == x` 在 Java/PERST 语义下等价；`!=` 同理。
+/// 将 null literal 固定到右侧，可让后续布尔吸收、互补判定和 CaseWhen
+/// first-match normal form 使用结构相等命中同一数学事实，例如：
+///
+/// `x == null || (null == x && flag) -> x == null`
+fn simplify_symmetric_eq_ne_null_orientation(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
+        return None;
+    }
+    if left.is_null() && !right.is_null() {
+        return Some(Expr::new(ExprKind::BinOp {
+            op: *op,
+            left: right.clone(),
+            right: left.clone(),
+        }));
+    }
+    None
+}
+
+/// Positive HeapRef values are executor-created Java objects and therefore non-null.
+///
+/// HeapRef sign is part of the executor/math contract: positive ids denote fresh
+/// concrete objects created by `new`/runtime materialization, while negative ids
+/// denote symbolic P/E references that may be null.  Once a positive HeapRef has
+/// reached math as a value atom, comparing it with null is a Java reference
+/// identity tautology/contradiction.  This removes object-snapshot null guards
+/// such as `null == {billId: row.item}` after row-scope heap absorption without
+/// guessing anything about negative external references.
+fn simplify_positive_heap_ref_compare_null(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
+        return None;
+    }
+
+    let heap_side = if left.is_null() {
+        right
+    } else if right.is_null() {
+        left
+    } else {
+        return None;
+    };
+
+    let Some(heap_id) = heap_side.as_heap_ref() else {
+        return None;
+    };
+    if heap_id <= 0 {
+        return None;
+    }
+
+    Some(crate::builder::lit_bool(matches!(op, BinOpKind::Ne)))
+}
+
+/// Java 字符串拼接字面量聚合。
+///
+/// 真实 Java 字符串拼接是从左到右的 `String.valueOf` + concat。表达式已经进入
+/// 符号值层后，`(prefix + "A") + "B"` 与 `prefix + "AB"` 等价；该规则只合并
+/// 相邻的字符串字面量后缀，不改变非字面量操作数顺序，不猜测数值加法。
+fn simplify_string_concat_literals(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp {
+        op: BinOpKind::Add,
+        left,
+        right,
+    } = expr.kind()
+    else {
+        return None;
+    };
+
+    let ExprKind::Lit(Lit::Str(right_s)) = right.kind() else {
+        return None;
+    };
+    let ExprKind::BinOp {
+        op: BinOpKind::Add,
+        left: prefix,
+        right: left_suffix,
+    } = left.kind()
+    else {
+        return None;
+    };
+    let ExprKind::Lit(Lit::Str(left_s)) = left_suffix.kind() else {
+        return None;
+    };
+
+    Some(crate::builder::add(
+        prefix.clone(),
+        crate::builder::lit_str(format!("{}{}", left_s, right_s)),
+    ))
+}
+
+/// Java 字符串拼接结果非 null。
+///
+/// 真实 Java 语义：只要 `+` 表达式进入字符串拼接路径，运行时等价于
+/// `new StringBuilder().append(...).append(...).toString()`；即使某个操作数为
+/// null，也会经 `String.valueOf(null)` 变成字符串 "null"，整个拼接结果不是
+/// null。
+///
+/// 本规则保守识别两类 Java 字符串拼接：
+/// 1. 含字符串字面量的 `Add` 树（如 `"channel_" + code` / `x + ""`）；
+/// 2. `Add` 树任一侧静态/返回类型已是 `java.lang.String`。
+///
+/// 第二类用于承接 executor 已经证明为 String 的表达式，例如
+/// `DateUtil.getDateString(now) + endTime`。这仍然是 Java `+` 的真实类型语义，
+/// 不是根据变量名/业务类名猜测；没有 String 类型证据的 `Add` 仍不按拼接处理。
+fn simplify_string_concat_compare_null(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
+        return None;
+    }
+
+    let concat_side = if left.is_null() {
+        right
+    } else if right.is_null() {
+        left
+    } else {
+        return None;
+    };
+
+    if !is_string_concat_with_literal(concat_side) {
+        return None;
+    }
+
+    Some(crate::builder::lit_bool(matches!(op, BinOpKind::Ne)))
+}
+
+fn is_string_concat_with_literal(expr: &Expr) -> bool {
+    let ExprKind::BinOp {
+        op: BinOpKind::Add,
+        left,
+        right,
+    } = expr.kind()
+    else {
+        return false;
+    };
+
+    contains_string_literal(left)
+        || contains_string_literal(right)
+        || is_java_string_expr(left)
+        || is_java_string_expr(right)
+}
+
+fn contains_string_literal(expr: &Expr) -> bool {
+    match expr.kind() {
+        ExprKind::Lit(Lit::Str(_)) => true,
+        ExprKind::BinOp {
+            op: BinOpKind::Add,
+            left,
+            right,
+        } => contains_string_literal(left) || contains_string_literal(right),
+        _ => false,
+    }
+}
+
+fn is_java_string_expr(expr: &Expr) -> bool {
+    if let Some(origin) = expr.as_sym_var() {
+        let primitive_type = match origin {
+            crate::SymVarOrigin::Parameter { primitive_type, .. }
+            | crate::SymVarOrigin::External { primitive_type, .. }
+            | crate::SymVarOrigin::Temporal { primitive_type, .. } => primitive_type,
+        };
+        if primitive_type == "java.lang.String" {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// `(x - y) op 0 → x op y`。
+///
+/// 支持比较运算符：`> / < / >= / <= / == / !=`。
+/// 对称形式先规范化方向：`0 < (x - y)` → `(x - y) > 0`。
+fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
+    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+        return None;
+    };
+    if !is_comparison(*op) {
+        return None;
+    }
+
+    let (cmp_op, lhs, rhs) = normalize_zero_direction(*op, left, right)?;
+    let ExprKind::BinOp {
+        op: BinOpKind::Sub,
+        left: x,
+        right: y,
+    } = lhs.kind()
+    else {
+        return None;
+    };
+
+    if !is_lit_int_zero(&rhs) {
+        return None;
+    }
+
+    Some(binop(cmp_op, x.clone(), y.clone()))
+}
+
+/// 规范化零值方向。
+///
+/// - `(x - y) < 0` 保持为 `((x - y), 0, Lt)`
+/// - `0 < (x - y)` 翻转为 `((x - y), 0, Gt)`
+///
+/// Eq/Ne 是对称比较，翻转后运算符不变。
+fn normalize_zero_direction(
+    op: BinOpKind,
+    left: &Expr,
+    right: &Expr,
+) -> Option<(BinOpKind, Expr, Expr)> {
+    if is_lit_int_zero(right) {
+        Some((op, left.clone(), right.clone()))
+    } else if is_lit_int_zero(left) {
+        Some((flip_comparison(op), right.clone(), left.clone()))
+    } else {
+        None
+    }
+}
+
+fn is_lit_int_zero(expr: &Expr) -> bool {
+    matches!(expr.kind(), ExprKind::Lit(Lit::Int(0)))
+}
+
+fn is_comparison(op: BinOpKind) -> bool {
+    matches!(
+        op,
+        BinOpKind::Eq
+            | BinOpKind::Ne
+            | BinOpKind::Lt
+            | BinOpKind::Le
+            | BinOpKind::Gt
+            | BinOpKind::Ge
+    )
+}
+
+fn flip_comparison(op: BinOpKind) -> BinOpKind {
+    match op {
+        BinOpKind::Lt => BinOpKind::Gt,
+        BinOpKind::Gt => BinOpKind::Lt,
+        BinOpKind::Le => BinOpKind::Ge,
+        BinOpKind::Ge => BinOpKind::Le,
+        BinOpKind::Eq => BinOpKind::Eq,
+        BinOpKind::Ne => BinOpKind::Ne,
+        _ => panic!(
+            "[ARITHMETIC] flip_comparison called with non-comparison op: {:?}",
+            op
+        ),
+    }
+}
+
+fn binop(op: BinOpKind, left: Expr, right: Expr) -> Expr {
+    Expr::new(ExprKind::BinOp { op, left, right })
+}

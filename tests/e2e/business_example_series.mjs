@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
+
+function checkKeys(object, allowed) {
+  for (const key of Object.keys(object)) assert.ok(allowed.includes(key), 'Unexpected fixture key: ' + key);
+}
+
+export function loadSeries(file) {
+  const series = YAML.parse(readFileSync(file, 'utf8'));
+  let variants = series;
+  let reject;
+  if (!Array.isArray(series)) {
+    assert.deepEqual(Object.keys(series ?? {}).sort(), ['reject', 'variants'], 'Invalid rejection series: ' + file);
+    ({ reject, variants } = series);
+    assert.ok(Array.isArray(reject) && reject.length && reject.every(text => typeof text === 'string' && text.trim().length),
+      'Expected diagnostic fragments: ' + file);
+  }
+  assert.ok(Array.isArray(variants) && variants.length, 'Empty series: ' + file);
+  const names = new Set(['original']);
+  for (const variant of variants) {
+    checkKeys(variant, ['name', 'edits', 'expect', 'reject']);
+    assert.match(variant.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    assert.ok(!names.has(variant.name), 'Duplicate case: ' + variant.name);
+    names.add(variant.name);
+    assert.ok(Array.isArray(variant.edits) && variant.edits.length, 'Missing input mutation');
+    if (Object.hasOwn(variant, 'expect')) assert.ok(Array.isArray(variant.expect) && variant.expect.length);
+    if (Object.hasOwn(variant, 'reject')) {
+      assert.ok(!variant.expect && Array.isArray(variant.reject) && variant.reject.length);
+      assert.ok(variant.reject.every(text => typeof text === 'string' && text.trim().length));
+    }
+  }
+  return { variants, reject };
+}
+
+export function resolveVariantEdits(mainFile, edits) {
+  return edits.map(edit => {
+    checkKeys(edit, ['file', 'from', 'to']);
+    const file = edit.file ?? mainFile;
+    assert.match(file, /^src\/[\w-]+\.(?:java|vue|mjs|js)$/);
+    assert.ok(typeof edit.from === 'string' && edit.from.length && typeof edit.to === 'string' && edit.from !== edit.to);
+    return { ...edit, file };
+  });
+}
+
+// Each case starts with the original prepared project and independent document oracle.
+// Replacements must identify exactly one source location so stale fixtures fail visibly.
+export function applyVariant(project, mainFile, baseline, variant) {
+  for (const edit of resolveVariantEdits(mainFile, variant.edits)) {
+    const { file } = edit;
+    const path = join(project, file);
+    const source = readFileSync(path, 'utf8');
+    const start = source.indexOf(edit.from);
+    assert.ok(start >= 0 && source.lastIndexOf(edit.from) === start, variant.name + ': expected one occurrence of ' + JSON.stringify(edit.from) + ' in ' + file);
+    writeFileSync(path, source.slice(0, start) + edit.to + source.slice(start + edit.from.length));
+  }
+  return applyExpectedChanges(baseline, variant.expect);
+}
+
+export function applyExpectedChanges(baseline, changes = []) {
+  const expected = structuredClone(baseline);
+  for (const change of changes) {
+    checkKeys(change, ['path', 'value', 'absent']);
+    const replacement = Object.hasOwn(change, 'value');
+    assert.ok(Array.isArray(change.path) && change.path.length &&
+      (replacement ? !Object.hasOwn(change, 'absent') : change.absent === true));
+    let node = expected;
+    for (const key of change.path.slice(0, -1)) {
+      assert.ok(Object.hasOwn(node, key), 'Unknown expected field: ' + change.path.join('.'));
+      node = node[key];
+    }
+    const last = change.path.at(-1);
+    assert.ok(Object.hasOwn(node, last), 'Unknown expected field: ' + change.path.join('.'));
+    if (replacement) {
+      node[last] = change.value;
+    } else {
+      assert.ok(!Array.isArray(node), 'Use a whole-array replacement to remove a list item');
+      delete node[last];
+    }
+  }
+  return expected;
+}

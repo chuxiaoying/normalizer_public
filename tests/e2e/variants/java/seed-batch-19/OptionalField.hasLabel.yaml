@@ -1,0 +1,15 @@
+- name: reverse-null-condition
+  edits:
+    - from: "return profile.label == null ? 0 : 1;"
+      to: "return profile.label != null ? 1 : 0;"
+- name: change-present-value
+  edits:
+    - from: "return profile.label == null ? 0 : 1;"
+      to: "return profile.label == null ? 0 : 2;"
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN profile.label == null THEN 0
+          ELSE 2
+        END

@@ -1,0 +1,18 @@
+- name: raise-positive-threshold
+  edits:
+    - from: 'where row.amount > 0'
+      to: 'where row.amount >= 10'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          (
+            SELECT bill.amount
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.amount >= 10
+            ORDER BY bill.amount
+            LIMIT 1
+          ),
+          0
+        )

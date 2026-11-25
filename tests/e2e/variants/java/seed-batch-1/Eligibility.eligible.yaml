@@ -1,0 +1,11 @@
+- name: remove-redundant-switch
+  edits:
+    - from: 'return (active && preferred) || (active && !preferred);'
+      to: 'return active;'
+- name: raise-score-threshold
+  edits:
+    - from: 'score >= 60'
+      to: 'score >= 70'
+  expect:
+    - path: [R]
+      value: score >= 70

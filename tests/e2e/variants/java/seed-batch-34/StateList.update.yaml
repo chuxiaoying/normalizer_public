@@ -1,0 +1,35 @@
+- name: update-second-slot
+  edits:
+    - from: 'values[0] = next;'
+      to: 'values[1] = next;'
+    - from: 'return alias[0];'
+      to: 'return alias[1];'
+  expect:
+    - path: [S, 0, write, target]
+      value: 'values[1]'
+    - path: [S, 0, write, when]
+      value: LENGTH(values) >= 2
+    - path: [throws, 0, when]
+      value: LENGTH(values) <= 1
+- name: add-before-write
+  edits:
+    - from: 'values[0] = next;'
+      to: 'values[0] = next + 1;'
+  expect:
+    - path: [S, 0, write, value]
+      value: next + 1
+    - path: [R]
+      value: next + 1
+- name: earlier-write-survives-later-out-of-bounds
+  edits:
+    - from: 'return alias[0];'
+      to: 'alias[1] = alias[0] + 1; return alias[1];'
+  expect:
+    - path: [S]
+      value:
+        - write: { target: 'values[0]', value: next, when: 'LENGTH(values) > 0' }
+        - write: { target: 'values[1]', value: next + 1, when: 'LENGTH(values) >= 2' }
+    - path: [R]
+      value: next + 1
+    - path: [throws, 0, when]
+      value: LENGTH(values) <= 1

@@ -1,0 +1,14 @@
+- name: add-one-to-nested-value
+  edits:
+    - from: "return outer.inner.value;"
+      to: "return outer.inner.value + 1;"
+  expect:
+    - path: [R]
+      value: outer.inner.value + 1
+- name: subtract-one-from-nested-value
+  edits:
+    - from: "return outer.inner.value;"
+      to: "return outer.inner.value - 1;"
+  expect:
+    - path: [R]
+      value: outer.inner.value - 1

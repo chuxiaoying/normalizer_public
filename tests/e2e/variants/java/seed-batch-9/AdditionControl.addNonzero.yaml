@@ -1,0 +1,9 @@
+- name: change-zero-fallback
+  edits: [{ from: 'return 0;', to: 'return -1;' }]
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN operand == 0 THEN -1
+          ELSE operand + total
+        END

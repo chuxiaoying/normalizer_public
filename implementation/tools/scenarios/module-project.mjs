@@ -1,0 +1,184 @@
+// Compile a synchronous component projection to the shared symbolic kernel.
+// Each binding denotes a read of a plain field during this render observation.
+import { accessSync, constants, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { readModuleEvent } from '../frontend/module-event.mjs';
+import { readModuleProjection } from '../frontend/module-projection.mjs';
+
+const carriers = {
+  bool: ['boolean', 'bool'], text: ['String', 'text?'],
+  number: ['int', 'number'],
+};
+
+function compileProjection(projection) {
+  const reads = new Map();
+  const bindings = new Map();
+  const environment = Object.create(null);
+
+  function read(target) {
+    const [binding, ...fields] = target.split('.');
+    const alias = bindings.get(binding);
+    if (alias && !alias.statePath) throw new Error(`SCENARIO_MODULE_INPUT: scalar projection local ${binding} has no fields`);
+    target = [alias?.statePath ?? binding, ...fields].join('.');
+    const [root, ...path] = target.split('.');
+    const state = projection.states.get(root);
+    if (!state) throw new Error(`SCENARIO_MODULE_INPUT: ${target} must name an @entryState field`);
+    let type = state.fields;
+    for (const name of path) {
+      if (!type || typeof type !== 'object' || !Object.hasOwn(type, name)) throw new Error(`SCENARIO_MODULE_INPUT: missing type for ${target}`);
+      type = type[name];
+    }
+    if (typeof type === 'object') return { statePath: target };
+    if (!Object.hasOwn(carriers, type)) throw new Error(`SCENARIO_MODULE_INPUT: ${target} must be a scalar field`);
+    if (!reads.has(target)) {
+      reads.set(target, { name: `state_${reads.size}`, path: ['E', root, ...path], type });
+      environment[root] ??= { kind: 'state', source: state.source, fields: Object.create(null) };
+      let fields = environment[root].fields;
+      for (const name of path.slice(0, -1)) fields = fields[name] ??= Object.create(null);
+      fields[path.at(-1)] = type;
+    }
+    return { type, body: { op: 'var', name: reads.get(target).name } };
+  }
+
+  function compile(expr) {
+    if (expr.op === 'read') return read(expr.target);
+    if (expr.op === 'var') {
+      const binding = bindings.get(expr.name);
+      if (binding?.statePath || projection.states.has(expr.name)) return read(expr.name);
+      if (!binding) throw new Error(`SCENARIO_MODULE_INPUT: unbound projection local ${expr.name}`);
+      return { type: binding.type, body: { op: 'var', name: binding.name } };
+    }
+    if (expr.op === 'literal') {
+      const type = { number: 'number', boolean: 'bool', string: 'text' }[expr.type];
+      if (!type || type === 'number' && !Number.isSafeInteger(expr.value)) {
+        throw new Error('SCENARIO_MODULE_INPUT: literal outside supported projection domain');
+      }
+      return { type, body: { op: 'const', type: carriers[type][1], value: expr.value } };
+    }
+    if (expr.op === 'select') {
+      const test = compile(expr.condition);
+      const yes = compile(expr.whenTrue);
+      const no = compile(expr.whenFalse);
+      const type = yes.type;
+      if (test.type !== 'bool' || !type || type !== no.type) throw new Error('SCENARIO_MODULE_INPUT: incompatible types in conditional projection');
+      return { type, body: { op: 'if', cond: test.body, then: yes.body, else: no.body } };
+    }
+    throw new Error(`SCENARIO_MODULE_INPUT: unsupported component projection operation ${expr.op}`);
+  }
+
+  const steps = [];
+  for (const local of projection.locals) {
+    if (bindings.has(local.name) || projection.states.has(local.name)) {
+      throw new Error(`SCENARIO_MODULE_INPUT: duplicate or shadowed projection binding ${local.name}`);
+    }
+    const value = compile(local.value);
+    if (value.statePath) {
+      // The projection contract admits plain immutable records for the duration
+      // of this observation. An alias retains the original field's E source.
+      bindings.set(local.name, value);
+      continue;
+    }
+    const { type, body } = value;
+    const name = `projection_${bindings.size}`;
+    steps.push({ op: 'let', name, value: body });
+    bindings.set(local.name, { type, name });
+  }
+  const returned = compile(projection.expression);
+  if (!returned.type) throw new Error('SCENARIO_MODULE_INPUT: projection must return a scalar field or expression');
+  const body = steps.length
+    ? { op: 'action', returns: carriers[returned.type][1], steps: [...steps, { op: 'return', value: returned.body }] }
+    : returned.body;
+  return { type: returned.type, body, reads: [...reads.values()], environment };
+}
+
+function projectionContract(modulePath, moduleText, name, original) {
+  const projection = readModuleProjection(modulePath, moduleText, name, original);
+  const { type, body, reads, environment } = compileProjection(projection);
+  const params = reads.map(read => ({ name: read.name, type: carriers[read.type][1] }));
+  const javaParams = reads.map(read => carriers[read.type][0]);
+  const declarations = params.map((param, index) => `${javaParams[index]} ${param.name}`).join(', ');
+  const returns = carriers[type][1];
+  const javaReturn = carriers[type][0];
+  const source = `class T { static ${javaReturn} run(${declarations}) { return M.run(${params.map(param => param.name).join(', ')}); } }\n` +
+    `class M { static native ${javaReturn} run(${declarations}); }\n`;
+  const entry = 'T.run';
+  const project = {
+    schema: 'normalizer.kernel-input/1',
+    source: 'Normalized.java', source_text: source,
+    entries: [entry],
+    entry_contexts: { [entry]: {
+      function: projection.function, returns: type, parameters: {}, environment,
+      bindings: Object.fromEntries(reads.map(read => [read.name, read.path])),
+    } },
+    functions: { run: {
+      java: `M.run(${javaParams.join(',')})`, params, returns,
+      origin: { path: 'Prepared.mjs', excerpt: `function ${name}` }, body,
+    } },
+  };
+  return project;
+}
+
+function eventContract(modulePath, moduleText, name, original) {
+  const event = readModuleEvent(modulePath, moduleText, name, original);
+  const entry = 'T.run';
+  const source = 'class T { static native void run(); }\n';
+  function kernelType(domain, seen = new Set()) {
+    if (domain.endsWith('[]')) return `vector<${kernelType(domain.slice(0, -2), seen)}>`;
+    if (domain === 'void') return 'unit';
+    if (Object.hasOwn(carriers, domain)) return carriers[domain][1];
+    const record = event.types[domain];
+    if (!record || seen.has(domain)) throw new Error(`SCENARIO_MODULE_INPUT: unknown or recursive entry type ${domain}`);
+    const next = new Set(seen).add(domain);
+    const fields = Object.entries(record.fields).map(([key, type]) => key + ':' + kernelType(type, next));
+    return `record<${fields.join(',')}>`;
+  }
+  const ports = {};
+  const exceptions = {};
+  for (const port of event.ports) {
+    ports[port.id] = {
+      endpoint: port.endpoint, effect: 'async-barrier', heap_effect: 'none', argument_observation: 'immutable_value',
+      params: port.params.map(({name, type}) => ({name, type: kernelType(type)})),
+      returns: kernelType(port.returns), throws: port.throws,
+      origin: {path: 'Prepared.mjs', excerpt: port.endpoint},
+    };
+    for (const type of port.throws) exceptions[type] = 'unit';
+  }
+  return {
+    schema: 'normalizer.kernel-input/1', source: 'Normalized.java',
+    source_text: source, entries: [entry], exceptions, ports,
+    entry_contexts: {[entry]: {
+      function: event.function, returns: 'void', parameters: event.parameters,
+      types: event.types, environment: event.environment,
+      external_results: Object.fromEntries(event.ports.map(port => [port.id, port.returns])),
+    }},
+    functions: {run: {java: 'T.run()', params: [], returns: 'unit',
+      origin: {path: 'Prepared.mjs', excerpt: `function ${name}`},
+      body: {op: 'settled', returns: 'unit', steps: event.steps}}},
+  };
+}
+
+export function buildModuleProject({ scene, root, file, name, original, directory }) {
+  for (const path of [original, file]) {
+    if (!path || isAbsolute(path) || relative(resolve(root), resolve(root, path)).split(/[\\/]/)[0] === '..') {
+      throw new Error('SCENARIO_MODULE_INPUT: source paths must be project-relative');
+    }
+  }
+  if (extname(original) !== '.vue' || extname(file) !== '.mjs') {
+    throw new Error('SCENARIO_MODULE_INPUT: expected a Vue source and its prepared .mjs module');
+  }
+  const originalPath = join(root, original);
+  if (!statSync(originalPath).isFile()) throw new Error('SCENARIO_MODULE_INPUT: original Vue source must be a file');
+  accessSync(originalPath, constants.R_OK);
+  const modulePath = join(root, file);
+  const moduleText = readFileSync(modulePath, 'utf8');
+  const build = scene === 'frontend-vo-production' ? eventContract : projectionContract;
+  if (!['frontend-vo-production', 'frontend-vo-consumption'].includes(scene)) throw new Error('SCENARIO_MODULE_INPUT: unsupported component scenario');
+  const project = build(modulePath, moduleText, name, original);
+  const [entry] = project.entries;
+  const source = project.source_text;
+  writeFileSync(join(directory, 'Normalized.java'), source);
+  writeFileSync(join(directory, 'Prepared.mjs'), moduleText);
+  const projectPath = join(directory, 'project.yaml');
+  writeFileSync(projectPath, JSON.stringify(project, null, 2) + '\n');
+  return { projectPath, entry };
+}

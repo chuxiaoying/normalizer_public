@@ -1,0 +1,11 @@
+- name: add-two
+  edits:
+    - from: "return this.value + 1;"
+      to: "return this.value + 2;"
+  expect:
+    - path: [R]
+      value: value + 2
+- name: preserve-state-read
+  edits:
+    - from: "return this.value + 1;"
+      to: "int result = this.value + 1;\n        return result;"

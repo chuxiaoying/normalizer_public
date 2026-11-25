@@ -1,0 +1,10 @@
+reject: ['kind=PREPROCESS_REQUIRED', 'external response', 'no finite bound']
+variants:
+  - name: compare-readiness-with-false
+    edits:
+      - from: '!readinessClient.isReady(accountId)'
+        to: readinessClient.isReady(accountId) == false
+  - name: poll-with-unbounded-for
+    edits:
+      - from: 'while (!readinessClient.isReady(accountId))'
+        to: 'for (; !readinessClient.isReady(accountId); )'

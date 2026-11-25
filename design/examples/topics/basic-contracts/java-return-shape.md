@@ -1,0 +1,67 @@
+# Hello World：对象返回的字段结构
+
+## 输入原始代码
+
+入口构造一个包含两个业务字段的对象并返回。对象类型和字段关系是返回合同的一部分。
+
+```java
+class Pair {
+    int left;
+    int right;
+
+    Pair(int left, int right) {
+        this.left = left;
+        this.right = right;
+    }
+}
+
+class PairFactory {
+    static Pair make(int value) {
+        return new Pair(value, value + 1);
+    }
+}
+```
+
+## AI 预处理结果
+
+**原样通过。** 构造器和字段写入是当前 Java parser 可处理的对象语义。
+
+## 归一化最终结果
+
+```yaml
+schema: normalizer.pers/1
+
+types:
+  Pair:
+    fields:
+      left: number
+      right: number
+
+entry:
+  function: src/PairFactory.java#PairFactory.make
+  returns: Pair
+
+P:
+  parameters:
+    value:
+      position: 0
+      type: number
+
+R: |-
+  {
+    left: value,
+    right: value + 1
+  }
+```
+
+**预处理 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| old 与 new 都保留具名类型、构造器和字段写入。 | 能被语言 parser 闭合的对象结构不需要 AI 另造 record 语法。 |
+
+**PERS 结果 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| old 只把返回值看成 `Pair` 引用，new 同时声明 Pair 的字段类型并展开字段表达式。 | 自定义类型由 `types` 统一定义，PERS 在返回处表达业务字段值，避免无根的宿主类型名。 |

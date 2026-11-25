@@ -1,0 +1,85 @@
+# Hello World：外部异常向入口传播
+
+## 输入原始代码
+
+入口直接返回风险客户端结果。外部服务失败时，入口不捕获异常而向调用者传播。
+
+```java
+class Pass {
+    private final RiskClient client;
+
+    Pass(RiskClient client) {
+        this.client = client;
+    }
+
+    int read(int accountId) {
+        return client.fetch(accountId);
+    }
+}
+
+interface RiskClient {
+    int fetch(int accountId) throws RiskUnavailable;
+}
+
+class RiskUnavailable extends RuntimeException {}
+```
+
+## AI 预处理结果
+
+AI 只在外部对象声明处增加 Normalizer 自身的标记，调用和未捕获异常路径继续保持 Java 原生结构。
+
+```diff
+--- a/src/Pass.java
++++ b/src/Pass.java
+@@ -1,2 +1,5 @@
++import normalizer.annotations.External;
++
+ class Pass {
++    @External
+     private final RiskClient client;
+```
+
+Normalizer 识别 `@External` 和源码中的 `throws RiskUnavailable`，不按客户端库名做特判。
+
+## 归一化最终结果
+
+```yaml
+schema: normalizer.pers/1
+
+entry:
+  function: src/Pass.java#Pass.read
+  returns: number
+
+P:
+  parameters:
+    accountId:
+      position: 0
+      type: number
+
+R: $e_0
+
+S:
+  - call:
+      external: client.fetch
+      args:
+        - accountId
+      returns: number
+      result: $e_0
+
+throws:
+  - type: RiskUnavailable
+    when: completion.is_throw($e_0, RiskUnavailable)
+```
+
+**预处理 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| old 只有 Java 字段声明，new 只增加 `@External` 和对应导入。 | 外部身份由 Normalizer 自身标记提供，Java parser 不需要理解具体库。 |
+| old 与 new 都保留调用和未捕获异常声明。 | 预处理补边界身份，但不吞掉异常或代替工程推导完成路径。 |
+
+**PERS 结果 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| old 只看到 `return client.fetch(...)`，new 在 S 中绑定外部调用和完成值，在 `throws` 中保留异常传播。 | 外部调用的成功值、失败类型和入口完成关系必须同时可观察。 |

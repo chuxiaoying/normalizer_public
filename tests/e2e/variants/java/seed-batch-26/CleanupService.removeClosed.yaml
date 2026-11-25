@@ -1,0 +1,22 @@
+- name: delete-open-bills
+  edits:
+    - from: 'b.status == "CLOSED"'
+      to: 'b.status == "OPEN"'
+  expect:
+    - path: [S, 0, sql]
+      value: |-
+        DELETE FROM bill
+        WHERE bill.account_id = accountId
+          AND bill.status = 'OPEN'
+- name: shift-account-filter
+  edits:
+    - from: 'int affected;'
+      to: 'int shiftedAccount = accountId + 1; int affected;'
+    - from: 'b.account_id == accountId'
+      to: 'b.account_id == shiftedAccount'
+  expect:
+    - path: [S, 0, sql]
+      value: |-
+        DELETE FROM bill
+        WHERE bill.account_id = accountId + 1
+          AND bill.status = 'CLOSED'

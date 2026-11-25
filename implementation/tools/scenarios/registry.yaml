@@ -1,0 +1,12 @@
+schema: normalizer.scenario-registry/1
+scenes:
+  frontend-vo-production:
+    input: vue-component-and-prepared-module
+    entry: event-or-lifecycle
+    result: normalizer.pers/1
+    cli: implementation/tools/normalizer scenario frontend-vo-production
+  frontend-vo-consumption:
+    input: vue-component-and-prepared-module
+    entry: vo-listener-or-render
+    result: normalizer.pers/1
+    cli: implementation/tools/normalizer scenario frontend-vo-consumption

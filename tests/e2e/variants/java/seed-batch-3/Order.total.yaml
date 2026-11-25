@@ -1,0 +1,14 @@
+- name: reverse-source-order
+  edits:
+    - from: 'return value + base;'
+      to: 'return base + value;'
+  expect:
+    - path: [R]
+      value: base + value
+- name: add-offset
+  edits:
+    - from: 'return value + base;'
+      to: 'return value + base + 1;'
+  expect:
+    - path: [R]
+      value: base + value + 1

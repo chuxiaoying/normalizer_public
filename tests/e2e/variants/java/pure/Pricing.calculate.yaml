@@ -1,0 +1,19 @@
+- name: reverse-equivalent-cap
+  edits:
+    - from: "return value > limit ? limit : value;"
+      to: "return value < limit ? value : limit;"
+- name: apply-cap-before-adding-base
+  edits:
+    - from: |-
+        int withBase = addBase(normalized, base);
+                return cap(withBase, limit);
+      to: |-
+        int capped = cap(normalized, limit);
+                return addBase(capped, base);
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN limit < value + 1 THEN base + limit
+          ELSE base + value + 1
+        END

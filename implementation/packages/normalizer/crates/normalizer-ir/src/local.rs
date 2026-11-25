@@ -1,0 +1,275 @@
+//! Source-independent syntax and typed operations of a local semantic declaration.
+use std::collections::BTreeSet;
+
+pub mod relation;
+pub mod decimal;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LocalIr {
+    SqlWrite(SqlWrite),
+    CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
+    FoldIndexRange {
+        binding: String,
+        lower: num_bigint::BigInt,
+        upper: ScalarOperand,
+        skip_before: num_bigint::BigInt,
+        stop_after: num_bigint::BigInt,
+    },
+    Relation(relation::Query),
+    Decimal(decimal::Assignment),
+    Unsupported(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SqlWrite {
+    pub binding: String,
+    pub table: String,
+    pub operation: SqlOperation,
+    pub assignments: Vec<(String, ScalarOperand)>,
+    pub exception: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SqlOperation {
+    Insert,
+    Update { predicates: Vec<(String, ScalarOperand)> },
+    Delete { predicates: Vec<(String, ScalarOperand)> },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScalarOperand {
+    Local(String),
+    Text(String),
+    Integer(num_bigint::BigInt),
+}
+
+impl SqlWrite {
+    pub fn operands(&self) -> impl Iterator<Item = &(String, ScalarOperand)> {
+        let predicates: &[(String, ScalarOperand)] = match &self.operation {
+            SqlOperation::Update { predicates } | SqlOperation::Delete { predicates } => predicates,
+            SqlOperation::Insert => &[],
+        };
+        self.assignments.iter().chain(predicates)
+    }
+}
+
+struct Tokens<'a> {
+    source: &'a str,
+}
+
+impl<'a> Tokens<'a> {
+    fn rest(&self) -> &'a str {
+        self.source.trim_start()
+    }
+
+    fn take(&mut self, token: &str) -> bool {
+        let Some(rest) = self.rest().strip_prefix(token) else {
+            return false;
+        };
+        if token.ends_with(|c: char| c.is_ascii_alphabetic())
+            && rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return false;
+        }
+        self.source = rest;
+        true
+    }
+
+    fn expect(&mut self, token: &str) -> Result<(), String> {
+        self.take(token)
+            .then_some(())
+            .ok_or_else(|| format!("expected {token}"))
+    }
+
+    fn name(&mut self) -> Result<String, String> {
+        let source = self.rest();
+        let n = source
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+            .count();
+        if n == 0 || source.as_bytes()[0].is_ascii_digit() {
+            return Err("expected identifier".into());
+        }
+        self.source = &source[n..];
+        Ok(source[..n].to_owned())
+    }
+
+    fn value(&mut self) -> Result<ScalarOperand, String> {
+        let source = self.rest();
+        if source.starts_with('"') {
+            let mut chars = source[1..].char_indices();
+            let mut value = String::new();
+            while let Some((i, c)) = chars.next() {
+                match c {
+                    '"' => {
+                        self.source = &source[i + 2..];
+                        return Ok(ScalarOperand::Text(value));
+                    }
+                    '\\' => {
+                        let (_, escaped) = chars.next().ok_or("unterminated escape")?;
+                        if !matches!(escaped, '\\' | '"') {
+                            return Err("unsupported text escape".into());
+                        }
+                        value.push(escaped);
+                    }
+                    _ => value.push(c),
+                }
+            }
+            return Err("unterminated string".into());
+        }
+        if source.starts_with(|c: char| c.is_ascii_digit() || c == '-') {
+            let n = source
+                .trim_start_matches('-')
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count()
+                + usize::from(source.starts_with('-'));
+            let value = source[..n].parse().map_err(|_| "invalid integer literal")?;
+            self.source = &source[n..];
+            return Ok(ScalarOperand::Integer(value));
+        }
+        self.name().map(ScalarOperand::Local)
+    }
+}
+
+pub fn parse(input: &str) -> Result<LocalIr, String> {
+    let mut tokens = Tokens { source: input };
+    let binding = tokens.name()?;
+    let accumulate = tokens.take("+=");
+    if !accumulate && !tokens.take("=") {
+        return Ok(LocalIr::Unsupported(input.trim().to_owned()));
+    }
+    if !accumulate {
+        let mut exact = Tokens { source: tokens.source };
+        if let Some(assignment) = decimal::parse(&binding, &mut exact)? {
+            return Ok(LocalIr::Decimal(assignment));
+        }
+    }
+    let mut range = Tokens { source: tokens.source };
+    if range.take("count") && range.take("from") && range.take("[") {
+        tokens = range;
+        let lower = tokens.value()?;
+        tokens.expect(",")?;
+        let upper = tokens.value()?;
+        tokens.expect(")")?;
+        tokens.expect("as")?;
+        tokens.name()?; // The binder ranges over each integer; count needs no projection.
+        if !tokens.rest().is_empty() { return Err("trailing count-range clauses".into()); }
+        if matches!(lower, ScalarOperand::Text(_)) || matches!(upper, ScalarOperand::Text(_)) {
+            return Err("count range endpoints must be integers".into());
+        }
+        return Ok(LocalIr::CountRange { binding, accumulate, lower, upper });
+    }
+    if tokens.take("fold") {
+        if accumulate { return Err("indexed fold updates its existing accumulator; use =".into()); }
+        let integer = |t: &mut Tokens<'_>| match t.value()? {
+            ScalarOperand::Integer(n) => Ok(n),
+            _ => Err("expected a literal integer in indexed fold".to_owned()),
+        };
+        tokens.expect("[")?;
+        let lower = integer(&mut tokens)?;
+        tokens.expect(",")?;
+        let upper = tokens.value()?;
+        if matches!(upper, ScalarOperand::Text(_)) { return Err("expected integer upper bound".into()); }
+        tokens.expect(")")?;
+        tokens.expect("as")?;
+        let index = tokens.name()?;
+        if index == binding || matches!(&upper, ScalarOperand::Local(n) if n == &index || n == &binding) {
+            return Err("indexed fold needs separate bound, accumulator and index".into());
+        }
+        let counter = |t: &mut Tokens<'_>| {
+            if t.name()? == index { Ok(()) } else { Err("unbound indexed fold variable".to_owned()) }
+        };
+        tokens.expect("when")?;
+        counter(&mut tokens)?;
+        tokens.expect("<")?;
+        let skip_before = integer(&mut tokens)?;
+        tokens.expect("continue")?;
+        tokens.expect("when")?;
+        counter(&mut tokens)?;
+        tokens.expect(">")?;
+        let stop_after = integer(&mut tokens)?;
+        tokens.expect("break")?;
+        tokens.expect("yield")?;
+        counter(&mut tokens)?;
+        if !tokens.rest().is_empty() { return Err("trailing indexed fold input".into()); }
+        return Ok(LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after });
+    }
+    if let Some(query) = relation::parse(binding.clone(), accumulate, &mut tokens)? {
+        return Ok(LocalIr::Relation(query));
+    }
+    if accumulate {
+        return Ok(LocalIr::Unsupported(input.trim().into()));
+    }
+    let insert = tokens.take("insert");
+    let delete = !insert && tokens.take("delete");
+    if !insert && !delete && !tokens.take("update") {
+        return Ok(LocalIr::Unsupported(input.trim().to_owned()));
+    }
+    if insert { tokens.expect("into")?; }
+    if delete { tokens.expect("from")?; }
+    let table = tokens.name()?;
+    let alias = if !insert && tokens.take("as") {
+        tokens.name()?
+    } else {
+        table.clone()
+    };
+    let mut assignments = Vec::new();
+    if !delete {
+        tokens.expect(if insert { "values" } else { "set" })?;
+        tokens.expect("{")?;
+        let mut columns = BTreeSet::new();
+        loop {
+            let name = tokens.name()?;
+            if !columns.insert(name.clone()) {
+                return Err(format!("duplicate column {name}"));
+            }
+            tokens.expect(":")?;
+            assignments.push((name, tokens.value()?));
+            if tokens.take("}") {
+                break;
+            }
+            tokens.expect(",")?;
+        }
+    }
+    let operation = if insert {
+        SqlOperation::Insert
+    } else {
+        let mut predicates = Vec::new();
+        if tokens.take("where") {
+            loop {
+                if tokens.name()? != alias {
+                    return Err("unbound table alias in where".into());
+                }
+                tokens.expect(".")?;
+                let column = tokens.name()?;
+                tokens.expect("==")?;
+                predicates.push((column, tokens.value()?));
+                if !tokens.take("and") {
+                    break;
+                }
+            }
+        }
+        if delete {
+            if predicates.is_empty() { return Err("delete requires an explicit predicate".into()); }
+            SqlOperation::Delete { predicates }
+        } else {
+            SqlOperation::Update { predicates }
+        }
+    };
+    tokens.expect("returning")?;
+    tokens.expect("affected_rows")?;
+    tokens.expect("atomic")?;
+    tokens.expect("throws")?;
+    let exception = tokens.name()?;
+    if !tokens.rest().is_empty() {
+        return Err("trailing input in SQL write".into());
+    }
+    Ok(LocalIr::SqlWrite(SqlWrite {
+        binding,
+        table,
+        operation,
+        assignments,
+        exception,
+    }))
+}

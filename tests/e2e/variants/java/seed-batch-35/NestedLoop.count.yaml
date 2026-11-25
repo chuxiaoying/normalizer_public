@@ -1,0 +1,22 @@
+- name: double-total
+  edits:
+    - from: 'return total;'
+      to: 'return total * 2;'
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN columns > 0 AND rows > 0 THEN columns * rows * 2
+          ELSE 0
+        END
+- name: include-outer-upper-bound
+  edits:
+    - from: 'row < rows'
+      to: 'row <= rows'
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN columns > 0 AND rows >= 0 THEN columns * (rows + 1)
+          ELSE 0
+        END

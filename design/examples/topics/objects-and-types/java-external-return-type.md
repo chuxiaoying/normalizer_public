@@ -1,0 +1,85 @@
+# Hello World：外部对象作为入口返回值
+
+## 输入原始代码
+
+外部端口返回一个业务对象，入口把同一个对象直接返回给调用者。对象类型来自源码声明，调用结果仍是一次外部完成值。
+
+```java
+class Profile {
+    int score;
+}
+
+class ProfileService {
+    private final ProfileClient client;
+
+    Profile load(int accountId) {
+        return client.fetch(accountId);
+    }
+}
+
+interface ProfileClient {
+    Profile fetch(int accountId);
+}
+```
+
+## AI 预处理结果
+
+AI 在外部端口声明处增加 Normalizer 自身的 `@External` 标记。调用、对象类型和返回语句保持原生 Java，不把外部返回对象拆成新的 P 参数，也不替工程实现 `ProfileClient`。
+
+**预处理 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| old 只有 Java 字段声明；new 只在外部端口声明处加入 `@External` 和对应导入，方法、对象类型、端口调用和返回语句保持不变。 | 外部对象的实现细节由边界合同封闭，预处理只补充 Normalizer 自身的边界身份，类型和返回关系交给 parser 与内核处理。 |
+
+```diff
+--- a/src/ProfileService.java
++++ b/src/ProfileService.java
+@@ -1,6 +1,9 @@
++import normalizer.annotations.External;
++
+ class Profile {
+     int score;
+ }
+
+ class ProfileService {
++    @External
+     private final ProfileClient client;
+```
+
+## 归一化最终结果
+
+```yaml
+schema: normalizer.pers/1
+
+types:
+  Profile:
+    fields:
+      score: number
+
+entry:
+  function: src/ProfileService.java#ProfileService.load
+  returns: Profile
+
+P:
+  parameters:
+    accountId:
+      position: 0
+      type: number
+
+S:
+  - call:
+      external: client.fetch
+      args:
+        - accountId
+      returns: Profile
+      result: $e_0
+
+R: $e_0
+```
+
+**PERS 结果 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| old 只能看到端口调用；new 在 S 中声明 `client.fetch` 返回 `Profile`，R 直接绑定 `$e_0`。 | 外部返回值的业务类型属于调用合同。对象不需要先被拆成字段或复制进 P，调用完成值可以作为完整业务结果继续流转。 |

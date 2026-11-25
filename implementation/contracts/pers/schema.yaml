@@ -1,0 +1,292 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: normalizer.pers/1
+title: Hello World PERS subset schema
+description: >-
+  Hello World 实际案例使用的 PERS YAML 子集。来源定义统一使用 kind、source
+  和来源载荷。types 定义本文档引用的具名业务类型。entry.returns 与
+  S 中操作的 returns 声明正常返回类型。类型引用的名称必须在本文档中闭合。
+  普通业务类型默认非空，后缀 ? 显式表示可空；这一规则统一适用于 P、
+  E 的状态和表字段、返回值及外部调用结果。非空是业务输入与边界合同，
+  不能因宿主语言允许 null 而自动增添空引用分支，也不能删去显式可空值的处理。
+  P 保留完整入口参数及顺序；R、S 与 throws 仅引用实际影响业务的输入。
+  普通形参取调用时的值；本子集的宿主输入各在源码对应的单一稳定读取阶段绑定。
+  position 只表示声明顺序，不将异步等待后的读取前移到入口。
+  普通 Java 整数和源码声明的 number 映射为 number；字段名、金额或日期用途不改变类型。
+  money 与 date 需要独立的来源类型依据。
+  number 表示无固定大小上限、可全序比较的业务数值，普通算术按数学关系归约。
+  Java 与 Vue/JS 共用这个数值域，NaN、正负无穷和宿主浮点舍入不属于业务合同。
+x-enums:
+  top-level-keys: [schema, types, entry, P, E, S, T, R, throws]
+  entry-variants: [function]
+  source-kinds: [state, table]
+  operation-kinds: [write, call, sql]
+  semantic-types: [number, money, date, bool, text]
+  type-modifiers: ['?', '[]']
+type: object
+additionalProperties: false
+required: [schema, entry, P, R]
+properties:
+  schema:
+    const: normalizer.pers/1
+  types:
+    type: object
+    minProperties: 1
+    propertyNames:
+      $ref: '#/$defs/type-name'
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [fields]
+      properties:
+        fields:
+          $ref: '#/$defs/fields'
+  entry:
+    $ref: '#/$defs/entry'
+  P:
+    $ref: '#/$defs/p-sources'
+  E:
+    $ref: '#/$defs/e-sources'
+  S:
+    type: array
+    items:
+      $ref: '#/$defs/operation'
+  T:
+    description: 本子集使用已有的内部选择合同。一次实际选择定义一个绑定，同一绑定的所有字段取自同一成员。
+    type: array
+    minItems: 1
+    items:
+      $ref: '#/$defs/member-choice'
+  R:
+    $ref: '#/$defs/expression'
+  throws:
+    type: array
+    items:
+      $ref: '#/$defs/throw-declaration'
+$defs:
+  identifier:
+    type: string
+    pattern: '^[A-Za-z_][A-Za-z0-9_]*$'
+  source-identity:
+    type: string
+    minLength: 1
+  expression:
+    type: string
+    minLength: 1
+  semantic-type:
+    type: string
+    description: 普通类型非空，? 表示该值允许为 null。
+    pattern: '^(number|money|date|bool|text)\??$'
+  semantic-array-type:
+    type: string
+    pattern: '^(number|money|date|bool|text)(\[\])+\??$'
+  named-type-reference:
+    type: string
+    pattern: '^[A-Za-z_][A-Za-z0-9_]*(\[\])*\??$'
+    not:
+      pattern: '^(void|number|money|date|bool|text)(\[\])*\??$'
+  type-name:
+    allOf:
+      - $ref: '#/$defs/identifier'
+      - $ref: '#/$defs/named-type-reference'
+  value-type:
+    oneOf:
+      - $ref: '#/$defs/semantic-type'
+      - $ref: '#/$defs/semantic-array-type'
+      - $ref: '#/$defs/named-type-reference'
+  return-type:
+    oneOf:
+      - const: void
+      - $ref: '#/$defs/value-type'
+  value-expression:
+    oneOf:
+      - $ref: '#/$defs/expression'
+      - type: boolean
+  fields:
+    type: object
+    minProperties: 1
+    propertyNames:
+      $ref: '#/$defs/identifier'
+    additionalProperties:
+      oneOf:
+        - $ref: '#/$defs/value-type'
+        - $ref: '#/$defs/fields'
+  parameter:
+    type: object
+    additionalProperties: false
+    required: [position, type]
+    properties:
+      position:
+        type: integer
+        minimum: 0
+      type:
+        $ref: '#/$defs/value-type'
+  p-sources:
+    description: 保留完整入口参数，包括化简后未被 R、S 或 throws 引用的参数。
+    type: object
+    additionalProperties: false
+    required: [parameters]
+    properties:
+      parameters:
+        type: object
+        propertyNames:
+          $ref: '#/$defs/identifier'
+        additionalProperties:
+          $ref: '#/$defs/parameter'
+  entry:
+    type: object
+    additionalProperties: false
+    required: [function, returns]
+    properties:
+      function:
+        $ref: '#/$defs/source-identity'
+      returns:
+        $ref: '#/$defs/return-type'
+  state-source:
+    description: 声明标量、数组或具名状态值，也可内联声明字段。
+    type: object
+    additionalProperties: false
+    required: [kind, source]
+    oneOf:
+      - required: [type]
+      - required: [fields]
+    properties:
+      kind:
+        const: state
+      source:
+        $ref: '#/$defs/source-identity'
+      type:
+        $ref: '#/$defs/value-type'
+      fields:
+        $ref: '#/$defs/fields'
+  table-columns:
+    type: object
+    minProperties: 1
+    propertyNames:
+      $ref: '#/$defs/identifier'
+    additionalProperties:
+      $ref: '#/$defs/semantic-type'
+  table-source:
+    description: 声明关系来源及列类型；作为写入目标不等于读取其全部已有行。
+    type: object
+    additionalProperties: false
+    required: [kind, source, columns]
+    properties:
+      kind:
+        const: table
+      source:
+        $ref: '#/$defs/source-identity'
+      columns:
+        $ref: '#/$defs/table-columns'
+  e-source:
+    oneOf:
+      - $ref: '#/$defs/state-source'
+      - $ref: '#/$defs/table-source'
+  e-sources:
+    type: object
+    propertyNames:
+      $ref: '#/$defs/identifier'
+    additionalProperties:
+      $ref: '#/$defs/e-source'
+  target:
+    type: string
+    description: 状态或可观察写回路径；目前数组下标用非负整数字面量。
+    pattern: '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*|\[(0|[1-9][0-9]*)\])*$'
+  result-binding:
+    type: string
+    pattern: '^\$e_[0-9]+$'
+  exception-type:
+    type: string
+    pattern: '^[A-Za-z_][A-Za-z0-9_.]*$'
+  write:
+    type: object
+    additionalProperties: false
+    required: [target, value]
+    properties:
+      target:
+        $ref: '#/$defs/target'
+      value:
+        $ref: '#/$defs/value-expression'
+      when:
+        $ref: '#/$defs/expression'
+  call:
+    type: object
+    additionalProperties: false
+    required: [external, args, returns, result]
+    properties:
+      external:
+        $ref: '#/$defs/source-identity'
+      args:
+        type: array
+        items:
+          $ref: '#/$defs/expression'
+      returns:
+        $ref: '#/$defs/return-type'
+      result:
+        $ref: '#/$defs/result-binding'
+      when:
+        $ref: '#/$defs/expression'
+  sql-write:
+    description: >-
+      sql 直接承载引用 P/E 名称的规范 INSERT、UPDATE 或 DELETE 语句，
+      不把目标表、列绑定、SET 和 WHERE 再拆成另一套 YAML 语法。
+      表名引用 E 中声明的关系，表达式读取 P/E 或已绑定的完成值；
+      沿用无冲突时直接引用、冲突时以 P/E 限定的名称规则。
+      此处 SQL 使用数据库写入语句的比较符 = 和单引号文本，不使用 R 公式的 == 和双引号。
+      它已完成名称绑定，不含框架占位符或未解析的库调用。
+      when 控制整条语句是否发生，不能用 SQL WHERE 代替这一调用条件。
+      本子集的写入按单条语句原子完成，失败不提交部分行；
+      普通单行 INSERT 成功影响一行，UPDATE 返回匹配行数（值相同的行也计数），DELETE 返回删除行数。
+      result 绑定该次操作的完成结果，失败类型及传播条件在 throws 声明。
+    type: object
+    additionalProperties: false
+    required: [sql, returns, result]
+    properties:
+      sql:
+        type: string
+        pattern: '^(INSERT INTO|UPDATE|DELETE FROM)\s'
+      returns:
+        const: number
+      result:
+        $ref: '#/$defs/result-binding'
+      when:
+        $ref: '#/$defs/expression'
+  operation:
+    oneOf:
+      - type: object
+        additionalProperties: false
+        required: [write]
+        properties:
+          write:
+            $ref: '#/$defs/write'
+      - type: object
+        additionalProperties: false
+        required: [call]
+        properties:
+          call:
+            $ref: '#/$defs/call'
+      - $ref: '#/$defs/sql-write'
+  member-choice:
+    type: object
+    additionalProperties: false
+    required: [id, op, when, members, empty]
+    properties:
+      id:
+        type: string
+        pattern: '^\$t_[0-9]+$'
+      op:
+        const: member_choice
+      when:
+        $ref: '#/$defs/expression'
+      members:
+        $ref: '#/$defs/expression'
+      empty:
+        $ref: '#/$defs/expression'
+  throw-declaration:
+    type: object
+    additionalProperties: false
+    required: [type]
+    properties:
+      type:
+        $ref: '#/$defs/exception-type'
+      when:
+        $ref: '#/$defs/expression'

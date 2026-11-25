@@ -1,0 +1,11 @@
+- name: add-one-after-alias
+  edits:
+    - from: "return alias.value;"
+      to: "return alias.value + 1;"
+  expect:
+    - path: [R]
+      value: box.value + 1
+- name: direct-state-projection
+  edits:
+    - from: "return alias.value;"
+      to: "return this.box.value;"

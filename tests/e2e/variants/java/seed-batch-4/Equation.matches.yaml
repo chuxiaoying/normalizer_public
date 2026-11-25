@@ -1,0 +1,14 @@
+- name: subtract-offset
+  edits:
+    - from: 'return value + 1 == target;'
+      to: 'return value - 1 == target;'
+  expect:
+    - path: [R]
+      value: target == value - 1
+- name: target-shift
+  edits:
+    - from: 'return value + 1 == target;'
+      to: 'return value + 1 == target + 2;'
+  expect:
+    - path: [R]
+      value: target + 2 == value + 1

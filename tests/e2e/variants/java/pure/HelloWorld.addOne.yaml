@@ -1,0 +1,90 @@
+- name: unbounded-increment-is-strictly-greater
+  edits:
+    - from: return value + 1;
+      to: |-
+        int next = value + 1;
+                if (next <= value) {
+                    return 99;
+                }
+                return next;
+- name: increment-by-two
+  edits:
+    - from: return value + 1;
+      to: return value + 2;
+  expect:
+    - path: [R]
+      value: value + 2
+
+- name: evaluates-integer-constants-without-wrap
+  edits:
+    - from: return value + 1;
+      to: return 2147483647 + 1;
+  expect:
+    - path: [R]
+      value: '2147483648'
+
+- name: evaluates-character-code-unit-in-arithmetic
+  edits:
+    - from: return value + 1;
+      to: "return 'Ω' + 1;"
+  expect:
+    - path: [R]
+      value: '938'
+
+- name: supplementary-character-is-not-one-java-char
+  edits:
+    - from: return value + 1;
+      to: "return '🙂' + 1;"
+  reject: ['SOURCE-PARSE-FAILED', 'Java character literal must contain one UTF-16 code unit']
+
+- name: exact-arithmetic-below-java-long-minimum
+  edits:
+    - from: static int addOne(int value)
+      to: static long addOne(int value)
+    - from: return value + 1;
+      to: return -9_223_372_036_854_775_808L - 1L;
+  expect:
+    - path: [R]
+      value: '-9223372036854775809'
+
+- name: positive-long-boundary-is-not-a-legal-literal
+  edits:
+    - from: static int addOne(int value)
+      to: static long addOne(int value)
+    - from: return value + 1;
+      to: return 9223372036854775808L;
+  reject: ['SOURCE-PARSE-FAILED', 'invalid int literal']
+
+- name: negative-identifier-is-not-the-long-boundary-literal
+  edits:
+    - from: static int addOne(int value)
+      to: static int addOne(int _9223372036854775808L)
+    - from: return value + 1;
+      to: return -_9223372036854775808L;
+  expect:
+    - path: [P, parameters]
+      value: {_9223372036854775808L: {position: 0, type: number}}
+    - path: [R]
+      value: '- (_9223372036854775808L)'
+
+- name: hex-int-literal-preserves-the-sign-bit
+  edits: [{from: 'return value + 1;', to: 'return 0xFFFF_FFFF + 2;'}]
+  expect: [{path: [R], value: '1'}]
+
+- name: binary-int-literal-is-exact
+  edits: [{from: 'return value + 1;', to: 'return 0b1_010 + 1;'}]
+  expect: [{path: [R], value: '11'}]
+
+- name: octal-int-literal-is-exact
+  edits: [{from: 'return value + 1;', to: 'return 017 + 1;'}]
+  expect: [{path: [R], value: '16'}]
+
+- name: hex-long-literal-preserves-the-sign-bit
+  edits:
+    - {from: 'static int addOne(int value)', to: 'static long addOne(int value)'}
+    - {from: 'return value + 1;', to: 'return 0x8000_0000_0000_0000L - 1L;'}
+  expect: [{path: [R], value: '-9223372036854775809'}]
+
+- name: overwide-hex-int-rejects-instead-of-guessing-width
+  edits: [{from: 'return value + 1;', to: 'return 0x1_0000_0000;'}]
+  reject: ['SOURCE-PARSE-FAILED', 'nondecimal int literal exceeds 32 bits']

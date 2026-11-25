@@ -1,0 +1,11 @@
+- name: widen-gap
+  edits:
+    - from: 'value + 1'
+      to: 'value + 2'
+  expect:
+    - path: [R]
+      value: |-
+        {
+          left: value,
+          right: value + 2
+        }

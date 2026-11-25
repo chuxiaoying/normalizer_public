@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Normalizer 设计阅览器</title>
+  <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+  <a class="skip" href="#article">跳到正文</a>
+  <header class="masthead">
+    <button id="menu-button" class="mobile-only" type="button" aria-expanded="false" aria-controls="sidebar">目录</button>
+    <a class="identity" href="#/design/README.md" aria-label="Normalizer 设计首页">
+      <span class="mark" aria-hidden="true">N</span>
+      <span>Normalizer</span>
+    </a>
+    <span class="masthead-divider" aria-hidden="true"></span>
+    <span class="edition">设计阅览器</span>
+  </header>
+  <div class="layout">
+    <div id="scrim" hidden></div>
+    <aside id="sidebar" aria-label="文档目录">
+      <div class="side-tools">
+        <div class="nav-head"><h2>目录</h2><button class="mobile-only" type="button" id="menu-close">关闭</button></div>
+        <label class="search"><span class="magnifier" aria-hidden="true"></span><input type="search" id="filter" placeholder="查找设计或测试用例" aria-label="按标题、文件名或用例名查找"><kbd aria-hidden="true">/</kbd></label>
+      </div>
+      <nav id="documents" aria-label="文档"></nav>
+    </aside>
+    <main id="main">
+      <nav id="breadcrumb" aria-label="当前位置"></nav>
+      <details id="compact-outline" hidden><summary>本页章节</summary><nav aria-label="本页章节"></nav></details>
+      <article id="article" tabindex="-1"></article>
+    </main>
+    <aside id="outline" aria-label="本文导航">
+      <h2>本页章节</h2>
+      <nav id="sections"></nav>
+    </aside>
+  </div>
+  <script id="reader-data" type="application/json">__READER_DATA__</script>
+  <script src="reader.js" defer></script>
+</body>
+</html>

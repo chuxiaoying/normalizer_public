@@ -1,0 +1,8 @@
+[package]
+name = "normalizer-ir"
+version.workspace = true
+edition.workspace = true
+description = "Typed local IR supplied by preprocessing and consumed by the normalization kernel."
+
+[dependencies]
+num-bigint = "0.4"

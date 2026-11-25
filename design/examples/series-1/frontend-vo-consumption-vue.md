@@ -1,0 +1,127 @@
+# Hello World：Vue VO 消费归一化
+
+## 输入原始代码
+
+欠费页把同一份 VO 投影到金额卡片的两个动态属性。一次消费观察的是一次渲染求值时某个属性收到的值。下面给出页面的完整消费切片。模板中的静态 `id="balance"` 用来辨认这个组件实例。
+
+```vue
+<template>
+  <PayableCard
+    id="balance"
+    :amount="arrears.status.ready ? arrears.summary.payable : 0"
+    :caption="arrears.status.loading ? '加载中' : '应付金额'"
+  />
+</template>
+
+<script setup>
+import { reactive } from 'vue'
+import PayableCard from './PayableCard.vue'
+
+const arrears = reactive({
+  status: { ready: false, loading: false },
+  summary: { payable: 0 }
+})
+</script>
+```
+
+## AI 预处理结果
+
+两个模板绑定各提取为一个无参函数，`@componentProp` 保留它在源模板中的位置。下列模块描述单个页面实例：setup 创建一次 `arrears`，以后每次渲染都从这个实例已有的状态求值。
+
+```diff
+diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.mjs
+rename from src/ArrearsPage.vue
+rename to src/ArrearsPage.mjs
+--- a/src/ArrearsPage.vue
++++ b/src/ArrearsPage.mjs
+@@ -1,17 +1,15 @@
+-<template>
+-  <PayableCard
+-    id="balance"
+-    :amount="arrears.status.ready ? arrears.summary.payable : 0"
+-    :caption="arrears.status.loading ? '加载中' : '应付金额'"
+-  />
+-</template>
+-
+-<script setup>
+-import { reactive } from 'vue'
+-import PayableCard from './PayableCard.vue'
+-
+-const arrears = reactive({
++/** @entryState */
++const arrears = {
+   status: { ready: false, loading: false },
+   summary: { payable: 0 }
+-})
+-</script>
++}
++
++/** @componentProp PayableCard#balance.amount */
++export function amount() {
++  return arrears.status.ready ? arrears.summary.payable : 0
++}
++
++/** @componentProp PayableCard#balance.caption */
++export function caption() {
++  return arrears.status.loading ? '加载中' : '应付金额'
++}
+```
+
+**预处理 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| 旧版提取 `amount(vo)`、`caption(vo)`，由 setup 闭包把原实例绑定给显式载体形参，属性来源写在场景合同中 → 新版提取无参普通函数，直接读取同一实例的 `arrears`，以 `@componentProp` 标记属性来源。 | 提取入口可以改变分析载体，却不能扩大业务接口。理想交接直接保留既有实例上下文和属性身份，减少适配层再证明“这个参数实际绑定谁”的负担。 |
+
+## 归一化最终结果
+
+以下为两个入口各自的目标 PERS。数值字段 `payable` 和金额属性都保持输入声明能确定的 `number`。
+
+### `PayableCard#balance.amount`
+
+```yaml
+schema: normalizer.pers/1
+entry:
+  function: src/ArrearsPage.vue#PayableCard#balance.amount
+  returns: number
+P:
+  parameters: {}
+E:
+  arrears:
+    kind: state
+    source: src/ArrearsPage.vue#ArrearsPage.arrears
+    fields:
+      status: { ready: bool }
+      summary: { payable: number }
+R: |-
+  CASE WHEN arrears.status.ready THEN arrears.summary.payable ELSE 0 END
+```
+
+### `PayableCard#balance.caption`
+
+```yaml
+schema: normalizer.pers/1
+entry:
+  function: src/ArrearsPage.vue#PayableCard#balance.caption
+  returns: text
+P:
+  parameters: {}
+E:
+  arrears:
+    kind: state
+    source: src/ArrearsPage.vue#ArrearsPage.arrears
+    fields:
+      status: { loading: bool }
+R: |-
+  CASE WHEN arrears.status.loading THEN "加载中" ELSE "应付金额" END
+```
+
+**PERS 结果 diff**
+
+| 差异点（old → new） | 升级思想 |
+|---|---|
+| 旧标题 PERS 以 `vo` 为状态目标，组件属性身份留在场景合同中 → 新版以 `entry.function` 标明原 `PayableCard#balance.amount` 或 `.caption`，以 `E.arrears.source` 标明状态来源。 | 统一函数入口仍须保留它代表的模板属性身份。提取函数只是分析手段，业务观察的对象始终是原组件属性及其读取的状态。 |
+| 金额：old 的正式前端 CLI 因原 JS `number` 与当前 `i32` 适配之间的数值合同未闭合，在进入内核前退出 2，stdout 为空，没有金额 PERS；new 预期生成原金额属性的 PERS。 | 不能以缩窄输入数值域换取成功输出。业务数值抽象的目标见[基础案例](java-static.md)，旧适配器的未闭合必须如实呈现。 |
+| 标题：old 的正式 CLI 退出 0、有 PERS，但 setup 绑定非空实例的事实未传入内核，额外产生原入口不可能到达的 `vo == null` 异常；new 预期直接表达原属性，不引入这条失败路径。 | 源码到结果的验收要贯穿原入口和上下文约束。CLI 有输出不代表原行为已被完整承接；适配参数的技术取值范围不能冒充真实业务输入域。 |
+
+数值域的共性见[基础案例](java-static.md)，业务类型默认非空的共性见[对象案例](java-static-object.md)，状态身份的共性见[参数与状态同名案例](java-name-collision.md)。

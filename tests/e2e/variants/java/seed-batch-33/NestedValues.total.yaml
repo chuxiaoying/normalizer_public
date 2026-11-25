@@ -1,0 +1,32 @@
+- name: add-one-per-value
+  edits:
+    - from: 'yield value'
+      to: 'yield value + 1'
+  expect:
+    - path: [R]
+      value: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value + 1 FROM grp AS value), 0) FROM groups AS grp), 0)
+- name: filter-positive-values
+  edits:
+    - from: 'yield value'
+      to: 'where value > 0 yield value'
+  expect:
+    - path: [R]
+      value: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value FROM grp AS value WHERE value > 0), 0) FROM groups AS grp), 0)
+- name: distinct-inner-scope
+  edits:
+    - from: 'int total(int[][] groups)'
+      to: 'int total(int[][] groups, int value)'
+    - from: 'sum from group as value yield value'
+      to: 'sum from group as item yield item - value'
+  expect:
+    - path: [P, parameters]
+      value:
+        groups: {position: 0, type: 'number[][]'}
+        value: {position: 1, type: number}
+    - path: [R]
+      value: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value_ - value FROM grp AS value_), 0) FROM groups AS grp), 0)
+- name: invalid-uncorrelated-inner-source
+  edits:
+    - from: 'sum from group as value'
+      to: 'sum from groups as value'
+  reject: ['[SOURCE-PARSE-FAILED]', 'nested sum requires a scalar sum from the outer row']

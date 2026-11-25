@@ -1,0 +1,14 @@
+- name: subtract-fee
+  edits:
+    - from: 'return balance + fee;'
+      to: 'return balance - fee;'
+  expect:
+    - path: [R]
+      value: balance - fee
+- name: add-fixed-surcharge
+  edits:
+    - from: 'return balance + fee;'
+      to: 'return balance + fee + 2;'
+  expect:
+    - path: [R]
+      value: balance + fee + 2

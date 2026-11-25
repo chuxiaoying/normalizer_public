@@ -1,0 +1,18 @@
+stages:
+  - build
+
+cargo_check:
+  stage: build
+  image: rust:1.90-bookworm
+  script:
+    - cd implementation/packages/normalizer
+    - cargo check --locked --workspace --all-targets
+  only:
+    - master
+    - merge_requests
+  tags:
+    - rust
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - implementation/packages/normalizer/target/

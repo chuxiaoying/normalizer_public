@@ -1,0 +1,12 @@
+reject: ['[NORM-RECURSION]', 'kind=PREPROCESS_REQUIRED', 'Recursive.down']
+variants:
+  - name: strict-base-condition
+    edits:
+      - from: 'value <= 0'
+        to: 'value < 0'
+    reject: ['[NORM-RECURSION]', 'kind=PREPROCESS_REQUIRED', 'Recursive.down']
+  - name: larger-step
+    edits:
+      - from: 'down(value - 1)'
+        to: 'down(value - 2)'
+    reject: ['[NORM-RECURSION]', 'kind=PREPROCESS_REQUIRED', 'Recursive.down']

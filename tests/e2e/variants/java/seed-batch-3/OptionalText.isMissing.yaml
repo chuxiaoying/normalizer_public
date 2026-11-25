@@ -1,0 +1,7 @@
+- name: reverse-null-test
+  edits:
+    - from: 'return value == null;'
+      to: 'return value != null;'
+  expect:
+    - path: [R]
+      value: value != null

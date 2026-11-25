@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+MANIFEST="$ROOT/packages/normalizer/Cargo.toml"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/packages/normalizer/target}"
+KERNEL="$TARGET_DIR/debug/normalizer-normalized"
+
+if [[ -n "${CARGO:-}" ]]; then
+  cargo_cmd="$CARGO"
+elif command -v cargo >/dev/null 2>&1; then
+  cargo_cmd=$(command -v cargo)
+elif [[ -n "${HOME:-}" && -x "$HOME/.cargo/bin/cargo" ]]; then
+  cargo_cmd="$HOME/.cargo/bin/cargo"
+else
+  echo "cargo not found; set CARGO to a standard cargo executable" >&2
+  exit 127
+fi
+
+usage() {
+  cat <<'EOF'
+Usage:
+  implementation/tools/normalizer source SOURCE_DIR Class.method
+  implementation/tools/normalizer module PROJECT_ROOT ENTRY_FILE FUNCTION
+  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE:FUNCTION --source ORIGINAL.vue
+  implementation/tools/normalizer test business-examples
+  implementation/tools/normalizer test pers-goldens
+  implementation/tools/normalizer test seed-patches
+
+source, module and scenario write final business PERS to stdout.
+EOF
+}
+
+ensure_kernel() {
+  if [[ ! -x "$KERNEL" ]] || find "$ROOT/packages/normalizer/crates" "$MANIFEST" "$ROOT/packages/normalizer/Cargo.lock" \
+      -type f \( -name '*.rs' -o -name '*.toml' -o -name 'Cargo.lock' \) \
+      -newer "$KERNEL" -print -quit | grep -q .; then
+    "$cargo_cmd" build --locked --target-dir "$TARGET_DIR" --manifest-path "$MANIFEST" -p pipeline --bin normalizer-normalized
+  fi
+}
+
+ensure_frontend_dependencies() {
+  local dependencies="$ROOT/tools/frontend/node_modules"
+  local tests="${1:-}"
+  if [[ -f "$dependencies/yaml/dist/index.js" && -f "$dependencies/typescript/lib/typescript.js" ]] &&
+     [[ "$tests" != tests || -f "$dependencies/ajv/dist/2020.js" ]]; then
+    return
+  fi
+  (
+    cd "$ROOT/tools/frontend"
+    local options=(--prefer-offline --ignore-scripts --no-audit --no-fund)
+    if [[ "$tests" == tests ]]; then options+=(--include=dev); fi
+    npm ci "${options[@]}"
+  ) >&2
+}
+
+require_args() {
+  local expected="$1"
+  local actual="$2"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "expected $expected arguments, got $actual" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
+command=${1:-help}
+case "$command" in
+  source)
+    require_args 3 "$#"
+    ensure_kernel
+    exec "$KERNEL" --source "$2" "$3"
+    ;;
+  module)
+    require_args 4 "$#"
+    ensure_frontend_dependencies
+    ensure_kernel
+    exec node "$ROOT/tools/frontend/standalone.mjs" "$KERNEL" "$2" "$3" "$4"
+    ;;
+  scenario)
+    require_args 7 "$#"
+    ensure_frontend_dependencies
+    ensure_kernel
+    exec node "$ROOT/tools/scenarios/runner.mjs" "$KERNEL" "${@:2}"
+    ;;
+  test)
+    require_args 2 "$#"
+    case "$2" in
+      seed-patches)
+        ensure_frontend_dependencies
+        exec node "$ROOT/../tests/e2e/check-seed-patches.mjs"
+        ;;
+      pers-goldens)
+        ensure_frontend_dependencies tests
+        exec node "$ROOT/../tests/e2e/check-pers-goldens.mjs"
+        ;;
+      business-examples)
+        ensure_frontend_dependencies tests
+        ensure_kernel
+        exec node --test "$ROOT/../tests/e2e/business_examples.test.mjs"
+        ;;
+      *)
+        usage >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "unknown command: $command" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

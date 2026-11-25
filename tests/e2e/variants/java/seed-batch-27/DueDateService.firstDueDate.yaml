@@ -1,0 +1,46 @@
+- name: order-by-id-first
+  edits:
+    - from: 'order by row.dueDate, row.id'
+      to: 'order by row.id, row.dueDate'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          (
+            SELECT bill.due_date
+            FROM bill
+            WHERE bill.account_id == accountId
+            ORDER BY bill.id, bill.due_date
+            LIMIT 1
+          ),
+          0
+        )
+- name: shift-account-filter
+  edits:
+    - from: 'b.account_id == accountId'
+      to: 'b.account_id == accountId + 1'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          (
+            SELECT bill.due_date
+            FROM bill
+            WHERE bill.account_id == accountId + 1
+            ORDER BY bill.due_date, bill.id
+            LIMIT 1
+          ),
+          0
+        )
+- name: known-empty-ordered-relation-uses-fallback
+  edits:
+    - from: 'where b.account_id == accountId'
+      to: 'where b.account_id == accountId and false'
+  expect: [{path: [R], value: '0'}]
+- name: known-empty-ordered-relation-preserves-explicit-fallback
+  edits:
+    - from: 'where b.account_id == accountId'
+      to: 'where b.account_id == accountId and false'
+    - from: 'yield row.dueDate else 0'
+      to: 'yield row.dueDate else accountId'
+  expect: [{path: [R], value: accountId}]

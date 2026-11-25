@@ -1,0 +1,50 @@
+- name: evaluate-probe-before-guard
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: |-
+        int observed = probe.read(value);
+                return active && observed > 0;
+  expect:
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
+    - path: [R]
+      value: active AND $e_0 > 0
+- name: concrete-false-does-not-call-probe
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: 'return false && probe.read(value) > 0;'
+  expect:
+    - path: [S]
+      absent: true
+    - path: [R]
+      value: 'false'
+- name: concrete-true-calls-probe-once
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: 'return true && probe.read(value) > 0;'
+  expect:
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
+    - path: [R]
+      value: $e_0 > 0
+- name: concrete-true-or-does-not-call-probe
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: 'return true || probe.read(value) > 0;'
+  expect:
+    - path: [S]
+      absent: true
+    - path: [R]
+      value: 'true'
+- name: concrete-false-or-calls-probe-once
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: 'return false || probe.read(value) > 0;'
+  expect:
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
+    - path: [R]
+      value: $e_0 > 0

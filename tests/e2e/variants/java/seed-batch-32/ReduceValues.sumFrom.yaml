@@ -1,0 +1,14 @@
+- name: reduce-subtract
+  edits:
+    - from: 'yield sum + value'
+      to: 'yield sum - value'
+  expect:
+    - path: [R]
+      value: initial - COALESCE(SUM(SELECT value FROM values), 0)
+- name: initial-plus-one
+  edits:
+    - from: 'from initial'
+      to: 'from initial + 1'
+  expect:
+    - path: [R]
+      value: initial + 1 + COALESCE(SUM(SELECT value FROM values), 0)

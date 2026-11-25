@@ -1,0 +1,69 @@
+- name: return-through-protected-local
+  edits:
+    - from: 'return scoreClient.fetchScore(accountId);'
+      to: |-
+        int answer = scoreClient.fetchScore(accountId);
+                        return answer;
+- name: single-attempt-before-fallback
+  edits:
+    - from: 'attempt < 3'
+      to: 'attempt < 1'
+  expect:
+    - path: [S]
+      value:
+        - call:
+            external: scoreClient.fetchScore
+            args: [accountId]
+            returns: number
+            result: $e_0
+    - path: [R]
+      value: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN $e_0
+          WHEN availableCredits > 0 THEN availableCredits
+          ELSE 0
+        END
+- name: four-attempts-on-renamed-port
+  edits:
+    - from: 'attempt < 3'
+      to: 'attempt < 4'
+    - from: scoreClient.fetchScore(accountId)
+      to: scoreClient.readPoints(accountId)
+    - from: 'int fetchScore(int accountId) throws RetryableScoreError;'
+      to: 'int readPoints(int accountId) throws RetryableScoreError;'
+  expect:
+    - path: [S]
+      value:
+        - call:
+            external: scoreClient.readPoints
+            args: [accountId]
+            returns: number
+            result: $e_0
+        - call:
+            external: scoreClient.readPoints
+            args: [accountId]
+            returns: number
+            result: $e_1
+            when: completion.is_throw($e_0, RetryableScoreError)
+        - call:
+            external: scoreClient.readPoints
+            args: [accountId]
+            returns: number
+            result: $e_2
+            when: completion.is_throw($e_0, RetryableScoreError) and completion.is_throw($e_1, RetryableScoreError)
+        - call:
+            external: scoreClient.readPoints
+            args: [accountId]
+            returns: number
+            result: $e_3
+            when: completion.is_throw($e_0, RetryableScoreError) and completion.is_throw($e_1, RetryableScoreError) and completion.is_throw($e_2, RetryableScoreError)
+    - path: [R]
+      value: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN $e_0
+          WHEN completion.is_return($e_1) THEN $e_1
+          WHEN completion.is_return($e_2) THEN $e_2
+          WHEN completion.is_return($e_3) THEN $e_3
+          WHEN availableCredits > 0 THEN availableCredits
+          ELSE 0
+        END

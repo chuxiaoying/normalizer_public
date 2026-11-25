@@ -1,0 +1,14 @@
+- name: shift-equation
+  edits:
+    - from: 'value + 1 == target && target <= limit'
+      to: 'value + 2 == target && target <= limit'
+  expect:
+    - path: [R]
+      value: limit >= target AND target == value + 2
+- name: strict-limit
+  edits:
+    - from: 'value + 1 == target && target <= limit'
+      to: 'value + 1 == target && target < limit'
+  expect:
+    - path: [R]
+      value: limit > target AND target == value + 1

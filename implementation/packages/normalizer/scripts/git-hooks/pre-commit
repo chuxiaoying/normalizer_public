@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Check the staged changes for whitespace errors.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+exec git diff --cached --check

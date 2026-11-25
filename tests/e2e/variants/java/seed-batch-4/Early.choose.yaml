@@ -1,0 +1,14 @@
+- name: select-value
+  edits:
+    - from: 'if (useFallback) return fallback;'
+      to: 'if (useFallback) return value;'
+  expect:
+    - path: [R]
+      value: value
+- name: select-negative-fallback
+  edits:
+    - from: 'return value;'
+      to: 'return -value;'
+  expect:
+    - path: [R]
+      value: CASE WHEN useFallback THEN fallback ELSE - (value) END

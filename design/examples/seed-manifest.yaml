@@ -1,0 +1,111 @@
+# 种子语义元数据。稳定 ID 与案例路径仍以 seeds.yaml 为权威来源。
+version: 1
+source: seeds.yaml
+
+# 主题注册表是 topic 引用的权威来源。每个目录至少有一个 README.md，说明该主题的语义合同和扩展路线。
+topics:
+  expression-simplification: { path: topics/expression-simplification }
+  collections: { path: topics/collections }
+  control-flow: { path: topics/control-flow }
+  objects-and-types: { path: topics/objects-and-types }
+  state-and-aliasing: { path: topics/state-and-aliasing }
+  loops-and-termination: { path: topics/loops-and-termination }
+  external-boundaries: { path: topics/external-boundaries }
+  relational-data: { path: topics/relational-data }
+  number-domain: { path: topics/number-domain }
+  language-entries: { path: topics/language-entries }
+  basic-contracts: { path: topics/basic-contracts }
+
+compositions:
+  loops-and-collections: { path: compositions/loops-and-collections }
+  relational-data-and-collections: { path: compositions/relational-data-and-collections }
+  collections-and-expression-simplification: { path: compositions/collections-and-expression-simplification }
+
+# kind 为 topic、composition 或 basic。topic 表示基础能力，composition 表示专门的联合测试，basic 表示常规合同和防御边界。
+seeds:
+  frontend-vo-consumption-vue: { kind: topic, topic: language-entries, related: [objects-and-types, state-and-aliasing] }
+  frontend-vo-production-vue: { kind: topic, topic: language-entries, related: [state-and-aliasing, external-boundaries] }
+  java-expression-simplification: { kind: topic, topic: expression-simplification, related: [control-flow] }
+  java-external-library: { kind: topic, topic: external-boundaries, related: [expression-simplification] }
+  java-loop-bounded-retry: { kind: topic, topic: loops-and-termination, related: [external-boundaries] }
+  java-loop-early-exit: { kind: topic, topic: loops-and-termination, related: [collections, control-flow] }
+  java-loop-fold: { kind: topic, topic: loops-and-termination, related: [collections] }
+  java-loop-unknown: { kind: topic, topic: loops-and-termination, related: [external-boundaries] }
+  java-name-collision: { kind: basic, topic: basic-contracts, related: [state-and-aliasing] }
+  java-static-case-when: { kind: topic, topic: control-flow, related: [expression-simplification] }
+  java-static-deep-calls: { kind: topic, topic: expression-simplification, related: [control-flow] }
+  java-static-external-sql: { kind: topic, topic: relational-data, related: [external-boundaries, collections] }
+  java-static-object: { kind: topic, topic: objects-and-types, related: [expression-simplification] }
+  java-static: { kind: topic, topic: expression-simplification, related: [] }
+  frontend-deferred-listener: { kind: topic, topic: external-boundaries, related: [control-flow] }
+  java-eager-first: { kind: topic, topic: collections, related: [control-flow] }
+  java-explicit-rollover: { kind: topic, topic: number-domain, related: [expression-simplification] }
+  java-independent-choice: { kind: topic, topic: collections, related: [control-flow, objects-and-types] }
+  java-invalid-declaration: { kind: basic, topic: basic-contracts, related: [language-entries] }
+  java-lifo-release: { kind: topic, topic: state-and-aliasing, related: [collections] }
+  java-map-present-null: { kind: topic, topic: collections, related: [state-and-aliasing] }
+  java-state-alias: { kind: topic, topic: state-and-aliasing, related: [objects-and-types] }
+  sql-projected-distinct: { kind: topic, topic: relational-data, related: [collections] }
+  typescript-tuple-slots: { kind: topic, topic: collections, related: [objects-and-types] }
+  expr-boolean-algebra: { kind: topic, topic: expression-simplification, related: [] }
+  collection-filter: { kind: topic, topic: collections, related: [] }
+  basic-nonnull-input: { kind: basic, topic: basic-contracts, related: [] }
+  number-business-unbounded: { kind: topic, topic: number-domain, related: [expression-simplification] }
+  external-scalar-success-failure: { kind: topic, topic: external-boundaries, related: [] }
+  expr-constant-folding: { kind: topic, topic: expression-simplification, related: [] }
+  control-if-else: { kind: topic, topic: control-flow, related: [expression-simplification] }
+  number-compare-boundaries: { kind: topic, topic: number-domain, related: [expression-simplification] }
+  external-exception-propagation: { kind: topic, topic: external-boundaries, related: [] }
+  basic-return-shape: { kind: basic, topic: basic-contracts, related: [objects-and-types] }
+  expr-associative-commutative-normal-form: { kind: topic, topic: expression-simplification, related: [] }
+  control-short-circuit: { kind: topic, topic: control-flow, related: [] }
+  basic-nullable-input: { kind: basic, topic: basic-contracts, related: [] }
+  external-object-success-failure: { kind: topic, topic: external-boundaries, related: [objects-and-types] }
+  collection-find-first: { kind: topic, topic: collections, related: [control-flow] }
+  expr-equation-normal-form: { kind: topic, topic: expression-simplification, related: [] }
+  control-early-return: { kind: topic, topic: control-flow, related: [] }
+  loop-constant-bound: { kind: topic, topic: loops-and-termination, related: [] }
+  control-switch-branch: { kind: topic, topic: control-flow, related: [] }
+  external-nondeterministic-result: { kind: topic, topic: external-boundaries, related: [] }
+  entry-java-instance: { kind: topic, topic: language-entries, related: [] }
+  number-money-precision: { kind: topic, topic: number-domain, related: [] }
+  basic-unsupported-source-boundary: { kind: basic, topic: basic-contracts, related: [] }
+  expr-unknown-condition-preservation: { kind: topic, topic: expression-simplification, related: [] }
+  number-division-zero: { kind: topic, topic: number-domain, related: [] }
+  control-exception-path: { kind: topic, topic: control-flow, related: [] }
+  expr-equation-inequality-normal-form: { kind: topic, topic: expression-simplification, related: [] }
+  state-explicit-marker: { kind: topic, topic: state-and-aliasing, related: [objects-and-types] }
+  state-nested-alias: { kind: topic, topic: state-and-aliasing, related: [objects-and-types] }
+  object-external-return-type: { kind: topic, topic: objects-and-types, related: [external-boundaries] }
+  expr-case-when-let-extraction: { kind: topic, topic: expression-simplification, related: [control-flow] }
+  object-nested-record: { kind: topic, topic: objects-and-types, related: [] }
+  object-optional-field: { kind: topic, topic: objects-and-types, related: [basic-contracts] }
+  object-structural-vs-identity: { kind: topic, topic: objects-and-types, related: [state-and-aliasing] }
+  object-polymorphic-dispatch: { kind: topic, topic: objects-and-types, related: [language-entries] }
+  object-collection-records: { kind: topic, topic: objects-and-types, related: [collections] }
+  control-try-catch-finally: { kind: topic, topic: control-flow, related: [external-boundaries, state-and-aliasing] }
+  state-multi-write-read-order: { kind: topic, topic: state-and-aliasing, related: [] }
+  state-call-to-call: { kind: topic, topic: state-and-aliasing, related: [language-entries] }
+  state-cycle-and-observable-output: { kind: topic, topic: state-and-aliasing, related: [objects-and-types] }
+  state-collection-mutation: { kind: topic, topic: state-and-aliasing, related: [collections] }
+  loop-variable-finite-bound: { kind: topic, topic: loops-and-termination, related: [] }
+  loop-break-continue: { kind: topic, topic: loops-and-termination, related: [control-flow] }
+  entry-javascript-module: { kind: topic, topic: language-entries, related: [] }
+  entry-async-await: { kind: topic, topic: language-entries, related: [external-boundaries] }
+  external-timeout: { kind: topic, topic: external-boundaries, related: [control-flow] }
+  external-callback-order: { kind: topic, topic: external-boundaries, related: [control-flow] }
+  loop-nested: { kind: topic, topic: loops-and-termination, related: [collections] }
+  loop-recursive: { kind: topic, topic: loops-and-termination, related: [] }
+  relation-batch-write: { kind: topic, topic: relational-data, related: [collections] }
+  relation-delete: { kind: topic, topic: relational-data, related: [] }
+  relation-order-limit: { kind: topic, topic: relational-data, related: [collections] }
+  relation-null-semantics: { kind: topic, topic: relational-data, related: [basic-contracts] }
+  relation-join: { kind: topic, topic: relational-data, related: [collections] }
+  relation-group-aggregate: { kind: topic, topic: relational-data, related: [collections, expression-simplification] }
+  number-decimal-rounding: { kind: topic, topic: number-domain, related: [expression-simplification] }
+  collection-alias-and-mutation: { kind: topic, topic: collections, related: [state-and-aliasing] }
+  collection-empty-and-singleton: { kind: topic, topic: collections, related: [control-flow] }
+  collection-map: { kind: topic, topic: collections, related: [expression-simplification] }
+  collection-reduce: { kind: topic, topic: collections, related: [expression-simplification] }
+  collection-order-and-duplicates: { kind: topic, topic: collections, related: [] }
+  collection-nested: { kind: topic, topic: collections, related: [loops-and-termination] }

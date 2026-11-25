@@ -1,0 +1,37 @@
+- name: include-closed-bills
+  edits:
+    - from: 'b.status == "OPEN"'
+      to: 'b.status == "CLOSED"'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id == b.account_id
+            WHERE a.id == accountId
+              AND b.status == "CLOSED"
+          ),
+          0
+        )
+- name: shift-join-key
+  edits:
+    - from: 'a.id == b.account_id'
+      to: 'a.id + 1 == b.account_id'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id + 1 == b.account_id
+            WHERE a.id == accountId
+              AND b.status == "OPEN"
+          ),
+          0
+        )
+- name: reject-unknown-join-column
+  edits: [{from: 'a.id == b.account_id', to: 'a.id == b.unlisted'}]
+  reject: ['undeclared query input b']

@@ -1,0 +1,14 @@
+- name: four-iterations
+  edits:
+    - from: 'i < 3'
+      to: 'i < 4'
+  expect:
+    - path: [R]
+      value: '6'
+- name: two-iterations
+  edits:
+    - from: 'i < 3'
+      to: 'i < 2'
+  expect:
+    - path: [R]
+      value: '1'

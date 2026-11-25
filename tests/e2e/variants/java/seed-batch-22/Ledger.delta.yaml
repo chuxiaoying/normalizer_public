@@ -1,0 +1,31 @@
+- name: raise-write
+  edits:
+    - from: "balance = balance + amount;"
+      to: "balance = balance + amount + 1;"
+  expect:
+    - path: [S, 0, write, value]
+      value: balance + amount + 1
+    - path: [R]
+      value: amount + 1
+- name: return-before-value
+  edits:
+    - from: "return balance - before;"
+      to: "return before;"
+  expect:
+    - path: [R]
+      value: balance
+
+- name: read-between-two-writes
+  edits:
+    - from: 'return balance - before;'
+      to: |-
+        int midway = balance;
+                balance = balance + 1;
+                return balance - midway;
+  expect:
+    - path: [S]
+      value:
+        - write: { target: balance, value: balance + amount }
+        - write: { target: balance, value: balance + amount + 1 }
+    - path: [R]
+      value: '1'

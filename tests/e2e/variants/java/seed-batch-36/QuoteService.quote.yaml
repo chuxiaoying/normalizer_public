@@ -1,0 +1,3 @@
+- name: shift-request-id
+  edits: [{ from: 'client.fetch(id)', to: 'client.fetch(id + 1)' }]
+  expect: [{ path: [S, 0, call, args, 0], value: id + 1 }]

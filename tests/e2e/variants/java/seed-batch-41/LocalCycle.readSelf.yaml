@@ -1,0 +1,3 @@
+- name: write-another-scalar
+  edits: [{ from: 'root.value = 7;', to: 'root.value = 8;' }]
+  expect: [{ path: [R], value: '8' }]

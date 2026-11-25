@@ -1,0 +1,14 @@
+- name: first-value-plus-one
+  edits:
+    - from: 'result = first from values else 0'
+      to: 'result = first from values else 1'
+  expect:
+    - path: [R]
+      value: CASE WHEN LENGTH(values) == 0 THEN 1 ELSE values[0] END
+- name: second-element-source
+  edits:
+    - from: 'result = first from values else 0'
+      to: 'result = first from values[1:] else 0'
+  expect:
+    - path: [R]
+      value: CASE WHEN LENGTH(values) <= 1 THEN 0 ELSE values[1] END

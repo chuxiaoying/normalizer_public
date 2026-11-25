@@ -1,0 +1,99 @@
+- name: replace-total-at-second-directive
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: |-
+        yield netAmount
+            */
+      to: |-
+        yield netAmount
+            */
+            /* @normalizer-ir total = sum from rows as row yield row.priority */
+  expect:
+    - path: [S, 5, write, value]
+      value: |-
+        CASE
+          WHEN $e_0.quota < COALESCE(
+            SUM(
+              SELECT row.priority
+              FROM $e_1 AS row
+            ),
+            0
+          ) THEN $e_0.quota
+          ELSE COALESCE(
+            SUM(
+              SELECT row.priority
+              FROM $e_1 AS row
+            ),
+            0
+          )
+        END
+
+- name: accumulate-into-initialized-zero
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: |-
+        let total
+            /* @normalizer-ir
+               total = sum
+      to: |-
+        let total = 0
+            /* @normalizer-ir
+               total += sum
+
+- name: unknown-second-directive
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: |-
+        yield netAmount
+            */
+      to: |-
+        yield netAmount
+            */
+            /* @normalizer-ir total = unknown_operation rows */
+  reject: ['expected a typed relation query']
+
+- name: directive-inside-write-value
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'arrears.status.failed = true'
+      to: 'arrears.status.failed = /* @normalizer-ir total = sum from rows as row yield row.priority */ true'
+  reject: ['@normalizer-ir must appear between statements']
+
+- name: later-sum-adds-to-existing-binding
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: |-
+        yield netAmount
+            */
+      to: |-
+        yield netAmount
+            */
+            const first = total
+            /* @normalizer-ir total += sum from rows as row
+                 where row.dueDate <= props.today and row.priority >= profile.minPriority
+                 let netAmount = row.amount - row.waivedAmount
+                 where netAmount > 0 yield netAmount */
+    - file: src/ArrearsPage.mjs
+      from: 'total > profile.quota ? profile.quota : total'
+      to: 'total === first + first ? 701 : 702'
+  expect:
+    - path: [S, 5, write, value]
+      value: "701"
+
+- name: capture-invariant-today-before-await
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'export async function onLoad() {'
+      to: |-
+        export async function onLoad() {
+          const todayAtEntry = props.today
+    - file: src/ArrearsPage.mjs
+      from: 'row.dueDate <= props.today'
+      to: 'row.dueDate <= todayAtEntry'
+
+- name: synchronous-entry-hides-await
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'export async function onLoad() {'
+      to: 'export function onLoad() {'
+  reject: ['SCENARIO_MODULE_INPUT', 'entry needs an exported async function']

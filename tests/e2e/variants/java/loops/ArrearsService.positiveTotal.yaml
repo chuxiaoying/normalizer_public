@@ -1,0 +1,23 @@
+- name: sum-through-return-local
+  edits:
+    - from: 'return total;'
+      to: |-
+        int balance = total;
+                return balance;
+- name: sum-above-threshold
+  edits:
+    - from: where row.amount > 0
+      to: where row.amount > 10
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT bill.amount
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.amount > 10
+              AND bill.status == "OPEN"
+          ),
+          0
+        )

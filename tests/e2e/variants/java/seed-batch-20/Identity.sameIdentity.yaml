@@ -1,0 +1,7 @@
+- name: negate-identity-check
+  edits:
+    - from: "return left == right;"
+      to: "return left != right;"
+  expect:
+    - path: [R]
+      value: left != right

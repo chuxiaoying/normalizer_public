@@ -1,0 +1,12 @@
+- name: read-before-increment
+  edits:
+    - from: |-
+        increment();
+                return read();
+      to: |-
+        int before = read();
+                increment();
+                return before;
+  expect:
+    - path: [R]
+      value: value

@@ -1,0 +1,3 @@
+- name: add-offset
+  edits: [{ from: 'value + base', to: 'value + base + 1' }]
+  expect: [{ path: [R], value: base + value + 1 }]

@@ -1,0 +1,73 @@
+- name: equivalent-positive-guard
+  edits:
+    - from: amount <= 0
+      to: '!(amount > 0)'
+
+- name: write-above-fee-threshold
+  edits:
+    - from: amount <= 0
+      to: amount <= 25
+  expect:
+    - path: [S, 0, when]
+      value: amount > 25
+    - path: [throws, 0, when]
+      value: amount > 25 AND completion.is_throw($e_0, DatabaseWriteError)
+    - path: [R]
+      value: |-
+        CASE
+          WHEN amount > 25 THEN 1
+          ELSE 0
+        END
+
+- name: resolve-account-before-write
+  edits:
+    - from: class DatabaseWriteError
+      to: |-
+        import normalizer.annotations.External;
+        interface AccountDirectory { int lookup(int accountId); }
+        class DatabaseWriteError
+    - from: 'class PayableService {'
+      to: |-
+        class PayableService {
+            @External private final AccountDirectory directory;
+            PayableService(AccountDirectory directory) { this.directory = directory; }
+    - from: int affected;
+      to: |-
+        int billingId = directory.lookup(accountId);
+                int affected;
+    - from: 'account_id: accountId'
+      to: 'account_id: billingId'
+  expect:
+    - path: [S]
+      value:
+        - call:
+            external: directory.lookup
+            args: [accountId]
+            returns: number
+            result: $e_0
+            when: amount > 0
+        - sql: |-
+            INSERT INTO payable_log (account_id, amount)
+            VALUES ($e_0, amount)
+          returns: number
+          result: $e_1
+          when: amount > 0
+    - path: [throws, 0, when]
+      value: amount > 0 AND completion.is_throw($e_1, DatabaseWriteError)
+
+- name: local-heap-value-passed-to-sql
+  edits:
+    - from: class PayableService {
+      to: |-
+        class AmountBox {
+            int value;
+            AmountBox(int amount) { this.value = amount; }
+        }
+        class PayableService {
+    - from: int affected;
+      to: |-
+        AmountBox box = new AmountBox(amount);
+                int savedAmount = box.value;
+                int affected;
+    - from: 'account_id: accountId, amount: amount'
+      to: 'account_id: accountId, amount: savedAmount'

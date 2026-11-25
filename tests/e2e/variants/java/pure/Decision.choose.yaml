@@ -1,0 +1,17 @@
+- name: reverse-signed-gap-and-test
+  edits:
+    - from: int gap = adjusted - limit;
+      to: int gap = limit - adjusted;
+    - from: if (gap > 0)
+      to: if (gap < 0)
+- name: equality-chooses-original-value
+  edits:
+    - from: return fallback;
+      to: return value;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN limit < value + 1 THEN value + 1
+          ELSE value
+        END

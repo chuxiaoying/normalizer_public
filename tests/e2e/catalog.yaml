@@ -1,0 +1,144 @@
+# version 1 的测试清单只维护执行入口和派生状态。
+# 种子的语义主题、基础/联合类型和关联主题由
+# design/examples/seed-manifest.yaml 统一维护，测试收集阶段会强校验二者关联。
+version: 1
+# 每个种子要么登记本轮派生的完整入口，要么显式列为待派生。
+groups:
+  java/pure:
+    java-static: [HelloWorld.addOne]
+    java-static-case-when: [Decision.choose]
+    java-static-deep-calls: [Pricing.calculate]
+    java-expression-simplification: [Adjustment.adjust]
+  java/objects-and-boundaries:
+    java-static-object: [Calculator.summarize]
+    java-name-collision: [QuotaService.difference]
+    java-external-library: [LabelService.normalizeLabel]
+  java/loops:
+    java-loop-fold: [ArrearsService.positiveTotal]
+    java-loop-early-exit: [ArrearsService.firstPayableAmount]
+    java-loop-bounded-retry: [ScoreService.fetchScore]
+    java-loop-unknown: [ReadinessService.readWhenReady]
+  java/sql:
+    java-static-external-sql:
+      - ArrearsService.calculatePayable
+      - PayableService.recordPayable
+      - WaiverService.setOpenBillWaiver
+  java/seed-batch-1:
+    expr-boolean-algebra: [Eligibility.eligible]
+    collection-filter: [PositiveCount.count]
+    basic-nonnull-input: [Greeting.label]
+    number-business-unbounded: [Balance.addFee]
+    external-scalar-success-failure: [RiskService.riskScore]
+  java/seed-batch-2:
+    expr-constant-folding: [Constant.normalize]
+    control-if-else: [Branch.clamp]
+    number-compare-boundaries: [Bound.safe]
+    external-exception-propagation: [Pass.read]
+    basic-return-shape: [PairFactory.make]
+  java/seed-batch-3:
+    expr-associative-commutative-normal-form: [Order.total]
+    control-short-circuit: [Guard.allowed, GuardWithProbe.allowed]
+    basic-nullable-input: [OptionalText.isMissing]
+    external-object-success-failure: [ProfileService.score]
+    collection-find-first: [First.first]
+  java/seed-batch-4:
+    expr-equation-normal-form: [Equation.matches]
+    control-early-return: [Early.choose]
+    loop-constant-bound: [SmallLoop.total]
+  java/seed-batch-5:
+    control-switch-branch: [SwitchMode.classify]
+    external-nondeterministic-result: [ClockService.doubled]
+    entry-java-instance: [InstanceEntry.add]
+  java/seed-batch-6:
+    number-money-precision: [Money.toMinorUnits]
+    basic-unsupported-source-boundary: [UnsupportedBoundary.format]
+  java/seed-batch-7:
+    expr-unknown-condition-preservation: [Unknown.choose]
+  java/seed-batch-9:
+    number-division-zero: [Ratio.safeDivide, AdditionControl.addNonzero]
+  java/seed-batch-10:
+    control-exception-path: [Guarded.read]
+  java/seed-batch-11:
+    expr-equation-inequality-normal-form: [System.consistent]
+  java/seed-batch-13:
+    state-explicit-marker: [Counter.read]
+  java/seed-batch-14:
+    state-nested-alias: [Alias.read]
+  java/seed-batch-15:
+    object-external-return-type: [ProfileService.load]
+  java/seed-batch-16:
+    java-explicit-rollover: [Sequence.next]
+  java/seed-batch-17:
+    expr-case-when-let-extraction: [CaseReuse.cap]
+  java/seed-batch-18:
+    object-nested-record: [Nested.read]
+  java/seed-batch-19:
+    object-optional-field: [OptionalField.hasLabel]
+  java/seed-batch-20:
+    object-structural-vs-identity: [Identity.sameValue, Identity.sameIdentity]
+  java/seed-batch-21:
+    control-try-catch-finally: [FinallyService.read]
+  java/seed-batch-22:
+    state-multi-write-read-order: [Ledger.delta]
+    state-call-to-call: [Counter.increment, Counter.read, Counter.incrementThenRead]
+  java/seed-batch-23:
+    loop-variable-finite-bound: [VariableLoop.count]
+  java/seed-batch-24:
+    loop-break-continue: [BreakContinue.sum]
+  java/seed-batch-25:
+    loop-recursive: [Recursive.down]
+  java/seed-batch-26:
+    relation-delete: [CleanupService.removeClosed]
+  java/seed-batch-27:
+    relation-order-limit: [DueDateService.firstDueDate]
+  java/seed-batch-28:
+    relation-null-semantics: [NullMemoService.missingMemoCount]
+  java/seed-batch-29:
+    relation-join: [JoinService.openBillCount]
+  java/seed-batch-30:
+    relation-group-aggregate: [GroupService.statusGroupCount]
+  java/seed-batch-31:
+    number-decimal-rounding: [DecimalPrice.roundPrice]
+  java/seed-batch-32:
+    collection-empty-and-singleton: [FirstValue.firstOrZero]
+    collection-map: [MapValues.sumPlusOne]
+    collection-reduce: [ReduceValues.sumFrom]
+  java/seed-batch-33:
+    collection-order-and-duplicates: [DistinctValues.distinctCount]
+    collection-nested: [NestedValues.total]
+  java/seed-batch-34:
+    state-collection-mutation: [StateList.update]
+    object-collection-records: [ProfileScores.total]
+  java/seed-batch-35:
+    loop-nested: [NestedLoop.count]
+  java/seed-batch-36:
+    external-timeout: [QuoteService.quote]
+    external-callback-order: [NotifyService.send]
+  java/seed-batch-37:
+    relation-batch-write: [PayableService.close, PayableAudit.closeWithAudit]
+  javascript/seed-batch-38:
+    entry-javascript-module: [total.js#total]
+    entry-async-await: [async-total.js#total]
+  java/seed-batch-39:
+    collection-alias-and-mutation: [AliasCollection.total]
+  java/seed-batch-40:
+    object-polymorphic-dispatch: [Billing.charge, Billing.chargeClosed]
+  java/seed-batch-41:
+    state-cycle-and-observable-output: [CycleState.read, LocalCycle.readSelf, LocalCycle.exportSelf]
+  vue:
+    frontend-vo-consumption-vue:
+      scene: frontend-vo-consumption
+      entries: [PayableCard#balance.amount, PayableCard#balance.caption]
+    frontend-vo-production-vue:
+      scene: frontend-vo-production
+      entries: [onLoad]
+pending:
+  - frontend-deferred-listener
+  - java-eager-first
+  - java-independent-choice
+  - java-invalid-declaration
+  - java-lifo-release
+  - java-map-present-null
+  - java-state-alias
+  - sql-projected-distinct
+  - typescript-tuple-slots

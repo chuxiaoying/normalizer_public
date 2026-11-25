@@ -1,0 +1,6 @@
+- name: fixed-dispatch
+  edits: [{ from: 'fixed ? new FixedFee() : new ScaledFee()', to: 'new FixedFee()' }]
+  expect: [{ path: [R], value: value - 1 }]
+- name: scaled-dispatch
+  edits: [{ from: 'fixed ? new FixedFee() : new ScaledFee()', to: 'new ScaledFee()' }]
+  expect: [{ path: [R], value: value * 2 }]

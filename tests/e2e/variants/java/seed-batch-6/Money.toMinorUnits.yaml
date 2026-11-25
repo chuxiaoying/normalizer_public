@@ -1,0 +1,14 @@
+- name: add-surcharge
+  edits:
+    - from: 'return major * 100 + minor;'
+      to: 'return major * 100 + minor + 1;'
+  expect:
+    - path: [R]
+      value: major * 100 + minor + 1
+- name: subtract-minor
+  edits:
+    - from: 'return major * 100 + minor;'
+      to: 'return major * 100 - minor;'
+  expect:
+    - path: [R]
+      value: major * 100 - minor

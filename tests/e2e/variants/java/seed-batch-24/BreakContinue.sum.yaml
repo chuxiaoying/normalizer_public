@@ -1,0 +1,12 @@
+- name: stop-before-five
+  edits:
+    - from: "when i > 4 break"
+      to: "when i > 3 break"
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN limit <= 2 THEN 0
+          WHEN limit == 3 THEN 2
+          ELSE 5
+        END

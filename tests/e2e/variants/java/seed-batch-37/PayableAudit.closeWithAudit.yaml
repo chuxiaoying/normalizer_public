@@ -1,0 +1,8 @@
+- name: change-second-statement-only
+  edits: [{ from: '"CLOSED"', to: '"SETTLED"' }]
+  expect:
+    - path: [S, 1, sql]
+      value: |-
+        UPDATE payable
+        SET status = 'SETTLED'
+        WHERE payable.account_id = accountId

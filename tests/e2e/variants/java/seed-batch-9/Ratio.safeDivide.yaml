@@ -1,0 +1,12 @@
+reject: ['[NORM-EXPRESSION]', 'kind=PREPROCESS_REQUIRED', 'Ratio.safeDivide']
+variants:
+  - name: guard-one
+    edits:
+      - from: 'divisor == 0'
+        to: 'divisor == 1'
+    reject: ['[NORM-EXPRESSION]', 'kind=PREPROCESS_REQUIRED', 'Ratio.safeDivide']
+  - name: negative-fallback
+    edits:
+      - from: 'return 0;'
+        to: 'return -1;'
+    reject: ['[NORM-EXPRESSION]', 'kind=PREPROCESS_REQUIRED', 'Ratio.safeDivide']

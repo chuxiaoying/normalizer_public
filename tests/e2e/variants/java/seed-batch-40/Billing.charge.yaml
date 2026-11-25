@@ -1,0 +1,6 @@
+reject: ['[NORM-OUT-OF-SOURCE]', '[NORM-ENGINE-FAILURE]', 'Billing.charge', 'Fee.apply', 'unsupported']
+variants:
+  - name: shift-argument-does-not-close-dispatch
+    edits:
+      - from: 'static int charge(Fee fee, int value) { return fee.apply(value); }'
+        to: 'static int charge(Fee fee, int value) { return fee.apply(value + 1); }'

@@ -1,0 +1,17 @@
+- name: raise-positive-threshold
+  edits:
+    - file: src/PositiveCount.java
+      from: 'where row.amount > 0'
+      to: 'where row.amount >= 10'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.amount >= 10
+          ),
+          0
+        )

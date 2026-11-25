@@ -1,0 +1,13 @@
+- name: update-status
+  edits: [{ from: '"CLOSED"', to: '"SETTLED"' }]
+  expect:
+    - path: [S, 0, sql]
+      value: |-
+        UPDATE payable
+        SET closed_amount = amount, status = 'SETTLED'
+        WHERE payable.account_id = accountId
+- name: include-zero-amount
+  edits: [{ from: 'amount > 0', to: 'amount >= 0' }]
+  expect:
+    - { path: [S, 0, when], value: amount >= 0 }
+    - { path: [throws, 0, when], value: 'amount >= 0 AND completion.is_throw($e_0, DatabaseWriteError)' }
