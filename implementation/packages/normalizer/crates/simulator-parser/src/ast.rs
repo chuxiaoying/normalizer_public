@@ -311,12 +311,6 @@ pub enum JavaStatement {
 
     /// 代码块
     Block(Vec<JavaStatement>),
-
-    /// break [label];
-    Break { label: Option<String> },
-
-    /// continue [label];
-    Continue { label: Option<String> },
 }
 
 /// catch 子句。

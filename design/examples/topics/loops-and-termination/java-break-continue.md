@@ -43,6 +43,8 @@ class BreakContinue {
  }
 ```
 
+直接提交原 Java 的 `continue` 或 `break`，会在对应关键字处要求先预处理，而不是送入内核后才报泛化循环错误。上面的显式 fold IR 保留这两个动作，运行结果不变；不把 Java 标签式跳转推断为本例的单层循环控制。
+
 **预处理 diff**
 
 | 差异点（old → new） | 升级思想 |

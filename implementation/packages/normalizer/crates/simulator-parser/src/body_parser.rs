@@ -86,23 +86,14 @@ impl<'a> Parser<'a> {
                 return Err(self.err(&format!("{keyword} requires explicit preprocessing")));
             }
         }
-        if self.eat_keyword("break") {
-            self.skip_ws();
-            let label = self.read_ident();
-            self.skip_ws();
-            if !self.eat_char(b';') {
-                return Err(self.err("expected ';' after break"));
+        let jump_at = self.pos;
+        for keyword in ["break", "continue"] {
+            if self.eat_keyword(keyword) {
+                self.pos = jump_at;
+                return Err(self.err(&format!(
+                    "[JAVA-LOOP-CONTROL] raw {keyword} requires explicit loop preprocessing"
+                )));
             }
-            return Ok(JavaStatement::Break { label });
-        }
-        if self.eat_keyword("continue") {
-            self.skip_ws();
-            let label = self.read_ident();
-            self.skip_ws();
-            if !self.eat_char(b';') {
-                return Err(self.err("expected ';' after continue"));
-            }
-            return Ok(JavaStatement::Continue { label });
         }
         // 尝试变量声明：Type name ... 或 Type name = expr;
         let save = self.pos;

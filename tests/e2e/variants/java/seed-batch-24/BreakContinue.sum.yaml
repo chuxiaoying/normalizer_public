@@ -10,3 +10,35 @@
           WHEN limit == 3 THEN 2
           ELSE 5
         END
+
+- name: raw-break-requires-explicit-loop-preprocessing
+  edits:
+    - from: |-
+        /* @normalizer-ir
+                   total = fold [0, limit) as i
+                     when i < 2 continue
+                     when i > 4 break
+                     yield i
+                */
+      to: |-
+        for (int i = 0; i < limit; i++) {
+                    if (i < 2) break;
+                    total = total + i;
+                }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-LOOP-CONTROL]', 'raw break requires explicit loop preprocessing']
+
+- name: raw-continue-requires-explicit-loop-preprocessing
+  edits:
+    - from: |-
+        /* @normalizer-ir
+                   total = fold [0, limit) as i
+                     when i < 2 continue
+                     when i > 4 break
+                     yield i
+                */
+      to: |-
+        for (int i = 0; i < limit; i++) {
+                    if (i < 2) continue;
+                    total = total + i;
+                }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-LOOP-CONTROL]', 'raw continue requires explicit loop preprocessing']
