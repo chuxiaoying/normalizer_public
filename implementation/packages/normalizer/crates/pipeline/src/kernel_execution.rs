@@ -316,6 +316,7 @@ impl Engine<'_> {
             if path.as_bool() == Some(false) { break; }
             self.budget()?;
             match s {
+                S::Block(statements) => self.source_scope(statements, id, env, path)?,
                 S::Return(Some(expr)) => {
                     need(
                         i + 1 == body.len(),

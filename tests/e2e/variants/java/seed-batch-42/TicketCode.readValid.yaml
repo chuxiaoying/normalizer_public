@@ -153,3 +153,23 @@
     - { from: 'class TicketCode {', to: 'import java.time.LocalDate; class TicketCode {' }
     - { from: 'int readValid(int value)', to: 'LocalDate readValid(LocalDate value)' }
   reject: ['[NORM-CLASS-SHAPE]', 'TicketCode']
+- name: a-lexical-block-can-update-but-not-redeclare-its-outer-result
+  edits:
+    - { from: 'return value;', to: 'int result = value; { int local = value + 1; result = local + 1; } return result;' }
+  expect:
+    - { path: [R], value: 'value + 2' }
+- name: a-name-declared-in-a-closed-block-can-be-used-again-afterward
+  edits:
+    - { from: 'return value;', to: '{ int local = value + 1; } int local = value; return local;' }
+- name: a-block-local-does-not-become-an-input-from-the-caller
+  edits:
+    - { from: 'return value;', to: '{ int local = value + 1; } return local;' }
+  reject: ['undefined Java variable local']
+- name: a-return-in-a-standalone-block-finishes-the-method
+  edits:
+    - { from: 'return value;', to: '{ return 7; }' }
+  expect:
+    - { path: [R], value: '7' }
+- name: an-empty-statement-does-not-add-a-business-action
+  edits:
+    - { from: 'return value;', to: '; return value;' }

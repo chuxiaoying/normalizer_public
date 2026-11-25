@@ -8,6 +8,17 @@ use normalizer_ir::local::ScalarOperand;
 use simulator_parser::ast::CatchClause;
 
 impl Engine<'_> {
+    /// A lexical child can update an outer binding, but cannot export its own
+    /// locals. Returns and effects already live in the same execution frame.
+    pub(super) fn source_scope(&mut self, body: &[S], id: &str, env: &mut Env, path: Expr) -> Result<()> {
+        let mut locals = env.clone();
+        self.source_steps(body, id, &mut locals, path)?;
+        for (name, value) in env {
+            *value = locals.remove(name).expect("scoped source preserved its outer binding");
+        }
+        Ok(())
+    }
+
     pub(super) fn source_if(
         &mut self,
         condition: Expr,
@@ -18,12 +29,7 @@ impl Engine<'_> {
         path: Expr,
     ) -> Result<()> {
         if let Some(truth) = condition.as_bool() {
-            let mut branch = env.clone();
-            self.source_steps(if truth { yes } else { no }, id, &mut branch, path)?;
-            for (name, value) in env {
-                *value = branch.remove(name).unwrap();
-            }
-            return Ok(());
+            return self.source_scope(if truth { yes } else { no }, id, env, path);
         }
         let parent = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
         let original_store = self.realtime_store.clone();
