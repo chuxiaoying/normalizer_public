@@ -777,6 +777,7 @@ pub(super) fn is_table_expression(
                 || correlated_array_relation(relation).is_some_and(|pair|
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),
             FirstValue if value.is_some() => return table_source(relation),
+            Exists if value.is_none_or(|v| v.as_bool() == Some(true)) => return table_source(relation),
             Count | NthValue => return is_scalar_array_relation(relation, arrays),
             _ => {}
         }

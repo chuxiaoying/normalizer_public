@@ -8,7 +8,7 @@
 | 总 Boolean AND／OR 与有序比较 | 交换两端且同步翻转符号；布尔排列和不同括号汇合 | 短路、可空和 NaN 不推出额外互补 | [总布尔排序种子](java-total-boolean-order.md)验证 AND／OR 各自的排列、括号和业务差异；[短路种子](../control-flow/java-short-circuit.md)验证保护边界；比较换边仍需扩充独立对照 |
 | 完整二分 CASE | 正反条件与交换两臂得到同一代表；数值指示器、普通计数、min／max、Vector 各按其域 | 只取反不换臂、互换嵌套 CASE、部分 CASE 不补 ELSE、nullable 保留惰性 | [二分 CASE 种子](java-binary-case.md)已验收计数的两种互补写法、比较换边和阈值反例；[取小取大种子](java-number-selection.md)验收严格／非严格、同时翻转和不同目标的对照；数值指示器、Vector 与保护域须逐项验收 |
 | 多分支 CASE、区间和 LET | 相邻同值合并、非相邻同值按有效域汇聚、区间交并补、合法提取和归约不动点 | 有重叠 guard 的首命中不能重排；禁止无 CASE 或仅出现一次的 LET | [整数分区种子](java-integer-partition.md)已验收相邻有效域合并、开闭端点和可观察优先级；一般非相邻同值、LET 和再归约仍待补 |
-| 纯总不可变构造与序列观察 | 总 CASE 外提的唯一方向、零索引统一为 FIRST | 不跨惰性／部分域；保留首项 null、顺序和越界异常 | [直接读第零项](../collections/java-empty-singleton.md#直接读第零项不吞掉越界)已验收纯标量数组的 FIRST、越界和非零索引对照；投影、首项 null 和构造外提待补 |
+| 纯总不可变构造与序列观察 | 总 CASE 外提的唯一方向、零索引统一为 FIRST | 不跨惰性／部分域；保留首项 null、顺序和越界异常 | [直接读第零项](../collections/java-empty-singleton.md#直接读第零项不吞掉越界)已验收纯标量数组的 FIRST、越界和非零索引对照；[按序投影首项](../collections/java-find-first.md)已验收先判存在、保持投影及顺序、再运算；首项本身为 null 和构造外提待补 |
 | Heap、E／T 业务名字与稳定编号 | 两次分配顺序不同但公开路径相同；纯定义别名和依赖图编号稳定 | 同名不合并不同对象或调用；禁止 S 乱序、移动取得域或重编号后漏改引用 | [对象引用之对照](../objects-and-types/java-structural-vs-identity.md)已覆盖直接参数公开名优先于分配顺序，包括多个身份判断的合取；纯递推 T 已覆盖独立及有依赖编号；E/T 混合图与成员选择仍待验收 |
 | 顶层异常和边界结构 | 已证明互斥的异常记录独立排序；同内容完整结构严格相等 | 不交换具因果关系的异常或 S，不能丢载荷、cond 或取得条件 | 关联[批量写入](../relational-data/java-batch-write.md)及其派生用例已覆盖按异常名排列但保持 SQL 因果与 S 顺序；载荷型异常仍待验收 |
 

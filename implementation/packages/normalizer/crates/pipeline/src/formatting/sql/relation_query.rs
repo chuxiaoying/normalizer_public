@@ -6,8 +6,13 @@ use math::{
 };
 
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
-    let (kind, relation, Some(value), default) = expr.as_relation_aggregate()? else {
-        return None;
+    let (kind, relation, value, default) = expr.as_relation_aggregate()?;
+    let one = math::builder::lit_int(1);
+    let value = if kind == math::RelationAggregateKind::Exists {
+        if !value.is_none_or(|v| v.as_bool() == Some(true)) { return None; }
+        &one
+    } else {
+        value?
     };
     if kind == math::RelationAggregateKind::Sum && value == &math::builder::lit_int(1) {
         if let Some((table, keys)) = crate::kernel_input::business_relation::grouped_table(relation) {
@@ -79,6 +84,10 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         input = inner;
     }
     let scalar_array = matches!(input, RelationExpr::Base {name, ..} if ctx.scalar_arrays.contains(name));
+    if kind == math::RelationAggregateKind::Exists && scalar_array && predicates.is_empty() && keys.is_empty() {
+        // The already-typed scalar array renderer owns the LENGTH shape.
+        return None;
+    }
     // Never convert the math layer's ordered first/null observation back
     // to an index. Explicit non-null fallbacks remain a separate contract.
     if scalar_array && kind == math::RelationAggregateKind::FirstValue
@@ -216,6 +225,13 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         let prefix = if distinct { "DISTINCT " } else { "" };
         let parts = select.join(" ");
         return Some(format!("COUNT({prefix}{})", parts.strip_prefix("SELECT ")?));
+    }
+    if kind == math::RelationAggregateKind::Exists {
+        return Some(format!("EXISTS ({})", select.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ")));
+    }
+    if kind == math::RelationAggregateKind::FirstValue && default.is_some_and(Expr::is_null) {
+        let query = select.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ");
+        return Some(format!("FIRST({})", query.strip_prefix("SELECT ")?));
     }
     let (lead, default) = match kind {
         math::RelationAggregateKind::Sum => ("SUM(", "0".into()),

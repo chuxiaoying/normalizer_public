@@ -21,3 +21,14 @@
     - from: 'where row.amount > 0'
       to: 'where row.amount > 0 and false'
   expect: [{path: [R], value: '0'}]
+- name: guarded-projected-first-keeps-order-and-no-row-default
+  edits:
+    - from: 'return match.amount;'
+      to: 'return match.amount + 1;'
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.amount > 0) THEN FIRST(bill.amount FROM bill WHERE bill.account_id == accountId AND bill.amount > 0 ORDER BY bill.amount) + 1
+          ELSE 0
+        END
