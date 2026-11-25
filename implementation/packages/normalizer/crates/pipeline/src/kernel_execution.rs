@@ -20,8 +20,6 @@ pub(super) struct Engine<'a> {
     pub(super) selected_entry: Option<&'a str>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, Expr>,
-    pub(super) host_reads: BTreeMap<String, u64>,
-    pub(super) suspension: u64,
     pub(super) pending_ports: BTreeMap<u64, port_completion::PortSpec>,
     pub(super) caught_exceptions: Option<Vec<realtime_state::CompletionAlternative>>,
     pub(super) next_binding: u64,

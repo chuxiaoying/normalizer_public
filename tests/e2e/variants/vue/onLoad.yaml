@@ -91,6 +91,19 @@
       from: 'row.dueDate <= props.today'
       to: 'row.dueDate <= todayAtEntry'
 
+- name: both-sides-of-await-read-the-same-invariant-today
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'export async function onLoad() {'
+      to: |-
+        export async function onLoad() {
+          const todayAtEntry = props.today
+    - file: src/ArrearsPage.mjs
+      from: 'row.dueDate <= props.today'
+      to: |-
+        row.dueDate <= props.today
+                   and row.dueDate <= todayAtEntry
+
 - name: synchronous-entry-hides-await
   edits:
     - file: src/ArrearsPage.mjs

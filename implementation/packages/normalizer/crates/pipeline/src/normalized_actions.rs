@@ -80,7 +80,7 @@ pub(super) enum Action {
         target: Vec<String>,
         value: Node,
     },
-    /// Read a declared host P at this operation, including after suspension.
+    /// Access an immutable input bound for the selected invocation.
     ReadInput {
         name: String,
         input: String,
@@ -347,11 +347,8 @@ impl Engine<'_> {
             "text" => Ty::Text,
             _ => return Err(fail(format!("unsupported host input type: {domain}"))),
         };
-        let stage = self
-            .host_reads
-            .entry(input.to_owned())
-            .or_insert(self.suspension);
-        need(*stage == self.suspension, &format!("host input {input} was already read before suspension; declare distinct observation slots"))?;
+        // P represents the entry snapshot, not a fresh host observation.
+        // Reading it again aliases the same symbol even after an await.
         let value = symbolic(&host_input_symbol(input), &ty, &mut self.heap)?;
         Self::bind_local(env, name, value)
     }

@@ -123,7 +123,6 @@ impl Engine<'_> {
                     return Err(fail("task_wait requires task<T>"));
                 };
                 let outcome = self.task_outcome(&task)?;
-                self.suspension += 1;
                 let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);
                 self.realtime_completion = self
                     .realtime_completion
