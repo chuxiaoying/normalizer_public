@@ -811,41 +811,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     }
 
     // Narrow RCL cardinality absorption:
-    //   FirstValue(R, v, null) != null  =>  R is non-empty
-    //
-    // This removes redundant `Count(R) > 0` / `Exists(R)` guards once a
-    // non-null first value has already proven the same relation non-empty.
-    // Keep this deliberately narrower than arbitrary peer implication; broad
-    // AND absorption can erase side-specific path facts that CaseWhen domains
-    // still need.
-    let before_first_value_absorb_len = out.len();
-    let absorbed_by_first_value: Vec<bool> = (0..out.len())
-        .map(|i| {
-            (0..out.len()).any(|j| {
-                i != j
-                    && (relation_first_value_nonnull_implies_exists(&out[j], &out[i])
-                        || relation_first_value_nonnull_implies_count_nonzero(&out[j], &out[i]))
-            })
-        })
-        .collect();
-    if absorbed_by_first_value.iter().any(|absorbed| *absorbed) {
-        out = out
-            .into_iter()
-            .zip(absorbed_by_first_value.iter())
-            .filter_map(|(expr, absorbed)| if *absorbed { None } else { Some(expr) })
-            .collect();
-        if out.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
-        if out.len() == 1 {
-            return Some(out.into_iter().next().unwrap());
-        }
-        if out.len() != before_first_value_absorb_len {
-            return Some(rebuild_and(&out));
-        }
-    }
-
-    // Narrow RCL cardinality absorption:
     //   Count(R) > 0  <=>  Exists(R)
     //
     // In AND contexts keep the stronger/arithmetic Count fact and remove the
@@ -1886,19 +1851,6 @@ fn literal_eq_ne_comparison(expr: &Expr) -> Option<(BinOpKind, Expr, Lit)> {
         return Some((*op, right.clone(), lit.clone()));
     }
     None
-}
-
-fn literal_equality_implies_non_null(left: &Expr, right: &Expr) -> bool {
-    let Some((left_op, left_subject, left_lit)) = literal_eq_ne_comparison(left) else {
-        return false;
-    };
-    if left_op != BinOpKind::Eq || matches!(left_lit, Lit::Null) {
-        return false;
-    }
-    let Some((right_op, right_subject, right_lit)) = literal_eq_ne_comparison(right) else {
-        return false;
-    };
-    right_op == BinOpKind::Ne && right_subject == left_subject && matches!(right_lit, Lit::Null)
 }
 
 fn literal_equality_implies_literal_inequality(left: &Expr, right: &Expr) -> bool {

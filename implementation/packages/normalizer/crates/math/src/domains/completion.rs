@@ -3,7 +3,7 @@
 //! A boundary's declared variants are exhaustive and mutually exclusive.
 //! is_throw is total. value/payload are partial projections, defined only in
 //! the corresponding variant; callers must retain the appropriate domain.
-use crate::{builder as b, Expr, FuncKey, FuncSemantics, Primitive};
+use crate::{builder as b, Expr, FuncSemantics, Primitive};
 
 pub fn output_name(name: &str) -> &str {
     match name.split_once('@') {
