@@ -114,9 +114,14 @@ impl Engine<'_> {
                 .realtime_completion
                 .replace_continue_with_throw(condition, &class, payload);
         }
-        Ok(Value::Term(
-            spec.returns.clone(),
-            spec.normal_value(&response),
-        ))
+        // A non-throwing integer port exposes the acquired numeric value of
+        // this receipt, not the completion control token. The identity and
+        // guarded occurrence in S stay exactly the same.
+        let value = if spec.returns == Ty::Integer && !spec.throwing() {
+            b::sym_e(bind, "integer")
+        } else {
+            spec.normal_value(&response)
+        };
+        Ok(Value::Term(spec.returns.clone(), value))
     }
 }

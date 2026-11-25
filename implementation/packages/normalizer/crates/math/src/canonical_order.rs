@@ -274,7 +274,7 @@ fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortCo
             binding_id, path, ..
         } => {
             let root = ctx.external_names().and_then(|names| names.get(binding_id)).cloned()
-                .unwrap_or_else(|| format!("$e_{binding_id}"));
+                .unwrap_or_else(|| format!("$e_{binding_id:020}"));
             if path.is_empty() {
                 format!("01|{root}")
             } else {

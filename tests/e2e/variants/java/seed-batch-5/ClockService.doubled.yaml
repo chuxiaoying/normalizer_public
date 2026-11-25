@@ -29,3 +29,37 @@
         - call: { external: clock.now, args: [], returns: number, result: $e_1 }
     - path: [R]
       value: $e_0 + $e_1
+- name: receipt-order-uses-ordinal-not-decimal-spelling
+  edits:
+    - from: |-
+        int reading = clock.now();
+                return reading + reading;
+      to: |-
+        int reading0 = clock.now();
+                int reading1 = clock.now();
+                int reading2 = clock.now();
+                int reading3 = clock.now();
+                int reading4 = clock.now();
+                int reading5 = clock.now();
+                int reading6 = clock.now();
+                int reading7 = clock.now();
+                int reading8 = clock.now();
+                int reading9 = clock.now();
+                int reading10 = clock.now();
+                return reading10 + reading2;
+  expect:
+    - path: [S]
+      value:
+        - call: { external: clock.now, args: [], returns: number, result: $e_0 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_1 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_2 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_3 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_4 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_5 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_6 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_7 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_8 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_9 }
+        - call: { external: clock.now, args: [], returns: number, result: $e_10 }
+    - path: [R]
+      value: $e_2 + $e_10

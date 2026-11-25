@@ -853,9 +853,14 @@ impl Engine<'_> {
         }
     }
     fn acquired_integer_receipt(&self, value: &Expr, path: &Expr) -> bool {
+        let Some(SymVarOrigin::External { binding_id, path: fields, primitive_type }) = value.as_sym_var() else {
+            return false;
+        };
+        if primitive_type != "integer" || !fields.is_empty() { return false; }
         self.realtime_effects.events().iter().any(|event| {
             let realtime_state::EffectOperation::Port(id) = &event.operation else { return false; };
-            event.result.as_ref() == Some(value)
+            matches!(event.result.as_ref().and_then(Expr::as_sym_var),
+                Some(SymVarOrigin::External { binding_id: receipt, .. }) if receipt == binding_id)
                 && self.project.source_ports.get(id).is_some_and(|port| port.throws.is_empty())
                 && b::path_implies(&self.normal_path(path.clone()), &event.guard)
         })
