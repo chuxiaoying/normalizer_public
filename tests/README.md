@@ -39,9 +39,9 @@ node --test --test-name-pattern='^java-static / ' tests/e2e/business_examples.te
 3. **一次改变一个有业务含义的条件。** 每个具名变体都从原例重新开始。用 `edits` 指定规范源码中唯一匹配的位置。等价改写直接继承完整 expected；改变行为时，用 `expect` 列出应变的字段；字段应当完全消失时，用 `absent: true` 断言不存在（例如没有发生任何外部调用时的 `S`）；应拒绝的变体用 `reject` 给出预期诊断。若种子本身就要求拒绝，系列在 `variants` 外声明统一的 `reject`，同时核对种子给出的拒绝类型和入口。预期由业务关系推出，再与 CLI 实际输出比对。
 4. **运行整套验收。** 收集阶段核对设计文档、种子 ID、已覆盖或待派生状态、真实入口和变体文件。漏登记、重复绑定、孤儿文件或无法唯一应用的改动都会报错。
 
-每条验收创建独立临时工程，回放已审阅的 AI 预处理 diff，再从正式 CLI 的 Java `source`、JavaScript `module` 或 Vue `scenario` 入口执行。成功路径比较完整 PERS 结构和表达式；拒绝路径检查非零退出、空 stdout 和具体诊断。这里覆盖的是已给定预处理交付物后的端到端工程链路，AI 实时生成预处理结果的质量需单独评估。
+每条验收创建独立临时工程，回放已审阅的 AI 预处理 diff，再从正式 CLI 的 Java `source`、JavaScript／TypeScript `module` 或 Vue `scenario` 入口执行。成功路径比较完整 PERS 结构和表达式；拒绝路径检查非零退出、空 stdout 和具体诊断。这里覆盖的是已给定预处理交付物后的端到端工程链路，AI 实时生成预处理结果的质量需单独评估。
 
-独立 JavaScript 模块通过 `implementation/tools/normalizer module PROJECT_ROOT src/module.js exportedFunction` 运行。当前入口接收带明确 JSDoc 类型的闭合同步标量函数，并从语言适配器交付共享有类型 IR；独立异步入口仍须补齐一般调用与完成语义；若入口明确直接调用普通对象入参上的无源码方法，独立负向例断言内核 Panic、具体调用目标及空 stdout。缺少能力时保留独立完整预期或精确拒绝合同，且不跳过。无源码的调用不是天然端口：不允许伪造端口让正向预期通过。
+独立 JavaScript 模块通过 `implementation/tools/normalizer module PROJECT_ROOT src/module.js exportedFunction` 运行。TypeScript 使用同一入口，指定相对 `.ts` 路径；可选槽、显式 undefined 和 rest 索引由有类型的源码与共享内核验收，不把类型声明剥离成 JS 来代替类型检查。当前入口接收带明确 JSDoc 类型的闭合同步标量函数，并从语言适配器交付共享有类型 IR；独立异步入口仍须补齐一般调用与完成语义；若入口明确直接调用普通对象入参上的无源码方法，独立负向例断言内核 Panic、具体调用目标及空 stdout。缺少能力时保留独立完整预期或精确拒绝合同，且不跳过。无源码的调用不是天然端口：不允许伪造端口让正向预期通过。
 
 `implementation/tools/normalizer test pers-goldens` 离线检查所有正向预期（含变体）的 PERS schema 和类型引用，不启动内核。它不证明业务行为；完整 CLI 回归仍逐项比较实际 PERS 与独立预期，并在比较前检查两者结构。
 

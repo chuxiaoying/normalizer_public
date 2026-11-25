@@ -3,7 +3,7 @@ use super::*;
 use actions::Action;
 use realtime_state::Completion;
 
-fn expression_is_closed(node: &Node) -> bool {
+pub(super) fn expression_is_closed(node: &Node) -> bool {
     match node {
         Node::Const { .. } | Node::Var { .. } => true,
         Node::Field { value, .. } | Node::Not { value } => expression_is_closed(value),

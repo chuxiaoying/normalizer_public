@@ -36,7 +36,11 @@ P:
   parameters:
     failed: { position: 0, type: bool }
     detailed: { position: 1, type: bool }
-R: CASE WHEN NOT failed AND detailed THEN 2 ELSE 0 END
+R: |-
+  CASE
+    WHEN detailed AND NOT (failed) THEN 2
+    ELSE 0
+  END
 ```
 
 **判别例**　成功且详细时索引 0 仍占位，追踪项恰好两项；普通成功为零；失败时缺少第二槽，即使 detailed 为真也返回零。

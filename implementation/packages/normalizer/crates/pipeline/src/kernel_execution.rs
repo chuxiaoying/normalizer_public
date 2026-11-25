@@ -72,6 +72,10 @@ impl Engine<'_> {
             );
         }
         match n {
+            Node::ObserveTuple { tuple, observations, body } => {
+                need(super::tasks::expression_is_closed(body), "tuple observation requires a pure scalar body")?;
+                self.observe_tuple(tuple, observations, body, env, path)
+            }
             Node::OrderedTextMap { entries } => {
                 let acquired = entries.iter().map(|entry| {
                     let value = env.get(&entry.input).ok_or_else(|| fail("unbound readonly Map entry"))?;

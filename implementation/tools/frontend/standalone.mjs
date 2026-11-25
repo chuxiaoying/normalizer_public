@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { lowerExpression } from './ir.mjs';
+import { compileTypedTuple } from './module-tuple.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
@@ -123,7 +124,12 @@ function mapEntries(node, names) {
   });
 }
 
-function compile(source, file, entry) {
+function compile(source, file, entry, physicalPath) {
+  if (file.endsWith('.ts')) {
+    const tuple = compileTypedTuple(source, entry, physicalPath);
+    const params = tuple.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
+    return projectInput(file, entry, params, 'number', false, 'number', tuple.result, tuple.excerpt);
+  }
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
   const exported = sf.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === entry
@@ -209,7 +215,12 @@ function compile(source, file, entry) {
     ? {type: returns, node: internal('value.ordered_text_map', {entries: mapEntries(last.expression, names)})}
     : expression(lowerExpression(last.expression, sf));
   if (result.type !== returns) fail('return value differs from declared domain');
+  return projectInput(file, entry, params, returnDomain, orderedMap, returns, result.node, fn.getText(sf));
+}
+
+function projectInput(file, entry, params, returnDomain, orderedMap, returns, body, excerpt) {
   const binding = 'Entry.run';
+  const moduleFile = file.endsWith('.ts') ? 'Module.ts' : 'Module.js';
   const javaParams = params.map(param => carrier(param.domain));
   const declarations = javaParams.map((type, index) => type + ' ' + params[index].name);
   const resultTypes = returnDomain === readonlyVector ? {ReadonlyNumbers: 'vector<number>'}
@@ -217,7 +228,7 @@ function compile(source, file, entry) {
   const returnCarrier = Object.keys(resultTypes)[0] ?? carrier(returnDomain);
   const javaSource = Object.keys(resultTypes).map(name => 'class ' + name + ' {}\n').join('') +
     'class Entry { static native ' + returnCarrier + ' run(' + declarations.join(', ') + '); }\n';
-  return {carrier: javaSource, binding, project: {
+  return {carrier: javaSource, binding, moduleFile, project: {
     schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: javaSource, entries: [binding],
     result_value_types: resultTypes,
     parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
@@ -228,21 +239,21 @@ function compile(source, file, entry) {
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
       params: params.map(param => ({name: param.name, type: valueType(param.domain)})),
-      returns: resultTypes[returnCarrier] ?? returns, origin: {path: 'Module.js', excerpt: fn.getText(sf)},
-      body: result.node,
+      returns: resultTypes[returnCarrier] ?? returns, origin: {path: moduleFile, excerpt},
+      body,
     }},
   }};
 }
 
 try {
   const [kernel, rootArg, file, entry] = process.argv.slice(2);
-  if (!kernel || !rootArg || !file || !entry || isAbsolute(file) || !file.endsWith('.js')) fail('expected PROJECT_ROOT, a relative .js file, and an exported function');
+  if (!kernel || !rootArg || !file || !entry || isAbsolute(file) || !/\.(js|ts)$/.test(file)) fail('expected PROJECT_ROOT, a relative .js or .ts file, and an exported function');
   const root = realpathSync(rootArg);
   const path = realpathSync(resolve(root, file));
   const name = relative(root, path);
   if (name === '..' || name.startsWith('../') || isAbsolute(name)) fail('module path must remain in the project');
   const source = readFileSync(path, 'utf8');
-  const {carrier, binding, project, closure} = compile(source, name, entry);
+  const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, path);
   if (closure) {
     const result = spawnSync(kernel, ['--validate-standalone-closure'], {input: JSON.stringify(closure), encoding: 'utf8'});
     if (result.error) throw result.error;
@@ -253,7 +264,7 @@ try {
     const temp = mkdtempSync(join(tmpdir(), 'normalizer-js-module-'));
     try {
       writeFileSync(join(temp, 'Carrier.java'), carrier);
-      writeFileSync(join(temp, 'Module.js'), source);
+      writeFileSync(join(temp, moduleFile), source);
       const projectPath = join(temp, 'Project.yaml');
       writeFileSync(projectPath, JSON.stringify(project));
       const result = spawnSync(kernel, ['--project', projectPath, binding], {encoding: 'utf8'});

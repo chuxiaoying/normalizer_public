@@ -146,7 +146,7 @@ topics:
         focus: 映射中的缺失键和显式空值
       - id: typescript-tuple-slots
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: typescript
         focus: Tuple 可选槽位和位置保持
       - id: collection-empty-and-singleton

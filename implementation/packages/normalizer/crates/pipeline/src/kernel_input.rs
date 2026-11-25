@@ -226,6 +226,12 @@ struct OrderedMapEntry {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
+    #[serde(rename = "value.observe_tuple")]
+    ObserveTuple {
+        tuple: tuple_observation::Plan,
+        observations: Vec<tuple_observation::Binding>,
+        body: Box<Node>,
+    },
     #[serde(rename = "value.number_vector")]
     NumberVector { items: Vec<Node> },
     #[serde(rename = "value.ordered_text_map")]
@@ -769,6 +775,7 @@ mod source_objects;
 mod source_arrays;
 mod source_map;
 mod source_stack;
+mod tuple_observation;
 mod source_decimal;
 pub mod standalone_closure;
 mod source_ports;

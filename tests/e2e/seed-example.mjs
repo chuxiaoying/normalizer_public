@@ -29,7 +29,7 @@ function loadExamples(root, name) {
   let sourceLanguage;
   let hasResult = false;
   for (const { language, body, start } of readSeedBlocks(root, name)) {
-    if (language === 'java' || language === 'vue' || language === 'javascript') {
+    if (language === 'java' || language === 'vue' || language === 'javascript' || language === 'typescript') {
       assert.ok(!source || hasResult, 'Source has no documented result in ' + name);
       sourceLanguage = language;
       source = body;
@@ -63,17 +63,18 @@ export function* loadSeedEntries(root, seeds) {
     assert.equal(fixtures.length, registrations.length, 'Full entry inventory for ' + document);
     for (const registration of registrations) {
       const { entry, group, seriesFile } = registration;
-      const javascript = group.split('/')[0] === 'javascript';
-      const exportName = javascript ? entry.split('#')[1] : entry;
+      const language = group.split('/')[0];
+      const extension = { javascript: '.js', typescript: '.ts' }[language];
+      const exportName = extension ? entry.split('#')[1] : entry;
       const matches = fixtures.filter(({ expected, rejection }) => expected
         ? expected.entry.function.slice(expected.entry.function.indexOf('#') + 1) === exportName
         : rejection.includes('\n' + exportName.split('.').at(-1) + ':\n'));
       assert.equal(matches.length, 1, 'Expected one seed example for ' + document + ' at ' + entry);
       const fixture = matches[0];
       const sourceFile = fixture.patch?.match(/^--- a\/(.+)$/m)?.[1] ??
-        (javascript ? 'src/' + entry.split('#')[0] : 'src/' + entry.split('.')[0] + '.java');
-      assert.equal(fixture.sourceLanguage === 'javascript', javascript, 'JavaScript seed must be in a JavaScript test group');
-      assert.ok(sourceFile.endsWith(javascript ? '.js' : '.' + fixture.sourceLanguage), 'Source language and filename disagree: ' + sourceFile);
+        (extension ? 'src/' + entry.split('#')[0] : 'src/' + entry.split('.')[0] + '.java');
+      assert.equal(fixture.sourceLanguage, language, 'Seed language must match its test group');
+      assert.ok(sourceFile.endsWith(extension ?? '.' + fixture.sourceLanguage), 'Source language and filename disagree: ' + sourceFile);
       if (fixture.expected) {
         assert.equal(fixture.expected.entry.function, sourceFile + '#' + exportName, 'Documented entry identity');
       }

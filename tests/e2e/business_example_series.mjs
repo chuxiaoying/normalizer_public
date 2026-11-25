@@ -38,7 +38,7 @@ export function resolveVariantEdits(mainFile, edits) {
   return edits.map(edit => {
     checkKeys(edit, ['file', 'from', 'to']);
     const file = edit.file ?? mainFile;
-    assert.match(file, /^src\/[\w-]+\.(?:java|vue|mjs|js)$/);
+    assert.match(file, /^src\/[\w-]+\.(?:java|vue|mjs|js|ts)$/);
     assert.ok(typeof edit.from === 'string' && edit.from.length && typeof edit.to === 'string' && edit.from !== edit.to);
     return { ...edit, file };
   });

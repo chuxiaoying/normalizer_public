@@ -162,11 +162,12 @@ export function loadCases(root, seeds = loadSeeds(root)) {
       assert.ok(Array.isArray(entries) && entries.length, 'No test entry for seed: ' + seedId);
       const document = examples + '/' + seeds.get(seedId);
       for (const entry of entries) {
-        const javascript = group.split('/')[0] === 'javascript';
-        assert.match(entry, javascript
-          ? /^[\w-]+\.js#[\w$]+$/
+        const language = group.split('/')[0];
+        const extension = { javascript: 'js', typescript: 'ts' }[language];
+        assert.match(entry, extension
+          ? new RegExp('^[\\w-]+\\.' + extension + '#[\\w$]+$')
           : /^[\w$]+(?:[.#][\w$]+)*$/, 'Invalid seed entry');
-        const filename = group + '/' + (javascript ? entry.split('#')[0].slice(0, -3) : entry.replaceAll('#', '-')) + '.yaml';
+        const filename = group + '/' + (extension ? entry.split('#')[0].slice(0, -3) : entry.replaceAll('#', '-')) + '.yaml';
         register(series, filename, 'variant series');
         cases.push({
           seedId, document, entry, group, scene, seriesFile: variants + '/' + filename,

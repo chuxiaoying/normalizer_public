@@ -29,7 +29,7 @@ function checkExample(project, scene, entry, fixture, variant, seedReject) {
     assert.ok(scene, 'Vue source requires a registered CLI scene');
     const exported = entry.split('.').at(-1);
     args = ['scenario', scene, project, '--entry', mainFile + ':' + exported, '--source', sourceFile];
-  } else if (fixture.sourceLanguage === 'javascript') {
+  } else if (['javascript', 'typescript'].includes(fixture.sourceLanguage)) {
     args = ['module', project, sourceFile, entry];
   } else {
     assert.equal(scene, undefined, 'Java source must use the source CLI route');
