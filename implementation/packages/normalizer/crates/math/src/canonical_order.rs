@@ -73,10 +73,10 @@ pub fn canonical_order_ordered_comparison(
 
 /// Deterministic display-order key for peer terms in a proven commutative family.
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
-    // Expr is immutable. Without HeapRef or function aliases this key is
+    // Expr is immutable. Without heap or scoped temporal names this key is
     // independent of SortContext, so the bounded cache is semantics-preserving and
     // avoids recomputing the same DisplayIR key in high-frequency AND/OR sorts.
-    if !expr.has_heap_ref() && ctx.function_aliases().is_none() && ctx.temporal_aliases().is_none() {
+    if !expr.has_heap_ref() && ctx.temporal_aliases().is_none() {
         if let Some(cached) = CANONICAL_ORDER_CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
             if crate::profile::cache_observation_enabled() {
                 crate::profile::cache_lookup(
@@ -235,19 +235,12 @@ fn binop_subject_key(op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortCon
     }
 }
 
-fn semantic_function_name(key: crate::FuncKey, ctx: &dyn SortContext) -> String {
-    ctx.function_aliases()
-        .and_then(|aliases| aliases.get(&key))
-        .cloned()
-        .unwrap_or_else(|| func_name(key))
-}
-
 fn call_subject_key(
     key: crate::domains::primitive::registry::FuncKey,
     args: &[Expr],
     ctx: &dyn SortContext,
 ) -> String {
-    let name = semantic_function_name(key, ctx);
+    let name = func_name(key);
 
     // Static/opaque call: prefer the first user-facing argument subject if any,
     // but keep the call signature in the subject so it does not collapse into
@@ -416,7 +409,7 @@ fn payload_key(expr: &Expr, ctx: &dyn SortContext) -> String {
             }
         }
         ExprKind::Call { key, args, .. } => {
-            let mut parts = vec![semantic_function_name(*key, ctx)];
+            let mut parts = vec![func_name(*key)];
             parts.extend(args.iter().map(|a| structural_key(a, ctx)));
             parts.join("|")
         }
@@ -457,7 +450,7 @@ fn structural_key(expr: &Expr, ctx: &dyn SortContext) -> String {
                 .map(|a| structural_key(a, ctx))
                 .collect::<Vec<_>>()
                 .join(",");
-            format!("call:{}({args})", semantic_function_name(*key, ctx))
+            format!("call:{}({args})", func_name(*key))
         }
         ExprKind::CaseWhen { branches } => {
             let branches = branches

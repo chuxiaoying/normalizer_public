@@ -17,16 +17,6 @@ pub trait SortContext {
     fn temporal_aliases(&self) -> Option<&std::collections::BTreeMap<u64, usize>> {
         None
     }
-
-    /// Final semantic names for already declared pure functions (for example
-    /// internal definition calls exposed as `$t_0`). None retains registered
-    /// names. Some, including an empty map, disables context-independent key
-    /// caching: the same Expr can legitimately have different keys elsewhere.
-    /// The mapping is read-only; it never re-registers a function or rewrites
-    /// its semantics, parameters, result type or executable expression.
-    fn function_aliases(&self) -> Option<&std::collections::HashMap<crate::FuncKey, String>> {
-        None
-    }
 }
 
 /// 默认空上下文 — 所有 heap_display_name 返回 None
