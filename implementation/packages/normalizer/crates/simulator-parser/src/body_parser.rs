@@ -419,13 +419,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         if self.peek() == Some(b'{') {
             if let JavaType::Array(elem) = declared_ty {
-                let text = self.skip_balanced_braces()?;
-                let java_type = JavaType::Array(elem.clone());
-                let init = parse_array_init_text(&text, elem, &self.file, &self.package)?;
-                return Ok(JavaExpr::New {
-                    java_type,
-                    args: init,
-                });
+                return self.parse_array_initializer(elem);
             }
         }
         self.parse_expression()
@@ -989,37 +983,22 @@ impl<'a> Parser<'a> {
         let ty = Self::parse_new_element_type(self)
             .ok_or_else(|| self.err("expected type after 'new'"))?;
         self.skip_ws();
-        // 数组分配：new int[10] 或 new int[]{1,2,3}
-        if self.peek() == Some(b'[') {
-            self.pos += 1;
-            self.skip_ws();
-            if self.peek() == Some(b']') {
-                self.pos += 1;
-                self.skip_ws();
-                // new Type[]{...}
-                if self.peek() == Some(b'{') {
-                    let text = self.skip_balanced_braces()?;
-                    let init = parse_array_init_text(&text, &ty, &self.file, &self.package)?;
-                    return Ok(JavaExpr::New {
-                        java_type: JavaType::Array(Box::new(ty)),
-                        args: init,
-                    });
+        if self.eat_char(b'[') {
+            if self.eat_char(b']') {
+                let mut element_type = ty;
+                while self.eat_char(b'[') {
+                    if !self.eat_char(b']') {
+                        return Err(self.err("expected empty dimension before array initializer"));
+                    }
+                    element_type = JavaType::Array(Box::new(element_type));
                 }
-                return Ok(JavaExpr::New {
-                    java_type: JavaType::Array(Box::new(ty)),
-                    args: Vec::new(),
-                });
+                return self.parse_array_initializer(&element_type);
             }
-            // new Type[size]
-            let size = self.parse_expression()?;
-            self.skip_ws();
+            let length = Box::new(self.parse_expression()?);
             if !self.eat_char(b']') {
                 return Err(self.err("expected ']' in new array"));
             }
-            return Ok(JavaExpr::New {
-                java_type: JavaType::Array(Box::new(ty)),
-                args: vec![size],
-            });
+            return Ok(JavaExpr::ArrayAllocation { element_type: ty, length });
         }
 
         // 构造器调用 new Type(args)
@@ -1036,6 +1015,29 @@ impl<'a> Parser<'a> {
         }
 
         Err(self.err("expected '(' or '[' after 'new Type'"))
+    }
+
+    fn parse_array_initializer(&mut self, element_type: &JavaType) -> Result<JavaExpr, ParseError> {
+        if !self.eat_char(b'{') {
+            return Err(self.err("expected '{' for array initializer"));
+        }
+        let mut elements = Vec::new();
+        while !self.eat_char(b'}') {
+            let value = match element_type {
+                JavaType::Array(inner) if self.peek() == Some(b'{') =>
+                    self.parse_array_initializer(inner)?,
+                _ => self.parse_expression()?,
+            };
+            elements.push(value);
+            if self.eat_char(b',') {
+                continue;
+            }
+            if !self.eat_char(b'}') {
+                return Err(self.err("expected ',' or '}' in array initializer"));
+            }
+            break;
+        }
+        Ok(JavaExpr::ArrayInitializer { element_type: element_type.clone(), elements })
     }
 
     fn parse_new_element_type(p: &mut Parser) -> Option<JavaType> {
@@ -1339,131 +1341,4 @@ impl<'a> Parser<'a> {
             }
         }
     }
-}
-
-fn split_top_level(s: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut dp = 0i32;
-    let mut da = 0i32;
-    let mut db = 0i32;
-    let mut dc = 0i32;
-    let mut in_string = false;
-    let mut in_char = false;
-    let mut escaped = false;
-
-    for c in s.chars() {
-        if in_string {
-            cur.push(c);
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if in_char {
-            cur.push(c);
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '\'' {
-                in_char = false;
-            }
-            continue;
-        }
-
-        match c {
-            '"' => {
-                in_string = true;
-                cur.push(c);
-            }
-            '\'' => {
-                in_char = true;
-                cur.push(c);
-            }
-            '(' => {
-                dp += 1;
-                cur.push(c);
-            }
-            ')' => {
-                dp -= 1;
-                cur.push(c);
-            }
-            '<' => {
-                da += 1;
-                cur.push(c);
-            }
-            '>' => {
-                da -= 1;
-                cur.push(c);
-            }
-            '[' => {
-                db += 1;
-                cur.push(c);
-            }
-            ']' => {
-                db -= 1;
-                cur.push(c);
-            }
-            '{' => {
-                dc += 1;
-                cur.push(c);
-            }
-            '}' => {
-                dc -= 1;
-                cur.push(c);
-            }
-            ',' if dp == 0 && da == 0 && db == 0 && dc == 0 => {
-                out.push(std::mem::take(&mut cur));
-            }
-            _ => cur.push(c),
-        }
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
-}
-
-fn parse_array_init_text(
-    text: &str,
-    elem_ty: &JavaType,
-    file: &str,
-    package: &str,
-) -> Result<Vec<JavaExpr>, ParseError> {
-    // text 是大括号内的内容（不含大括号）
-    let parts = split_top_level(text);
-    let mut out = Vec::new();
-    for part in parts {
-        let trimmed = part.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with('{') {
-            if let JavaType::Array(inner) = elem_ty {
-                let mut p = Parser::new(trimmed, file);
-                let inner_text = p.skip_balanced_braces()?;
-                p.skip_ws();
-                if p.pos != p.src.len() {
-                    return Err(p.err("unexpected tokens after nested array initializer"));
-                }
-                let args = parse_array_init_text(&inner_text, inner, file, package)?;
-                out.push(JavaExpr::New {
-                    java_type: elem_ty.clone(),
-                    args,
-                });
-                continue;
-            }
-        }
-        let mut p = Parser::new(trimmed, file);
-        p.package = package.to_string();
-        let e = p.parse_expression()?;
-        out.push(e);
-    }
-    Ok(out)
 }

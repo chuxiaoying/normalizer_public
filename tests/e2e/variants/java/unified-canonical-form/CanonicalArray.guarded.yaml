@@ -1,0 +1,46 @@
+- name: upper-bound-uses-the-same-index-exception
+  edits:
+    - from: '[-1]'
+      to: '[2]'
+- name: negative-allocation-is-a-different-exception
+  edits:
+    - from: '(new int[]{2, 7})[-1]'
+      to: '(new int[-1]).length'
+  expect:
+    - path: [throws, 0, type]
+      value: java.lang.NegativeArraySizeException
+- name: successful-inline-element-is-not-an-exception
+  edits:
+    - from: '(new int[]{2, 7})[-1]'
+      to: '(new int[]{2, 7})[1]'
+  expect:
+    - path: [S]
+      absent: true
+    - path: [throws]
+      absent: true
+- name: caught-index-failure-executes-its-fallback
+  edits:
+    - from: |-
+        if (fail) return (new int[]{2, 7})[-1];
+                return 7;
+      to: 'try { return (new int[]{2, 7})[-1]; } catch (RuntimeException ignored) { return 42; }'
+  expect:
+    - path: [R]
+      value: '42'
+    - path: [S]
+      absent: true
+    - path: [throws]
+      absent: true
+- name: caught-negative-size-executes-its-fallback
+  edits:
+    - from: |-
+        if (fail) return (new int[]{2, 7})[-1];
+                return 7;
+      to: 'try { return (new int[-1]).length; } catch (RuntimeException ignored) { return 42; }'
+  expect:
+    - path: [R]
+      value: '42'
+    - path: [S]
+      absent: true
+    - path: [throws]
+      absent: true

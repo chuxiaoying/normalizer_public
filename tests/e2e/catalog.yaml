@@ -11,6 +11,7 @@ groups:
     canonical-total-boolean-order: [CanonicalChecks.approved, CanonicalChecks.tier, CanonicalChecks.priority]
     canonical-number-selection: [CanonicalQuota.smaller]
     canonical-text-order: [CanonicalLabel.label, CanonicalLabel.charCode]
+    canonical-constant-array: [CanonicalArray.digits, CanonicalArray.sized, CanonicalArray.guarded]
   java/pure:
     java-static: [HelloWorld.addOne]
     java-static-case-when: [Decision.choose]

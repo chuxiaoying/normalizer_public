@@ -129,6 +129,7 @@ impl Ty {
 enum Value {
     Term(Ty, Expr),
     Rows(Box<business_relation::Rows>),
+    LocalIntArray(source_arrays::LocalIntArray),
     Sequence {
         item: Ty,
         relation: RelationExpr,
@@ -141,6 +142,7 @@ impl Value {
         match self {
             Self::Term(t, _) => t.clone(),
             Self::Rows(rows)=>rows.ty(),
+            Self::LocalIntArray(_) => Ty::Seq(Box::new(Ty::Integer)),
             Self::Sequence { item, .. } => Ty::Seq(Box::new(item.clone())),
         }
     }

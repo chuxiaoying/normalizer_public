@@ -184,6 +184,7 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
                 | "ArithmeticException"
                 | "IndexOutOfBoundsException"
                 | "ArrayIndexOutOfBoundsException"
+                | "NegativeArraySizeException"
         ) {
             return Err(error("NORM-EXCEPTION-SHADOW", &class.full_name()));
         }
@@ -232,6 +233,7 @@ pub(crate) fn subtype(child: &str, parent: &str, parents: &BTreeMap<String, Stri
         "java.lang.NullPointerException"
             | "java.lang.ArithmeticException"
             | "java.lang.IndexOutOfBoundsException"
+            | "java.lang.NegativeArraySizeException"
     ) {
         return parent == RUNTIME_EXCEPTION;
     }
@@ -544,6 +546,23 @@ pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)>
     Some((total, delta))
 }
 
+pub(crate) fn java_int(ty: &JavaType) -> bool {
+    matches!(ty, JavaType::Primitive(name) if name == "int")
+}
+
+fn local_array_construction(e: &E) -> bool {
+    matches!(e, E::ArrayInitializer { element_type, .. } | E::ArrayAllocation { element_type, .. }
+        if java_int(element_type))
+}
+
+fn signed_literal_index(e: &E) -> bool {
+    match e {
+        E::Lit(JavaLit::Int(_)) => true,
+        E::UnaryOp { op: U::Neg, operand } => matches!(operand.as_ref(), E::Lit(JavaLit::Int(_))),
+        _ => false,
+    }
+}
+
 fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
     match e {
         E::Ident(_) | E::Lit(JavaLit::Bool(_) | JavaLit::Str(_) | JavaLit::Null) => (),
@@ -588,8 +607,18 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
             }
             calls.push((SourceCall::Constructor(owner.clone()), args.len()));
         }
+        E::ArrayInitializer { element_type, elements } if java_int(element_type) => {
+            for element in elements {
+                expr(element, at, calls)?;
+            }
+        }
+        E::ArrayAllocation { element_type, length } if java_int(element_type) => {
+            expr(length, at, calls)?;
+        }
         E::FieldAccess { target, .. } => expr(target, at, calls)?,
-        E::ArrayAccess { target, index } if constant_array_address(target, index) => {
+        E::ArrayAccess { target, index } if constant_array_address(target, index)
+            || (local_array_construction(target) || matches!(target.as_ref(), E::Ident(_)))
+                && signed_literal_index(index) => {
             expr(target, at, calls)?;
             expr(index, at, calls)?;
         }

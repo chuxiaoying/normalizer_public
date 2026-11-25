@@ -146,6 +146,10 @@ CASE WHEN count > 0 THEN count ELSE 0 END
 
 统一方向是把下界已足以判定的字面量比较归约为 Boolean 常量，再由原宿主消去死分支。只有下界时，`Count == 0` 仍未知；`1 + Count == 0` 在合法取得域内为 false。原取得条件和独立异常必须保留，例如 source 为 null 时的 NPE 不能一并删除。证据不足时不改写，也不能把当前域的证明写进无上下文的 normalize 缓存。
 
+## 有序 Java 常量数组
+
+对于已执行的封闭 Java `int[]`，初始化值按源顺序占据对应位置，不能应用标量 Add／Mul 的交换律移动元素。声明简写与显式初始化共享唯一语义；`new int[n]` 则先求长度、再得到长度为 `n` 的零填充数组，不能与 `new int[]{n}` 同形。读取可确定的长度和位置直接归约；在当前取得域越界或负长度时保留各自的真实异常及 guard，而不是正常返回 null、补零或把异常推到无关路径。该例的 [正式验收种子](examples/topics/unified-canonical-form/java-constant-array.md) 不把可变数组归为不可变 Vector，也不认证对象身份、写入、逃逸和符号长度。
+
 ## 已取得 typed Vector 长度的自然域（目标合同）
 
 宿主可认证原生 `ValueLength` 的精确自然数域，但证据必须同时包含：接收值在当前宿主域已经取得；完整声明类型确为不可变 Vector；若来自响应或 record 字段，完整字段路径逐层有声明类型，且该取得条件已成立。字段中的 Java null 标志不使完整 record 的其他载荷变成未定义；相应源异常仍由独立 throws 保留。不能仅凭 `Ty::I64`、普通 Number 返型、函数名包含 length、相似打印或尚未取得的 E/T 推断这些前提。

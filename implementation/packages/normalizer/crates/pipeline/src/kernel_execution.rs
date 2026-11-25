@@ -516,12 +516,30 @@ impl Engine<'_> {
                     .collect::<Result<_>>()?;
                 self.construct_source_object(owner, args, path)
             }
+            J::ArrayInitializer { element_type, elements } if crate::normalized::java_int(element_type) => {
+                let values = elements.iter().map(|element| self.java_expr(element, id, env, path.clone()))
+                    .collect::<Result<_>>()?;
+                self.source_local_array_initializer(values)
+            }
+            J::ArrayAllocation { element_type, length } if crate::normalized::java_int(element_type) => {
+                let size = self.java_expr(length, id, env, path.clone())?;
+                self.source_local_array_allocation(size, path)
+            }
             J::ArrayAccess { target, index } => {
                 let array = self.java_expr(target, id, env, path.clone())?;
                 let index = self.java_expr(index, id, env, path.clone())?;
                 self.source_array_read(array, index, path)
             }
             J::FieldAccess { target, field } => {
+                if field == "length" && (matches!(target.as_ref(), J::Ident(name)
+                    if matches!(env.get(name), Some(Value::LocalIntArray(_))))
+                    || matches!(target.as_ref(), J::ArrayInitializer { .. } | J::ArrayAllocation { .. }))
+                {
+                    let Value::LocalIntArray(array) = self.java_expr(target, id, env, path.clone())? else {
+                        return Err(fail("length requires a local Java int array"));
+                    };
+                    return Ok(Value::Term(Ty::Integer, b::lit_int(array.length())));
+                }
                 self.source_field(target, field, id)?;
                 if matches!(target.as_ref(), J::Ident(name) if name == "this")
                     && !env.contains_key("this")

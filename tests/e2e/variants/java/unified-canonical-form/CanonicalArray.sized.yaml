@@ -1,0 +1,21 @@
+- name: single-initializer-is-not-size-three
+  edits:
+    - from: 'new int[3]'
+      to: 'new int[]{3}'
+  expect:
+    - path: [R]
+      value: '13'
+- name: empty-initializer-keeps-zero-length
+  edits:
+    - from: 'new int[3]'
+      to: 'new int[]{}'
+    - from: 'values.length * 10 + values[0]'
+      to: 'values.length'
+  expect:
+    - path: [R]
+      value: '0'
+- name: nested-arrays-do-not-borrow-the-int-array-contract
+  edits:
+    - from: 'values.length * 10 + values[0]'
+      to: '(new int[][]{{1}}).length'
+  reject: ['NORM-EXPRESSION']

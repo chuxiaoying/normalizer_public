@@ -386,6 +386,18 @@ pub enum JavaExpr {
         args: Vec<JavaExpr>,
     },
 
+    /// `new T[]{...}` or the declaration-only shorthand `{...}`.
+    ArrayInitializer {
+        element_type: JavaType,
+        elements: Vec<JavaExpr>,
+    },
+
+    /// `new T[length]`: unlike an initializer, every element starts at its default.
+    ArrayAllocation {
+        element_type: JavaType,
+        length: Box<JavaExpr>,
+    },
+
     /// 二元运算
     BinOp {
         op: JavaBinOp,

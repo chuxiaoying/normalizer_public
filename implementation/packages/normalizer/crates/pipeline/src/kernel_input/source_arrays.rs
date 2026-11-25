@@ -3,6 +3,42 @@
 use super::*;
 
 const OUT_OF_BOUNDS: &str = "java.lang.ArrayIndexOutOfBoundsException";
+const NEGATIVE_SIZE: &str = "java.lang.NegativeArraySizeException";
+
+#[derive(Clone, PartialEq)]
+pub(super) enum LocalIntArray {
+    Initialized(Vec<i32>),
+    Zeroed(i32),
+}
+
+impl LocalIntArray {
+    pub(super) fn length(&self) -> i64 {
+        match self {
+            Self::Initialized(values) => values.len() as i64,
+            Self::Zeroed(length) => i64::from(*length),
+        }
+    }
+
+    fn get(&self, index: i32) -> Option<i32> {
+        if index < 0 || i64::from(index) >= self.length() {
+            return None;
+        }
+        Some(match self {
+            Self::Initialized(values) => values[index as usize],
+            Self::Zeroed(_) => 0,
+        })
+    }
+}
+
+fn exact_java_int(value: Value) -> Result<i32> {
+    need(value.ty() == Ty::Integer, "expected Java int for local array")?;
+    let folded = math::normalize(value.scalar()?);
+    match folded.as_lit() {
+        Some(math::Lit::Int(value)) => i32::try_from(*value)
+            .map_err(|_| fail("local array operand exceeds Java int range")),
+        _ => Err(fail("local array operand must be a closed Java int constant")),
+    }
+}
 
 fn array_root(value: Value) -> Result<String> {
     let Value::Sequence { item: Ty::Integer, relation: RelationExpr::Base { name, .. }, .. } = value else {
@@ -36,6 +72,29 @@ fn original_slot(root: &str, index: i64) -> Expr {
 }
 
 impl Engine<'_> {
+    fn fail_source_array(&mut self, path: Expr, exception: &str) {
+        let path = self.normal_path(path);
+        if path.as_bool() != Some(false) {
+            self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
+                path.clone(), exception, b::lit_null(),
+            );
+            self.realtime_throws.push(path);
+        }
+    }
+
+    pub(super) fn source_local_array_initializer(&self, values: Vec<Value>) -> Result<Value> {
+        let entries = values.into_iter().map(exact_java_int).collect::<Result<_>>()?;
+        Ok(Value::LocalIntArray(LocalIntArray::Initialized(entries)))
+    }
+
+    pub(super) fn source_local_array_allocation(&mut self, size: Value, path: Expr) -> Result<Value> {
+        let length = exact_java_int(size)?;
+        if length < 0 {
+            self.fail_source_array(path, NEGATIVE_SIZE);
+        }
+        Ok(Value::LocalIntArray(LocalIntArray::Zeroed(length.max(0))))
+    }
+
     fn source_array_reference(&mut self, root: &str) -> Expr {
         let key = format!("array:{root}");
         if let Some(reference) = self.state_roots.get(&key) { return reference.clone(); }
@@ -46,13 +105,7 @@ impl Engine<'_> {
 
     fn check_source_bounds(&mut self, root: &str, index: i64, path: &Expr) -> Expr {
         let fails = math::normalize(bounds_failure(root, index));
-        let failures = math::normalize(b::and(path.clone(), fails.clone()));
-        if failures.as_bool() != Some(false) {
-            self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
-                failures.clone(), OUT_OF_BOUNDS, b::lit_null(),
-            );
-            self.realtime_throws.push(failures);
-        }
+        self.fail_source_array(b::and(path.clone(), fails.clone()), OUT_OF_BOUNDS);
         math::normalize(b::and(path.clone(), b::not(fails)))
     }
 
@@ -85,6 +138,16 @@ impl Engine<'_> {
 
     pub(super) fn source_array_read(&mut self, array: Value, index: Value, path: Expr) -> Result<Value> {
         need(self.project.direct_source, "source array index requires direct source")?;
+        if let Value::LocalIntArray(local) = array {
+            let index = exact_java_int(index)?;
+            let Some(value) = local.get(index) else {
+                self.fail_source_array(path, OUT_OF_BOUNDS);
+                // This continuation is now unreachable; do not use null as a
+                // normal result for an integer-valued Java expression.
+                return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+            };
+            return Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(value))));
+        }
         let root = array_root(array)?;
         let index = index_value(index)?;
         let path = self.normal_path(path);
