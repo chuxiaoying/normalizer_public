@@ -223,10 +223,6 @@ impl Engine<'_> {
         settled: bool,
     ) -> Result<Value> {
         let ty = Ty::parse(returns)?;
-        need(
-            !matches!(ty, Ty::Seq(_)),
-            "sequence result is not supported",
-        )?;
         let parent_completion = self.realtime_completion.clone();
         self.realtime_completion = realtime_state::Completion::Continue;
         // A normal helper scope does not become async merely because its

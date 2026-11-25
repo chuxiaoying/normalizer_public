@@ -49,3 +49,10 @@
           WHEN values <= 0 THEN 11
           ELSE 7
         END
+
+- name: mutable-array-is-not-a-closed-readonly-vector
+  edits:
+    - from: '{ReadonlyArray<number>}'
+      to: '{Array<number>}'
+  reject:
+    - expected declared business scalar or non-null readonly Vector for values

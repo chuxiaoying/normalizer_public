@@ -76,17 +76,6 @@ impl Ty {
         if let Some(ty) = values::structural_type(s)? {
             return Ok(ty);
         }
-        if let Some(inner) = s
-            .strip_suffix('?')
-            .and_then(|s| s.strip_prefix("list<").and_then(|s| s.strip_suffix('>')))
-        {
-            let item = Self::parse(inner)?;
-            need(
-                item.state_value(),
-                "list item must be an immutable state value",
-            )?;
-            return Ok(Self::Seq(Box::new(item)));
-        }
         Ok(match s {
             "unit" => Self::Unit,
             "bool" => Self::Bool,
@@ -96,10 +85,6 @@ impl Ty {
             "ref?" => Self::Ref,
             "text?" => Self::Text,
             "map<text,text>" => Self::OrderedTextMap,
-            "list<i32>?" => Self::Seq(Box::new(Self::I32)),
-            "list<i64>?" => Self::Seq(Box::new(Self::I64)),
-            "list<ref?>?" => Self::Seq(Box::new(Self::Ref)),
-            "list<text?>?" => Self::Seq(Box::new(Self::Text)),
             _ => return Err(fail(format!("unsupported type {s}"))),
         })
     }
