@@ -7,6 +7,7 @@ pub mod decimal;
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalIr {
     SqlWrite(SqlWrite),
+    ProjectedUnionCount { binding: String, branches: Vec<(String, String)> },
     MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
     CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
     FoldIndexRange {
@@ -151,6 +152,21 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         if let Some(assignment) = decimal::parse(&binding, &mut exact)? {
             return Ok(LocalIr::Decimal(assignment));
         }
+    }
+    let mut union = Tokens { source: tokens.source };
+    if union.take("count") && union.take("distinct") && union.take("union") {
+        if accumulate { return Err("projected union initializes its count with =".into()); }
+        let mut branches = Vec::new();
+        loop {
+            let source = union.name()?;
+            union.expect(".")?;
+            branches.push((source, union.name()?));
+            if !union.take(",") { break; }
+        }
+        if branches.len() < 2 || !union.rest().is_empty() {
+            return Err("projected union needs at least two closed branches".into());
+        }
+        return Ok(LocalIr::ProjectedUnionCount { binding, branches });
     }
     let mut range = Tokens { source: tokens.source };
     if range.take("count") && range.take("from") && range.take("[") {

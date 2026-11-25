@@ -501,7 +501,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
                 for handler in catches { statements(handler.body(), at, calls)?; }
                 if let Some(finally) = finally_block { statements(finally, at, calls)?; }
             }
-            S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
+            S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { .. } | normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
             S::LocalIr(normalizer_ir::local::LocalIr::Unsupported(_)) => {
                 return Err(error("NORM-UNSUPPORTED-LOCAL-IR", at));
             }

@@ -47,6 +47,8 @@ pub enum RelationExpr {
         input: Box<RelationExpr>,
     },
     Distinct(Box<RelationExpr>),
+    /// Unordered set union of already projected branches.
+    Union(Vec<RelationExpr>),
 }
 
 impl RelationExpr {
@@ -80,6 +82,10 @@ impl RelationExpr {
             alias: alias.into(),
             input: Box::new(input),
         }
+    }
+
+    pub fn union(branches: Vec<RelationExpr>) -> Self {
+        normalize_relation(Self::Union(branches))
     }
 
     pub fn distinct(input: RelationExpr) -> Self {
@@ -148,6 +154,19 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
         },
         RelationExpr::Distinct(input) => {
             RelationExpr::Distinct(Box::new(normalize_relation(*input)))
+        }
+        RelationExpr::Union(branches) => {
+            let mut branches: Vec<_> = branches.into_iter().map(normalize_relation).collect();
+            branches.sort_by_cached_key(|branch| {
+                let structural = crate::canonical_order_key(&relation_expr(branch.clone()), &crate::DefaultSortContext);
+                let projected = match branch {
+                    RelationExpr::Project {value, ..} => crate::canonical_order_key(value, &crate::DefaultSortContext),
+                    _ => structural.clone(),
+                };
+                (projected, structural)
+            });
+            branches.dedup();
+            RelationExpr::Union(branches)
         }
         RelationExpr::Vector { value, alias } => RelationExpr::Vector {
             value: crate::normalize(value),

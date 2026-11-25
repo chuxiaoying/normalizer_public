@@ -413,6 +413,8 @@ pub(super) fn collect_relation_real_vars(
         crate::domains::relation::RelationExpr::Distinct(input) => {
             collect_relation_real_vars(input, out);
         }
+        crate::domains::relation::RelationExpr::Union(branches) =>
+            branches.iter().for_each(|branch| collect_relation_real_vars(branch, out)),
     }
 }
 
@@ -422,7 +424,8 @@ pub(super) fn relation_base_name(
     match relation {
         crate::domains::relation::RelationExpr::Base { name, .. } => Some(name.as_str()),
         crate::domains::relation::RelationExpr::Select { input, .. } | crate::domains::relation::RelationExpr::Project { input, .. } | crate::domains::relation::RelationExpr::Distinct(input) => relation_base_name(input),
-        crate::domains::relation::RelationExpr::Empty | crate::domains::relation::RelationExpr::Vector { .. } => None,
+        crate::domains::relation::RelationExpr::Empty | crate::domains::relation::RelationExpr::Vector { .. }
+        | crate::domains::relation::RelationExpr::Union(_) => None,
     }
 }
 

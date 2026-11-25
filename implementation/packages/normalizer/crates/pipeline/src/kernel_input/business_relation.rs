@@ -238,6 +238,34 @@ impl Engine<'_> {
         }
     }
 
+    pub(super) fn projected_union_count(
+        &self, binding: &str, sources: &[(String, String)], env: &mut Env,
+    ) -> Result<()> {
+        let branches = sources.iter().map(|(source, field)| {
+            let Some(Value::Rows(rows)) = env.get(source) else {
+                return Err(fail("projected union needs a declared table row source"));
+            };
+            let RelationExpr::Base {name, alias} = &rows.input else {
+                return Err(fail("projected union needs direct table rows without filters"));
+            };
+            need(rows.ordering.is_empty() && self.source_relations.tables.contains_key(name),
+                "projected union requires an unordered read-only table")?;
+            let Some(Value::Term(Ty::Integer, expression)) = rows.fields.get(field) else {
+                return Err(fail("projected union field must be a declared nonnullable integer"));
+            };
+            let column = expression.as_row_value().and_then(|path| path.split_once('.'))
+                .filter(|(root, _)| *root == alias)
+                .map(|(_, column)| column)
+                .filter(|column| self.source_relations.tables[name].get(*column).is_some_and(|ty| ty == "number"))
+                .ok_or_else(|| fail("projected union field must be a direct nonnullable table column"))?;
+            Ok(RelationExpr::project(b::row_value(format!("{name}.{column}")), "value",
+                RelationExpr::base(name, name)))
+        }).collect::<Result<Vec<_>>>()?;
+        let count = r::relation_count(RelationExpr::union(branches));
+        env.insert(binding.into(), Value::Term(Ty::Integer, count));
+        Ok(())
+    }
+
     pub(super) fn execute_query(
         &mut self,
         query: &Query,
@@ -771,6 +799,17 @@ pub(super) fn correlated_array_relation(relation: &RelationExpr) -> Option<(&str
     }
 }
 
+pub(crate) fn projected_union_columns(relation: &RelationExpr) -> Option<Vec<(&str, &str)>> {
+    let RelationExpr::Union(branches) = relation else { return None; };
+    if branches.is_empty() { return None; }
+    branches.iter().map(|branch| {
+        let RelationExpr::Project { value, alias, input } = branch else { return None; };
+        let RelationExpr::Base { name, alias: source } = input.as_ref() else { return None; };
+        let (owner, column) = value.as_row_value()?.split_once('.')?;
+        (alias == "value" && source == name && owner == name).then_some((name.as_str(), column))
+    }).collect()
+}
+
 pub(super) fn is_table_expression(
     expr: &Expr,
     tables: &BTreeMap<String, BTreeMap<String, String>>,
@@ -811,6 +850,9 @@ pub(super) fn is_table_expression(
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),
             FirstValue if value.is_some() => return table_source(relation),
             Exists if value.is_none_or(|v| v.as_bool() == Some(true)) => return table_source(relation),
+            Count if value.is_none() && projected_union_columns(relation).is_some_and(|branches|
+                branches.iter().all(|(name, column)| tables.get(*name)
+                    .and_then(|columns| columns.get(*column)).is_some_and(|ty| ty == "number"))) => return true,
             Count | NthValue => return is_scalar_array_relation(relation, arrays),
             _ => {}
         }

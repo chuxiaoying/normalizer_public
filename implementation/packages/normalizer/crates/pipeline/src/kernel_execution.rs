@@ -360,6 +360,8 @@ impl Engine<'_> {
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. })) =>
                             binding == name && (self.project.parameter_type(java_type)? == Ty::Integer
                                 || self.project.source_owner(java_type).is_some()),
+                        Some(S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, .. })) =>
+                            binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(w))) => &w.binding == name && self.project.parameter_type(java_type)?==Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::CountRange { binding, accumulate: false, .. })) => binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Relation(q))) => &q.binding==name && !q.accumulate,
@@ -368,6 +370,12 @@ impl Engine<'_> {
                         _=>false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
+                }
+                S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, branches }) => {
+                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
+                        Some(S::VarDecl { name, initializer: None, .. }) if name == binding),
+                        "projected union count must initialize its declared local")?;
+                    self.projected_union_count(binding, branches, env)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::Relation(query))=>{
                     let decl=self.source_declared_type(&J::Ident(query.binding.clone()),id)?;

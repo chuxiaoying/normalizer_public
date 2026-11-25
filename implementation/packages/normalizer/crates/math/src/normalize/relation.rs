@@ -224,6 +224,10 @@ fn relation_profile_shape(relation: &RelationExpr) -> (usize, usize) {
             let (size, depth) = relation_profile_shape(input);
             (1 + size, 1 + depth)
         }
+        RelationExpr::Union(branches) => branches.iter().fold((1, 1), |(size, depth), branch| {
+            let (s, d) = relation_profile_shape(branch);
+            (size + s, depth.max(1 + d))
+        }),
     }
 }
 
@@ -235,6 +239,7 @@ fn relation_node_kind(relation: &RelationExpr) -> &'static str {
         RelationExpr::Select { .. } => "select",
         RelationExpr::Project { .. } => "project",
         RelationExpr::Distinct(_) => "distinct",
+        RelationExpr::Union(_) => "union",
     }
 }
 

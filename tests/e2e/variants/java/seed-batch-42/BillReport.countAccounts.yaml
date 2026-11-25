@@ -1,0 +1,50 @@
+- name: swapping-certified-union-branches-does-not-change-the-normal-form
+  edits:
+    - from: 'pending.accountId, posted.accountId'
+      to: 'posted.accountId, pending.accountId'
+- name: projecting-bill-id-counts-bills-not-accounts
+  edits:
+    - from: 'p.account_id'
+      to: 'p.bill_id'
+    - from: 'q.account_id'
+      to: 'q.bill_id'
+  expect:
+    - path: [E, pending_bill, columns]
+      value: { bill_id: number }
+    - path: [E, posted_bill, columns]
+      value: { bill_id: number }
+    - path: [R]
+      value: |-
+        SELECT COUNT(*) FROM (
+          SELECT bill_id FROM pending_bill
+          UNION
+          SELECT bill_id FROM posted_bill
+        ) AS accounts
+- name: an-unknown-projection-is-not-a-count-of-complete-rows
+  edits:
+    - from: 'posted.accountId'
+      to: 'posted.unknown'
+  reject: ['projected union field must be a declared nonnullable integer']
+- name: duplicate-branches-still-deduplicate-values-within-one-table
+  edits:
+    - from: 'posted.accountId'
+      to: 'pending.accountId'
+  expect:
+    - path: [R]
+      value: |-
+        SELECT COUNT(*) FROM (
+          SELECT DISTINCT account_id FROM pending_bill
+        ) AS accounts
+- name: private-record-and-query-aliases-do-not-leak
+  edits:
+    - from: 'List<AccountRow> pending;'
+      to: 'List<AccountRow> early;'
+    - from: 'pending = from pending_bill as p yield {accountId: p.account_id}'
+      to: 'early = from pending_bill as raw yield {accountId: raw.account_id}'
+    - from: 'pending.accountId, posted.accountId'
+      to: 'early.accountId, posted.accountId'
+- name: unsupported-column-type-is-not-assumed-to-be-an-integer
+  edits:
+    - from: 'int accountId;'
+      to: 'String accountId;'
+  reject: ['projected union field must be a declared nonnullable integer']

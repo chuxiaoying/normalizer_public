@@ -553,6 +553,7 @@ fn walk_relation_expr<F: FnMut(&Expr)>(rel: &crate::domains::relation::RelationE
         RelationExpr::Distinct(inner) => {
             walk_relation_expr(inner, f);
         }
+        RelationExpr::Union(branches) => branches.iter().for_each(|branch| walk_relation_expr(branch, f)),
     }
 }
 
@@ -645,6 +646,12 @@ impl ExprProfile {
             crate::domains::relation::RelationExpr::Distinct(input) => {
                 let child = Self::relation(input);
                 Self::from_children(1 + child.size, 1 + child.depth, [child])
+            }
+            crate::domains::relation::RelationExpr::Union(branches) => {
+                let children: Vec<_> = branches.iter().map(Self::relation).collect();
+                let size = 1 + children.iter().map(|x| x.size).sum::<usize>();
+                let depth = 1 + children.iter().map(|x| x.depth).max().unwrap_or(0);
+                Self::from_children(size, depth, children)
             }
         }
     }

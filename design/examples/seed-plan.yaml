@@ -452,7 +452,7 @@ topics:
         focus: SELECT、INSERT、UPDATE 打穿为关系语义
       - id: sql-projected-distinct
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 关系投影后的不同账户计数
       - id: relation-join

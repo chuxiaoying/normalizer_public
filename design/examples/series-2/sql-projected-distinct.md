@@ -23,14 +23,14 @@ interface BillReport {
 
 ## AI 预处理结果
 
-保留方法签名，把 @Select 交给关系解析，形成两张表保留重复行的并集，再按 account_id 去重计数。这里没有绑定参数、写入或其他可观察的数据库效果。
+保留入口标识和结果类型。将仅声明查询的 mapper 接口改成闭合的规范载体，分别以已声明的非空整数行读取两表；再交付按 account_id 投影的去重并集计数。对非空列，COUNT(DISTINCT column) 在 UNION 后计数与原查询相同，这不是整张账单去重。没有绑定参数、写入或其他可观察的数据库效果。
 
 ```diff
 --- a/src/BillReport.java
 +++ b/src/BillReport.java
-@@ -1,12 +1,14 @@
+@@ -1,12 +1,13 @@
 -import org.apache.ibatis.annotations.Select;
- interface BillReport {
+-interface BillReport {
 -    @Select("""
 -        SELECT COUNT(DISTINCT account_id)
 -        FROM (
@@ -40,16 +40,16 @@ interface BillReport {
 -        ) AS all_bills
 -        """)
 -    long countAccounts();
-+    default long countAccounts() {
++import java.util.List;
++class AccountRow { int accountId; }
++class BillReport {
++    static long countAccounts() {
++        List<AccountRow> pending;
++        /* @normalizer-ir pending = from pending_bill as p yield {accountId: p.account_id} */
++        List<AccountRow> posted;
++        /* @normalizer-ir posted = from posted_bill as q yield {accountId: q.account_id} */
 +        long count;
-+        /* @normalizer-ir
-+           count = SELECT COUNT(DISTINCT account_id)
-+             FROM (
-+               SELECT bill_id, account_id FROM pending_bill
-+               UNION ALL
-+               SELECT bill_id, account_id FROM posted_bill
-+             ) AS all_bills
-+        */
++        /* @normalizer-ir count = count distinct union pending.accountId, posted.accountId */
 +        return count;
 +    }
  }
@@ -76,3 +76,6 @@ R: |-
 两次查询都只取账户编号。账单号对计数没有影响，可以从最终的表字段声明与公式中一起消去。
 
 **判别例**　两表分别含 (101,7)、(202,7)，整行去重有两条，不同账户只有一个。把第二个账户改为 8，结果才变为二。两表均空时为零。
+
+
+并集只针对已经类型闭合的候选列，按公开的表和列结构键稳定排列；交换两个来源不改变结果。重复同一分支时，剩下的单分支仍须 SELECT DISTINCT，不能把去重语义一并删除。换成 bill_id 时，公式和 E 中实际依赖的列都随之改变。
