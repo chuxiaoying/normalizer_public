@@ -28,3 +28,8 @@
         Pair(int left, int right) {
                 this(left);
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CONSTRUCTOR-DELEGATION]', 'this(...)']
+
+- name: a-declared-field-initializer-is-not-silently-discarded
+  edits:
+    - { from: 'int left;', to: 'int left = 7;' }
+  reject: ['[NORM-FIELD-DECLARATION]', 'Pair']

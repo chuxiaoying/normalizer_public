@@ -43,7 +43,7 @@ pub(crate) fn declarations(
             if !field.is_final()
                 || field.is_volatile()
                 || field.is_static()
-                || field.initializer().is_some()
+                || field.has_initializer()
             {
                 return Err(error("NORM-EXTERNAL-FIELD", field.name()));
             }

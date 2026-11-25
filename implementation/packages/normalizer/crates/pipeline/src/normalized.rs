@@ -91,7 +91,7 @@ pub(crate) fn source_layouts(
             if field.is_static()
                 || field.is_final()
                 || field.is_volatile()
-                || field.initializer().is_some()
+                || field.has_initializer()
                 || !annotation_ok
             {
                 return Err(error("NORM-FIELD-DECLARATION", &class.full_name()));
@@ -208,7 +208,7 @@ pub(crate) fn source_payload_domain(class: &simulator_parser::JavaClass) -> Opti
     if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
     let [field] = class.fields() else { return None; };
     if field.name() != "payload" || field.is_static() || field.is_final() || field.is_volatile()
-        || field.initializer().is_some() || !field.annotations().is_empty()
+        || field.has_initializer() || !field.annotations().is_empty()
     {
         return None;
     }

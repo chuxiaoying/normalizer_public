@@ -933,22 +933,12 @@ fn parse_class_body(
             let field_is_static = is_static || class.is_interface;
             let field_is_final = is_final || class.is_interface;
 
-            // 解析字段 initializer 表达式。
-            // PR-ClassLoader: 字段 initializer 解析（static 和 instance 统一）
-            //
-            // Java 语义：
-            // - instance 字段 initializer 在实例化时（ctor body 前）执行，可访问 this
-            // - static 字段 initializer 在类加载时执行，处于 static context，无 enclosing this
-            //
-            // 执行入口分别由 initialize_instance_fields / ensure_class_initialized 负责。
-            let initializer = if p.eat_char(b'=') {
-                p.skip_ws();
-                let expr = p.parse_initializer_expr(&java_type)?;
-                p.skip_ws();
-                Some(expr)
-            } else {
-                None
-            };
+            // Validate the initializer syntax, but retain only its presence:
+            // the source contract must reject it, never silently execute or drop it.
+            let has_initializer = p.eat_char(b'=');
+            if has_initializer {
+                p.parse_initializer_expr(&java_type)?;
+            }
             p.require_semicolon("field declaration")?;
             class.fields.push(JavaField {
                 name: member_name,
@@ -957,7 +947,7 @@ fn parse_class_body(
                 is_final: field_is_final,
                 is_volatile,
                 annotations,
-                initializer,
+                has_initializer,
             });
         }
     }

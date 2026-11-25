@@ -119,7 +119,7 @@ pub struct JavaField {
     pub(crate) is_final: bool,
     pub(crate) is_volatile: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
-    pub(crate) initializer: Option<JavaExpr>,
+    pub(crate) has_initializer: bool,
 }
 
 impl JavaField {
@@ -143,8 +143,9 @@ impl JavaField {
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations
     }
-    pub fn initializer(&self) -> Option<&JavaExpr> {
-        self.initializer.as_ref()
+    /// Declaration shape only; source contracts reject field initialization.
+    pub fn has_initializer(&self) -> bool {
+        self.has_initializer
     }
 }
 

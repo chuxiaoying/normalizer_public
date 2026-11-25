@@ -24,7 +24,7 @@ class PairFactory {
 
 ## AI 预处理结果
 
-**原样通过。** 直接构造对象和 `this.field` 赋值属于当前源码合同。显式 `this(...)` 或 `super(...)` 委托有自己的初始化顺序（[JLS 8.8.7.1](https://docs.oracle.com/javase/specs/jls/se21/html/jls-8.html#jls-8.8.7.1)），不能被当作普通方法或直接删除；当前源码入口在委托关键字提示先预处理，不改变本例对 `this.field` 的支持。
+**原样通过。** 直接构造对象和 `this.field` 赋值属于当前源码合同。显式 `this(...)` 或 `super(...)` 委托有自己的初始化顺序（[JLS 8.8.7.1](https://docs.oracle.com/javase/specs/jls/se21/html/jls-8.html#jls-8.8.7.1)），不能被当作普通方法或直接删除；当前源码入口在委托关键字提示先预处理，不改变本例对 `this.field` 的支持。 字段声明自带的初始化式也不能被忽略，即使构造器稍后会重写同一字段；当前合同要求在支持的构造器源码内表达初始化。
 
 ## 归一化最终结果
 
