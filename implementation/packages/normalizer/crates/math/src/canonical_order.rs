@@ -156,17 +156,10 @@ fn subject_key(expr: &Expr, ctx: &dyn SortContext) -> String {
             select_expr,
             default_expr,
         } => {
-            if needs_recursive_relation_key(expr, ctx) {
-                format!(
-                    "05|relation-agg|{}",
-                    aggregate_structural_key(*kind, relation, select_expr, default_expr, ctx)
-                )
-            } else {
-                format!(
-                    "05|relation-agg|{:?}|{:?}|{:?}|{:?}",
-                    kind, relation, select_expr, default_expr
-                )
-            }
+            format!(
+                "05|relation-agg|{}",
+                aggregate_structural_key(*kind, relation, select_expr, default_expr, ctx)
+            )
         }
         ExprKind::UnaryOp {
             op: UnaryOpKind::Not,
@@ -194,11 +187,7 @@ fn subject_key(expr: &Expr, ctx: &dyn SortContext) -> String {
             .min()
             .unwrap_or_else(|| "99|array-empty".to_string()),
         ExprKind::Relation(relation) => {
-            if needs_recursive_relation_key(expr, ctx) {
-                format!("70|relation|{}", relation_structural_key(relation, ctx))
-            } else {
-                format!("70|relation|{:?}", relation)
-            }
+            format!("70|relation|{}", relation_structural_key(relation, ctx))
         }
     }
 }
@@ -481,32 +470,18 @@ fn structural_key(expr: &Expr, ctx: &dyn SortContext) -> String {
             select_expr,
             default_expr,
         } => {
-            if needs_recursive_relation_key(expr, ctx) {
-                format!(
-                    "relagg:{}",
-                    aggregate_structural_key(*kind, relation, select_expr, default_expr, ctx)
-                )
-            } else {
-                format!(
-                    "relagg:{:?}:{:?}:{:?}:{:?}",
-                    aggregate_kind_rank(*kind),
-                    relation,
-                    select_expr,
-                    default_expr
-                )
-            }
+            format!(
+                "relagg:{}",
+                aggregate_structural_key(*kind, relation, select_expr, default_expr, ctx)
+            )
         }
         ExprKind::Relation(relation) => {
-            if needs_recursive_relation_key(expr, ctx) {
-                format!("relation:{}", relation_structural_key(relation, ctx))
-            } else {
-                format!("relation:{:?}", relation)
-            }
+            format!("relation:{}", relation_structural_key(relation, ctx))
         }
     }
 }
 
-// Relation keys in alias contexts must recurse through Expr rather than its
+// Relation keys must recurse through Expr rather than its
 // Debug representation (which contains FuncKey/ExprProfile implementation IDs).
 // Length-prefix every field and preserve child/event order; this is structural
 // encoding, not a new commutativity rule for relations or event histories.
@@ -617,25 +592,6 @@ fn canonical_order_orient_ordered_predicate_to_rhs(
     ctx: &dyn SortContext,
 ) -> bool {
     ordered_comparison_view(op, left, right, ctx).is_some_and(|(_, swap)| swap)
-}
-
-// Debug is retained for legacy relation keys without ordered predicates. If a
-// predicate occurs anywhere below a relation, recurse through the canonical
-// Expr encoding instead so its original operand spelling cannot leak into keys.
-fn needs_recursive_relation_key(expr: &Expr, ctx: &dyn SortContext) -> bool {
-    if ctx.function_aliases().is_some() {
-        return true;
-    }
-    let mut ordered = false;
-    expr.walk(&mut |part| {
-        if let ExprKind::BinOp { op, .. } = part.kind() {
-            ordered |= matches!(
-                op,
-                BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
-            );
-        }
-    });
-    ordered
 }
 
 fn canonical_order_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> bool {
