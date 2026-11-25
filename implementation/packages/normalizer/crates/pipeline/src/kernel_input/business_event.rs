@@ -10,7 +10,7 @@ use serde_json::json;
 
 // Guards use the PERS condition grammar. Parentheses preserve the math tree,
 // and operands remain in their original evaluation order.
-fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
+pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
     fn render(expr: &Expr, parent: u8, ctx: &mut crate::FormatCtx) -> String {
         if let Some(bound) = crate::formatting::sql::format_array_failure_union(expr, ctx) {
             return bound;
@@ -232,7 +232,7 @@ pub(super) fn observations(
         let public = crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
             external: Some(&public_names),
-            temporals: None,
+            total_temporals: None, temporals: None,
         };
         exceptions.sort_by_cached_key(|(name, payload, cond)| (
             name.clone(),
@@ -266,11 +266,15 @@ pub(super) fn observations(
         returned
     } else {
         let external_names = ctx.published_external_names();
-        math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
+        super::member_choice::validate_return_choices(&returned, &result.member_choices)?;
+        let total_temporals = super::member_choice::total_choices(&result.member_choices);
+        let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
             external: Some(&external_names),
-            temporals: Some(&temporal_names),
-        }).map_err(|error| fail(error.to_string()))?
+            total_temporals: Some(&total_temporals), temporals: Some(&temporal_names),
+        }).map_err(|error| fail(error.to_string()))?;
+        super::member_choice::validate_return_choices(&normalized, &result.member_choices)?;
+        normalized
     };
     ctx.set_temporal_names(temporal_names);
     ctx.protect_business_return();

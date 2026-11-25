@@ -18,10 +18,13 @@ pub trait SortContext {
         None
     }
 
-    /// Published ordinals of retained pure definitions, not internal tasks.
+    /// Published ordinals, which do not by themselves prove availability.
     fn temporal_aliases(&self) -> Option<&std::collections::BTreeMap<u64, usize>> {
         None
     }
+
+    /// Explicit evidence that the binding is acquired on every path.
+    fn temporal_is_total(&self, _id: u64) -> bool { false }
 }
 
 /// 默认空上下文 — 所有 heap_display_name 返回 None

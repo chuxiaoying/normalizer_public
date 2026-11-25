@@ -69,3 +69,25 @@
         - call: { external: checkpoints.read, args: ['$e_7'], returns: number, result: '$e_8' }
         - call: { external: checkpoints.read, args: ['$e_8'], returns: number, result: '$e_9' }
         - call: { external: checkpoints.read, args: ['$e_9'], returns: number, result: '$e_10' }
+- name: guarded-choice-reuses-an-unconditional-receipt-without-hoisting
+  edits:
+    - from: |-
+        int selected;
+                /* @normalizer-ir selected = choose from values else second */
+                return selected;
+      to: |-
+        if (code == 0) {
+          int selected;
+          /* @normalizer-ir selected = choose from values else second */
+          return selected;
+        }
+        return second;
+  expect:
+    - path: [T, 0, when]
+      value: 'code == 0'
+    - path: [R]
+      value: |-
+        CASE
+          WHEN code == 0 THEN $t_0
+          ELSE $e_1
+        END

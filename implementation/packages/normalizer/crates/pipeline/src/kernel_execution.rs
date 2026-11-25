@@ -838,7 +838,7 @@ impl Engine<'_> {
                     // Reorient only the pure comparison, never the evaluations.
                     let kind = if *op == B::Eq { math::BinOpKind::Eq } else { math::BinOpKind::Ne };
                     let names = crate::canonical_names::CanonicalNames {
-                        heap: &self.source_objects.compared_parameters, external: None, temporals: None,
+                        heap: &self.source_objects.compared_parameters, external: None, total_temporals: None, temporals: None,
                     };
                     if math::canonical_order_ordered_comparison(kind, &a, &z, &names).is_some() {
                         std::mem::swap(&mut a, &mut z);

@@ -35,14 +35,24 @@
         int first;
                 /* @normalizer-ir first = choose from values else backup */
       to: |-
-        if (backup > 0) {
+        if (backup == 0) {
           int first;
           /* @normalizer-ir first = choose from values else backup */
           return first;
         }
     - from: 'return first + second;'
       to: 'return second;'
-  reject: ['conditional member choice needs a guarded T contract']
+  expect:
+    - path: [T, 0, when]
+      value: 'backup == 0'
+    - path: [T, 1, when]
+      value: 'backup != 0'
+    - path: [R]
+      value: |-
+        CASE
+          WHEN backup == 0 THEN $t_0
+          ELSE $t_1
+        END
 - name: choice-does-not-accumulate-an-uninitialized-binding
   edits:
     - from: 'first = choose from values'
@@ -131,3 +141,42 @@
       value: '[2, 7]'
     - path: [T, 1, members]
       value: '[2, 7]'
+- name: a-prior-nondeterministic-result-is-not-an-entry-guard
+  edits:
+    - from: |-
+        int second;
+                /* @normalizer-ir second = choose from values else backup */
+                return first + second;
+      to: |-
+        if (first == 0) {
+          int second;
+          /* @normalizer-ir second = choose from values else backup */
+          return second;
+        }
+        return first;
+  reject: ['member choice guard requires acquired entry scalars']
+- name: a-single-conditional-choice-is-absent-on-the-fallback-path
+  edits:
+    - from: |-
+        int first;
+                /* @normalizer-ir first = choose from values else backup */
+                int second;
+                /* @normalizer-ir second = choose from values else backup */
+                return first + second;
+      to: |-
+        if (backup == 0) {
+          int first;
+          /* @normalizer-ir first = choose from values else backup */
+          return first;
+        }
+        return backup;
+  expect:
+    - path: [T]
+      value:
+        - { id: $t_0, op: member_choice, when: 'backup == 0', members: values, empty: backup }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN backup == 0 THEN $t_0
+          ELSE backup
+        END

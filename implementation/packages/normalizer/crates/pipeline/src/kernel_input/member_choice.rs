@@ -15,6 +15,7 @@ enum Candidates {
 pub(super) struct Occurrence {
     members: Candidates,
     empty: Expr,
+    guard: Expr,
 }
 
 impl Engine<'_> {
@@ -66,13 +67,51 @@ impl Engine<'_> {
             }
             Choice::Independent(members) => members,
         };
-        need(path.as_bool() == Some(true), "conditional member choice needs a guarded T contract")?;
-        let occurrence = Occurrence {members, empty};
+        let occurrence = Occurrence {members, empty, guard: path};
         let id = self.member_choices.len();
         self.member_choices.push(occurrence);
         env.insert(binding.into(), Value::Term(Ty::Integer, b::integer_temporal_result(id as u64)));
         Ok(())
     }
+}
+
+pub(super) fn total_choices(choices: &[Occurrence]) -> BTreeSet<u64> {
+    choices.iter().enumerate().filter_map(|(position, choice)|
+        (choice.guard.as_bool() == Some(true)).then_some(position as u64)).collect()
+}
+
+/// Each reference must be reached only on paths on which its own occurrence exists.
+pub(super) fn validate_return_choices(expression: &Expr, choices: &[Occurrence]) -> Result<()> {
+    fn check(expression: &Expr, active: &Expr, choices: &[Occurrence]) -> Result<()> {
+        if let Some(id) = integer_definition_id(expression) {
+            let choice = choices.get(id as usize).ok_or_else(|| fail("unknown member choice reference"))?;
+            return need(b::path_implies(active, &choice.guard), "member choice read outside its acquisition guard");
+        }
+        if let Some(branches) = expression.as_case_when() {
+            let mut remaining = active.clone();
+            for (test, value) in branches {
+                check(test, &remaining, choices)?;
+                check(value, &math::normalize(b::and(remaining.clone(), test.clone())), choices)?;
+                remaining = math::normalize(b::and(remaining, b::not(test.clone())));
+            }
+        } else if let Some((op, left, right)) = expression.as_binop() {
+            check(left, active, choices)?;
+            let right_active = match op {
+                math::BinOpKind::And => math::normalize(b::and(active.clone(), left.clone())),
+                math::BinOpKind::Or => math::normalize(b::and(active.clone(), b::not(left.clone()))),
+                _ => active.clone(),
+            };
+            check(right, &right_active, choices)?;
+        } else if let Some((_, operand)) = expression.as_unary_op() {
+            check(operand, active, choices)?;
+        } else {
+            let mut temporal = false;
+            expression.walk(&mut |node| temporal |= integer_definition_id(node).is_some());
+            need(!temporal, "member choice read under an uncertified operator")?;
+        }
+        Ok(())
+    }
+    check(expression, &b::lit_bool(true), choices)
 }
 
 pub(super) fn publish(
@@ -99,9 +138,18 @@ pub(super) fn publish(
         } else {
             return Err(fail("member choice fallback must be a constant, acquired integer parameter or state field"));
         };
+        let mut entry_guard = true;
+        occurrence.guard.walk(&mut |node| {
+            entry_guard &= node.as_lit().is_some() || node.as_binop().is_some() || node.as_unary_op().is_some()
+                || matches!(node.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
+                    if matches!(primitive_type.as_str(), "integer" | "boolean") && names.contains_key(name));
+        });
+        need(entry_guard, "member choice guard requires acquired entry scalars")?;
+        let mut ctx = crate::FormatCtx::for_business(names.clone(), BTreeMap::new());
+        let guard = super::business_event::condition_text(&occurrence.guard, &mut ctx);
         aliases.insert(position as u64, position);
         definitions.push(json!({
-            "id": format!("$t_{position}"), "op": "member_choice", "when": "true",
+            "id": format!("$t_{position}"), "op": "member_choice", "when": guard,
             "members": source, "empty": empty,
         }));
     }

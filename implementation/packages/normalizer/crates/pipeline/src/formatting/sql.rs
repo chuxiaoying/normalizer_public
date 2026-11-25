@@ -229,7 +229,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         let public = CanonicalNames {
             heap: &ctx.business_identities,
             external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
-            temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
+            total_temporals: None, temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
         };
         if let Some((display_op, flip)) =
             math::canonical_order_ordered_comparison(op, left, right, &public)

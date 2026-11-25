@@ -8,13 +8,13 @@ use num_bigint::BigInt;
 use num_traits::{One, Zero};
 
 pub(super) fn total_integer(value: &Expr) -> bool {
-    total_with_temporal_names(value, None)
+    total_with_temporals(value, &crate::DefaultSortContext)
 }
 
-fn total_with_temporal_names(value: &Expr, folds: Option<&std::collections::BTreeMap<u64, usize>>) -> bool {
+fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
     match value.kind() {
         ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
-            primitive_type == "integer" && folds.is_some_and(|names| names.contains_key(binding_id)),
+            primitive_type == "integer" && ctx.temporal_is_total(*binding_id),
         ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_)) => true,
         ExprKind::SymVar {
             origin:
@@ -41,11 +41,11 @@ fn total_with_temporal_names(value: &Expr, folds: Option<&std::collections::BTre
             op: B::Add | B::Sub | B::Mul,
             left,
             right,
-        } => total_with_temporal_names(left, folds) && total_with_temporal_names(right, folds),
+        } => total_with_temporals(left, ctx) && total_with_temporals(right, ctx),
         ExprKind::UnaryOp {
             op: UnaryOpKind::Neg,
             operand,
-        } => total_with_temporal_names(operand, folds),
+        } => total_with_temporals(operand, ctx),
         // A numeric result annotation does not prove totality. In particular,
         // E/T and CASE values may exist only on an acquisition/completion domain.
         // Word and IEEE operations retain their own explicit operator contracts.
@@ -83,7 +83,7 @@ fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
 pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     let start = std::time::Instant::now();
     let (eligible_shape, total) = match expr.kind() {
-        ExprKind::BinOp { op, .. } if matches!(op, B::Add | B::Mul) => (true, total_with_temporal_names(expr, ctx.temporal_aliases())),
+        ExprKind::BinOp { op, .. } if matches!(op, B::Add | B::Mul) => (true, total_with_temporals(expr, ctx)),
         _ => (false, false),
     };
     let output = simplify_impl(expr, ctx);
@@ -119,7 +119,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     if !matches!(op, B::Add | B::Mul) {
         return expr.clone();
     }
-    if !total_with_temporal_names(expr, ctx.temporal_aliases()) {
+    if !total_with_temporals(expr, ctx) {
         if exact_business_integer(expr, ctx) && crate::canonical_order_compare(left, right, ctx).is_gt() {
             return b::binop_public(*op, right.clone(), left.clone());
         }

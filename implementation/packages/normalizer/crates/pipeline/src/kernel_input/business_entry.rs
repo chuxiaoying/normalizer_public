@@ -348,7 +348,15 @@ impl EntryContext {
             super::pure_fold::publish(&result.pure_folds, &result.business_return()?, &arrays, &numbers, &names,
                 state_path)?
         };
+        let total_temporals = if result.member_choices.is_empty() {
+            definition_names.keys().copied().collect()
+        } else {
+            super::member_choice::total_choices(&result.member_choices)
+        };
         let render_value = |expression: &Expr| -> Result<String> {
+            if !result.member_choices.is_empty() {
+                super::member_choice::validate_return_choices(expression, &result.member_choices)?;
+            }
             let mut closed = true;
             let mut scalar_element = false;
             let mut record_rows = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
@@ -433,13 +441,16 @@ impl EntryContext {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &identities,
                     external: (!states.is_empty()).then_some(&states),
-                    temporals: (!definition_names.is_empty()).then_some(&definition_names),
+                    total_temporals: Some(&total_temporals), temporals: (!definition_names.is_empty()).then_some(&definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
                     .map_err(|error| error.to_string())?
             } else {
                 expression.clone()
             };
+            if !result.member_choices.is_empty() {
+                super::member_choice::validate_return_choices(&expression, &result.member_choices)?;
+            }
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_temporal_names(definition_names.clone());
             ctx.set_scalar_arrays(arrays.clone());
