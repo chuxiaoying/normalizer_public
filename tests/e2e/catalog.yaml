@@ -6,6 +6,7 @@ version: 1
 groups:
   java/unified-canonical-form:
     canonical-binary-case: [CanonicalCount.clamp]
+    canonical-text-order: [CanonicalLabel.label]
   java/pure:
     java-static: [HelloWorld.addOne]
     java-static-case-when: [Decision.choose]

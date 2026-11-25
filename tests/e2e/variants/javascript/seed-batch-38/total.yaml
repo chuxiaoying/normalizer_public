@@ -1,3 +1,11 @@
 - name: add-offset
   edits: [{ from: 'value + base', to: 'value + base + 1' }]
   expect: [{ path: [R], value: base + value + 1 }]
+- name: module-reverse-addition-operands
+  edits: [{ from: 'value + base', to: 'base + value' }]
+- name: module-left-associated-sum
+  edits: [{ from: 'value + base', to: '(value + 2) + base' }]
+  expect: [{ path: [R], value: base + value + 2 }]
+- name: module-right-associated-sum
+  edits: [{ from: 'value + base', to: '2 + (base + value)' }]
+  expect: [{ path: [R], value: base + value + 2 }]

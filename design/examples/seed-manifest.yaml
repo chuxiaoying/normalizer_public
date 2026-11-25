@@ -59,6 +59,7 @@ seeds:
   external-exception-propagation: { kind: topic, topic: external-boundaries, related: [] }
   basic-return-shape: { kind: basic, topic: basic-contracts, related: [objects-and-types] }
   expr-associative-commutative-normal-form: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
+  canonical-text-order: { kind: topic, topic: unified-canonical-form, related: [expression-simplification] }
   canonical-binary-case: { kind: topic, topic: unified-canonical-form, related: [expression-simplification, control-flow] }
   control-short-circuit: { kind: topic, topic: control-flow, related: [] }
   basic-nullable-input: { kind: basic, topic: basic-contracts, related: [] }
@@ -92,7 +93,7 @@ seeds:
   state-collection-mutation: { kind: topic, topic: state-and-aliasing, related: [collections] }
   loop-variable-finite-bound: { kind: topic, topic: loops-and-termination, related: [] }
   loop-break-continue: { kind: topic, topic: loops-and-termination, related: [control-flow] }
-  entry-javascript-module: { kind: topic, topic: language-entries, related: [] }
+  entry-javascript-module: { kind: topic, topic: language-entries, related: [unified-canonical-form] }
   entry-async-await: { kind: topic, topic: language-entries, related: [external-boundaries] }
   external-timeout: { kind: topic, topic: external-boundaries, related: [control-flow] }
   external-callback-order: { kind: topic, topic: external-boundaries, related: [control-flow] }

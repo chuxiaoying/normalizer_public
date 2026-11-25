@@ -1,0 +1,11 @@
+- name: swapped-text-is-different
+  edits:
+    - from: 'return "zone-" + "42";'
+      to: 'return "42" + "zone-";'
+  expect:
+    - path: [R]
+      value: '"42zone-"'
+- name: association-keeps-text-order
+  edits:
+    - from: 'return "zone-" + "42";'
+      to: 'return "zone-" + ("" + "42");'

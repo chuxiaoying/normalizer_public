@@ -2,8 +2,8 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 102
-  seeded: 87
+  total: 103
+  seeded: 88
   planned: 15
 topics:
   expression-simplification:
@@ -75,6 +75,12 @@ topics:
         status: seeded
         surface: java
         focus: 完整二分 CASE 的互补方向与比较换边
+        test_status: covered
+        review_status: proposed
+      - id: canonical-text-order
+        status: seeded
+        surface: java
+        focus: 文本连接可计算但不可交换
         test_status: covered
         review_status: proposed
   collections:
