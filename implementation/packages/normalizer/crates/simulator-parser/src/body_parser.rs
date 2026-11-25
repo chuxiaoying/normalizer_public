@@ -31,9 +31,11 @@ impl<'a> Parser<'a> {
         Ok(out)
     }
 
-    /// A statement slice keeps the source file, not unused name bindings.
-    fn child_parser<'b>(&self, text: &'b str) -> Parser<'b> {
-        Parser::new(text, &self.file)
+    fn parse_braced_statements(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
+        self.skip_ws();
+        let body_at = self.pos + 1;
+        let text = self.skip_balanced_braces()?;
+        parse_method_body_text(&text, &self.file).map_err(|error| self.rebase_slice(body_at, error))
     }
 
     /// Return the last statement from this source position. A local declaration
@@ -57,10 +59,7 @@ impl<'a> Parser<'a> {
 
         // 块语句 { ... }
         if self.peek() == Some(b'{') {
-            let body_text = self.skip_balanced_braces()?;
-            let mut sub = self.child_parser(&body_text);
-            let stmts = sub.parse_statements_until_end()?;
-            return Ok(JavaStatement::Block(stmts));
+            return Ok(JavaStatement::Block(self.parse_braced_statements()?));
         }
 
         // 关键字分发
@@ -334,9 +333,7 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(b'(') {
             return Err(self.err("try-with-resources is not supported in normalized Java"));
         }
-        let try_body_text = self.skip_balanced_braces()?;
-        let mut sub = self.child_parser(&try_body_text);
-        let try_body = sub.parse_statements_until_end()?;
+        let try_body = self.parse_braced_statements()?;
 
         let mut catches = Vec::new();
         loop {
@@ -363,9 +360,7 @@ impl<'a> Parser<'a> {
             if !self.eat_char(b')') {
                 return Err(self.err("expected ')' after catch clause"));
             }
-            let catch_body_text = self.skip_balanced_braces()?;
-            let mut csub = self.child_parser(&catch_body_text);
-            let body = csub.parse_statements_until_end()?;
+            let body = self.parse_braced_statements()?;
             catches.push(CatchClause {
                 exception_type,
                 var_name,
@@ -375,9 +370,7 @@ impl<'a> Parser<'a> {
 
         self.skip_ws();
         let finally = if self.eat_keyword("finally") {
-            let fin_text = self.skip_balanced_braces()?;
-            let mut fsub = self.child_parser(&fin_text);
-            Some(fsub.parse_statements_until_end()?)
+            Some(self.parse_braced_statements()?)
         } else {
             None
         };
@@ -392,9 +385,7 @@ impl<'a> Parser<'a> {
     fn parse_single_or_block(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
         self.skip_ws();
         if self.peek() == Some(b'{') {
-            let body_text = self.skip_balanced_braces()?;
-            let mut sub = self.child_parser(&body_text);
-            sub.parse_statements_until_end()
+            self.parse_braced_statements()
         } else {
             let mut body = Vec::new();
             let stmt = self.parse_statement(&mut body)?;

@@ -140,7 +140,7 @@ impl<'a> Parser<'a> {
 
     // Class and method fragments are parsed with local offsets. Reattach an
     // error to its original source position at every enclosing slice.
-    fn rebase_slice(&self, offset: usize, error: ParseError) -> ParseError {
+    pub(crate) fn rebase_slice(&self, offset: usize, error: ParseError) -> ParseError {
         let ParseError::Syntax { file, line, col, msg } = error;
         if file != self.file {
             return ParseError::Syntax { file, line, col, msg };

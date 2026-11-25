@@ -173,3 +173,13 @@
 - name: an-empty-statement-does-not-add-a-business-action
   edits:
     - { from: 'return value;', to: '; return value;' }
+- name: syntax-diagnostic-keeps-the-physical-position-inside-two-blocks
+  edits:
+    - from: 'return value;'
+      to: "if (true) {\n            {\n                return null instanceof TicketCode ? 7 : 8;\n            }\n        }\n        return 0;"
+  reject: ['[SOURCE-PARSE-FAILED]', 'src/TicketCode.java:4:29:', '[JAVA-UNSUPPORTED-TYPE-TEST]']
+- name: a-nested-finally-diagnostic-keeps-the-original-file-position
+  edits:
+    - from: 'return value;'
+      to: "try {\r\n            return value;\r\n        } catch (RuntimeException ignored) {\r\n            return 7;\r\n        } finally {\r\n            {\r\n                boolean unsupported = null instanceof TicketCode;\r\n            }\r\n        }"
+  reject: ['[SOURCE-PARSE-FAILED]', 'src/TicketCode.java:8:44:', '[JAVA-UNSUPPORTED-TYPE-TEST]']
