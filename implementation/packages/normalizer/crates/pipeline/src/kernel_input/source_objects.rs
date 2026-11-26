@@ -427,32 +427,27 @@ impl Engine<'_> {
         if a == b {
             return Ok(());
         }
-        let origin = |e: &Expr| {
-            e.as_heap_ref()
-                .and_then(|id| self.source_objects.objects.get(&id))
-                .map(|(_, origin)| origin)
+        let origin = |value: &Expr| {
+            let id = value.as_heap_ref()?;
+            self.source_objects.objects.get(&id).map(|(_, origin)| (id, origin))
         };
-        match (origin(a), origin(b)) {
-            (Some(Origin::Allocation), _) | (_, Some(Origin::Allocation)) | (None, None) => Ok(()),
-            (Some(left), Some(right)) => {
-                let (Some(left), Some(right)) = (borrowed_root(left), borrowed_root(right)) else {
-                    return Err(fail("borrowed identity comparison requires an alias contract"));
-                };
-                // A different borrowed ID describes a different acquisition
-                // path, not necessarily a different Java object.
-                for (reference, origin) in [(a, left), (b, right)] {
-                    let id = reference.as_heap_ref().unwrap();
-                    match origin {
-                        BorrowedRoot::Parameter(path) => { self.source_objects.compared_parameters.insert(id, path.to_owned()); }
-                        BorrowedRoot::State(binding) => { self.source_objects.compared_states.insert(id, binding); }
-                    }
-                }
-                Ok(())
+        let roots = match (origin(a), origin(b)) {
+            (Some((_, Origin::Allocation)), _) | (_, Some((_, Origin::Allocation))) | (None, None) =>
+                return Ok(()),
+            (Some((left_id, left)), Some((right_id, right))) =>
+                borrowed_root(left).zip(borrowed_root(right))
+                    .map(|(left, right)| [(left_id, left), (right_id, right)]),
+            _ => None,
+        }.ok_or_else(|| fail("borrowed identity comparison requires an alias contract"))?;
+        // A different borrowed ID describes a different acquisition path,
+        // not necessarily a different Java object.
+        for (id, origin) in roots {
+            match origin {
+                BorrowedRoot::Parameter(path) => { self.source_objects.compared_parameters.insert(id, path.to_owned()); }
+                BorrowedRoot::State(binding) => { self.source_objects.compared_states.insert(id, binding); }
             }
-            _ => Err(fail(
-                "borrowed identity comparison requires an alias contract",
-            )),
         }
+        Ok(())
     }
 
     fn check_source_content_cycle(

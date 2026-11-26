@@ -27,6 +27,16 @@ impl Surrogates<'_> {
     }
 }
 
+pub(super) fn advance_position(b: u8, previous_cr: bool, row: &mut usize, column: &mut usize) -> bool {
+    if matches!(b, b'\r' | b'\n') {
+        *row += usize::from(!(previous_cr && b == b'\n'));
+        *column = 1;
+    } else {
+        *column += 1;
+    }
+    b == b'\r'
+}
+
 impl Translation {
     pub(super) fn surrogates(&self) -> Surrogates<'_> {
         Surrogates { units: &self.surrogates, base: 0 }
@@ -39,12 +49,7 @@ impl Translation {
             if (row, column) == (line, col) && !(previous_cr && b == b'\n') {
                 return self.origins[index];
             }
-            match b {
-                b'\r' => { row += 1; column = 1; }
-                b'\n' => { if !previous_cr { row += 1; } column = 1; }
-                _ => column += 1,
-            }
-            previous_cr = b == b'\r';
+            previous_cr = advance_position(b, previous_cr, &mut row, &mut column);
         }
         self.origins[self.text.len()]
     }

@@ -301,10 +301,9 @@ fn array_cardinality_name(expr: &Expr, expected: RelationAggregateKind) -> Optio
     let (kind, Base { name, .. }, select, None) = expr.as_relation_aggregate()? else {
         return None;
     };
-    if kind != expected { return None; }
-    match (kind, select) {
-        (Count, None) => Some(name),
-        (Exists, select) if unfiltered_exists_projection(select) => Some(name),
+    match (expected, kind, select) {
+        (Count, Count, None) => Some(name),
+        (Exists, Exists, select) if unfiltered_exists_projection(select) => Some(name),
         _ => None,
     }
 }

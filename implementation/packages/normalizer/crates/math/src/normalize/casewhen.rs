@@ -374,9 +374,9 @@ fn project_values_under_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Ex
     (out, changed)
 }
 
-pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
+fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
     if domain.as_bool() == Some(true) || super::boolean_casewhen::is_boolean_expr(value) {
-        return project_boolean_condition_under_domain(value, domain);
+        return value.clone();
     }
 
     // Guard-equality value substitution:
@@ -406,81 +406,10 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
         }
     }
 
-    match value.kind() {
-        ExprKind::BinOp {
-            op,
-            left: _,
-            right: _,
-        } => match op {
-            BinOpKind::And
-            | BinOpKind::Or
-            | BinOpKind::Eq
-            | BinOpKind::Ne
-            | BinOpKind::Lt
-            | BinOpKind::Le
-            | BinOpKind::Gt
-            | BinOpKind::Ge => project_boolean_condition_under_domain(value, domain),
-            _ => value.clone(),
-        },
-        ExprKind::CaseWhen { branches } =>
-            project_case_under_domain(value, branches, domain, project_value_under_domain),
-        // A host branch is not proof about values bound inside a relation.
-        // Relation projection has its own same-row proof.
-        _ => value.clone(),
-    }
+    // Preserve nested CASE and relation payloads: their local acquisition
+    // domains belong to those expressions, not to the enclosing branch.
+    value.clone()
 }
-
-fn project_boolean_condition_under_domain(cond: &Expr, domain: &Expr) -> Expr {
-    if cond.as_bool().is_some() {
-        return cond.clone();
-    }
-
-    match cond.kind() {
-        ExprKind::BinOp { op: op @ (BinOpKind::And | BinOpKind::Or), left, right } => {
-            let left = project_boolean_condition_under_domain(left, domain);
-            let and = *op == BinOpKind::And;
-            let entrance = if and { left.clone() } else { crate::builder::not(left.clone()) };
-            let scoped = crate::normalize(crate::builder::and(domain.clone(), entrance));
-            let right = project_boolean_condition_under_domain(right, &scoped);
-            crate::normalize(if and {
-                crate::builder::and(left, right)
-            } else {
-                crate::builder::or(left, right)
-            })
-        }
-        ExprKind::CaseWhen { branches } =>
-            project_case_under_domain(cond, branches, domain, project_boolean_condition_under_domain),
-        _ => cond.clone(),
-    }
-}
-
-/// Scope each original first-match arm before projecting its typed payload.
-fn project_case_under_domain(
-    original: &Expr,
-    branches: &[(Expr, Expr)],
-    domain: &Expr,
-    project_payload: fn(&Expr, &Expr) -> Expr,
-) -> Expr {
-    let nested_domains = first_match_effective_domains(branches);
-    let mut changed = false;
-    let mut out = Vec::with_capacity(branches.len());
-    for ((cond, value), nested_effective) in branches.iter().zip(nested_domains.iter()) {
-        let combined_domain = crate::normalize(crate::builder::and(
-            domain.clone(),
-            nested_effective.clone(),
-        ));
-        let projected_cond = project_boolean_condition_under_domain(cond, domain);
-        let projected_value = project_payload(value, &combined_domain);
-        changed |= projected_cond != *cond || projected_value != *value;
-        out.push((projected_cond, projected_value));
-    }
-    if changed {
-        Expr::new(ExprKind::CaseWhen { branches: out })
-    } else {
-        original.clone()
-    }
-}
-
 
 fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
     let mut remaining = crate::builder::lit_bool(true);

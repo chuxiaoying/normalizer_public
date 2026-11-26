@@ -315,7 +315,6 @@ pub(crate) fn finally_throw<'a>(statement: &'a S) -> Option<&'a str> {
 fn continuing_try_body(body: &[S]) -> bool {
     body.iter().all(|statement| match statement {
         S::Assign { target: E::ArrayAccess { .. }, .. } | S::Throw(_) => true,
-        S::Block(inner) => continuing_try_body(inner),
         S::If { then_block, else_block, .. } => continuing_try_body(then_block)
             && else_block.as_deref().is_none_or(continuing_try_body),
         _ => false,
@@ -649,14 +648,9 @@ fn constant_array_address(target: &E, index: &E) -> bool {
         && matches!(index, E::Lit(JavaLit::Int(i)) if *i >= 0)
 }
 
-// A bound local or local construction can also be read with a signed int
-// literal. Explicit this.fields still require the constant-address proof.
+// Read from a bound local or local construction with a signed int literal.
 fn source_array_read(target: &E, index: &E) -> bool {
-    if matches!(target, E::Ident(_)) || local_array_construction(target) {
-        signed_literal_index(index)
-    } else {
-        constant_array_address(target, index)
-    }
+    (matches!(target, E::Ident(_)) || local_array_construction(target)) && signed_literal_index(index)
 }
 
 // Match one full accumulator update and reject every other loop shape at

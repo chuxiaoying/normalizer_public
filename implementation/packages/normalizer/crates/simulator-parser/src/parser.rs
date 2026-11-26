@@ -111,12 +111,7 @@ impl<'a> Parser<'a> {
         let (mut line, mut col) = (1usize, 1usize);
         let mut previous_cr = false;
         for &b in &self.source.as_bytes()[..offset.min(self.source.len())] {
-            match b {
-                b'\r' => { line += 1; col = 1; }
-                b'\n' => { if !previous_cr { line += 1; } col = 1; }
-                _ => col += 1,
-            }
-            previous_cr = b == b'\r';
+            previous_cr = java_unicode::advance_position(b, previous_cr, &mut line, &mut col);
         }
         (line, col)
     }

@@ -193,6 +193,12 @@ struct AdmittedMethod<'a> {
     binding: Option<Rc<CheckedBinding<'a>>>,
 }
 
+impl AdmittedMethod<'_> {
+    fn parameter_types(&self) -> &[Ty] {
+        self.binding.as_ref().map_or(self.defaults.as_slice(), |binding| &binding.parameters)
+    }
+}
+
 struct CheckedBinding<'a> {
     name: &'a str,
     function: &'a Function,
@@ -682,11 +688,12 @@ impl Loaded {
             )?;
             let mut names = BTreeSet::new();
             let mut parameters = Vec::with_capacity(f.params.len());
-            for (p, fallback) in f.params.iter().zip(&declared.defaults) {
+            for ((p, (_, java_name)), fallback) in f.params.iter().zip(m.params()).zip(&declared.defaults) {
                 need(
                     names.insert(&p.name) && identifier(&p.name),
                     "duplicate/invalid parameter",
                 )?;
+                need(&p.name == java_name, "binding parameters must match the Java declaration")?;
                 let ty = Ty::parse(&p.typ)?;
                 let override_type = self.project.parameter_override(id.rsplit('.').next().unwrap_or(id), &p.name)?;
                 need(ty == *override_type.as_ref().unwrap_or(fallback), "semantic parameter type mismatch")?;
@@ -723,7 +730,7 @@ impl Loaded {
             .iter()
             .enumerate()
             .map(|(index, (t, n))| {
-                let expected = e.methods[entry].parameter_type(&self.project, entry, index, n)?;
+                let expected = e.methods[entry].parameter_types()[index].clone();
                 let nullable = if self.project.direct_source {
                     self.project.source_nullable_entry_parameters.contains(n)
                 } else {

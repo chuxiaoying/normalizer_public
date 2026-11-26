@@ -26,7 +26,7 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     && !dec.asteriskToken && !has(dec, ts.SyntaxKind.AsyncKeyword);
   if (functions.length !== 2 || !closedSync(fn) || !closedSync(helper)
       || fn.type?.kind !== ts.SyntaxKind.NumberKeyword || has(helper, ts.SyntaxKind.ExportKeyword)
-      || fn.name.text === helper.name.text || other.length || declarations?.length !== 1
+      || other.length || declarations?.length !== 1
       || !ret || !ts.isReturnStatement(ret) || !ret.expression || !ts.isArrayBindingPattern(decl.name)
       || !call || !ts.isCallExpression(call) || call.questionDotToken
       || !ts.isIdentifier(call.expression) || call.expression.text !== helper.name.text

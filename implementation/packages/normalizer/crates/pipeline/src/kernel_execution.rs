@@ -26,25 +26,6 @@ fn preceding_uninitialized<'a>(body: &'a [S], index: usize, binding: &str) -> Op
     }
 }
 
-impl AdmittedMethod<'_> {
-    pub(super) fn parameter_type(
-        &self, project: &Project, id: &str, index: usize, name: &str,
-    ) -> Result<Ty> {
-        if let Some(binding) = &self.binding {
-            let semantic = &binding.function.params[index];
-            if semantic.name == name {
-                return Ok(binding.parameters[index].clone());
-            }
-            // A manually prepared carrier can bind a different semantic name.
-            // Resolve that rare Java-side override at the original call site.
-            if let Some(ty) = project.parameter_override(id.rsplit('.').next().unwrap_or(id), name)? {
-                return Ok(ty);
-            }
-        }
-        Ok(self.defaults[index].clone())
-    }
-}
-
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
     pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
@@ -1219,30 +1200,22 @@ impl Engine<'_> {
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
         let m = method.syntax;
         need(m.params().len() == args.len(), "Java arity mismatch")?;
-        let mut semantic_types_match = true;
-        for (index, ((t, name), v)) in m.params().iter().zip(&mut args).enumerate() {
-            let expected = method.parameter_type(self.project, id, index, name)?;
+        let parameter_types = method.parameter_types();
+        for (((t, _), v), expected) in m.params().iter().zip(&mut args).zip(parameter_types) {
             if crate::normalized::native_decimal_type(t) {
                 if v.ty() == Ty::Integer {
                     *v = Self::promote_native_decimal(v.clone());
                 }
             }
-            if expected == Ty::Text
+            if *expected == Ty::Text
                 && matches!(v, Value::Term(Ty::Ref, e) if e.as_lit() == Some(&math::Lit::Null))
             {
                 *v = Value::Term(Ty::Text, b::lit_null());
             }
-            need(expected == v.ty(), "Java argument type mismatch")?;
-            if let Some(binding) = &method.binding {
-                // Same-name slots already used the semantic type above.
-                // Independently check any legacy adapter alias before execution.
-                if binding.function.params[index].name != *name {
-                    semantic_types_match &= expected == binding.parameters[index];
-                }
-            }
+            need(*expected == v.ty(), "Java argument type mismatch")?;
         }
         let value = if let Some(binding) = method.binding.clone() {
-            self.call(id, &binding, args, path, semantic_types_match)?
+            self.call(id, &binding, args, path)?
         } else {
             need(
                 m.is_static()
@@ -1272,10 +1245,7 @@ impl Engine<'_> {
         self.active.remove(&format!("java:{id}"));
         Ok(value)
     }
-    fn call(
-        &mut self, id: &str, binding: &CheckedBinding<'_>, args: Vec<Value>, path: Expr,
-        semantic_types_match: bool,
-    ) -> Result<Value> {
+    fn call(&mut self, id: &str, binding: &CheckedBinding<'_>, args: Vec<Value>, path: Expr) -> Result<Value> {
         self.budget()?;
         self.semantic_calls += 1;
         let name = binding.name;
@@ -1283,7 +1253,6 @@ impl Engine<'_> {
         // for the existing call-budget and profiling accounting.
         self.active.insert(format!("semantic:{name}"));
         let f = binding.function;
-        need(semantic_types_match, "semantic argument type mismatch")?;
         let mut env = f
             .params
             .iter()

@@ -23,7 +23,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
   const contracts = new Map(), ports = {}, externalResults = {};
   for (const host of sf.statements) {
     if (host === fn) continue;
-    const [root, ...extra] = host.declarationList.declarations;
+    const [root] = host.declarationList.declarations;
     const markers = ts.getJSDocTags(host);
     if (markers.some(tag => tag.tagName.text !== 'external')) fail('unsupported listener host contract tag');
     for (const signature of root.type.members) {

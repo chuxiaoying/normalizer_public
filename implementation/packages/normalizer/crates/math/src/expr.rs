@@ -43,8 +43,8 @@ pub struct ExprProfile {
     structural_hash: u64,
 }
 
-// This derived hint is not part of existing profile identity or debug
-// signatures. In particular, the proof atom keys use the original Debug.
+// The derived aggregate hint is not part of the original Debug signature;
+// propositional proof atom keys use that signature.
 impl fmt::Debug for ExprProfile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ExprProfile")
@@ -55,20 +55,6 @@ impl fmt::Debug for ExprProfile {
             .field("has_case_when", &self.has_case_when)
             .field("structural_hash", &self.structural_hash)
             .finish()
-    }
-}
-
-impl PartialEq for ExprProfile {
-    fn eq(&self, other: &Self) -> bool {
-        self.identity() == other.identity()
-    }
-}
-
-impl Eq for ExprProfile {}
-
-impl Hash for ExprProfile {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.identity().hash(state);
     }
 }
 
@@ -327,53 +313,6 @@ impl PartialEq for ExprKind {
 }
 
 impl Eq for ExprKind {}
-
-impl Hash for ExprKind {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // 先 hash 变体 discriminant（防止不同变体字段巧合相等导致 hash 相同）
-        std::mem::discriminant(self).hash(state);
-        use ExprKind::*;
-        match self {
-            Lit(v) => v.hash(state),
-            SymVar { origin } => origin.hash(state),
-            HeapRef(id) => id.hash(state),
-            RowValue { alias, acquired_integer } => {
-                alias.hash(state);
-                acquired_integer.hash(state);
-            }
-            Call {
-                key,
-                args,
-            } => {
-                key.hash(state);
-                args.hash(state);
-            }
-            BinOp { op, left, right } => {
-                op.hash(state);
-                left.hash(state);
-                right.hash(state);
-            }
-            UnaryOp { op, operand } => {
-                op.hash(state);
-                operand.hash(state);
-            }
-            CaseWhen { branches } => branches.hash(state),
-            ArrayLit(items) => items.hash(state),
-            RelationAggregate {
-                kind,
-                relation,
-                select_expr,
-                default_expr,
-            } => {
-                kind.hash(state);
-                relation.hash(state);
-                select_expr.hash(state);
-                default_expr.hash(state);
-            }
-            Relation(relation) => relation.hash(state),
-        }
-    }
-}
 
 impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
@@ -696,11 +635,6 @@ fn walk_relation_expr<F: FnMut(&Expr)>(rel: &crate::domains::relation::RelationE
 }
 
 impl ExprProfile {
-    fn identity(&self) -> (usize, usize, &BTreeSet<String>, bool, bool, u64) {
-        (self.size, self.depth, &self.vars, self.has_heap_ref,
-         self.has_case_when, self.structural_hash)
-    }
-
     fn leaf() -> Self {
         Self {
             size: 1,

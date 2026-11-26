@@ -151,17 +151,16 @@ pub fn register_func(
         return key;
     }
     let mut writer = reg.write().unwrap();
-    if let Some(&key) = writer.name_arity_index.get(&key_hint) {
-        return key;
-    }
-    let key = FuncKey(writer.entries.len() as u32);
-    writer.entries.push(FuncEntry {
-        name: name.to_string(),
-        return_type,
-        semantics,
-    });
-    writer.name_arity_index.insert(key_hint, key);
-    key
+    let FuncRegistry { name_arity_index, entries, .. } = &mut *writer;
+    *name_arity_index.entry(key_hint).or_insert_with(|| {
+        let key = FuncKey(entries.len() as u32);
+        entries.push(FuncEntry {
+            name: name.to_string(),
+            return_type,
+            semantics,
+        });
+        key
+    })
 }
 
 /// 查询 FuncKey 对应的函数名（用于 Display）。

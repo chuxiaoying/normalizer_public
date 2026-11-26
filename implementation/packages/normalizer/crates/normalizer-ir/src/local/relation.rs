@@ -355,9 +355,6 @@ fn parse_query_tail(
             RowOperation::EagerPath { link, leaf }
         }
         (Kind::Sum, Yield::Value(value)) => RowOperation::Sum(value),
-        (Kind::Count | Kind::CountDistinct, Yield::Value(Scalar::Path(path)))
-            if path.as_slice() == std::slice::from_ref(&alias) =>
-                RowOperation::Count { distinct: kind == Kind::CountDistinct },
         (Kind::First, Yield::FirstValue { value, fallback }) =>
             RowOperation::FirstValue { value, fallback },
         (Kind::First, Yield::Value(Scalar::Path(path)))
