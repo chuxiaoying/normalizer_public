@@ -405,10 +405,21 @@ impl Admission<'_> {
         self.compatible(expected, actual, &label)
     }
 
+    // Child scopes start with the currently visible parameters/locals.
+    // Fields are resolved separately and may be hidden by a local name.
+    fn check_local_name(&self, name: &str, scope: &Scope) -> Result<(), String> {
+        if scope.contains_key(name) {
+            return Err(self.diagnostic("NORM-SOURCE-NAME", &format!(
+                "duplicate local declaration {name} overlaps a visible binding")));
+        }
+        Ok(())
+    }
+
     fn block(&self, body: &[S], scope: &mut Scope) -> Result<(), String> {
         for statement in body {
             match statement {
                 S::VarDecl { java_type, name, initializer, is_final } => {
+                    self.check_local_name(name, scope)?;
                     if let Some(value) = initializer {
                         let actual = self.expression_in_context(value, scope, self.root_object_target(java_type))?;
                         let label = format!("initializer for {name}");
@@ -437,6 +448,7 @@ impl Admission<'_> {
                     self.block(body, &mut scope.clone())?;
                     for handler in catches {
                         let mut handler_scope = scope.clone();
+                        self.check_local_name(handler.var_name(), scope)?;
                         handler_scope.insert(handler.var_name().into(), Binding::plain(JavaType::Class(handler.exception_class().into())));
                         self.block(handler.body(), &mut handler_scope)?;
                     }
@@ -454,6 +466,7 @@ impl Admission<'_> {
                 }
                 S::ForEach { var_type, var_name, iterable, body } => {
                     self.expression(iterable, scope)?;
+                    self.check_local_name(var_name, scope)?;
                     let mut loop_scope = scope.clone();
                     loop_scope.insert(var_name.clone(), Binding::plain(var_type.clone()));
                     self.block(body, &mut loop_scope)?;
