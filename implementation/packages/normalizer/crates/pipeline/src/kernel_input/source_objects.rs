@@ -61,9 +61,8 @@ impl SourceObjects {
     }
 
     pub(super) fn has_complete_identity_partition(&self, value: &Expr) -> bool {
-        value.as_case_when().is_some_and(|arms| {
-            arms.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true))
-                && arms.iter().all(|(_, identity)| self.knows_identity(identity))
+        value.as_total_case_when().is_some_and(|(arms, fallback)| {
+            arms.iter().all(|(_, identity)| self.knows_identity(identity)) && self.knows_identity(fallback)
         })
     }
 
@@ -384,24 +383,27 @@ impl Engine<'_> {
             let z = right.as_case_when().unwrap().iter().map(key);
             if a.cmp(z).is_gt() { std::mem::swap(&mut left, &mut right); }
         }
-        let selected = match (left.as_case_when(), right.as_case_when()) {
+        let selected = match (left.as_total_case_when(), right.as_total_case_when()) {
             (Some(arms), _) if left_partition && (self.source_objects.knows_identity(&right) || right_partition) =>
                 Some((arms, &right, true)),
             (None, Some(arms)) if right_partition && self.source_objects.knows_identity(&left) =>
                 Some((arms, &left, false)),
             _ => None,
         };
-        if let Some((arms, other, selected_left)) = selected {
+        if let Some(((arms, fallback), other, selected_left)) = selected {
             // A certified partition has only atomic identity arms. Two
             // partitions therefore recurse at most twice, with each pair
             // subject to the ordinary execution-work budget.
-            let mut result = Vec::with_capacity(arms.len());
-            for (guard, value) in arms {
+            let mut compare = |value: &Expr| {
                 self.budget()?;
                 let (a, z) = if selected_left { (value, other) } else { (other, value) };
-                result.push((guard.clone(), self.source_reference_equality(a.clone(), z.clone(), different)?));
+                self.source_reference_equality(a.clone(), z.clone(), different)
+            };
+            let mut result = Vec::with_capacity(arms.len() + 1);
+            for (guard, value) in arms {
+                result.push((guard.clone(), compare(value)?));
             }
-            return Ok(math::normalize(b::case_when(result)));
+            return Ok(math::normalize(b::case_when(result, compare(fallback)?)));
         }
         self.compare_reference_roots(left, right, different)
     }

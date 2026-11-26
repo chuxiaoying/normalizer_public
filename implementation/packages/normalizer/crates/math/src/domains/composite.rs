@@ -113,9 +113,9 @@ pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
         if let Some((Op::Add | Op::Sub | Op::Mul, a, b)) = value.as_binop() {
             return integer(a) && integer(b);
         }
-        if let Some(branches) = value.as_case_when() {
-            return branches.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true))
-                && branches.iter().all(|(guard, arm)| boolean(guard) && integer(arm));
+        if let Some((arms, fallback)) = value.as_total_case_when() {
+            return arms.iter().all(|(guard, arm)| boolean(guard) && integer(arm))
+                && integer(fallback);
         }
         false
     }
@@ -136,15 +136,18 @@ pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
 
     fn lift(items: Vec<Expr>, budget: &mut usize) -> Result<Expr, &'static str> {
         *budget = budget.checked_sub(1).ok_or("readonly Vector CASE lift exceeds its expansion budget")?;
-        let Some((index, branches)) = items.iter().enumerate()
-            .find_map(|(index, item)| item.as_case_when().map(|branches| (index, branches)))
+        let Some((index, (arms, fallback))) = items.iter().enumerate()
+            .find_map(|(index, item)| item.as_total_case_when().map(|parts| (index, parts)))
         else { return Ok(b::array_lit(items)); };
-        let out = branches.iter().map(|(guard, choice)| {
+        let mut lift_choice = |choice: &Expr| {
             let mut arm = items.clone();
             arm[index] = choice.clone();
-            Ok((guard.clone(), lift(arm, budget)?))
-        }).collect::<Result<Vec<_>, _>>()?;
-        Ok(b::case_when(out))
+            lift(arm, budget)
+        };
+        let out = arms.iter().map(|(guard, choice)| {
+            Ok((guard.clone(), lift_choice(choice)?))
+        }).collect::<Result<Vec<_>, &'static str>>()?;
+        Ok(b::case_when(out, lift_choice(fallback)?))
     }
     if items.len() > 256 || !items.iter().all(integer) {
         return Err("readonly Vector construction requires total acquired integer elements");
@@ -194,7 +197,7 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
         suffix.push(b::array_lit(vec![b::lit_str(key.as_str()), value.clone()]));
         let with = lift(prefix, suffix);
         suffix.pop();
-        b::case_when(vec![(b::eq(value.clone(), b::lit_null()), without), (b::lit_bool(true), with)])
+        b::case_when(vec![(b::eq(value.clone(), b::lit_null()), without)], with)
     }
     Ok(crate::normalize(lift(entries, &mut Vec::new())))
 }

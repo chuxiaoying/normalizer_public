@@ -89,9 +89,8 @@ impl TerminalAlternatives {
                 None
             }
         }).collect();
-        let Some(last) = returns.last_mut() else { return b::lit_null(); };
-        last.0 = b::lit_bool(true);
-        canonicalize_realtime_case(math::normalize(b::case_when(returns)))
+        let Some((_, fallback)) = returns.pop() else { return b::lit_null(); };
+        canonicalize_realtime_case(math::normalize(b::case_when(returns, fallback)))
     }
 
 }
@@ -556,10 +555,7 @@ impl SymbolicStore {
 /// local bindings have already been substituted, so a source local name can
 /// never become an atom in the merged value.
 pub(crate) fn join_value(condition: Expr, then_value: Expr, else_value: Expr) -> Expr {
-    math::normalize(b::case_when(vec![
-        (condition, then_value),
-        (b::lit_bool(true), else_value),
-    ]))
+    math::normalize(b::case_when(vec![(condition, then_value)], else_value))
 }
 
 fn canonicalize_realtime_case(expression: Expr) -> Expr {

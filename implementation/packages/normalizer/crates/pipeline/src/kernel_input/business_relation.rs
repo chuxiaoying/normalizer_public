@@ -351,7 +351,7 @@ impl Engine<'_> {
                 let length = r::relation_count(relation.clone());
                 let none = if offset.bits() == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
                 let nth = r::relation_nth_value(relation, index, b::lit_null());
-                let value = b::case_when(vec![(none, default.scalar()?), (b::lit_bool(true), nth)]);
+                let value = b::case_when(vec![(none, default.scalar()?)], nth);
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
                 return Ok(());
             }

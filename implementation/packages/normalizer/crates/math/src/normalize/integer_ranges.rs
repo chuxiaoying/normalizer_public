@@ -107,7 +107,7 @@ pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {
     })
 }
 
-pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
+pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)>, Expr)> {
     if branches.len() < 3
         || !branches.last()?.0.as_bool().is_some_and(|b| b)
         || branches.iter().any(|(_, v)| v.as_case_when().is_some())
@@ -173,6 +173,5 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<Expr> {
             out.push((domain, value));
         }
     }
-    out.push((b::lit_bool(true), default));
-    Some(b::case_when(out))
+    Some((out, default))
 }

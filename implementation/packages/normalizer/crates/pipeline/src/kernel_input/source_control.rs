@@ -100,10 +100,10 @@ impl Engine<'_> {
             domain = b::and(domain, test);
             delta = b::mul(delta, count);
         }
-        let result = b::case_when(vec![
-            (math::normalize(domain), math::normalize(b::add(initial.clone(), delta))),
-            (b::lit_bool(true), initial),
-        ]);
+        let result = b::case_when(
+            vec![(math::normalize(domain), math::normalize(b::add(initial.clone(), delta)))],
+            initial,
+        );
         env.insert(rectangle.target.into(), Value::Term(Ty::Integer, math::normalize(result)));
         Ok(())
     }
@@ -135,11 +135,11 @@ impl Engine<'_> {
         for n in 0..span {
             let index = first + n;
             total = math::normalize(b::add(total, b::lit_integer(index.clone())));
-            let guard = if n + 1 == span { b::lit_bool(true) }
-                else { b::eq(end.clone(), b::lit_integer(index + 1)) };
-            branches.push((guard, total.clone()));
+            if n + 1 < span {
+                branches.push((b::eq(end.clone(), b::lit_integer(index + 1)), total.clone()));
+            }
         }
-        env.insert(binding.into(), Value::Term(Ty::Integer, math::normalize(b::case_when(branches))));
+        env.insert(binding.into(), Value::Term(Ty::Integer, math::normalize(b::case_when(branches, total))));
         Ok(())
     }
 
@@ -162,10 +162,10 @@ impl Engine<'_> {
             }
         };
         let length = math::normalize(b::sub(endpoint(upper)?, endpoint(lower)?));
-        let count = b::case_when(vec![
-            (b::gt(length.clone(), b::lit_int(0)), length),
-            (b::lit_bool(true), b::lit_int(0)),
-        ]);
+        let count = b::case_when(
+            vec![(b::gt(length.clone(), b::lit_int(0)), length)],
+            b::lit_int(0),
+        );
         let value = if accumulate {
             let current = env
                 .get(binding)

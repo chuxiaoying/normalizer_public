@@ -464,6 +464,12 @@ impl Expr {
         }
     }
 
+    /// Read a CASE with an explicit, unconditional final result.
+    pub fn as_total_case_when(&self) -> Option<(&[(Expr, Expr)], &Expr)> {
+        let ((guard, fallback), arms) = self.as_case_when()?.split_last()?;
+        (guard.as_bool() == Some(true)).then_some((arms, fallback))
+    }
+
     /// 如果是 UnaryOp，返回 (op, operand)；否则 None。
     ///
     /// 外部使用者（如 formatting::sql）通过此 API 获取一元运算表达式的内部，

@@ -70,5 +70,5 @@ impl LocalTextMap {
 }
 
 fn branch(guard: Expr, yes: Expr, no: Expr) -> Expr {
-    math::normalize(b::case_when(vec![(guard, yes), (b::lit_bool(true), no)]))
+    math::normalize(b::case_when(vec![(guard, yes)], no))
 }

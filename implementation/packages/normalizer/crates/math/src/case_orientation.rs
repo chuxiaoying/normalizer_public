@@ -80,10 +80,7 @@ fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortConte
         crate::builder::gt
     };
     let guard = crate::normalize_with(cmp(first.clone(), second.clone()), context);
-    crate::builder::case_when(vec![
-        (guard, first.clone()),
-        (crate::builder::lit_bool(true), second.clone()),
-    ])
+    crate::builder::case_when(vec![(guard, first.clone())], second.clone())
 }
 
 fn has_total_number_selection_evidence(value: &Expr) -> bool {
@@ -205,10 +202,7 @@ pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) ->
         return (canonical != *expression).then_some(canonical);
     }
     let complement = preferred_complement_for_shape(condition, yes, no, context, || false)?;
-    Some(crate::builder::case_when(vec![
-        (complement, no.clone()),
-        (crate::builder::lit_bool(true), yes.clone()),
-    ]))
+    Some(crate::builder::case_when(vec![(complement, no.clone())], yes.clone()))
 }
 
 #[cfg(test)]

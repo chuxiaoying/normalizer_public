@@ -330,24 +330,10 @@ pub fn mul(left: Expr, right: Expr) -> Expr {
 // CaseWhen
 // =============================================================================
 
-/// 构造 CaseWhen 分支。至少一个分支，最后一个分支条件必须是 `lit_bool(true)` 兜底。
-///
-/// # Panics
-/// - branches 为空
-/// - 最后一个分支条件不是 `true`
-pub fn case_when(branches: Vec<(Expr, Expr)>) -> Expr {
-    assert!(
-        !branches.is_empty(),
-        "[MATH-BUILDER] case_when: branches must not be empty"
-    );
-    if let Some((last_cond, _)) = branches.last() {
-        assert!(
-            last_cond.as_bool() == Some(true),
-            "[MATH-BUILDER] case_when: last branch condition must be lit_bool(true), got {:?}",
-            last_cond
-        );
-    }
-    Expr::new(ExprKind::CaseWhen { branches })
+/// Construct a total first-match CASE. The fallback is unconditional.
+pub fn case_when(mut arms: Vec<(Expr, Expr)>, fallback: Expr) -> Expr {
+    arms.push((lit_bool(true), fallback));
+    Expr::new(ExprKind::CaseWhen { branches: arms })
 }
 
 /// 构造 normal-return 域下的 partial CaseWhen。

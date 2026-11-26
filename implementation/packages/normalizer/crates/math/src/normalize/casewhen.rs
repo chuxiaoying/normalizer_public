@@ -97,19 +97,17 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
             branches
         };
 
-        if let Some(ranged) = super::integer_ranges::case_ranges(branches_ref) {
+        if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
             // Normalize guards before comparison to avoid commuting AND terms
             // forever between this rule and the normal boolean ordering.
             let arms = ranged
-                .as_case_when()
-                .unwrap()
-                .iter()
-                .map(|(c, v)| (crate::normalize_with(c.clone(), ctx), v.clone()))
+                .into_iter()
+                .map(|(c, v)| (crate::normalize_with(c, ctx), v))
                 .collect();
             // A certified complete integer partition is already in its
             // terminal domain form. Later prior-failure stripping must not
             // remove bounds that this partition would restore next iteration.
-            return crate::builder::case_when(arms);
+            return crate::builder::case_when(arms, fallback);
         }
 
         // 0. 路径守卫冗余消除（新增规则）：

@@ -179,7 +179,7 @@ impl Engine<'_> {
                 } else {
                     // Keep multiple guarded corrections linear in the number
                     // of written indices rather than duplicating the sum tree.
-                    let correction = b::case_when(vec![(bound, b::sub(updated, original)), (b::lit_bool(true), b::lit_int(0))]);
+                    let correction = b::case_when(vec![(bound, b::sub(updated, original))], b::lit_int(0));
                     total = b::add(total, correction);
                 }
             }

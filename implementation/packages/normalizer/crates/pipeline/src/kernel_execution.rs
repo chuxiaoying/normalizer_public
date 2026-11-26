@@ -859,13 +859,10 @@ impl Engine<'_> {
                     use crate::normalized_text::SourceIntrinsic;
                     let expr = match intrinsic {
                         SourceIntrinsic::Trim => crate::normalized_text::trim(value),
-                        SourceIntrinsic::DefaultIfBlank => b::normal_return_case_when(vec![
-                            (
-                                crate::normalized_text::is_blank(value.clone()),
-                                vs[1].scalar()?,
-                            ),
-                            (b::lit_bool(true), value),
-                        ]),
+                        SourceIntrinsic::DefaultIfBlank => b::case_when(
+                            vec![(crate::normalized_text::is_blank(value.clone()), vs[1].scalar()?)],
+                            value,
+                        ),
                     };
                     return Ok(Value::Term(Ty::Text, math::normalize(expr)));
                 }
@@ -1221,8 +1218,8 @@ impl Engine<'_> {
             }
             need(remaining.as_bool() == Some(false), "interface receiver alternatives do not cover the source condition")?;
             let ty = ty.ok_or_else(|| fail("no live interface receiver"))?;
-            values.last_mut().unwrap().0 = b::lit_bool(true);
-            return Ok(Value::Term(ty, math::normalize(b::case_when(values))));
+            let (_, fallback) = values.pop().ok_or_else(|| fail("no live interface receiver"))?;
+            return Ok(Value::Term(ty, math::normalize(b::case_when(values, fallback))));
         }
         need(!receiver.is_null(), "null interface receiver requires a closed null-completion contract")?;
         let target = format!("{interface}.{member}");
