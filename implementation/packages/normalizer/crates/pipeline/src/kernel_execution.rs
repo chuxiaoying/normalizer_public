@@ -74,6 +74,7 @@ pub(super) struct Engine<'a> {
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
     pub(super) selected_entry: Option<SelectedEntry<'a>>,
+    pub(super) public_source_entry: Option<&'a str>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
     pub(super) checked_ports: BTreeMap<String, actions::CheckedPort>,
@@ -101,6 +102,10 @@ pub(super) struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
+    fn diagnostic_entry(&self) -> &str {
+        self.public_source_entry.or_else(|| self.selected_entry_id()).unwrap_or("Java execution")
+    }
+
     pub(super) fn selected_entry_id(&self) -> Option<&'a str> {
         self.selected_entry.map(|entry| entry.id)
     }
@@ -1426,7 +1431,7 @@ impl Engine<'_> {
         need(!receiver.is_null(), "null interface receiver requires a closed null-completion contract")?;
         let target = format!("{interface}.{member}");
         let owner = self.source_objects.allocation_owner(&receiver)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or("Java execution"), &target));
+            .unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), &target));
         let class = self.program.find_class(owner).ok_or_else(|| fail("missing selected implementation"))?;
         need(class.interfaces().iter().any(|name| name == interface), "selected receiver does not implement declared interface")?;
         let actual = format!("{owner}.{member}");
@@ -1466,7 +1471,7 @@ impl Engine<'_> {
             "recursive Java call",
         )?;
         let method = self.methods.get(id)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or("Java execution"), id));
+            .unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), id));
         let m = method.syntax;
         need(m.params().len() == args.len(), "Java arity mismatch")?;
         let parameter_types = method.parameter_types();
@@ -1513,7 +1518,7 @@ impl Engine<'_> {
             if let Some(receiver) = receiver {
                 env.insert("this".into(), receiver);
             }
-            let body = m.body().unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or("Java execution"), id));
+            let body = m.body().unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), id));
             let value = self.block(body, id, &mut env, path)?;
             need(value.ty() == self.methods[id].returns, "Java return type mismatch")?;
             value

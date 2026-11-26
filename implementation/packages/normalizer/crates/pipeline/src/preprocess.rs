@@ -12,5 +12,5 @@ pub(crate) fn required(code: &str, location: &str, problem: &str, action: &str) 
 #[cold]
 #[track_caller]
 pub(crate) fn out_of_source(at: &str, target: &str) -> ! {
-    panic!("[NORM-OUT-OF-SOURCE] kind=ABORT location={at} target={target}: unsupported non-external call without source")
+    panic!("[NORM-OUT-OF-SOURCE] kind=ABORT location={at} target={target}: Panic: not-support; unsupported non-external call without source")
 }

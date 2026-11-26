@@ -81,14 +81,14 @@
     to: '@N.Nullable(,) '
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
-  - unsupported source parameter annotation normalizer.annotations.Nullable
+  - unsupported source parameter annotation N.Nullable
 - name: marker-does-not-treat-quoted-commas-as-missing-arguments
   edits:
   - from: '@N.Nullable '
     to: '@N.Nullable(reason="审核,(参数)") '
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
-  - unsupported source parameter annotation normalizer.annotations.Nullable
+  - unsupported source parameter annotation N.Nullable
 - name: repeated-nullable-markers-do-not-become-a-double-nullable-type
   edits:
   - from: '@N.Nullable '
@@ -104,7 +104,7 @@
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
   - Account.helper.amount
-  - unsupported source parameter annotation normalizer.annotations.Nullable
+  - unsupported source parameter annotation N.Nullable
 - name: unicode-escaped-nullable-marker-binds-like-its-raw-spelling
   edits:
   - from: '@N.Nullable '

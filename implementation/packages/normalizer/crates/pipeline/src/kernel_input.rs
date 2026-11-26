@@ -583,6 +583,7 @@ impl Loaded {
             active: BTreeSet::new(),
             steps: 0,
             selected_entry: None,
+            public_source_entry: None,
             entry_context: None,
             state_roots: BTreeMap::new(),
             checked_ports,
@@ -745,6 +746,7 @@ impl Loaded {
             .ok_or_else(|| fail("entry not declared"))?;
         let m = e.methods.get(entry).ok_or_else(|| fail("entry method missing"))?.syntax;
         e.selected_entry = Some(kernel_execution::SelectedEntry { id: selected.as_str(), syntax: m });
+        e.public_source_entry = self.source_entry.as_ref().map(|source| source.locator.as_str());
         e.entry_context = self.project.entry_contexts.get(entry);
         let args = m
             .params()

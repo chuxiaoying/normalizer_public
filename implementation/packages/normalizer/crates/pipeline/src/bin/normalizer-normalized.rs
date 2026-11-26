@@ -1,6 +1,14 @@
 //! Closed normalized Java/project entry. Does not load semantic plugins.
 use pipeline::parse_source_directory;
 
+fn source_request(error: String, locator: &str) -> String {
+    if locator.contains('#') && !locator.chars().any(char::is_control) {
+        format!("{error}\nentry={locator}")
+    } else {
+        error
+    }
+}
+
 fn run() -> Result<(), String> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.as_slice() == ["--validate-standalone-closure"] {
@@ -18,9 +26,10 @@ fn run() -> Result<(), String> {
             if !path.is_dir() {
                 return Err("[NORM-SOURCE] expected existing directory".into());
             }
-            let program = parse_source_directory(path).map_err(|e| e.to_string())?;
-            let loaded = pipeline::kernel_input::Loaded::from_linked_source(program, path, entry)?;
-            print!("{}", loaded.source_pers(path, entry)?);
+            let program = parse_source_directory(path).map_err(|e| source_request(e.to_string(), entry))?;
+            let loaded = pipeline::kernel_input::Loaded::from_linked_source(program, path, entry)
+                .map_err(|e| source_request(e, entry))?;
+            print!("{}", loaded.source_pers(path, entry).map_err(|e| source_request(e, entry))?);
         }
         _ => return Err("invalid kernel invocation; use implementation/tools/normalizer help".into()),
     }
