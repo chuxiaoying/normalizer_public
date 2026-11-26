@@ -35,7 +35,7 @@ P:
   parameters:
     value: { position: 0, type: number }
     delta: { position: 1, type: number }
-R: value + delta
+R: delta + value
 ```
 
 这份 YAML 定义了最基本的字段：
@@ -46,7 +46,7 @@ R: value + delta
 | `entry.returns` | 正常返回的业务类型。这里是 `number`；它不是返回值本身。 |
 | `P`、`P.parameters` | `P` 声明调用方提供的输入。`parameters` 按参数名列出定义，这里是 `value` 和 `delta`。 |
 | `position`、`type` | 每个参数在原签名里的位置和业务类型。位置从 0 开始：`value` 是第一项，`delta` 是第二项。 |
-| `R` | 正常返回值的表达式。传入 2 和 3 得 5；分析未知入参时保留 `value + delta`。 |
+| `R` | 正常返回值的表达式。传入 2 和 3 得 5；分析未知入参时，按统一写法交付 `delta + value`，参数位置不变。 |
 
 本例没有环境来源、对外动作或异常完成，不写 `E`、`S` 或 `throws`。
 

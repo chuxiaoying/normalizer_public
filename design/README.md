@@ -17,6 +17,7 @@
 - [第五章 · 关系代数：让 SQL 和集合运算一起化简](chapters/第五章%20·%20关系代数：让%20SQL%20和集合运算一起化简.md)
 - [第六章 · 业务至上](chapters/第六章%20·%20业务至上.md)
 - [第七章 · PERS 登场](chapters/第七章%20·%20PERS%20登场.md)
+- [第八章 · 统一定形规范](chapters/第八章%20·%20统一定形规范.md)
 
 [Normalizer 扩展语义参考](extension-semantics-reference.md)集中列出标准操作、声明标记和关系指令。
 
@@ -26,7 +27,7 @@
 
 [架构指导](architecture.md)用案例说明 AI、多语言解析器和符号执行内核如何分工，以及一次执行遇到未知条件时如何分裂、汇合和化简。
 
-[统一正则规范](unified-canonical-form.md)规定哪些等价表达式必须归到同一种形态，以及排序、CASE WHEN 和观察边界如何验收。
+[定形规则与验收细则](unified-canonical-form.md)规定哪些等价表达式必须归到同一种形态，以及排序、CASE WHEN 和观察边界如何验收。
 
 [设计种子目录](examples/README.md)按基础主题和联合主题组织案例。[种子分母与覆盖模型](examples/coverage.md)说明应该覆盖哪些语义场景。[种子清单](examples/seeds.yaml)给每篇案例一个稳定 ID，[种子语义清单](examples/seed-manifest.yaml)记录主主题和关联主题；[测试区](../tests/README.md)按这个 ID 关联入口与变体。移动案例时更新清单里的路径，保留 ID。
 
