@@ -1,9 +1,9 @@
 # 设计区阅览器
 
-在 macOS 上双击 [open.command](open.command)，或从仓库根目录运行：
+在 macOS 的 Finder 双击设计区的 [open.command](../../../design/open.command)，或从仓库根目录运行：
 
 ```sh
-implementation/apps/design-reader/open.command
+./design/open.command
 ```
 
 浏览器打开 [本地阅览器](http://127.0.0.1:4176/)。首次运行需要 Node.js 24 或更高版本和 npm，启动脚本会安装锁定的依赖。服务只监听本机。保留启动窗口，刷新即可读取最新的设计与测试。
