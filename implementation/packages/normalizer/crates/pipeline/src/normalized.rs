@@ -56,6 +56,18 @@ pub(crate) fn closed_field_initializer(t: &JavaType, e: &E) -> Option<math::Expr
     }
 }
 
+/// A well-typed host-only declaration may exist in an uncalled method. The
+/// type relation here is declaration evidence, not a library implementation;
+/// actual execution of the allocation must still fail closed.
+pub(crate) fn host_collection_allocation(declared: &JavaType, init: &E) -> bool {
+    let JavaType::Generic(interface, element) = declared else { return false; };
+    if interface != "java.util.List" || element.len() != 1
+        || !matches!(&element[0], JavaType::Class(name) if matches!(name.as_str(), "java.lang.String" | "String"))
+    { return false; }
+    matches!(init, E::New { java_type: JavaType::Generic(allocator, diamond), args }
+        if allocator == "java.util.ArrayList" && diamond.is_empty() && args.is_empty())
+}
+
 pub(crate) fn integral(t: &JavaType) -> bool {
     matches!(t, JavaType::Primitive(n) if matches!(n.as_str(), "byte" | "short" | "int" | "long"))
 }
@@ -890,6 +902,8 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 | normalizer_ir::local::LocalIr::LocalMapPut { .. }
                 | normalizer_ir::local::LocalIr::LocalMapGet { .. }
                 | normalizer_ir::local::LocalIr::ProjectedUnionCount { .. } | normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
+            S::VarDecl { java_type, initializer: Some(init), .. }
+                if host_collection_allocation(java_type, init) => {}
             S::VarDecl {
                 java_type,
                 initializer: None,

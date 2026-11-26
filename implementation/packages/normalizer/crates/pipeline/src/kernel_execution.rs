@@ -505,6 +505,9 @@ impl<'a> Engine<'a> {
                         "reserved Java local name; rename during preprocessing",
                     )?;
                     need(!env.contains_key(name), "duplicate local")?;
+                    if crate::normalized::host_collection_allocation(java_type, expr) {
+                        crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or(id), "java.util.ArrayList.<init>");
+                    }
                     self.source_reference_assignment(java_type, expr, id)?;
                     let v = self.java_expr(expr, id, env, path.clone())?;
                     let v = if crate::normalized::native_decimal_type(java_type) {
