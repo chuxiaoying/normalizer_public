@@ -6,9 +6,9 @@
     - path: [R]
       value: |-
         CASE
-          WHEN columns > 0 AND rows > 0 THEN columns * rows * 2
+          WHEN columns > 0 AND rows > 0 THEN columns * rows
           ELSE 0
-        END
+        END * 2
 - name: include-outer-upper-bound
   edits:
     - from: 'row < rows'
