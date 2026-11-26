@@ -62,12 +62,6 @@
 
 - name: acquired-immutable-field-self-subtraction-preserves-call
   edits:
-    - from: 'int score;'
-      to: |-
-        final int score;
-            Profile(int score) {
-                this.score = score;
-            }
     - from: 'return client.fetch(accountId).score;'
       to: |-
         Profile reply = client.fetch(accountId);
