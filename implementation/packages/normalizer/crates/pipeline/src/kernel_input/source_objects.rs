@@ -522,3 +522,56 @@ fn scalar_origin_type(ty: &Ty) -> Result<ScalarSymbolType> {
         )),
     }
 }
+
+#[cfg(test)]
+mod content_graph_contract {
+    use super::*;
+    use simulator_parser::{parse, ParseOptions};
+
+    fn local_graph(back_edge: &str) -> Loaded {
+        let source = format!(r#"
+            class GraphNode {{
+                GraphNode left;
+                GraphNode right;
+                GraphNode original;
+                GraphNode missing;
+                int value;
+            }}
+            class ExportGraph {{
+                static GraphNode build(GraphNode original) {{
+                    GraphNode root = new GraphNode();
+                    GraphNode shared = new GraphNode();
+                    shared.value = 7;
+                    root.left = shared;
+                    root.right = shared;
+                    root.original = original;
+                    {back_edge}
+                    return root;
+                }}
+            }}
+        "#);
+        let program = parse(&source, "ExportGraph.java", &ParseOptions::default()).unwrap();
+        Loaded::from_parsed_source(program, "ExportGraph.build").unwrap()
+    }
+
+    #[test]
+    fn shared_completed_child_and_borrowed_or_null_edges_are_not_a_cycle() {
+        // Internal projection admission only: this deliberately does not
+        // claim the complete recursive PERS formatter has rendered the DAG.
+        let result = local_graph("").normalize("ExportGraph.build").unwrap();
+        let fields = result.source_record_return.as_ref().unwrap();
+        let field = |name: &str| &fields.iter().find(|(field, _)| field == name).unwrap().1;
+        assert_eq!(field("left"), field("right"));
+        assert!(field("left").as_heap_ref().is_some());
+        assert!(field("original").as_heap_ref().is_some());
+        assert!(field("missing").is_null());
+        assert!(result.realtime_effects.events().is_empty());
+    }
+
+    #[test]
+    fn reaching_an_active_ancestor_aborts_content_projection() {
+        let result = local_graph("shared.left = root;").normalize("ExportGraph.build");
+        let error = result.err().expect("an active ancestor makes the returned content cyclic");
+        assert!(error.contains("[NORM-CYCLIC-CONTENT-EXIT]"));
+    }
+}
