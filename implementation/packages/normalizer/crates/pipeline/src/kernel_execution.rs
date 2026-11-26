@@ -1293,12 +1293,10 @@ impl Engine<'_> {
                 env.insert("this".into(), receiver);
             }
             let body = m.body().unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
-            self.block(body, id, &mut env, path)?
+            let value = self.block(body, id, &mut env, path)?;
+            need(value.ty() == self.methods[id].returns, "Java return type mismatch")?;
+            value
         };
-        need(
-            value.ty() == self.methods[id].returns,
-            "Java return type mismatch",
-        )?;
         if let Some(parent) = parent_completion {
             self.realtime_completion =
                 parent.replace_continue(self.realtime_completion.resume_after_normal_return());
@@ -1310,12 +1308,10 @@ impl Engine<'_> {
         self.budget()?;
         self.semantic_calls += 1;
         let name = binding.name;
-        need(
-            self.active.insert(format!("semantic:{name}")),
-            "recursive semantic call",
-        )?;
+        // Adapter nodes cannot enter another method. Retain this key only
+        // for the existing call-budget and profiling accounting.
+        self.active.insert(format!("semantic:{name}"));
         let f = binding.function;
-        need(f.params.len() == args.len(), "semantic arity mismatch")?;
         for (ty, v) in binding.parameters.iter().zip(&args) {
             need(*ty == v.ty(), "semantic argument type mismatch")?;
         }

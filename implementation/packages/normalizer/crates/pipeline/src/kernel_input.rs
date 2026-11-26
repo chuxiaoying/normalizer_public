@@ -334,31 +334,22 @@ pub struct Loaded {
 }
 impl Project {
     fn java_type(&self, t: &JavaType) -> Result<Ty> {
-        if crate::normalized::integral(t) {
-            return Ok(Ty::Integer);
+        if let Some((ty, _)) = java_carrier_atom(t) {
+            return Ok(ty);
         }
         if self.direct_source && (crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t)) {
             return Ok(Ty::Decimal);
         }
         match t {
             JavaType::Void => Ok(Ty::Unit),
-            JavaType::Primitive(name) if name == "boolean" => Ok(Ty::Bool),
-            JavaType::Class(name) if name == "Object" || name == "java.lang.Object" => Ok(Ty::Ref),
-            JavaType::Class(name) if name == "String" => Ok(Ty::Text),
             JavaType::Array(item) => {
                 let ty = match item.as_ref() {
                     _ if self.direct_source && crate::normalized::integral(item) => Ty::Integer,
                     JavaType::Array(element) if self.direct_source && crate::normalized::integral(element) =>
                         Ty::Seq(Box::new(Ty::Integer)),
                     _ if self.direct_source && self.source_owner(item).is_some() => Ty::Ref,
-                    // Adapter vector carriers still declare int[]/long[] in
-                    // their Java signatures; the semantic override supplies
-                    // vector<number>, not a second width-specific scalar.
-                    JavaType::Primitive(name) if matches!(name.as_str(), "int" | "long") =>
-                        Ty::Integer,
-                    JavaType::Class(name) if name == "Object" => Ty::Ref,
-                    JavaType::Class(name) if name == "String" => Ty::Text,
-                    _ => return Err(fail("unsupported Java array type")),
+                    _ => java_carrier_array_component(item).map(|(ty, _)| ty)
+                        .ok_or_else(|| fail("unsupported Java array type"))?,
                 };
                 Ok(Ty::Seq(Box::new(ty)))
             }
@@ -564,6 +555,7 @@ impl Loaded {
     fn prepare(&self) -> Result<Engine<'_>> {
         let mut e = self.engine(self.project.validate_state_metadata()?);
         let mut classes = BTreeSet::new();
+        let mut adapter_signatures = BTreeMap::new();
         let mut aliases = BTreeMap::<&str, Ty>::new();
         // Resolve on first use rather than before walking declarations:
         // a method may refer to a carrier declared later in the project.
@@ -619,8 +611,16 @@ impl Loaded {
                     _ => None,
                 };
                 let returns = alias.map_or_else(|| self.project.declared_result_type(return_type), Ok)?;
-                let defaults = m.params().iter().map(|(ty, _)| self.project.parameter_type(ty))
-                    .collect::<Result<Vec<_>>>()?;
+                let defaults = if self.project.direct_source {
+                    m.params().iter().map(|(ty, _)| self.project.parameter_type(ty))
+                        .collect::<Result<Vec<_>>>()?
+                } else {
+                    let (types, spellings): (Vec<_>, Vec<_>) = m.params().iter()
+                        .map(|(ty, _)| adapter_parameter(ty)).collect::<Result<Vec<_>>>()?
+                        .into_iter().unzip();
+                    adapter_signatures.insert(id.clone(), format!("{})", spellings.join(",")));
+                    types
+                };
                 e.methods.insert(id, AdmittedMethod { syntax: m, defaults, returns, binding: None });
             }
         }
@@ -644,15 +644,8 @@ impl Loaded {
                 .ok_or_else(|| fail(format!("binding has no Java declaration: {id}")))?;
             let m = declared.syntax;
             need(signature.ends_with(')'), "invalid signature")?;
-            let java_types: Vec<_> = m
-                .params()
-                .iter()
-                .map(|(t, _)| java_parameter_type_text(t))
-                .collect::<Result<_>>()?;
-            need(
-                signature == format!("{})", java_types.join(",")),
-                "Java parameter signature mismatch",
-            )?;
+            need(adapter_signatures.get(id).is_some_and(|admitted| admitted == signature),
+                "Java parameter signature mismatch")?;
             need(
                 f.params.len() == m.params().len()
                     && Ty::parse(&f.returns)? == declared.returns,
@@ -771,13 +764,36 @@ fn identifier(s: &str) -> bool {
             .enumerate()
             .all(|(i, c)| c == b'_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
 }
-fn java_parameter_type_text(t: &JavaType) -> Result<String> {
+fn java_carrier_atom(t: &JavaType) -> Option<(Ty, &str)> {
     match t {
-        JavaType::Primitive(n) => Ok(n.clone()),
-        JavaType::Class(n) if identifier(n) || n == "java.lang.Object" => Ok(n.clone()),
-        JavaType::Array(t) => Ok(format!("{}[]", java_parameter_type_text(t)?)),
-        _ => Err(fail("unsupported signature type")),
+        JavaType::Primitive(name) if crate::normalized::integral(t) => Some((Ty::Integer, name)),
+        JavaType::Primitive(name) if name == "boolean" => Some((Ty::Bool, name)),
+        JavaType::Class(name) if name == "Object" || name == "java.lang.Object" => Some((Ty::Ref, name)),
+        JavaType::Class(name) if name == "String" => Some((Ty::Text, name)),
+        _ => None,
     }
+}
+
+fn java_carrier_array_component(t: &JavaType) -> Option<(Ty, &str)> {
+    match t {
+        // The adapter's exact semantic override still supplies vector<number>.
+        JavaType::Primitive(name) if matches!(name.as_str(), "int" | "long") => Some((Ty::Integer, name)),
+        JavaType::Class(name) if name == "Object" => Some((Ty::Ref, name)),
+        JavaType::Class(name) if name == "String" => Some((Ty::Text, name)),
+        _ => None,
+    }
+}
+
+fn adapter_parameter(t: &JavaType) -> Result<(Ty, String)> {
+    if let Some((ty, spelling)) = java_carrier_atom(t) {
+        return Ok((ty, spelling.to_owned()));
+    }
+    if let JavaType::Array(item) = t {
+        let (ty, spelling) = java_carrier_array_component(item)
+            .ok_or_else(|| fail("unsupported Java array type"))?;
+        return Ok((Ty::Seq(Box::new(ty)), format!("{spelling}[]")));
+    }
+    Err(fail("unsupported Java type"))
 }
 // Unlike an external receipt, the declared initial value of an entry-state
 // scalar is available on every path. Keep it a typed math input in a separate
