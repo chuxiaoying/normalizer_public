@@ -43,7 +43,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
 ///
 /// 规则清单：
 /// - 加法幺元：`0 + x → x`、`x + 0 → x`
-/// - 减法右零元：`x - 0 → x`（`0 - x` 不处理，需引入 UnaryOp::Neg）
+/// - 减法：`x - 0 → x`；同一个全域精确整数 `x - x → 0`
 /// - 乘法幺元：`1 * x → x`、`x * 1 → x`
 /// - 乘法零元：`0 * x → 0`、`x * 0 → 0`
 ///
@@ -67,6 +67,9 @@ fn simplify_identity(expr: &Expr) -> Option<Expr> {
                 return Some(left.clone());
             }
             if super::integer_ac::total_integer(expr) {
+                if left == right {
+                    return Some(crate::builder::lit_int(0));
+                }
                 if let Some(value) = remove_additive_term(left, right)
                     .or_else(|| combine_acquired_row_literals(left, right))
                 {
