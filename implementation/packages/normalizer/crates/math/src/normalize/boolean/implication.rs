@@ -34,7 +34,7 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
 /// A selection of an empty input is empty.
 pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
     fn empty_relation(expr: &Expr) -> Option<&RelationExpr> {
-        let (UnaryOpKind::Not, exists) = expr.as_unary_op()? else { return None };
+        let exists = expr.as_not()?;
         let (RelationAggregateKind::Exists, input, Some(value), None) =
             exists.as_relation_aggregate()? else { return None };
         (value.as_bool() == Some(true)).then_some(input)

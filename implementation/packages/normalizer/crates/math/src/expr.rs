@@ -450,6 +450,14 @@ impl Expr {
         }
     }
 
+    /// Return the Boolean NOT operand, never a numeric negation operand.
+    pub(crate) fn as_not(&self) -> Option<&Expr> {
+        match self.kind() {
+            ExprKind::UnaryOp { op: UnaryOpKind::Not, operand } => Some(operand),
+            _ => None,
+        }
+    }
+
     /// A complement preserves the operands; it is not an operand swap.
     pub(crate) fn is_comparison_complement(&self, other: &Expr) -> bool {
         let Some((a, left, right)) = self.as_binop() else { return false; };

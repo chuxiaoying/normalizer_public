@@ -580,14 +580,12 @@ fn conditions_have_direct_complement_pair(conds: &[Expr]) -> bool {
     let mut negatives: HashSet<Expr> = HashSet::new();
 
     for cond in conds {
-        if let Some((op, operand)) = cond.as_unary_op() {
-            if op == UnaryOpKind::Not {
-                if positives.contains(operand) {
-                    return true;
-                }
-                negatives.insert(operand.clone());
-                continue;
+        if let Some(operand) = cond.as_not() {
+            if positives.contains(operand) {
+                return true;
             }
+            negatives.insert(operand.clone());
+            continue;
         }
 
         if negatives.contains(cond) {
@@ -771,33 +769,29 @@ fn proof_can_skip_as_unrelated(left: &Expr, right: &Expr) -> bool {
     !proof_inputs_may_interact(left, right)
 }
 
-/// Collect exact Boolean facts from a conjunction without interpreting any
-/// arithmetic, call, heap, or relation semantics. A disjunction in the active
-/// path is deliberately rejected because it cannot be represented as one
-/// literal fact set.
+/// Collect exact facts from conjunctions. A disjunction may be remembered
+/// as one opaque fact, but never decomposed into unconditional facts.
 fn exact_active_facts(active: &Expr, facts: &mut HashMap<Expr, bool>) -> bool {
-    if active.as_bool() == Some(true) {
-        return true;
+    match active.kind() {
+        ExprKind::Lit(Lit::Bool(true)) => true,
+        ExprKind::BinOp { op: BinOpKind::And, left, right } =>
+            exact_active_facts(left, facts) && exact_active_facts(right, facts),
+        ExprKind::UnaryOp { op: UnaryOpKind::Not, operand } => {
+            facts.insert(operand.clone(), false);
+            facts.insert(not(operand.clone()), true);
+            true
+        }
+        ExprKind::Lit(Lit::Bool(false))
+        | ExprKind::CaseWhen { .. }
+        | ExprKind::ArrayLit(_)
+        | ExprKind::Relation(_)
+        | ExprKind::RelationAggregate { .. } => false,
+        _ => {
+            facts.insert(active.clone(), true);
+            facts.insert(not(active.clone()), false);
+            true
+        }
     }
-    if let Some((BinOpKind::And, left, right)) = active.as_binop() {
-        return exact_active_facts(left, facts) && exact_active_facts(right, facts);
-    }
-    if let Some((UnaryOpKind::Not, operand)) = active.as_unary_op() {
-        facts.insert(operand.clone(), false);
-        facts.insert(not(operand.clone()), true);
-        return true;
-    }
-    if active.as_bool().is_some()
-        || active.as_case_when().is_some()
-        || active.as_array_lit().is_some()
-        || active.as_relation().is_some()
-        || active.as_relation_aggregate().is_some()
-    {
-        return false;
-    }
-    facts.insert(active.clone(), true);
-    facts.insert(not(active.clone()), false);
-    true
 }
 
 fn evaluate_with_exact_facts(expression: &Expr, facts: &HashMap<Expr, bool>) -> Option<bool> {
@@ -807,7 +801,7 @@ fn evaluate_with_exact_facts(expression: &Expr, facts: &HashMap<Expr, bool>) -> 
     if let Some(value) = facts.get(expression) {
         return Some(*value);
     }
-    if let Some((UnaryOpKind::Not, operand)) = expression.as_unary_op() {
+    if let Some(operand) = expression.as_not() {
         return evaluate_with_exact_facts(operand, facts).map(|value| !value);
     }
     let Some((op, left, right)) = expression.as_binop() else {
@@ -1039,12 +1033,10 @@ fn compile_boolean_truth_table_expr(
     if let Some(value) = expr.as_bool() {
         return CompiledBoolExpr::Const(value);
     }
-    if let Some((op, operand)) = expr.as_unary_op() {
-        if op == UnaryOpKind::Not {
-            return CompiledBoolExpr::Not(Box::new(compile_boolean_truth_table_expr(
-                operand, atom_index,
-            )));
-        }
+    if let Some(operand) = expr.as_not() {
+        return CompiledBoolExpr::Not(Box::new(compile_boolean_truth_table_expr(
+            operand, atom_index,
+        )));
     }
     if let Some((op, left, right)) = expr.as_binop() {
         match op {
@@ -1204,7 +1196,7 @@ fn visit_boolean_atoms(expr: &Expr, visit: &mut impl FnMut(&Expr)) {
     if expr.as_bool().is_some() {
         return;
     }
-    if let Some((UnaryOpKind::Not, operand)) = expr.as_unary_op() {
+    if let Some(operand) = expr.as_not() {
         visit_boolean_atoms(operand, visit);
     } else if let Some((BinOpKind::And | BinOpKind::Or, left, right)) = expr.as_binop() {
         visit_boolean_atoms(left, visit);
@@ -1264,8 +1256,8 @@ fn is_pure_boolean_propositional_expr(expr: &Expr) -> bool {
     if expr.as_bool().is_some() {
         return true;
     }
-    if let Some((op, operand)) = expr.as_unary_op() {
-        return op == UnaryOpKind::Not && is_pure_boolean_propositional_expr(operand);
+    if let Some(operand) = expr.as_not() {
+        return is_pure_boolean_propositional_expr(operand);
     }
     if let Some((op, left, right)) = expr.as_binop() {
         return matches!(op, BinOpKind::And | BinOpKind::Or)
