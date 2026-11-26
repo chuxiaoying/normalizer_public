@@ -2,12 +2,12 @@
   edits:
     - {from: 'value < 0', to: 'value < 2'}
   expect:
-    - {path: [R], value: 'CASE WHEN value < 2 THEN 0 ELSE value END'}
+    - {path: [R], value: "CASE\n  WHEN value < 2 THEN 0\n  ELSE value\nEND"}
 - name: fallback-negative-one
   edits:
     - {from: 'return 0;', to: 'return -1;'}
   expect:
-    - {path: [R], value: 'CASE WHEN value < 0 THEN -1 ELSE value END'}
+    - {path: [R], value: "CASE\n  WHEN value < 0 THEN -1\n  ELSE value\nEND"}
 - name: negative-path-escapes-unrelated-handler
   edits:
     - {from: 'class Guarded {', to: "class OtherValue extends RuntimeException {}\n\nclass Guarded {"}

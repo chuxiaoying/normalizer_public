@@ -33,7 +33,11 @@ class Guarded {
 schema: normalizer.pers/1
 entry: { function: src/Guarded.java#Guarded.read, returns: number }
 P: { parameters: { value: { position: 0, type: number } } }
-R: CASE WHEN value < 0 THEN 0 ELSE value END
+R: |-
+  CASE
+    WHEN value > 0 THEN value
+    ELSE 0
+  END
 ```
 
-负数路径抛出的异常已在入口内部捕获，不进入顶层 `throws`，R 上只留下这条路径正常返回的 0；0 和正数返回原值。若不捕获该异常，负数域须记到 `throws`，不能同时宣称这条路径在 R 中返回 0。
+负数路径抛出的异常已在入口内部捕获，不进入顶层 `throws`，R 保留了这条路径返回的 0；输入正数时返回原值。输入恰好为 0 时虽然源程序走正常路径，但两个结果都是 0，因此可以并入返回 0 的分支。若不捕获该异常，负数域须记到 `throws`，不能同时宣称这条路径在 R 中返回 0。
