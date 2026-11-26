@@ -882,21 +882,21 @@ pub(super) fn is_table_expression(
     });
     if let Some((kind, relation, value, _)) = expr.as_relation_aggregate() {
         use math::RelationAggregateKind::*;
-        match kind {
-            Sum if value.is_some() => return table_source(relation)
+        return match kind {
+            Sum => value.is_some() && (table_source(relation)
                 || (value == Some(&b::lit_int(1)) &&
                     grouped_table(relation).is_some_and(|(name, _)| tables.contains_key(name)))
                 || relation_base(relation).is_some_and(|(name, _)| nested_arrays.contains(name))
                 || correlated_array_relation(relation).is_some_and(|pair|
-                    correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),
-            FirstValue if value.is_some() => return table_source(relation),
-            Exists if value.is_none_or(|v| v.as_bool() == Some(true)) => return table_source(relation),
-            Count if value.is_none() && projected_union_columns(relation).is_some_and(|branches|
+                    correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str())))),
+            FirstValue => value.is_some() && table_source(relation),
+            Exists => value.is_none_or(|v| v.as_bool() == Some(true)) && table_source(relation),
+            Count => (value.is_none() && projected_union_columns(relation).is_some_and(|branches|
                 branches.iter().all(|(name, column)| tables.get(*name)
-                    .and_then(|columns| columns.get(*column)).is_some_and(|ty| ty == "number"))) => return true,
-            Count | NthValue => return is_scalar_array_relation(relation, arrays),
-            _ => {}
-        }
+                    .and_then(|columns| columns.get(*column)).is_some_and(|ty| ty == "number"))))
+                || is_scalar_array_relation(relation, arrays),
+            NthValue => is_scalar_array_relation(relation, arrays),
+        };
     }
     if let Some(relation) = expr.as_relation() {
         return table_source(relation);

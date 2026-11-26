@@ -56,8 +56,6 @@ pub(crate) enum Ty {
     Bool,
     Integer,
     Decimal,
-    I32,
-    I64,
     Ref,
     Text,
     Seq(Box<Ty>),
@@ -80,39 +78,13 @@ impl Ty {
             "unit" => Self::Unit,
             "bool" => Self::Bool,
             "number" => Self::Integer,
-            "i32" => Self::I32,
-            "i64" => Self::I64,
             "ref?" => Self::Ref,
             "text?" => Self::Text,
             "map<text,text>" => Self::OrderedTextMap,
             _ => return Err(fail(format!("unsupported type {s}"))),
         })
     }
-    fn java(t: &JavaType) -> Result<Self> {
-        match t {
-            JavaType::Void => Ok(Self::Unit),
-            JavaType::Primitive(n) => Self::parse(match n.as_str() {
-                "boolean" => "bool",
-                "int" => "i32",
-                "long" => "i64",
-                _ => "unsupported",
-            }),
-            JavaType::Class(n) if n == "Object" || n == "java.lang.Object" => Ok(Self::Ref),
-            JavaType::Class(n) if n == "String" => Ok(Self::Text),
-            JavaType::Array(t) => Ok(Self::Seq(Box::new(match t.as_ref() {
-                JavaType::Class(n) if n == "Object" => Self::Ref,
-                _ => {
-                    let t = Self::java(t)?;
-                    need(
-                        matches!(t, Self::I32 | Self::I64 | Self::Text),
-                        "only integer, String or Object arrays",
-                    )?;
-                    t
-                }
-            }))),
-            _ => Err(fail("unsupported Java type")),
-        }
-    }
+
 }
 #[derive(Clone, PartialEq)]
 enum Value {
@@ -354,18 +326,30 @@ impl Project {
         if self.direct_source && (crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t)) {
             return Ok(Ty::Decimal);
         }
-        if let JavaType::Array(item) = t {
-            if self.direct_source && crate::normalized::integral(item) {
-                return Ok(Ty::Seq(Box::new(Ty::Integer)));
+        match t {
+            JavaType::Void => Ok(Ty::Unit),
+            JavaType::Primitive(name) if name == "boolean" => Ok(Ty::Bool),
+            JavaType::Class(name) if name == "Object" || name == "java.lang.Object" => Ok(Ty::Ref),
+            JavaType::Class(name) if name == "String" => Ok(Ty::Text),
+            JavaType::Array(item) => {
+                let ty = match item.as_ref() {
+                    _ if self.direct_source && crate::normalized::integral(item) => Ty::Integer,
+                    JavaType::Array(element) if self.direct_source && crate::normalized::integral(element) =>
+                        Ty::Seq(Box::new(Ty::Integer)),
+                    _ if self.direct_source && self.source_owner(item).is_some() => Ty::Ref,
+                    // Adapter vector carriers still declare int[]/long[] in
+                    // their Java signatures; the semantic override supplies
+                    // vector<number>, not a second width-specific scalar.
+                    JavaType::Primitive(name) if matches!(name.as_str(), "int" | "long") =>
+                        Ty::Integer,
+                    JavaType::Class(name) if name == "Object" => Ty::Ref,
+                    JavaType::Class(name) if name == "String" => Ty::Text,
+                    _ => return Err(fail("unsupported Java array type")),
+                };
+                Ok(Ty::Seq(Box::new(ty)))
             }
-            if self.direct_source && matches!(item.as_ref(), JavaType::Array(element) if crate::normalized::integral(element)) {
-                return Ok(Ty::Seq(Box::new(Ty::Seq(Box::new(Ty::Integer)))));
-            }
-            if self.direct_source && self.source_owner(item).is_some() {
-                return Ok(Ty::Seq(Box::new(Ty::Ref)));
-            }
+            _ => Err(fail("unsupported Java type")),
         }
-        Ty::java(t)
     }
     fn source_owner(&self, ty: &JavaType) -> Option<&str> {
         let JavaType::Class(name) = ty else {
@@ -869,8 +853,6 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
         Ty::Bool => Value::Term(t.clone(), b::param(name, "boolean")),
         Ty::Integer => Value::Term(t.clone(), b::param(name, "integer")),
         Ty::Decimal => Value::Term(t.clone(), b::param(name, math::domains::decimal::VALUE_TAG)),
-        Ty::I32 => Value::Term(t.clone(), b::param(name, "i32")),
-        Ty::I64 => Value::Term(t.clone(), b::param(name, "i64")),
         Ty::Text => Value::Term(t.clone(), b::param(name, "text")),
         Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
             return Err(fail("this value type has no input symbol contract")),

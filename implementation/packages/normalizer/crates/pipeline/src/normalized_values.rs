@@ -10,8 +10,6 @@ impl Ty {
             Self::Bool => "bool".into(),
             Self::Integer => "number".into(),
             Self::Decimal => "exact decimal".into(),
-            Self::I32 => "i32".into(),
-            Self::I64 => "i64".into(),
             Self::Text => "text?".into(),
             Self::OrderedTextMap => "map<text,text>".into(),
             Self::LocalTextMap => "local nonescaping text map".into(),
@@ -33,8 +31,6 @@ impl Ty {
             Self::Unit
             | Self::Bool
             | Self::Integer
-            | Self::I32
-            | Self::I64
             | Self::Text
             | Self::OrderedTextMap
             | Self::Ref => true,
@@ -47,7 +43,7 @@ impl Ty {
     // They are typed response data, not guessed library implementations.
     pub(crate) fn port_value(&self) -> bool {
         match self {
-            Self::Unit | Self::Bool | Self::Integer | Self::I32 | Self::I64 | Self::Text => true,
+            Self::Unit | Self::Bool | Self::Integer | Self::Text => true,
             Self::Vector(t) => t.port_value(),
             Self::Record(fields) => fields.values().all(Self::port_value),
             _ => false,
@@ -57,7 +53,7 @@ impl Ty {
         Ok(match self {
             Self::Unit => return Err(fail("unit has no primitive value")),
             Self::Bool => Primitive::Boolean,
-            Self::Integer | Self::I32 | Self::I64 => Primitive::Number,
+            Self::Integer => Primitive::Number,
             Self::Text => Primitive::String,
             Self::Ref => Primitive::ReferenceIdentity,
             Self::Task(_)

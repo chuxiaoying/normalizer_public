@@ -6,12 +6,10 @@
 
 任务句柄只由已验证的任务启动创建，不能通过文本类型声明。Vue 动作层 catch 处理已声明的仅类型异常，并可原样重抛；合法外部回执的异常载荷不变。工程参数声明接收名称和执行类型，参数怎样被观察由端口合同约定。
 
-适配器以 `vector<T>` 表达不可变向量。 生产输入载体不可空，也不会静默丢弃可空性。Java 源码数组仍由源码声明及其读写、越界和异常合同处理；它们不是规范工程里另一种 `list<T>?` 载体。
+适配器以 `vector<T>` 表达不可变向量，以 `number` 表达精确业务数值。规范工程不接受 `i32`／`i64` 作为数值载体类型；Java 签名中的 `int`／`long` 不改变业务数值域。生产输入载体不可空，也不会静默丢弃可空性。Java 源码数组仍由源码声明及其读写、越界和异常合同处理；它们不是规范工程里另一种 `list<T>?` 载体。
 
 读取宿主输入和写入状态只依据当前所选入口的 P／E 声明。若入口缺少上下文、字段或参数，内核报错，不从同一工程的其他入口借用同名声明。
 
 P 是本次调用绑定的入口快照。等待前后重复读取同一个 P 仍取得同一个值；与时间相关的可变状态或边界观察应另行建模，不能悄悄替换成第二个 P。
-
-Vue 的投影与事件输入可在[生产示例](../design/examples/topics/language-entries/frontend-vo-production-vue.md)及[消费示例](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md)中对照。术语和输出字段遵循[业务 PERS](../implementation/contracts/business-pers.md)。
 
 Vue 的投影与事件输入可在[生产示例](../design/examples/topics/language-entries/frontend-vo-production-vue.md)及[消费示例](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md)中对照。术语和输出字段遵循[业务 PERS](../implementation/contracts/business-pers.md)。
