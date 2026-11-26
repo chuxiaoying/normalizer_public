@@ -342,12 +342,12 @@ pub fn case_when(mut arms: Vec<(Expr, Expr)>, fallback: Expr) -> Expr {
 /// R 只表达正常返回域，因此不应为了满足 total CaseWhen 形态而追加
 /// `true -> null` 可见哨兵。普通值级 CaseWhen 仍必须使用 `case_when`，
 /// 保持最后一支为 `true` 的 total 表达式 invariant。
-pub fn normal_return_case_when(branches: Vec<(Expr, Expr)>) -> Expr {
-    assert!(
-        !branches.is_empty(),
-        "[MATH-BUILDER] normal_return_case_when: branches must not be empty"
-    );
-    Expr::new(ExprKind::CaseWhen { branches })
+pub fn normal_return_case_when(
+    mut earlier_arms: Vec<(Expr, Expr)>,
+    last_guarded_arm: (Expr, Expr),
+) -> Expr {
+    earlier_arms.push(last_guarded_arm);
+    Expr::new(ExprKind::CaseWhen { branches: earlier_arms })
 }
 
 pub fn conditions_cover_all(conds: &[Expr]) -> bool {

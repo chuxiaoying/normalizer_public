@@ -60,21 +60,18 @@ impl TerminalAlternatives {
     /// alternatives leave their domain absent from the CASE expression, which
     /// matches the PERS convention that `R` is defined only on normal return.
     pub(crate) fn normal_return_value(&self) -> Option<Expr> {
-        let returns = self.0.iter()
+        let mut returns = self.0.iter()
             .filter_map(|alternative| match &alternative.outcome {
                 TerminalOutcome::Return(value) => Some((alternative.guard.clone(), value.clone())),
                 TerminalOutcome::Throw { .. } => None,
             })
             .collect::<Vec<_>>();
-        if returns.is_empty() {
-            return None;
+        let last = returns.pop()?;
+        if returns.iter().all(|(_, value)| value == &last.1) {
+            let value = returns.into_iter().next().map_or(last.1, |(_, value)| value);
+            return Some(canonicalize_realtime_case(value));
         }
-        if returns.iter().all(|(_, value)| value == &returns[0].1) {
-            return Some(canonicalize_realtime_case(
-                returns.into_iter().next().unwrap().1,
-            ));
-        }
-        let expression = math::normalize(b::normal_return_case_when(returns));
+        let expression = math::normalize(b::normal_return_case_when(returns, last));
         Some(canonicalize_realtime_case(expression))
     }
 
@@ -559,24 +556,22 @@ pub(crate) fn join_value(condition: Expr, then_value: Expr, else_value: Expr) ->
 }
 
 fn canonicalize_realtime_case(expression: Expr) -> Expr {
-    let Some(mut branches) = expression.as_case_when().map(|branches| branches.to_vec()) else {
+    let Some((last, earlier)) = expression.as_case_when().and_then(|arms| arms.split_last()) else {
         return expression;
     };
-    if branches.len() >= 2 {
-        let last = branches.len() - 1;
-        if branches[last].0.as_bool() == Some(true) {
-            let index = last - 1;
-            let (condition, yes) = branches[index].clone();
-            let no = branches[last].1.clone();
+    let mut last = (*last).clone();
+    let mut earlier = earlier.to_vec();
+    if last.0.as_bool() == Some(true) {
+        if let Some((condition, yes)) = earlier.last_mut() {
             if let Some(complement) = math::case_orientation::preferred_complement(
-                &condition, &yes, &no, &math::DefaultSortContext,
+                condition, yes, &last.1, &math::DefaultSortContext,
             ) {
-                branches[index] = (complement, no);
-                branches[last].1 = yes;
+                *condition = complement;
+                std::mem::swap(yes, &mut last.1);
             }
         }
     }
-    math::normalize(b::normal_return_case_when(branches))
+    math::normalize(b::normal_return_case_when(earlier, last))
 }
 
 /// Join two completion outcomes at their earliest common continuation.

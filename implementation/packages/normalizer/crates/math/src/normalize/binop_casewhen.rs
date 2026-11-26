@@ -18,20 +18,19 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     // difference is exactly zero. Distribute only if this actually shrinks
     // the tree; never expand two CASE expressions into a cross product.
     if *op == crate::BinOpKind::Sub && super::integer_ac::total_integer(right) {
-        if let Some(branches) = left_case {
-            if branches.iter().any(|(_, value)| value == right) {
+        if let Some((last, earlier)) = left_case.and_then(|branches| branches.split_last()) {
+            if earlier.iter().chain([last]).any(|(_, value)| value == right) {
+                let subtract = |(guard, value): &(Expr, Expr)| {
+                    let delta = if value == right {
+                        crate::builder::lit_int(0)
+                    } else {
+                        crate::builder::sub(value.clone(), right.clone())
+                    };
+                    (guard.clone(), delta)
+                };
                 let candidate = crate::builder::normal_return_case_when(
-                    branches
-                        .iter()
-                        .map(|(guard, value)| {
-                            let delta = if value == right {
-                                crate::builder::lit_int(0)
-                            } else {
-                                crate::builder::sub(value.clone(), right.clone())
-                            };
-                            (guard.clone(), delta)
-                        })
-                        .collect(),
+                    earlier.iter().map(&subtract).collect(),
+                    subtract(last),
                 );
                 if candidate.size() < expr.size() {
                     return candidate;
