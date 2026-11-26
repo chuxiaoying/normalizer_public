@@ -630,6 +630,9 @@ fn parse_class_body(
                 .next()
                 .unwrap_or(&class.simple_name);
             if p.peek() == Some(b'(') && first == constructor_simple_name {
+                if class.is_interface() {
+                    return Err(p.err_at(save, "[JAVA-CONSTRUCTOR] interface cannot declare a constructor"));
+                }
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
                 let (params, param_annotations) = parse_params(&mut p)?;
                 p.skip_ws();

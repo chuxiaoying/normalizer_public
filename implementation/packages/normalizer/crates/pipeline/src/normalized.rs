@@ -57,7 +57,7 @@ pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> boo
         && class.fields().is_empty()
         && class.interfaces().is_empty()
         && !class.methods().is_empty()
-        && class.methods().iter().all(|method| !method.is_static() && !method.is_constructor()
+        && class.methods().iter().all(|method| !method.is_static()
             && method.body().is_none() && method.throws().is_empty()
             && method.annotations().is_empty()
             && scalar(method.return_type()) && method.params().iter().all(|(ty, _)| scalar(ty)))
@@ -805,4 +805,47 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
         _ => return Err(error("NORM-EXPRESSION", at)),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod source_declaration_contracts {
+    use super::*;
+    use simulator_parser::{parse, ParseOptions};
+
+    #[test]
+    fn ordinary_interface_eligibility_does_not_assume_every_interface_is_a_contract() {
+        for (source, expected) in [
+            ("interface Shape { int size(); }", true),
+            ("interface Shape {}", false),
+            ("interface Shape { int VERSION = 1; int size(); }", false),
+            ("interface Shape { static int size() { return 1; } }", false),
+            ("interface Shape { default int size() { return 1; } }", false),
+            ("interface Shape { @Deprecated int size(); }", false),
+        ] {
+            let program = parse(source, "Shape.java", &ParseOptions::default()).unwrap();
+            assert_eq!(plain_source_interface(program.find_class("Shape").unwrap()), expected, "{source}");
+        }
+        let constructor = parse("interface Shape { Shape() {} }", "Shape.java", &ParseOptions::default())
+            .expect_err("a constructor in an interface is rejected at parse admission");
+        assert!(constructor.to_string().contains("[JAVA-CONSTRUCTOR] interface cannot declare a constructor"));
+    }
+
+    #[test]
+    fn declared_external_payloads_do_not_infer_a_value_from_unrelated_fields() {
+        for (field, expected) in [
+            ("int payload;", Some("number")),
+            ("java.lang.String payload;", Some("text?")),
+            ("int other;", None),
+            ("static int payload;", None),
+            ("final int payload = 1;", None),
+            ("int payload = 1;", None),
+        ] {
+            let source = format!("class RemoteFailure extends RuntimeException {{ {field} }}");
+            let program = parse(&source, "RemoteFailure.java", &ParseOptions::default()).unwrap();
+            assert_eq!(source_payload_domain(program.find_class("RemoteFailure").unwrap()), expected);
+            if expected.is_none() {
+                assert!(source_exceptions(&program).unwrap_err().contains("[NORM-EXCEPTION-DECLARATION]"));
+            }
+        }
+    }
 }
