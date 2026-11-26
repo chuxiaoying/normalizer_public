@@ -215,3 +215,14 @@
   reject:
     - '[NORM-PROJECT]'
     - 'finally throw requires a source-declared type-only exception'
+
+- name: inactive-finally-return-does-not-erase-pending-result
+  edits:
+    - { from: 'attempts = attempts + 1;', to: 'attempts = attempts + 1; if (false) return 42;' }
+
+- name: two-finally-returns-override-pending-completions-on-both-domains
+  edits:
+    - from: 'attempts = attempts + 1;'
+      to: 'attempts = attempts + 1; if (accountId == 0) return 42; else return 43;'
+  expect:
+    - { path: [R], value: 'CASE WHEN accountId == 0 THEN 42 ELSE 43 END' }

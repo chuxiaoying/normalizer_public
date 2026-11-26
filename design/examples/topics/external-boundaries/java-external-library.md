@@ -87,3 +87,5 @@ R: |-
 **PERS 验收要点**：最终表达应呈现文本操作的业务含义，字符遍历与编码结构留在操作合同内；公共文本语义仍须覆盖完整原始字符域，不能用更简短的公式掩盖孤立代理项。
 
 **空值守卫对照**　将内层换为原始 `raw`，再显式写成 `raw == null ? fallback : NormalizedText.defaultIfBlank(raw, fallback)`。注册的空白谓词自身已经覆盖 null，因此 R 是 `CASE WHEN blank(raw) THEN fallback ELSE raw END`。非空但属于空白的文本仍返回 fallback；非空白文本仍保留原值。无需额外识别旧 Java 库实现里的空值写法。
+
+直接给纯文本内建操作传 `null` 与经 `trim(null)` 取得的空值同属文本语义：第一实参为空时选备用文本。如果第一实参是非空白常量，第二实参即使是 `null`，也不会成为可观察的返回值。两种情况都不生成 S。

@@ -59,3 +59,13 @@
       absent: true
     - path: [S]
       absent: true
+
+- name: length-observed-in-helper-still-belongs-to-original-array
+  edits:
+    - from: 'class FirstValue {'
+      to: 'class FirstValue { static int extent(int[] items) { return items.length; }'
+    - { from: 'return values[0];', to: 'return extent(values);' }
+  expect:
+    - { path: [R], value: 'LENGTH(values)' }
+    - { path: [throws], absent: true }
+    - { path: [S], absent: true }

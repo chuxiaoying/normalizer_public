@@ -68,3 +68,5 @@ S: []
 throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
 ```
+
+长度也可在源码可见的辅助函数中观察。把已绑定的 `values` 传给以 `items` 为形参名的长度函数，返回 `LENGTH(values)`；辅助函数形参名不能覆盖借用来源，也不能凭空产生数组读写、越界或 S。

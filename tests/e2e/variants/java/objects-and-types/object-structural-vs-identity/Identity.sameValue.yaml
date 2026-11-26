@@ -9,3 +9,10 @@
   expect:
     - path: [R]
       value: left.value == right.value + 1
+- name: acquired-scalar-length-field-keeps-its-record-owner
+  edits:
+    - { from: 'int value;', to: 'int length;' }
+    - { from: 'left.value == right.value', to: 'left.length == right.length' }
+  expect:
+    - { path: [types, Box, fields], value: {length: number} }
+    - { path: [R], value: 'left.length == right.length' }

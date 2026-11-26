@@ -94,3 +94,18 @@
           WHEN blank(raw) THEN fallback
           ELSE raw
         END
+
+- name: direct-null-first-argument-is-not-an-unbound-receiver
+  edits:
+    - { from: 'NormalizedText.trim(raw)', to: 'null' }
+  expect:
+    - { path: [R], value: fallback }
+
+- name: null-in-dead-fallback-is-not-observed
+  edits:
+    - from: 'NormalizedText.trim(raw),'
+      to: '"label",'
+    - from: "            fallback\n"
+      to: "            null\n"
+  expect:
+    - { path: [R], value: '"label"' }

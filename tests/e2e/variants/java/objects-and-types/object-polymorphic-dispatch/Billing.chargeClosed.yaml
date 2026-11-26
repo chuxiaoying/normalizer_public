@@ -53,3 +53,14 @@
     - from: 'interface Fee { int apply(int value); }'
       to: 'interface Fee { default int apply(int value) { return value + 10; } }'
   reject: ['[NORM-CLASS-SHAPE]', 'kind=PREPROCESS_REQUIRED', 'Fee']
+- name: repeated-condition-does-not-select-the-dead-implementation
+  edits:
+    - from: 'fixed ? new FixedFee() : new ScaledFee()'
+      to: 'fixed ? (fixed ? new FixedFee() : new RateFee()) : new ScaledFee()'
+
+- name: different-nominal-receivers-with-equal-pure-results-collapse
+  edits:
+    - { from: 'return value - 1;', to: 'return 7;' }
+    - { from: 'return value * 2;', to: 'return 7;' }
+  expect:
+    - { path: [R], value: '7' }

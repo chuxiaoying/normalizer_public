@@ -8,3 +8,7 @@ variants:
     edits:
       - from: 'static int charge(Fee fee, int value) { return fee.apply(value); }'
         to: 'static int charge(Fee fee, int value) { int amount = fee.apply(value); return amount; }'
+  - name: aliasing-the-interface-object-does-not-close-dispatch
+    edits:
+      - from: 'static int charge(Fee fee, int value) { return fee.apply(value); }'
+        to: 'static int charge(Fee fee, int value) { Fee held = fee; return held.apply(value); }'
