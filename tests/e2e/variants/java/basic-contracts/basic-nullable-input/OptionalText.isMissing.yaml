@@ -11,7 +11,7 @@
     - from: 'class OptionalText {'
       to: |-
         class OptionalText {
-            static boolean helper(@normalizer.annotations.Nullable String text) {
+            static boolean helper(@N.Nullable String text) {
                 return text == null;
             }
     - from: 'return value == null;'
@@ -26,14 +26,14 @@
 
 - name: empty-parentheses-preserve-the-explicit-nullability-marker
   edits:
-    - {from: '@normalizer.annotations.Nullable String value', to: '@normalizer.annotations.Nullable() String value'}
+    - {from: '@N.Nullable String value', to: '@N.Nullable() String value'}
 
 - name: qualified-helper-observes-the-original-symbolic-nullability
   edits:
     - from: 'class OptionalText {'
       to: |-
         class OptionalText {
-            static boolean probe(@normalizer.annotations.Nullable java.lang.String text) {
+            static boolean probe(@N.Nullable java.lang.String text) {
                 return text == null;
             }
     - {from: 'return value == null;', to: 'return OptionalText.probe(value);'}

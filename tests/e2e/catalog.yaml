@@ -17,7 +17,7 @@ groups:
     java-source-name-closure:
     - Catalog.price
     java-lexical-declaration-scope:
-    - LexicalScope.read
+    - LexicalScope.INSTANCE.read
     java-assignment-conversion:
     - AssignmentConversion.read
     java-grouping-signed-operand:
@@ -57,11 +57,11 @@ groups:
     - Branch.clamp
     control-short-circuit:
     - Guard.allowed
-    - GuardWithProbe.allowed
+    - GuardWithProbe.INSTANCE.allowed
     control-switch-branch:
     - SwitchMode.classify
     control-try-catch-finally:
-    - FinallyService.read
+    - FinallyService.INSTANCE.read
   java/expression-simplification:
     expr-boolean-algebra:
     - Eligibility.eligible
@@ -96,11 +96,11 @@ groups:
     - InstanceEntry.INSTANCE.add
   java/loops:
     java-loop-bounded-retry:
-    - ScoreService.fetchScore
+    - ScoreService.INSTANCE.fetchScore
     java-loop-early-exit:
-    - ArrearsService.firstPayableAmount
+    - ArrearsService.INSTANCE.firstPayableAmount
     java-loop-fold:
-    - ArrearsService.positiveTotal
+    - ArrearsService.INSTANCE.positiveTotal
     java-loop-unknown:
     - ReadinessService.readWhenReady
   java/loops-and-termination:
@@ -134,7 +134,7 @@ groups:
     java-external-library:
     - LabelService.normalizeLabel
     java-name-collision:
-    - QuotaService.difference
+    - QuotaService.INSTANCE.difference
     java-static-object:
     - Calculator.summarize
   java/objects-and-types:

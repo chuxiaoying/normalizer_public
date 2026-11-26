@@ -204,7 +204,7 @@
   expect:
     - path: [S]
       value:
-        - call: {external: client.fetch, args: [accountId], returns: number, result: '$e_0'}
+        - call: {external: src/FinallyService.java#FinallyService.INSTANCE.client.fetch, args: [accountId], returns: number, result: '$e_0'}
         - write: {target: attempts, value: 'attempts + 1'}
         - write: {target: attempts, value: 'attempts + 3'}
 

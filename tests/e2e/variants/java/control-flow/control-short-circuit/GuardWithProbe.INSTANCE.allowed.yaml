@@ -7,7 +7,7 @@
   expect:
     - path: [S]
       value:
-        - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
+        - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0 }
     - path: [R]
       value: active AND $e_0 > 0
 - name: concrete-false-does-not-call-probe
@@ -26,7 +26,7 @@
   expect:
     - path: [S]
       value:
-        - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
+        - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0 }
     - path: [R]
       value: $e_0 > 0
 - name: concrete-true-or-does-not-call-probe
@@ -45,7 +45,7 @@
   expect:
     - path: [S]
       value:
-        - call: { external: probe.read, args: [value], returns: number, result: $e_0 }
+        - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0 }
     - path: [R]
       value: $e_0 > 0
 - name: keep-receipt-guard-in-call-argument
@@ -55,27 +55,23 @@
         boolean allowed = active && probe.read(value) > 0;
                 probe.publish(allowed);
                 return allowed;
-    - from: 'interface Probe { int read(int value); }'
-      to: 'interface Probe { int read(int value); void publish(boolean allowed); }'
+    - from: 'class Probe { native int read(int value); }'
+      to: 'class Probe { native int read(int value); native void publish(boolean allowed); }'
   expect:
     - path: [S]
       value:
-        - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+        - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0, when: active }
         - call:
-            external: probe.publish
+            external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.publish
             args: ['CASE WHEN active THEN $e_0 > 0 ELSE false END']
             returns: void
             result: $e_1
 - name: keep-receipt-guard-in-state-write
   edits:
-    - from: 'import normalizer.annotations.External;'
-      to: |-
-        import normalizer.annotations.EntryState;
-        import normalizer.annotations.External;
     - from: 'class GuardWithProbe {'
       to: |-
         class GuardWithProbe {
-            @EntryState
+            @N.EntryState
             boolean stored;
     - from: 'return active && probe.read(value) > 0;'
       to: |-
@@ -84,10 +80,10 @@
   expect:
     - path: [E]
       add:
-        stored: { kind: state, source: src/GuardWithProbe.java#GuardWithProbe.stored, type: bool }
+        stored: { kind: state, source: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.stored, type: bool }
     - path: [S]
       value:
-        - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+        - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0, when: active }
         - write: { target: stored, value: 'CASE WHEN active THEN $e_0 > 0 ELSE false END' }
 - name: keep-receipt-guard-in-later-call-condition
   edits:
@@ -95,14 +91,14 @@
       to: |-
         if (active && probe.read(value) > 0) probe.signal();
                 return true;
-    - from: 'interface Probe { int read(int value); }'
-      to: 'interface Probe { int read(int value); void signal(); }'
+    - from: 'class Probe { native int read(int value); }'
+      to: 'class Probe { native int read(int value); native void signal(); }'
   expect:
     - path: [S]
       value:
-        - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+        - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0, when: active }
         - call:
-            external: probe.signal
+            external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.signal
             args: []
             returns: void
             result: $e_1
@@ -122,13 +118,13 @@
         boolean allowed = active || probe.read(value) > 0;
                 probe.publish(allowed);
                 return allowed;
-    - from: 'interface Probe { int read(int value); }'
-      to: 'interface Probe { int read(int value); void publish(boolean allowed); }'
+    - from: 'class Probe { native int read(int value); }'
+      to: 'class Probe { native int read(int value); native void publish(boolean allowed); }'
   expect:
     - path: [S]
       value:
-        - call: {external: probe.read, args: [value], returns: number, result: '$e_0', when: 'NOT (active)'}
-        - call: {external: probe.publish, args: ['CASE WHEN active THEN true ELSE $e_0 > 0 END'], returns: void, result: '$e_1'}
+        - call: {external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: '$e_0', when: 'NOT (active)'}
+        - call: {external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.publish, args: ['CASE WHEN active THEN true ELSE $e_0 > 0 END'], returns: void, result: '$e_1'}
     - {path: [R], value: 'CASE WHEN active THEN true ELSE $e_0 > 0 END'}
 
 - name: effect-guard-uses-or-result-not-an-unbound-probe
@@ -137,11 +133,11 @@
       to: |-
         if (active || probe.read(value) > 0) probe.signal();
                 return true;
-    - from: 'interface Probe { int read(int value); }'
-      to: 'interface Probe { int read(int value); void signal(); }'
+    - from: 'class Probe { native int read(int value); }'
+      to: 'class Probe { native int read(int value); native void signal(); }'
   expect:
     - path: [S]
       value:
-        - call: {external: probe.read, args: [value], returns: number, result: '$e_0', when: 'NOT (active)'}
-        - call: {external: probe.signal, args: [], returns: void, result: '$e_1', when: 'CASE WHEN active THEN true ELSE $e_0 > 0 END'}
+        - call: {external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: '$e_0', when: 'NOT (active)'}
+        - call: {external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.signal, args: [], returns: void, result: '$e_1', when: 'CASE WHEN active THEN true ELSE $e_0 > 0 END'}
     - {path: [R], value: 'true'}

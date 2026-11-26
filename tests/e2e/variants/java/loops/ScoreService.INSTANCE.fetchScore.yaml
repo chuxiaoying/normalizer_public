@@ -12,7 +12,7 @@
     - path: [S]
       value:
         - call:
-            external: scoreClient.fetchScore
+            external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.fetchScore
             args: [accountId]
             returns: number
             result: $e_0
@@ -35,18 +35,18 @@
     - path: [S]
       value:
         - call:
-            external: scoreClient.readPoints
+            external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.readPoints
             args: [accountId]
             returns: number
             result: $e_0
         - call:
-            external: scoreClient.readPoints
+            external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.readPoints
             args: [accountId]
             returns: number
             result: $e_1
             when: completion.is_throw($e_0, RetryableScoreError)
         - call:
-            external: scoreClient.readPoints
+            external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.readPoints
             args: [accountId]
             returns: number
             result: $e_2
@@ -56,7 +56,7 @@
                 ELSE false
               END
         - call:
-            external: scoreClient.readPoints
+            external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.readPoints
             args: [accountId]
             returns: number
             result: $e_3
