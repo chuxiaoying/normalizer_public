@@ -20,7 +20,7 @@ pub(super) fn or_implication_tautology(left: &Expr, right: &Expr) -> bool {
         operand,
     } = left.kind()
     {
-        if relation_exists_conjunct_implies(operand, right) {
+        if relation_count_nonzero_implies_exists(operand, right) {
             return true;
         }
     }
@@ -29,7 +29,7 @@ pub(super) fn or_implication_tautology(left: &Expr, right: &Expr) -> bool {
         operand,
     } = right.kind()
     {
-        if relation_exists_conjunct_implies(operand, left) {
+        if relation_count_nonzero_implies_exists(operand, left) {
             return true;
         }
     }
@@ -46,23 +46,16 @@ pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bo
     left.vars().is_disjoint(right.vars()) && !(left.has_heap_ref() && right.has_heap_ref())
 }
 
-pub(super) fn relation_exists_conjunct_implies(left: &Expr, right: &Expr) -> bool {
-    if profile_pair_can_skip_proof_check(left, right) {
-        return false;
-    }
-    relation_count_nonzero_implies_exists(left, right)
-}
-
 pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> bool {
-    relation_exists_contradicts_count_zero(left, right)
-        || relation_exists_contradicts_count_zero(right, left)
+    exists_and_count_zero_same_relation(left, right)
+        || exists_and_count_zero_same_relation(right, left)
 }
 
 pub(super) fn relation_cardinality_exhaustive(left: &Expr, right: &Expr) -> bool {
     relation_count_nonzero_or_zero_same_relation(left, right)
         || relation_count_nonzero_or_zero_same_relation(right, left)
-        || relation_exists_or_count_zero_same_relation(left, right)
-        || relation_exists_or_count_zero_same_relation(right, left)
+        || exists_and_count_zero_same_relation(left, right)
+        || exists_and_count_zero_same_relation(right, left)
         || relation_exists_or_not_exists_same_relation(left, right)
         || relation_exists_or_not_exists_same_relation(right, left)
 }
@@ -80,18 +73,13 @@ pub(super) fn relation_count_nonzero_or_zero_same_relation(
     relation_cardinality_input_matches(nonzero_relation, zero_relation)
 }
 
-pub(super) fn relation_exists_or_count_zero_same_relation(
+fn exists_and_count_zero_same_relation(
     exists_expr: &Expr,
     zero_expr: &Expr,
 ) -> bool {
-    let Some((RelationAggregateKind::Exists, exists_relation, exists_select, exists_default)) =
-        exists_expr.as_relation_aggregate()
-    else {
+    let Some(exists_relation) = relation_exists_true_relation(exists_expr) else {
         return false;
     };
-    if exists_select.and_then(|expr| expr.as_bool()) != Some(true) || exists_default.is_some() {
-        return false;
-    }
     let Some(zero_relation) = relation_count_zero_relation(zero_expr) else {
         return false;
     };
@@ -102,50 +90,16 @@ pub(super) fn relation_exists_or_not_exists_same_relation(
     exists_expr: &Expr,
     not_exists_expr: &Expr,
 ) -> bool {
-    let Some((RelationAggregateKind::Exists, exists_relation, exists_select, exists_default)) =
-        exists_expr.as_relation_aggregate()
-    else {
+    let Some(exists_relation) = relation_exists_true_relation(exists_expr) else {
         return false;
     };
-    if exists_select.and_then(|expr| expr.as_bool()) != Some(true) || exists_default.is_some() {
-        return false;
-    }
     let Some((UnaryOpKind::Not, not_exists_inner)) = not_exists_expr.as_unary_op() else {
         return false;
     };
-    let Some((
-        RelationAggregateKind::Exists,
-        not_exists_relation,
-        not_exists_select,
-        not_exists_default,
-    )) = not_exists_inner.as_relation_aggregate()
-    else {
+    let Some(not_exists_relation) = relation_exists_true_relation(not_exists_inner) else {
         return false;
     };
-    if not_exists_select.and_then(|expr| expr.as_bool()) != Some(true)
-        || not_exists_default.is_some()
-    {
-        return false;
-    }
     relation_cardinality_input_matches(exists_relation, not_exists_relation)
-}
-
-pub(super) fn relation_exists_contradicts_count_zero(
-    exists_expr: &Expr,
-    count_zero_expr: &Expr,
-) -> bool {
-    let Some((RelationAggregateKind::Exists, exists_relation, exists_select, exists_default)) =
-        exists_expr.as_relation_aggregate()
-    else {
-        return false;
-    };
-    if exists_select.and_then(|expr| expr.as_bool()) != Some(true) || exists_default.is_some() {
-        return false;
-    }
-    let Some(count_zero_relation) = relation_count_zero_relation(count_zero_expr) else {
-        return false;
-    };
-    relation_cardinality_input_matches(exists_relation, count_zero_relation)
 }
 
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {
@@ -154,14 +108,9 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     else {
         return false;
     };
-    let Some((RelationAggregateKind::Exists, right_relation, right_select, right_default)) =
-        right.as_relation_aggregate()
-    else {
+    let Some(right_relation) = relation_exists_true_relation(right) else {
         return false;
     };
-    if right_select.and_then(|expr| expr.as_bool()) != Some(true) || right_default.is_some() {
-        return false;
-    }
     relation_cardinality_input_matches(left_relation, right_relation)
 }
 

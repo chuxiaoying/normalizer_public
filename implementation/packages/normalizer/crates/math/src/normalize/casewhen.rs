@@ -341,10 +341,6 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
 }
 
 fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option<Expr> {
-    if branches.len() < 2 {
-        return None;
-    }
-
     let mut values: Vec<Expr> = Vec::new();
     let mut counts: Vec<usize> = Vec::new();
     for (_, value) in branches {

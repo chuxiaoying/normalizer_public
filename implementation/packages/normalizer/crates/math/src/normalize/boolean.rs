@@ -179,7 +179,7 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     if context.iter().any(|c| {
         c == expr
             || (!profile_pair_can_skip_proof_check(c, expr)
-                && (relation_exists_conjunct_implies(c, expr)
+                && (relation_count_nonzero_implies_exists(c, expr)
                     || literal_equality_implies_literal_inequality(c, expr)
                     || positive_heap_ref_equality_implies_inequality(c, expr)
                     || or_all_branches_imply(c, expr)))
@@ -635,12 +635,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         context_simplified.push(item.clone());
     }
     if context_changed {
-        if context_simplified.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
-        if context_simplified.len() == 1 {
-            return Some(context_simplified.into_iter().next().unwrap());
-        }
         return Some(rebuild_and(&context_simplified));
     }
 
