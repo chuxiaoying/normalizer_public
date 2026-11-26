@@ -23,3 +23,39 @@
       absent: true
     - path: [S]
       absent: true
+
+- name: borrowed-array-length-after-an-earlier-scalar-parameter
+  edits:
+    - from: 'firstRequired(int[] values)'
+      to: 'firstRequired(int earlier, int[] values)'
+    - from: 'return values[0];'
+      to: 'int[] ordered = values; return ordered.length;'
+  expect:
+    - path: [P, parameters]
+      value: { earlier: { position: 0, type: number }, values: { position: 1, type: 'number[]' } }
+    - path: [R]
+      value: LENGTH(values)
+    - path: [throws]
+      absent: true
+    - path: [S]
+      absent: true
+
+- name: ordinary-record-length-field-is-not-array-cardinality
+  edits:
+    - from: 'class FirstValue {'
+      to: |-
+        class Box {
+            int length;
+            Box(int value) { this.length = value; }
+        }
+
+        class FirstValue {
+    - from: 'return values[0];'
+      to: 'Box box = new Box(7); return box.length;'
+  expect:
+    - path: [R]
+      value: '7'
+    - path: [throws]
+      absent: true
+    - path: [S]
+      absent: true

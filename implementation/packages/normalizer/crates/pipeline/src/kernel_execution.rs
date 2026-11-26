@@ -628,15 +628,13 @@ impl Engine<'_> {
                     return Ok(Some(b::lit_int(array.length())));
                 }
                 if let Some(Value::Sequence { item: Ty::Integer, name: root, java_component, .. }) = env.get(name) {
-                    // A local alias retains the original entry parameter. A
-                    // borrowed length reads its cardinality, not an element.
-                    // State arrays and nullable receivers are a separate route.
+                    // Aliases preserve their root and its Java component.
+                    // Source admission cannot mark an array parameter nullable.
+                    // Still require an entry parameter; state names are not borrowed roots.
                     let admitted = java_component.as_deref() == Some("int")
-                        && !self.project.source_nullable_entry_parameters.contains(root)
                         && self.selected_entry.and_then(|entry| self.methods.get(entry))
-                            .is_some_and(|method| method.syntax.params().iter().any(|(ty, parameter)| {
-                                parameter == root && matches!(ty, JavaType::Array(item)
-                                    if crate::normalized::java_int(item))
+                            .is_some_and(|method| method.syntax.params().iter().any(|(_, parameter)| {
+                                parameter == root
                             }));
                     if admitted {
                         self.budget()?;
