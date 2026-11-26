@@ -7,7 +7,7 @@
 
 /// 排序上下文 trait — 提供 HeapRef display_name 查询能力
 pub trait SortContext {
-    /// 查询 HeapRef 的 display_name（如 "$e_0.data"）
+    /// 查询 HeapRef 的 display_name（入口参数或命名状态的公开路径）
     ///
     /// - 有 display_name → 返回 Some(name)，用作主符号路径
     /// - 无 display_name → 返回 None，由排序规则使用 id 稳定字符串

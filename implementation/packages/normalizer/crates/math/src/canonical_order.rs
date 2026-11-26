@@ -158,32 +158,20 @@ fn subject_key(expr: &Expr, ctx: &dyn SortContext) -> String {
 }
 
 fn binop_subject_key(op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortContext) -> String {
-    if is_null_comparison(op, left, right) {
-        return if left.is_null() {
-            subject_key(right, ctx)
-        } else {
-            subject_key(left, ctx)
+    use BinOpKind::*;
+    if matches!(op, Eq | Ne | Lt | Le | Gt | Ge) {
+        let subject_rank = |value: &Expr| match value.as_lit() {
+            Some(Lit::Null) if matches!(op, Eq | Ne) => 2,
+            Some(_) => 1,
+            None => 0,
         };
-    }
-
-    let left_key = subject_key(left, ctx);
-    let right_key = subject_key(right, ctx);
-    if matches!(
-        op,
-        BinOpKind::Eq
-            | BinOpKind::Ne
-            | BinOpKind::Lt
-            | BinOpKind::Le
-            | BinOpKind::Gt
-            | BinOpKind::Ge
-    ) {
-        match (is_literal_like(left), is_literal_like(right)) {
-            (true, false) => return right_key,
-            (false, true) => return left_key,
-            _ => {}
+        match subject_rank(left).cmp(&subject_rank(right)) {
+            std::cmp::Ordering::Less => return subject_key(left, ctx),
+            std::cmp::Ordering::Greater => return subject_key(right, ctx),
+            std::cmp::Ordering::Equal => {}
         }
     }
-    left_key.min(right_key)
+    subject_key(left, ctx).min(subject_key(right, ctx))
 }
 
 fn call_subject_key(
@@ -208,24 +196,12 @@ fn call_subject_key(
 
 fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortContext) -> String {
     match origin {
-        crate::symvar::SymVarOrigin::Parameter { name, .. } => {
-            // Boundary/external Pojo projections can be carried as Parameter
-            // paths (for example `$e_0.result.name`) after symbolic field
-            // expansion.  For display ordering they must stay in the same
-            // public E/T subject class as the root HeapRef `$e_0`; otherwise
-            // `$e_0.success` sorts before `$e_0 != null` simply because it is
-            // represented as Parameter internally.
-            if name.starts_with("$e_") || name.starts_with("$t_") || name.starts_with("$h_") {
-                public_display_name_subject_key(name)
-            } else {
-                format!("00|{}", public_path_key(name))
-            }
-        }
+        crate::symvar::SymVarOrigin::Parameter { name, .. } => format!("00|{name}"),
         crate::symvar::SymVarOrigin::External {
             binding_id, path, ..
         } => {
             let root = ctx.external_names().and_then(|names| names.get(binding_id))
-                .map(|name| numbered_public_path(name, "$e_"))
+                .map(|name| numbered_receipt_root(name))
                 .unwrap_or_else(|| format!("$e_{binding_id:020}"));
             if path.is_empty() {
                 format!("01|{root}")
@@ -244,30 +220,18 @@ fn sym_origin_subject_key(origin: &crate::symvar::SymVarOrigin, ctx: &dyn SortCo
 
 fn heap_subject_key(id: i64, ctx: &dyn SortContext) -> String {
     if let Some(name) = ctx.heap_display_name(id) {
-        return public_display_name_subject_key(&name);
+        return format!("00|{name}");
     }
     format!("99|heap:{id:020}")
 }
 
-fn numbered_public_path(name: &str, prefix: &str) -> String {
-    let Some(rest) = name.strip_prefix(prefix) else { return name.into(); };
-    let (root, suffix) = rest.split_once('.').map_or((rest, String::new()),
-        |(root, path)| (root, format!(".{path}")));
-    root.parse::<u64>().map_or_else(|_| name.into(),
-        |slot| format!("{prefix}{slot:020}{suffix}"))
-}
-
-fn public_display_name_subject_key(name: &str) -> String {
-    if name.starts_with("$e_") {
-        format!("01|{}", numbered_public_path(name, "$e_"))
-    } else if name.starts_with("$t_") {
-        format!("02|{}", numbered_public_path(name, "$t_"))
-    } else if name.starts_with("$h_") {
-        format!("99|{name}")
+// Published receipt names are ordinal roots; the typed External path is
+// appended separately. A named input/state remains its ordinary public path.
+fn numbered_receipt_root(name: &str) -> String {
+    if let Some(slot) = name.strip_prefix("$e_").and_then(|root| root.parse::<u64>().ok()) {
+        format!("$e_{slot:020}")
     } else {
-        // Heap display names such as `request` / `family.name` are user-facing
-        // parameter-style paths unless a caller later provides a richer context.
-        format!("00|{}", public_path_key(name))
+        name.to_string()
     }
 }
 
@@ -609,14 +573,6 @@ fn literal_payload_key(lit: &Lit) -> String {
         Lit::BigInt(v) => format!("2:{v:020}"),
         Lit::Str(v) => format!("3:{v}"),
     }
-}
-
-fn public_path_key(path: &str) -> String {
-    path.to_string()
-}
-
-fn is_literal_like(expr: &Expr) -> bool {
-    matches!(expr.kind(), ExprKind::Lit(_))
 }
 
 fn is_internal_subject_key(key: &str) -> bool {
