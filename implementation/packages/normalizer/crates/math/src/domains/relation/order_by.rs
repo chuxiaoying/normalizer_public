@@ -28,6 +28,11 @@ pub fn order_components(relation: &RelationExpr) -> Option<(&RelationExpr, &[Exp
     let RelationExpr::Vector { value, .. } = relation else {
         return None;
     };
+    order_value_components(value)
+}
+
+/// Recognize the ordered value carried by the relation and its child walk.
+pub fn order_value_components(value: &Expr) -> Option<(&RelationExpr, &[Expr])> {
     let (op, args) = value.as_call()?;
     let (source, keys) = args.split_first()?;
     if keys.is_empty() || crate::func_name(op) != format!("relation.order_by/{}", keys.len()) {

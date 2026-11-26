@@ -844,13 +844,14 @@ pub(super) fn is_table_expression(
     if let Some((kind, relation, value, _)) = expr.as_relation_aggregate() {
         use math::RelationAggregateKind::*;
         return match kind {
-            Sum => value.is_some() && (table_source(relation)
+            // The aggregate constructors require a projection for these kinds.
+            Sum => table_source(relation)
                 || (value == Some(&b::lit_int(1)) &&
                     grouped_table(relation).is_some_and(|(name, _)| tables.contains_key(name)))
                 || relation_base(relation).is_some_and(|(name, _)| nested_arrays.contains(name))
                 || correlated_array_relation(relation).is_some_and(|pair|
-                    correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str())))),
-            FirstValue => value.is_some() && table_source(relation),
+                    correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),
+            FirstValue => table_source(relation),
             Exists => table_source(relation),
             Count => (value.is_none() && projected_union_columns(relation).is_some_and(|branches|
                 branches.iter().all(|(name, column)| tables.get(*name)
@@ -862,14 +863,5 @@ pub(super) fn is_table_expression(
     if let Some(relation) = expr.as_relation() {
         return table_source(relation);
     }
-    if let Some((op, args)) = expr.as_call() {
-        if let Some((source, keys)) = args.split_first() {
-            return !keys.is_empty()
-                && math::func_name(op) == format!("relation.order_by/{}", keys.len())
-                && source
-                    .as_relation()
-                    .is_some_and(|r| table_source(r));
-        }
-    }
-    false
+    r::order_value_components(expr).is_some_and(|(source, _)| table_source(source))
 }

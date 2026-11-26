@@ -14,7 +14,7 @@
 
 mod order_by;
 pub mod positional;
-pub use order_by::{order_by, order_components};
+pub use order_by::{order_by, order_components, order_value_components};
 
 use crate::{
     Expr, builder,
