@@ -217,3 +217,54 @@ mod tests {
         assert!(!candidate_precedes(&guard, &one, &nine, &guard, &one, &seven, &DefaultSortContext));
     }
 }
+
+#[cfg(test)]
+mod totality_and_polarity_tests {
+    use super::*;
+    use crate::{builder as b, DefaultSortContext, ScalarSymbolType};
+
+    #[test]
+    fn exact_number_selection_does_not_infer_acquisition_from_a_projection_tag() {
+        let n = b::param("n", ScalarSymbolType::ExactDecimal);
+        assert!(has_total_number_selection_evidence(&n));
+        for non_direct in [
+            b::param("label", ScalarSymbolType::Text),
+            b::param("$e_0.quote", ScalarSymbolType::ExactDecimal),
+            b::param("order.quote", ScalarSymbolType::ExactDecimal),
+            b::sym_e_path(0, vec!["quote".to_owned()], ScalarSymbolType::ExactDecimal),
+        ] {
+            assert!(!has_total_number_selection_evidence(&non_direct));
+        }
+    }
+
+    #[test]
+    fn positive_count_policy_preserves_the_same_subject_and_zero_fallback() {
+        let n = b::param("n", ScalarSymbolType::Integer);
+        let other = b::param("other", ScalarSymbolType::Integer);
+        let zero = b::lit_int(0);
+        let positive = b::gt(n.clone(), zero.clone());
+
+        assert_eq!(domain_policy_rank(&positive, &n, &zero), 0);
+        assert_eq!(domain_policy_rank(&positive, &other, &zero), 2);
+        assert_eq!(domain_policy_rank(&positive, &n, &b::lit_null()), 1);
+        assert_eq!(domain_policy_rank(&b::ge(n.clone(), zero.clone()), &n, &zero), 2);
+        let fraction = b::param("fraction", ScalarSymbolType::ExactDecimal);
+        assert_eq!(
+            domain_policy_rank(&b::gt(fraction.clone(), zero.clone()), &fraction, &zero),
+            2
+        );
+    }
+
+    #[test]
+    fn cheaper_negation_is_not_a_lone_not_of_the_original_guard() {
+        let p = b::param("p", ScalarSymbolType::Boolean);
+        let original = b::not(b::and(p.clone(), p.clone()));
+        assert_eq!(crate::normalize(b::not(original.clone())), p);
+        assert_eq!(
+            preferred_complement_for_shape(
+                &original, &b::lit_int(3), &b::lit_int(4), &DefaultSortContext, || false
+            ),
+            None
+        );
+    }
+}

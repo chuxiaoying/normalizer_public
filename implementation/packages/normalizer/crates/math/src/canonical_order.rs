@@ -550,3 +550,74 @@ fn aggregate_kind_rank(kind: RelationAggregateKind) -> u8 {
         RelationAggregateKind::Exists => 5,
     }
 }
+
+#[cfg(test)]
+mod typed_subject_order_tests {
+    use super::*;
+    use crate::{builder as b, DefaultSortContext, Primitive, ScalarSymbolType};
+    use crate::domains::primitive::registry::FuncSemantics;
+    use crate::domains::relation::{relation_count, RelationExpr};
+
+    #[test]
+    fn literal_operand_does_not_choose_the_subject_or_nested_orientation() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let point = b::lit_int(3);
+        let right_subject = b::lt(point.clone(), x.clone());
+        let left_subject = b::gt(x.clone(), point.clone());
+
+        assert_eq!(
+            binop_subject_key(BinOpKind::Lt, &point, &x, &DefaultSortContext),
+            subject_key(&x, &DefaultSortContext)
+        );
+        assert_eq!(
+            structural_key(&b::not(right_subject), &DefaultSortContext),
+            structural_key(&b::not(left_subject), &DefaultSortContext)
+        );
+        assert_ne!(
+            structural_key(&b::not(b::lt(x, point)), &DefaultSortContext),
+            structural_key(&b::not(b::lit_bool(true)), &DefaultSortContext)
+        );
+    }
+
+    #[test]
+    fn optional_and_relational_predicate_families_accept_both_orientations() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let count = relation_count(RelationExpr::base("offers", "offer"));
+        let nullable = b::heap_ref(-7);
+        assert_eq!(predicate_family_rank(&b::lt(x.clone(), count.clone())), 7);
+        assert_eq!(predicate_family_rank(&b::gt(count, x.clone())), 7);
+        assert_eq!(predicate_family_rank(&b::lt(x, b::lit_int(2))), 5);
+        assert_eq!(predicate_family_rank(&b::eq(b::lit_null(), nullable.clone())), 0);
+        assert_eq!(predicate_family_rank(&b::ne(nullable, b::lit_null())), 0);
+    }
+
+    #[test]
+    fn internal_call_arguments_do_not_displace_the_first_public_subject() {
+        let marker = b::array_lit(vec![]);
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let key = crate::register_func(
+            "test.order.vector_and_threshold",
+            vec![Primitive::Composite, Primitive::Number],
+            Some(Primitive::Boolean),
+            FuncSemantics::pure_function(),
+        );
+        assert_eq!(
+            call_subject_key(key, &[marker, x], &DefaultSortContext),
+            "05|call:test.order.vector_and_threshold|arg:00|x"
+        );
+    }
+
+    #[test]
+    fn acquired_receipt_field_and_bare_scalar_have_distinct_subject_strength() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let receipt = b::sym_e(0, ScalarSymbolType::Integer);
+        let field = b::sym_e_path(1, vec!["score".to_owned()], ScalarSymbolType::Integer);
+
+        assert_eq!(ordered_comparison_view(BinOpKind::Lt, &x, &field, &DefaultSortContext),
+            Some((BinOpKind::Gt, true)));
+        assert_eq!(ordered_comparison_view(BinOpKind::Gt, &field, &x, &DefaultSortContext),
+            Some((BinOpKind::Gt, false)));
+        assert_eq!(ordered_comparison_view(BinOpKind::Lt, &x, &receipt, &DefaultSortContext),
+            Some((BinOpKind::Lt, false)));
+    }
+}

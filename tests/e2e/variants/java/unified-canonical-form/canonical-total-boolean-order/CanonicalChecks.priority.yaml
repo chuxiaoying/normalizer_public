@@ -20,3 +20,7 @@
 - name: explicit-complement-leaves-the-terminal-default-unreachable
   edits:
     - { from: 'return 30;', to: 'if (!c) return 30; return 40;' }
+- name: earlier-matches-do-not-reappear-in-later-disjuncts
+  edits:
+    - { from: 'if (b) return 20;', to: 'if (a || b) return 20;' }
+    - { from: 'if (c) return 10;', to: 'if (a || c) return 10;' }
