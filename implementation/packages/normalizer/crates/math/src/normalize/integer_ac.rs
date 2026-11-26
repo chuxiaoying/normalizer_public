@@ -70,22 +70,20 @@ fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
 }
 
 pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
-    let start = std::time::Instant::now();
-    let (eligible_shape, total) = match expr.kind() {
-        ExprKind::BinOp { op, .. } if matches!(op, B::Add | B::Mul) => (true, total_with_temporals(expr, ctx)),
-        _ => (false, false),
+    let ExprKind::BinOp { op: op @ (B::Add | B::Mul), left, right } = expr.kind() else {
+        return expr.clone();
     };
-    let output = simplify_impl(expr, ctx);
-    let skip_reason = if !eligible_shape {
-        Some("not_add_mul")
-    } else if !total {
+    let start = std::time::Instant::now();
+    let total = total_with_temporals(expr, ctx);
+    let output = simplify_admitted(expr, *op, left, right, total, ctx);
+    let skip_reason = if !total {
         Some("not_total_integer")
     } else if output == *expr {
         Some("no_rewrite")
     } else {
         None
     };
-    if eligible_shape && (total || expr.size() >= 16) {
+    if total || expr.size() >= 16 {
         crate::profile::rule_event(
             "math.integer.ac",
             expr.size(),
@@ -97,22 +95,16 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     output
 }
 
-fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return expr.clone();
-    };
-    let combine: fn(Expr, Expr) -> Expr = match op {
-        B::Add => b::add,
-        B::Mul => b::mul,
-        _ => return expr.clone(),
-    };
-    if !total_with_temporals(expr, ctx) {
+fn simplify_admitted(
+    expr: &Expr, op: B, left: &Expr, right: &Expr, total: bool, ctx: &dyn SortContext,
+) -> Expr {
+    if !total {
         if exact_business_integer(expr, ctx) && crate::canonical_order_compare(left, right, ctx).is_gt() {
-            return b::binop_public(*op, right.clone(), left.clone());
+            return b::binop_public(op, right.clone(), left.clone());
         }
         return expr.clone();
     }
-    if *op == B::Add {
+    if op == B::Add {
         if let Some(offset) = combine_constant_offset(left, right)
             .or_else(|| combine_constant_offset(right, left))
         {
@@ -135,8 +127,8 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         out.push(expr.clone());
     }
     let mut leaves = Vec::new();
-    collect(expr, *op, &mut leaves);
-    let mut constant = if *op == B::Add {
+    collect(expr, op, &mut leaves);
+    let mut constant = if op == B::Add {
         BigInt::zero()
     } else {
         BigInt::one()
@@ -144,7 +136,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     let mut terms = Vec::new();
     for leaf in leaves {
         if let Some(value) = leaf.as_lit().and_then(Lit::as_integer) {
-            if *op == B::Add {
+            if op == B::Add {
                 constant += value;
             } else {
                 constant *= value;
@@ -153,7 +145,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
             terms.push(leaf);
         }
     }
-    let identity = if *op == B::Add {
+    let identity = if op == B::Add {
         constant.is_zero()
     } else {
         constant.is_one()
@@ -163,6 +155,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     }
     // This shared structural comparator is legal only after the proof above.
     terms.sort_by(|left, right| crate::canonical_order_compare(left, right, ctx));
+    let combine: fn(Expr, Expr) -> Expr = if op == B::Add { b::add } else { b::mul };
     terms.into_iter().reduce(combine).unwrap()
 }
 
