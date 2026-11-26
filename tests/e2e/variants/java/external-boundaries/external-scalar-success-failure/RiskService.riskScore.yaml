@@ -49,3 +49,11 @@
   - '[NORM-OUT-OF-SOURCE]'
   - target=RiskClient.fetchScore
   - '[NORM-ENGINE-FAILURE]'
+- name: explicitly-qualified-port-ignores-same-named-scalar-local
+  edits:
+    - from: 'int riskScore(int accountId) {'
+      to: 'int riskScore(int accountId) { int riskClient = accountId + 1;'
+    - from: 'return riskClient.fetchScore(accountId);'
+      to: 'return this.riskClient.fetchScore(riskClient);'
+  expect:
+    - {path: [S, 0, call, args, 0], value: 'accountId + 1'}

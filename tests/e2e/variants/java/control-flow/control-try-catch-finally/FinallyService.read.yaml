@@ -165,3 +165,38 @@
   edits:
   - from: '} finally {'
     to: '} catch (RuntimeException ignored) { return 999; } finally {'
+- name: unmatched-remote-failure-propagates-after-finally-write
+  edits:
+    - from: 'catch (RemoteError ignored)'
+      to: 'catch (IllegalArgumentException ignored)'
+  expect:
+    - {path: [R], value: '$e_0'}
+    - path: [throws]
+      add:
+        - type: RemoteError
+          when: completion.is_throw($e_0, RemoteError)
+
+- name: terminal-finally-throw-replaces-the-pending-remote-failure
+  edits:
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: 'class RemoteError extends RuntimeException {} class TerminalError extends RuntimeException {}'
+    - from: 'catch (RemoteError ignored)'
+      to: 'catch (IllegalArgumentException ignored)'
+    - from: 'attempts = attempts + 1;'
+      to: 'attempts = attempts + 1; throw new TerminalError();'
+  expect:
+    - {path: [R], value: '⊥'}
+    - path: [throws]
+      add:
+        - {type: TerminalError, when: 'true'}
+
+- name: second-finally-write-reads-the-first-write
+  edits:
+    - from: 'attempts = attempts + 1;'
+      to: 'attempts = attempts + 1; attempts = attempts + 2;'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: client.fetch, args: [accountId], returns: number, result: '$e_0'}
+        - write: {target: attempts, value: 'attempts + 1'}
+        - write: {target: attempts, value: 'attempts + 3'}

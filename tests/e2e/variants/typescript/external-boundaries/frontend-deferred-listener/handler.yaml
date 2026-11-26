@@ -259,3 +259,9 @@
   - from: pending = callback
     to: pending = pending
   reject: ['[NORM-TS-MODULE]', 'listener registration must write the entry callback slot from its callback parameter']
+- name: renamed-void-endpoint-keeps-the-same-guard-and-new-port-owner
+  edits:
+    - {from: 'notify(): void', to: 'inform(): void'}
+    - {from: 'notices.notify()', to: 'notices.inform()'}
+  expect:
+    - {path: [S, 1, call, external], value: notices.inform}
