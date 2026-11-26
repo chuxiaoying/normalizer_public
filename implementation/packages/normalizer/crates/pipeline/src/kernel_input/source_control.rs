@@ -116,7 +116,7 @@ impl Engine<'_> {
         need(current.ty() == Ty::Integer, "indexed fold needs a numeric accumulator")?;
         let mut total = current.scalar()?;
         let end = match upper {
-            IntegerOperand::Integer(_) => unreachable!(),
+            IntegerOperand::Integer(n) => b::lit_integer(n.clone()),
             IntegerOperand::Local(name) => {
                 let value = env.get(name).ok_or_else(|| fail("unbound indexed fold upper bound"))?;
                 need(value.ty() == Ty::Integer, "indexed fold upper bound must be numeric")?;

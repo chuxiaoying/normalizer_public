@@ -112,7 +112,7 @@ pub(super) fn publish(
                 } else {
                     return Err(fail(match node {
                         Definition::Fold(_) => "pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold",
-                        Definition::Choice(_) => unreachable!(),
+                        Definition::Choice(_) => "member choice fallback must be a constant or an acquired integer",
                     }));
                 }
             };

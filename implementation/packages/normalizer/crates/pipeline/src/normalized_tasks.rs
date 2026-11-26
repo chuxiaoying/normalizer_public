@@ -17,7 +17,7 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
         } => [cond, then, otherwise]
             .into_iter()
             .all(|node| expression_is_closed(node)),
-        _ => unreachable!(),
+        _ => false,
     }
 }
 
@@ -45,7 +45,7 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
                     tail,
                 )) = steps.split_first()
                 else {
-                    unreachable!();
+                    return Err(fail("entry contains an outstanding task"));
                 };
                 need(
                     name == awaited,
@@ -53,7 +53,7 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
                 )?;
                 steps = tail;
             }
-            _ => unreachable!(),
+            _ => return Err(fail("unclosed operation in settled entry")),
         }
     }
     Ok(())
@@ -108,11 +108,11 @@ impl Engine<'_> {
         )?;
         let task = self.action_value(task, env)?;
         let Ty::Task(ty) = task.ty() else {
-            unreachable!();
+            return Err(fail("task_wait requires task<T>"));
         };
         let handle = task.scalar()?;
         let Some(SymVarOrigin::Temporal { binding_id, .. }) = handle.as_sym_var() else {
-            unreachable!();
+            return Err(fail("task identity is not closed at this operation"));
         };
         let outcome = self.task_outcome(*binding_id)?;
         let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);

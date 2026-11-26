@@ -41,7 +41,8 @@ impl Engine<'_> {
             let ty = match ty {
                 Ty::Integer => "number",
                 Ty::Text => "text",
-                _ => unreachable!(),
+                Ty::Bool => "bool",
+                _ => return Err(fail("unsupported SQL column type")),
             };
             columns.insert(column.clone(), ty.into());
             args.push(value);

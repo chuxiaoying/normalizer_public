@@ -76,7 +76,7 @@ fn source_type(ty: &JavaType) -> Result<String> {
         JavaType::Primitive(t) if t == "boolean" => Ok("bool".into()),
         JavaType::Class(t) if matches!(t.as_str(), "String" | "java.lang.String") => Ok("text".into()),
         JavaType::Class(t) if identifier(t) => Ok(t.clone()),
-        _ => unreachable!(),
+        _ => Err(format!("[NORM-BUSINESS-TYPE] unsupported source type {ty:?}")),
     }
 }
 
@@ -200,7 +200,7 @@ impl EntryContext {
                 let ty = self.state_field(root, fields)?;
                 Ok((format!("{}.{}", self.qualified(kind, root), fields.join(".")), ty))
             }
-            _ => unreachable!(),
+            _ => Err("invalid business source binding".into())
         }
     }
 

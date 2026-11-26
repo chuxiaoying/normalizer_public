@@ -12,14 +12,14 @@ impl Ty {
     pub(crate) fn describe(&self) -> String {
         match self {
             Self::Unit => "unit".into(),
-            Self::Task(_) => unreachable!(),
+            Self::Task(t) => format!("task<{}>", t.describe()),
             Self::Bool => "bool".into(),
             Self::Integer => "number".into(),
-            Self::Decimal => unreachable!(),
+            Self::Decimal => "exact decimal".into(),
             Self::Text => "text?".into(),
             Self::OrderedTextMap => "map<text,text>".into(),
             Self::LocalTextMap => "local nonescaping text map".into(),
-            Self::LocalRelation => unreachable!(),
+            Self::LocalRelation => "local nonescaping relation".into(),
             Self::Ref => "ref?".into(),
             Self::Vector(t) => format!("vector<{}>", t.describe()),
             Self::Record(f) => format!(
@@ -63,7 +63,7 @@ impl Ty {
             | Self::Vector(_)
             | Self::Record(_)
             | Self::OrderedTextMap => Primitive::Composite,
-            _ => unreachable!(),
+            _ => return Err(fail("state values cannot erase source sequence contracts")),
         })
     }
 }
@@ -125,7 +125,7 @@ fn operation(op: &str, args: Vec<Value>, ty: Ty) -> Result<Value> {
 }
 pub(super) fn field(record: Value, name: &str) -> Result<Value> {
     let Ty::Record(fields) = record.ty() else {
-        unreachable!();
+        return Err(fail("field requires immutable record"));
     };
     let ty = fields
         .get(name)

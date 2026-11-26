@@ -19,7 +19,7 @@ pub(crate) fn source_intrinsic(
     match (target, arity) {
         ("NormalizedText.trim", 1) => Some(SourceIntrinsic::Trim),
         ("NormalizedText.defaultIfBlank", 2) => Some(SourceIntrinsic::DefaultIfBlank),
-        _ => unreachable!(),
+        _ => None,
     }
 }
 
@@ -32,7 +32,7 @@ pub fn trim(value: Expr) -> Expr {
             .with_null_behavior(vec![0], Lit::Null)
             .with_evaluator(std::sync::Arc::new(|args| match args {
                 [Lit::Str(s)] => Some(Lit::Str(s.trim_matches(|c: char| c <= '\u{20}').into())),
-                _ => unreachable!(),
+                _ => None,
             }))
             .with_unary_idempotence(),
     );
@@ -48,7 +48,7 @@ pub fn whitespace(unit: u16) -> bool {
 fn evaluate_non_null(args: &[Lit]) -> Option<Lit> {
     match args {
         [Lit::Str(s)] => Some(Lit::Bool(s.encode_utf16().all(whitespace))),
-        _ => unreachable!(),
+        _ => None,
     }
 }
 pub fn is_blank(value: Expr) -> Expr {

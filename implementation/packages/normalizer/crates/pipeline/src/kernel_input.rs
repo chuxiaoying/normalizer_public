@@ -82,7 +82,7 @@ impl Ty {
             "ref?" => Self::Ref,
             "text?" => Self::Text,
             "map<text,text>" => Self::OrderedTextMap,
-            _ => unreachable!(),
+            _ => return Err(fail(format!("unsupported type {s}"))),
         })
     }
 
@@ -148,7 +148,7 @@ impl Value {
     fn scalar(&self) -> Result<Expr> {
         match self {
             Self::Term(_, e) | Self::IntegerFloor { value: e, .. } => Ok(e.clone()),
-            _ => unreachable!(),
+            _ => Err(fail("expected scalar")),
         }
     }
 }
@@ -353,7 +353,7 @@ impl Project {
                 };
                 Ok(Ty::Seq(Box::new(ty)))
             }
-            _ => unreachable!(),
+            _ => Err(fail("unsupported Java type")),
         }
     }
     fn source_owner(&self, ty: &JavaType) -> Option<&str> {
@@ -793,7 +793,7 @@ fn adapter_parameter(t: &JavaType) -> Result<(Ty, String)> {
             .ok_or_else(|| fail("unsupported Java array type"))?;
         return Ok((Ty::Seq(Box::new(ty)), format!("{spelling}[]")));
     }
-    unreachable!()
+    Err(fail("unsupported Java type"))
 }
 // Unlike an external receipt, the declared initial value of an entry-state
 // scalar is available on every path. Keep it a typed math input in a separate
@@ -835,7 +835,7 @@ fn integer_definition_id(expr: &Expr) -> Option<u64> {
 
 fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) -> Result<Value> {
     Ok(match t {
-        Ty::Unit => unreachable!(),
+        Ty::Unit => Value::Term(Ty::Unit, b::lit_null()),
         Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) => Value::Term(
             t.clone(),
             math::domains::composite::apply(
@@ -863,7 +863,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
         Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),
         Ty::Text => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Text)),
         Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
-            unreachable!(),
+            return Err(fail("this value type has no input symbol contract")),
     })
 }
 type Env = BTreeMap<String, Value>;

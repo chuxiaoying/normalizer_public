@@ -40,7 +40,7 @@ impl SourceObjects {
 
     pub(super) fn borrowed_parameter(&self, reference: &Expr) -> Option<(&str, &str)> {
         let (owner, Origin::Parameter { path, .. }) = self.objects.get(&reference.as_heap_ref()?)? else {
-            unreachable!();
+            return None;
         };
         Some((owner, path))
     }
@@ -192,7 +192,7 @@ impl Engine<'_> {
             let default = match self.project.parameter_type(field.java_type())? {
                 Ty::Integer => b::lit_int(0),
                 Ty::Ref | Ty::Text => b::lit_null(),
-                _ => unreachable!(),
+                _ => return Err(fail("unsupported source field initializer")),
             };
             self.realtime_store
                 .store_guarded(path.clone(), r.clone(), field.name(), default);
@@ -449,7 +449,9 @@ impl Engine<'_> {
                 }
                 Ok(())
             }
-            _ => unreachable!(),
+            _ => Err(fail(
+                "borrowed identity comparison requires an alias contract",
+            )),
         }
     }
 
@@ -458,7 +460,7 @@ impl Engine<'_> {
     ) -> Result<()> {
         let Some(id) = root.as_heap_ref() else { return Ok(()); };
         let Some((owner, Origin::Allocation)) = self.source_objects.objects.get(&id)
-            else { unreachable!() };
+            else { return Ok(()); };
         if completed.contains(&id) { return Ok(()); }
         if !active.insert(id) {
             return Err(format!("[NORM-CYCLIC-CONTENT-EXIT] kind=ABORT location={} problem=cyclic content at the return boundary",
@@ -519,6 +521,8 @@ fn scalar_origin_type(ty: &Ty) -> Result<ScalarSymbolType> {
         Ty::Integer => Ok(ScalarSymbolType::Integer),
         Ty::Bool => Ok(ScalarSymbolType::Boolean),
         Ty::Text => Ok(ScalarSymbolType::Text),
-        _ => unreachable!(),
+        _ => Err(fail(
+            "source scalar origin requires a declared scalar field",
+        )),
     }
 }

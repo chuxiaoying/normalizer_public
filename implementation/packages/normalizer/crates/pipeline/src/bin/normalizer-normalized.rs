@@ -22,7 +22,7 @@ fn run() -> Result<(), String> {
             let loaded = pipeline::kernel_input::Loaded::from_parsed_source(program, entry)?;
             print!("{}", loaded.source_pers(path, entry)?);
         }
-        _ => unreachable!(),
+        _ => return Err("invalid kernel invocation; use implementation/tools/normalizer help".into()),
     }
     Ok(())
 }

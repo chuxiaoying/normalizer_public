@@ -353,7 +353,7 @@ fn parse_query_tail(
         (Kind::First, Yield::Value(Scalar::Path(path)))
             if path.as_slice() == std::slice::from_ref(&alias) => RowOperation::FirstRow,
         // No input types or acquired values can make this pair legal.
-        _ => unreachable!(),
+        _ => return Err("incompatible query operation and projection".into()),
     };
     Ok(Query { binding, accumulate, source, alias, clauses, operation: Operation::OnRows(operation) })
 }

@@ -191,7 +191,9 @@ impl Project {
                 match p.argument_observation.as_str() {
                     "immutable_value" =>
                         need(ty.port_value(), "immutable port values cannot contain object references or source sequences"),
-                    _ => unreachable!(),
+                    "reference_value" =>
+                        need(ty.state_value(), "reference port values require closed state types; source sequences must be explicit heap fields"),
+                    _ => Err(fail("unsupported port observation contract")),
                 }
             };
             let returns = p.returns.resolve()?;
@@ -368,7 +370,8 @@ impl Engine<'_> {
         let ty = match domain {
             "bool" => Ty::Bool,
             "number" => Ty::Integer,
-            _ => unreachable!(),
+            "text" => Ty::Text,
+            _ => return Err(fail(format!("unsupported host input type: {domain}"))),
         };
         // P represents the entry snapshot, not a fresh host observation.
         // Reading it again aliases the same symbol even after an await.
@@ -409,7 +412,8 @@ impl Engine<'_> {
                     let expected = match domain {
                         "number" => Ty::Integer,
                         "bool" => Ty::Bool,
-                        _ => unreachable!(),
+                        "text" => Ty::Text,
+                        _ => return Err(fail("unsupported state field type")),
                     };
                     let value = self.action_value(value, env)?;
                     need(value.ty() == expected, "incompatible state write value")?;

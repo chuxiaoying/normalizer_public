@@ -24,7 +24,9 @@ fn collect_java_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), Pipeli
 }
 
 pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError> {
-    let scope = fs::canonicalize(root).unwrap();
+    let scope = fs::canonicalize(root).map_err(|error| PipelineError::Io(
+        format!("[SOURCE-WALK-FAILED] {}: {error}", root.display()),
+    ))?;
     let mut paths = Vec::new();
     collect_java_paths(root, &mut paths)?;
     if paths.is_empty() {

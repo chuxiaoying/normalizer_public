@@ -170,7 +170,7 @@ impl Engine<'_> {
                         b::lit_int(x)
                     }
                     (Ty::Text, serde_json::Value::String(v)) => b::lit_str(v),
-                    _ => unreachable!(),
+                    _ => return Err(fail("invalid constant")),
                 };
                 Ok(Value::Term(t, e))
             }
@@ -246,7 +246,7 @@ impl Engine<'_> {
             }
             J::FieldAccess { target, field } => {
                 let JavaType::Class(owner) = self.source_declared_type(target, id)? else {
-                    unreachable!();
+                    return Err(fail("scalar has no fields"));
                 };
                 return self
                     .program
@@ -258,7 +258,9 @@ impl Engine<'_> {
             _ => {}
         }
         let J::Ident(name) = expression else {
-            unreachable!();
+            return Err(fail(
+                "source field receiver must be a declared local or parameter",
+            ));
         };
         let method = self.methods[id].syntax;
         if let Some((ty, _)) = method.params().iter().find(|(_, n)| n == name) {
@@ -397,7 +399,7 @@ impl Engine<'_> {
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Relation(q))) => &q.binding==name && !q.accumulate,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Decimal(decimal))) =>
                             &decimal.binding == name && crate::normalized::exact_decimal_type(java_type),
-                        _ => unreachable!(),
+                        _=>false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
                 }
@@ -412,7 +414,7 @@ impl Engine<'_> {
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapPut { binding, key, value }) => {
                     let value = super::source_map::text_operand(value, env)?;
                     let Some(Value::LocalTextMap(map)) = env.get_mut(binding) else {
-                        unreachable!();
+                        return Err(fail("local map update requires its fresh map binding"));
                     };
                     map.put(key.clone(), value);
                 }
@@ -425,7 +427,7 @@ impl Engine<'_> {
                         "local map text result must declare a nullable return")?;
                     let fallback = super::source_map::text_operand(fallback, env)?;
                     let Some(Value::LocalTextMap(map)) = env.get(source) else {
-                        unreachable!();
+                        return Err(fail("local map read requires its fresh map binding"));
                     };
                     env.insert(binding.clone(), Value::Term(Ty::Text, map.get_or(key, fallback)));
                 }
@@ -544,7 +546,7 @@ impl Engine<'_> {
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
                     let java_type = preceding_uninitialized(body, i, binding)
-                        .unwrap();
+                        .ok_or_else(|| fail("member choice must follow its uninitialized local declaration"))?;
                     self.choose_source_member(binding, members, empty, java_type, id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after }) => {
@@ -567,7 +569,7 @@ impl Engine<'_> {
                     let sum = self.source_array_sum(array, prior.scalar()?, offset, path)?;
                     env.insert(total.into(), sum);
                 }
-                _ => unreachable!(),
+                _ => return Err(fail("unsupported Java statement in pure-array-1")),
             }
         }
         Ok(())
@@ -595,12 +597,12 @@ impl Engine<'_> {
             let text = |value: Expr| match value.as_lit() {
                 Some(math::Lit::Str(_)) => Some(value),
                 Some(math::Lit::Null) => Some(b::lit_str("null")),
-                _ => unreachable!(),
+                _ => None,
             };
             if let (Some(left), Some(right)) = (text(left), text(right)) {
                 return Ok(Value::Term(Ty::Text, math::normalize(b::add(left, right))));
             }
-            unreachable!();
+            return Err(fail("text concatenation requires concrete text or null operands"));
         }
         if left.ty() == Ty::Decimal || right.ty() == Ty::Decimal {
             need(matches!(left.ty(), Ty::Integer | Ty::Decimal)
@@ -767,7 +769,7 @@ impl Engine<'_> {
                     self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
                     self.read_or_bind_source_field(&reference, field, &path)
                 } else {
-                    unreachable!()
+                    Err(fail("field read requires a closed source object"))
                 }
             }
             J::MethodCall {
@@ -1003,7 +1005,7 @@ impl Engine<'_> {
                     } else {
                         match v {
                             Value::Term(Ty::Ref | Ty::Text, e) => b::eq(e, b::lit_null()),
-                            _ => unreachable!(),
+                            _ => return Err(fail("null comparison type")),
                         }
                     };
                     return Ok(Value::Term(
@@ -1045,7 +1047,7 @@ impl Engine<'_> {
                     b::binop_public(op, a, z),
                 ))
             }
-            _ => unreachable!(),
+            _ => Err(fail("unsupported Java expression in pure-array-1")),
         }
     }
 }
@@ -1129,7 +1131,7 @@ impl Engine<'_> {
     }
     fn acquired_integer_receipt(&self, value: &Expr, path: &Expr) -> bool {
         let Some(SymVarOrigin::External { binding_id, path: fields, primitive_type }) = value.as_sym_var() else {
-            unreachable!();
+            return false;
         };
         if primitive_type != "integer" || !fields.is_empty() { return false; }
         self.realtime_effects.events().iter().any(|event| {

@@ -79,10 +79,12 @@ impl Engine<'_> {
 
     fn query_row_declaration(&self, decl: &JavaType) -> Result<&simulator_parser::JavaClass> {
         let JavaType::Generic(container, args) = decl else {
-            unreachable!();
+            return Err(fail(format!(
+                "query output requires List<Row>, found {decl:?}"
+            )));
         };
         let [JavaType::Class(name)] = args.as_slice() else {
-            unreachable!();
+            return Err(fail("missing declared query row type"));
         };
         need(
             matches!(container.as_str(), "List" | "java.util.List"),
@@ -102,7 +104,7 @@ impl Engine<'_> {
         let row = self.query_row_declaration(decl)?;
         let types = self.query_row_types(row)?;
         let Operation::OnRows(RowOperation::Project(fields)) = &query.operation else {
-            unreachable!();
+            return Err(fail("table rows require a record projection"));
         };
         let nullable_fields: std::collections::BTreeSet<_> = row.fields().iter()
             .filter(|field| crate::normalized::nullable_text_field(row, field))
@@ -124,10 +126,10 @@ impl Engine<'_> {
         for (name, expr) in fields {
             if nullable_fields.contains(name.as_str()) {
                 let Scalar::Path(path) = expr else {
-                    unreachable!();
+                    return Err(fail("nullable table field requires a direct column"));
                 };
                 let [alias, column] = path.as_slice() else {
-                    unreachable!();
+                    return Err(fail("nullable table field requires a qualified column"));
                 };
                 need(alias == &query.alias, "unbound nullable table column alias")?;
                 nullable_columns.insert(column.clone());
@@ -164,7 +166,8 @@ impl Engine<'_> {
                 Ty::Integer => "number",
                 Ty::Text if nullable_columns.contains(name) => "text?",
                 Ty::Text => "text",
-                _ => unreachable!(),
+                Ty::Bool => "bool",
+                _ => return Err(fail("unsupported table column type")),
             };
             table.insert(name.clone(), business_type.into());
         }
@@ -221,7 +224,7 @@ impl Engine<'_> {
             }
             Scalar::NullPredicate { value, negated } => {
                 let Scalar::Path(parts) = value.as_ref() else {
-                    unreachable!();
+                    return Err(fail("SQL NULL predicate requires a declared column"));
                 };
                 need(matches!(parts.as_slice(), [owner, column] if owner == alias && fields.contains_key(column)),
                     "SQL NULL predicate requires a bound row column")?;
@@ -239,7 +242,7 @@ impl Engine<'_> {
                     Op::Sub => b::sub,
                     Op::Mul => b::mul,
                     Op::Eq => b::eq,
-                    Op::Ne => unreachable!(),
+                    Op::Ne => b::ne,
                     Op::Lt => b::lt,
                     Op::Le => b::le,
                     Op::Gt => b::gt,
@@ -264,10 +267,10 @@ impl Engine<'_> {
     ) -> Result<()> {
         let branches = sources.iter().map(|(source, field)| {
             let Some(Value::Rows(rows)) = env.get(source) else {
-                unreachable!();
+                return Err(fail("projected union needs a declared table row source"));
             };
             let RelationExpr::Base {name, alias} = &rows.input else {
-                unreachable!();
+                return Err(fail("projected union needs direct table rows without filters"));
             };
             need(rows.ordering.is_empty() && self.source_relations.tables.contains_key(name),
                 "projected union requires an unordered read-only table")?;
@@ -301,7 +304,7 @@ impl Engine<'_> {
         if let Operation::OnRows(RowOperation::EagerPath(parts)) = &query.operation {
             if matches!(decl, Some(JavaType::Array(item)) if crate::normalized::integral(item)) {
                 let [alias, link, leaf] = parts.as_slice() else {
-                    unreachable!();
+                    return Err(fail("eager record projection requires one nullable member hop"));
                 };
                 need(alias == &query.alias && query.clauses.is_empty(),
                     "eager record projection requires an unfiltered source-order path")?;
@@ -347,7 +350,7 @@ impl Engine<'_> {
             }
             Operation::NestedSum { alias, clauses, value } => {
                 let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
-                    unreachable!();
+                    return Err(fail("nested sum requires a directly bound two-dimensional array"));
                 };
                 need(**element == Ty::Integer,
                     "nested sum requires exact integer elements")?;
@@ -369,7 +372,7 @@ impl Engine<'_> {
                 inner_locals.remove(&query.alias);
                 for clause in clauses {
                     let Clause::Where(p) = clause else {
-                        unreachable!();
+                        return Err(fail("nested sum supports scalar filters only"));
                     };
                     let predicate = self.query_value(p, alias, &row, &inner_locals, guard)?;
                     need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
@@ -393,10 +396,10 @@ impl Engine<'_> {
                 let mut bind = |source: &str, alias: &str| -> Result<RelationExpr> {
                     need(!env.contains_key(alias), "join alias would shadow a local value")?;
                     let Some(Value::Rows(rows)) = env.get(source) else {
-                        unreachable!();
+                        return Err(fail("join requires two typed table bindings"));
                     };
                     let RelationExpr::Base { name, alias: bound } = &rows.input else {
-                        unreachable!();
+                        return Err(fail("join count currently requires unfiltered table declarations"));
                     };
                     need(name == bound && self.source_relations.tables.contains_key(name),
                         "join count requires a declared table")?;
@@ -460,10 +463,10 @@ impl Engine<'_> {
             }
             Some(vector) => {
                 let Ty::Vector(item) = vector.ty() else {
-                    unreachable!();
+                    return Err(fail("expected a row vector"));
                 };
                 let Ty::Record(fields) = *item else {
-                    unreachable!();
+                    return Err(fail("row vector element requires named fields"));
                 };
                 let fields = fields
                     .into_iter()
@@ -486,7 +489,7 @@ impl Engine<'_> {
                 decl.ok_or_else(|| fail("table query needs a row declaration"))?,
                 env,
             )?,
-            _ => unreachable!(),
+            _ => return Err(fail("aggregate source is not bound")),
         };
         for clause in &query.clauses {
             match clause {
@@ -616,7 +619,8 @@ impl Engine<'_> {
                 fn has_accumulator(term: &Scalar, accumulator: &str) -> bool {
                     match term {
                         Scalar::Path(parts) => parts.first().is_some_and(|name| name == accumulator),
-                        Scalar::Binary(..) | Scalar::NullPredicate { .. } => unreachable!(),
+                        Scalar::Binary(_, l, r) => has_accumulator(l, accumulator) || has_accumulator(r, accumulator),
+                        Scalar::NullPredicate { value, .. } => has_accumulator(value, accumulator),
                         Scalar::Integer(_) | Scalar::Text(_) | Scalar::Bool(_) => false,
                     }
                 }
@@ -634,7 +638,7 @@ impl Engine<'_> {
                     }
                     _ => {
                         let RelationExpr::Base { name, .. } = &rows.input else {
-                            unreachable!();
+                            return Err(fail("pure fold requires a direct ordered source array"));
                         };
                         need(rows.ordering.is_empty(), "pure fold must preserve source array order")?;
                         self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard)?
@@ -660,7 +664,7 @@ impl Engine<'_> {
                 let first_key = keys.next().ok_or_else(|| fail("first requires an ordered input"))?;
                 if let Some(declared) = decl {
                     let JavaType::Class(target) = declared else {
-                        unreachable!();
+                        return Err(fail("first requires a declared row type"));
                     };
                     let class = self
                         .program
@@ -690,7 +694,7 @@ impl Engine<'_> {
                 return Ok(());
             }
             RowOperation::EagerPath(_) | RowOperation::Count { distinct: true } =>
-                unreachable!(),
+                return Err(fail("incompatible query operation and projection")),
         };
         if let Some(declared) = decl {
             need(
@@ -821,7 +825,7 @@ pub(super) fn correlated_array_relation(relation: &RelationExpr) -> Option<(&str
     while let RelationExpr::Select { input, .. } = base { base = input; }
     match base {
         RelationExpr::Vector { value, alias } => Some((value.as_row_value()?, alias)),
-        _ => unreachable!(),
+        _ => None,
     }
 }
 

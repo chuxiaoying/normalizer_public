@@ -51,7 +51,7 @@ impl Engine<'_> {
                             let flag = match items.get(*index) {
                                 None | Some(Slot::Undefined) => false,
                                 Some(Slot::Record { fields }) => fields.get(field).copied().unwrap_or(false),
-                                _ => unreachable!(),
+                                _ => return Err(fail("optional tuple receiver is not a record")),
                             };
                             (name, Value::Term(Ty::Bool, b::lit_bool(flag)))
                         }
