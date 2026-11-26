@@ -678,3 +678,62 @@ fn select_first_default(expr: &Expr) -> Option<Expr> {
     }
     None
 }
+
+#[cfg(test)]
+mod first_match_domain_tests {
+    use super::*;
+    use crate::builder as b;
+
+    fn flag(name: &str) -> Expr {
+        b::param(name, crate::ScalarSymbolType::Boolean)
+    }
+
+    #[test]
+    fn partial_case_does_not_gain_a_normal_completion() {
+        let p = flag("p");
+        let partial = b::normal_return_case_when(vec![], (p, b::lit_int(7)));
+        let never = b::normal_return_case_when(vec![], (b::lit_bool(false), b::lit_int(9)));
+
+        for input in [partial, never] {
+            assert_eq!(simplify(&input, &crate::DefaultSortContext), input);
+            assert!(input.as_total_case_when().is_none());
+        }
+    }
+
+    #[test]
+    fn previous_guard_is_removed_only_inside_the_later_first_match_domain() {
+        let p = flag("p");
+        let q = flag("q");
+        let branches = [
+            (p.clone(), b::lit_int(10)),
+            (b::or(p.clone(), q.clone()), b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ];
+        let (rewritten, changed) = strip_prev_disjuncts_from_or_guards(&branches);
+        assert!(changed);
+        assert_eq!(rewritten, vec![
+            (p, b::lit_int(10)),
+            (q, b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ]);
+    }
+
+    #[test]
+    fn merging_reachable_payloads_keeps_total_fallback_even_when_masked() {
+        let p = flag("p");
+        let q = flag("q");
+        let branches = [
+            (b::and(p.clone(), q.clone()), b::lit_int(10)),
+            (b::and(p.clone(), b::not(q)), b::lit_int(10)),
+            (b::not(p.clone()), b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ];
+        let (grouped, changed) = group_same_value_effective_domains(&branches);
+        assert!(changed);
+        assert_eq!(grouped, vec![
+            (p.clone(), b::lit_int(10)),
+            (b::not(p), b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ]);
+    }
+}
