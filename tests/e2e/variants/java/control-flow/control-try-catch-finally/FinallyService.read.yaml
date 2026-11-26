@@ -200,3 +200,11 @@
         - call: {external: client.fetch, args: [accountId], returns: number, result: '$e_0'}
         - write: {target: attempts, value: 'attempts + 1'}
         - write: {target: attempts, value: 'attempts + 3'}
+
+- name: payload-bearing-terminal-finally-is-outside-the-published-subset
+  edits:
+    - from: 'attempts = attempts + 1;'
+      to: 'attempts = attempts + 1; throw new RuntimeException("message");'
+  reject:
+    - '[NORM-PROJECT]'
+    - 'finally throw requires a source-declared type-only exception'
