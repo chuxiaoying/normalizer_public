@@ -1,6 +1,7 @@
 // Shared module front end for a typed, nonescaping tuple and its observations.
 // The emitted plan keeps source branches and literal slots; the kernel executes it.
 import ts from 'typescript';
+import { unwrapParens as unwrap } from './ir.mjs';
 import {checkedTypeScript, failTypedModule, typedBooleanParameters, typedIdentifier} from './typed-module.mjs';
 
 const n = (op, fields) => ({op, ...fields});
@@ -9,10 +10,6 @@ const literal = (type, value) => n('const', {type, value});
 const choose = (cond, then, otherwise) => n('if', {cond, then, else: otherwise});
 const has = (node, kind) => node.modifiers?.some(m => m.kind === kind);
 const fail = failTypedModule;
-const unwrap = node => {
-  while (ts.isParenthesizedExpression(node)) node = node.expression;
-  return node;
-};
 const uid = typedIdentifier;
 
 export function compileTypedTuple(physicalPath, sf, fn) {

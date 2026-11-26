@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { lowerExpression } from './ir.mjs';
+import { lowerExpression, unwrapParens as unwrap } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { typedModuleAst } from './typed-module.mjs';
@@ -65,13 +65,9 @@ function leadingParameterCall(fn) {
       && !(ts.isExpressionStatement(statement) && i === 0)) return null;
   }
   const declaration = ts.isVariableStatement(first) ? first.declarationList.declarations[0] : null;
-  const top = declaration && ts.isIdentifier(declaration.name) ? declaration.initializer
+  const top = declaration ? declaration.initializer
     : ts.isReturnStatement(first) || ts.isExpressionStatement(first) ? first.expression : null;
   if (!top) return null;
-  const unwrap = node => {
-    while (ts.isParenthesizedExpression(node)) node = node.expression;
-    return node;
-  };
   const expression = unwrap(top);
   const awaited = ts.isAwaitExpression(expression);
   const call = awaited ? unwrap(expression.expression) : expression;
@@ -84,10 +80,6 @@ function leadingParameterCall(fn) {
 }
 
 function mapEntries(node, names) {
-  function unwrap(value) {
-    while (ts.isParenthesizedExpression(value)) value = value.expression;
-    return value;
-  }
   node = unwrap(node);
   if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression)
       || node.expression.text !== 'Map' || node.arguments?.length !== 1) {

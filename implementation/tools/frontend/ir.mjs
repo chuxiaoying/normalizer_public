@@ -9,6 +9,11 @@ const BINARY = new Map([
   [ts.SyntaxKind.EqualsEqualsEqualsToken, '==='],
 ]);
 
+export function unwrapParens(node) {
+  while (ts.isParenthesizedExpression(node)) node = node.expression;
+  return node;
+}
+
 function pathOf(node, sf) {
   if (ts.isIdentifier(node)) return node.text;
   if (node.kind === ts.SyntaxKind.ThisKeyword) return 'this';
@@ -26,7 +31,7 @@ function pathOf(node, sf) {
 // Callers require an expression. Array holes remain explicit
 // OmittedExpression nodes rather than fabricated value expressions.
 function expr(node, sf) {
-  if (ts.isParenthesizedExpression(node)) return expr(node.expression, sf);
+  node = unwrapParens(node);
   // These are compile-time annotations, not runtime wrappers. Keeping them
   // opaque would hide calls underneath `await nativeRpc(...) as Reply`.
   if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) return expr(node.expression, sf);
