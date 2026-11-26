@@ -36,6 +36,25 @@ impl<'de> Deserialize<'de> for SettledSteps {
     }
 }
 
+/// Sync scopes never consume a task. Their nested catch arms belong to
+/// the same scope; a nested action expression is admitted independently.
+pub(super) fn read_sync_steps<'de, D: serde::Deserializer<'de>>(
+    reader: D,
+) -> std::result::Result<Vec<Action>, D::Error> {
+    fn has_wait(steps: &[Action]) -> bool {
+        steps.iter().any(|action| match action {
+            Action::TaskWait { .. } => true,
+            Action::Catch { body, handler, .. } => has_wait(body) || has_wait(handler),
+            _ => false,
+        })
+    }
+    let steps = Vec::<Action>::deserialize(reader)?;
+    if has_wait(&steps) {
+        return Err(serde::de::Error::custom("task_wait requires an async function body"));
+    }
+    Ok(steps)
+}
+
 fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
     while let Some((action, tail)) = steps.split_first() {
         steps = tail;
@@ -116,10 +135,6 @@ impl Engine<'_> {
     }
 
     pub(super) fn task_wait(&mut self, name: &str, task: &Node, env: &mut Env) -> Result<()> {
-        need(
-            self.action_can_await,
-            "task_wait requires an async function body",
-        )?;
         let task = self.action_value(task, env)?;
         let Ty::Task(ty) = task.ty() else {
             return Err(fail("task_wait requires task<T>"));

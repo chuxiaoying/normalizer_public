@@ -131,9 +131,10 @@ export function compileTypedListener(physicalPath, sf, fn) {
     fail('listener dispatch condition must be a closed Boolean');
   }
   for (const st of dispatches) {
-    const guarded = ts.isIfStatement(st) && !st.elseStatement;
-    const condition = guarded ? gate(st.expression) : null;
-    for (const _ of guarded ? blockStatements(st.thenStatement) : [st]) executeCallback(condition);
+    if (!ts.isIfStatement(st) || st.elseStatement)
+      fail('listener dispatch requires a single guarded branch');
+    const condition = gate(st.expression);
+    for (const _ of blockStatements(st.thenStatement)) executeCallback(condition);
   }
   steps.push({op: 'return', value: value('unit', null)});
   return {params, excerpt: fn.getText(sf), ports, externalResults,

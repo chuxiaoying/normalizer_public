@@ -295,6 +295,7 @@ enum Node {
     Action {
         #[serde(deserialize_with = "read_action_return")]
         returns: Ty,
+        #[serde(deserialize_with = "tasks::read_sync_steps")]
         steps: Vec<actions::Action>,
     },
     Add {
@@ -384,8 +385,8 @@ impl Project {
                     JavaType::Array(element) if self.direct_source && crate::normalized::integral(element) =>
                         Ty::Seq(Box::new(Ty::Integer)),
                     _ if self.direct_source && self.source_owner(item).is_some() => Ty::Ref,
-                    _ => java_carrier_array_component(item).map(|(ty, _)| ty)
-                        .ok_or_else(|| fail("unsupported Java array type"))?,
+                    _ if adapter_integer_component(item).is_some() => Ty::Integer,
+                    _ => return Err(fail("unsupported Java array type")),
                 };
                 Ok(Ty::Seq(Box::new(ty)))
             }
@@ -564,7 +565,6 @@ impl Loaded {
             methods: BTreeMap::new(),
             active: BTreeSet::new(),
             steps: 0,
-            action_can_await: false,
             selected_entry: None,
             entry_context: None,
             state_roots: BTreeMap::new(),
@@ -808,11 +808,10 @@ fn java_carrier_atom(t: &JavaType) -> Option<(Ty, &str)> {
     }
 }
 
-fn java_carrier_array_component(t: &JavaType) -> Option<(Ty, &str)> {
+fn adapter_integer_component(t: &JavaType) -> Option<&str> {
     match t {
         // The adapter's exact semantic override still supplies vector<number>.
-        JavaType::Primitive(name) if matches!(name.as_str(), "int" | "long") => Some((Ty::Integer, name)),
-        JavaType::Class(name) if name == "String" => Some((Ty::Text, name)),
+        JavaType::Primitive(name) if matches!(name.as_str(), "int" | "long") => Some(name),
         _ => None,
     }
 }
@@ -822,9 +821,9 @@ fn adapter_parameter(t: &JavaType) -> Result<(Ty, String)> {
         return Ok((ty, spelling.to_owned()));
     }
     if let JavaType::Array(item) = t {
-        let (ty, spelling) = java_carrier_array_component(item)
+        let spelling = adapter_integer_component(item)
             .ok_or_else(|| fail("unsupported Java array type"))?;
-        return Ok((Ty::Seq(Box::new(ty)), format!("{spelling}[]")));
+        return Ok((Ty::Seq(Box::new(Ty::Integer)), format!("{spelling}[]")));
     }
     Err(fail("unsupported Java type"))
 }

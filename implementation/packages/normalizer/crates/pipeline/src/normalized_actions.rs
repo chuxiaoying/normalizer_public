@@ -281,12 +281,8 @@ impl Engine<'_> {
         let parent_completion = std::mem::replace(
             &mut self.realtime_completion, realtime_state::Completion::Continue,
         );
-        // A normal helper scope does not become async merely because its
-        // caller is async. A settled entry observes its own async completion.
-        let caller_can_await = std::mem::replace(&mut self.action_can_await, settled);
         let caller_action_path = std::mem::replace(&mut self.action_path, path);
         let executed = self.action_steps(steps, &mut env.clone(), returns);
-        self.action_can_await = caller_can_await;
         self.action_path = caller_action_path;
         executed?;
         let local_completion = self.realtime_completion.clone();

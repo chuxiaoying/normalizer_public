@@ -197,16 +197,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
             }
         }
 
-        // 2a. 在 first-match 有效域下投影布尔 branch value：
-        //     CASE WHEN C THEN C WHEN true THEN X END -> CASE WHEN C THEN true WHEN true THEN X END
-        //
-        // 语义依据：CaseWhen branch[k] 被选中时，所有前序分支已失败且当前 cond 为真。
-        // 若该有效域蕴含 value 为 true/false，则 value 可投影为对应布尔常量。
-        // 这是控制域内的数学化简，不是 formatter/expected shape 特判。
-        let (projected_values, projected_values_changed) =
-            project_values_under_effective_domains(&filtered);
-        let filtered = projected_values;
-
         // 3. 如果唯一分支是 (true, v)，退化为 v
         if filtered.len() == 1 {
             if let ExprKind::Lit(Lit::Bool(true)) = filtered[0].0.kind() {
@@ -255,7 +245,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
             || same_value_grouped_changed
             || covered_changed
             || canonicalized_changed
-            || projected_values_changed
             || filtered.len() != branches_ref.len()
             || filtered.len() != domain_simplified.len()
             || filtered.len() != same_value_grouped.len()
@@ -358,57 +347,6 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
         return None;
     }
     Some(Expr::new(ExprKind::CaseWhen { branches: out }))
-}
-
-fn project_values_under_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
-    let domains = first_match_effective_domains(branches);
-    let mut changed = false;
-    let mut out = Vec::with_capacity(branches.len());
-    for ((cond, value), effective) in branches.iter().zip(&domains) {
-        let projected = project_value_under_domain(value, effective);
-        changed |= projected != *value;
-        // Availability of a row in the selected value does not prove its guard
-        // before this branch is taken. Keep the guard and its acquisition domain.
-        out.push((cond.clone(), projected));
-    }
-    (out, changed)
-}
-
-fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
-    if domain.as_bool() == Some(true) || super::boolean_casewhen::is_boolean_expr(value) {
-        return value.clone();
-    }
-
-    // Guard-equality value substitution:
-    // If domain AND-conjuncts contain `value == literal` (or `literal == value`),
-    // the value is provably equal to that literal under this domain.
-    // Example: WHEN ... && $t_1 == 0 THEN $t_1  →  THEN 0
-    if value.as_lit().is_none() {
-        let conjuncts = flatten_and(domain);
-        for conj in &conjuncts {
-            if let ExprKind::BinOp {
-                op: BinOpKind::Eq,
-                left,
-                right,
-            } = conj.kind()
-            {
-                let replacement = if left == value {
-                    right
-                } else if right == value {
-                    left
-                } else {
-                    continue;
-                };
-                if replacement.as_lit().is_some() {
-                    return replacement.clone();
-                }
-            }
-        }
-    }
-
-    // Preserve nested CASE and relation payloads: their local acquisition
-    // domains belong to those expressions, not to the enclosing branch.
-    value.clone()
 }
 
 fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {

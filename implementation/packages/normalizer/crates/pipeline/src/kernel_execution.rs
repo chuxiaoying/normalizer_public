@@ -40,7 +40,6 @@ pub(super) struct Engine<'a> {
     pub(super) methods: BTreeMap<String, AdmittedMethod<'a>>,
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
-    pub(super) action_can_await: bool,
     pub(super) selected_entry: Option<&'a str>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
