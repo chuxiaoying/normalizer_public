@@ -4,45 +4,22 @@
 
 关系代数让这两半用同一套数学表达。筛选就是留下符合条件的行，投影就是挑出字段或为每行计算一个值，连接就是按条件配对，聚合就是把多行算成一个结果。写在 SQL 里，还是写成 Java 的循环或集合调用，不决定它能不能参与化简。只要作用相同、需要观察的行为也相同，就可以用同一种操作表示。
 
-## 一、把 SQL 和循环放进同一个算式
+## 一、把扩展语义注入源码，不另造一份程序
+
+给 SQL 和循环用同一种关系表达，不意味着要给 Java 或 TypeScript 新加关键字。**宿主语言照常写，扩展语义走它们已有的注解和注释。** 这份分析源码既能保留类、函数、声明和控制流，又能让 Normalizer 在原位读到宿主语法没表达出来的业务操作。
+
+| 写在哪里 | 交付什么 |
+| --- | --- |
+| 声明上的注解 | 标明对象的身份。例如 Java 的 `@EntryState` / 前端的 `@entryState` 标的是已有状态；Java 的 `@External` / 前端的 `@external` 标的是真实外部端口。前端 `@componentProp` 标明提取的函数对应哪个组件属性。不因为加了标记就执行一次读写或调用。 |
+| 原语句位置的 `/* @normalizer-ir … */` | 注入一条可执行的扩展指令。块里写的是受约束的伪代码：比如 `total += sum from rows as row yield row.amount`。块外仍是 Java 或 TypeScript；块内不是给人看的随笔，是 Normalizer 要解析的语法。 |
+
+**「无伤」是指不破坏宿主源码的语法、结构和原业务的观察行为，不是说改写后的分析源码还能当生产源码替换上线。** 比如用指令给局部变量赋值，普通 JVM 或 JS 运行时并不会执行注释；运行时真的要执行的是未改写的生产源码。在分析副本里，删去被替代的那段原语句，不能原语句和注入指令两头都执行，也不能补一个默认值让宿主编译器看起来满意。
+
+解析时，语言适配器保留注解、注释的位置和原生变量绑定；共享语法解析块内指令，解析后的类型化操作和原生语句一起进入统一 IR。**放在分支里，就只随那条分支执行；放在调用后，就读取调用之后取得的值。** 目标、列、行别名、类型或完成合同对不上，应指出这处缺口，不把指令静默当注释，也不生成 PERS。普通中文注释仍只是说明，不能替代正式指令。
+
+## 二、把 SQL 和循环放进同一个算式
 
 以下例子只读一次账单表。金额是非空的精确整数，逐行读取没有副作用，数据库故障不在这个例子的观察范围。原程序按账户和 `OPEN` 状态取账单，再按正金额筛选；每笔金额还先加上 `extra`，又减掉同一个 `extra`。
-
-```java
-import java.util.List;
-import org.apache.ibatis.annotations.Select;
-
-class ArrearsService {
-    private final BillMapper mapper;
-
-    ArrearsService(BillMapper mapper) {
-        this.mapper = mapper;
-    }
-
-    int positiveTotal(int accountId, int extra) {
-        int total = 0;
-        for (BillRow row : mapper.openBills(accountId)) {
-            if (row.amount > 0) {
-                total += (row.amount + extra) - extra;
-            }
-        }
-        return total;
-    }
-}
-
-interface BillMapper {
-    @Select("""
-        SELECT amount
-        FROM bill
-        WHERE account_id = #{accountId} AND status = 'OPEN'
-        """)
-    List<BillRow> openBills(int accountId);
-}
-
-class BillRow {
-    int amount;
-}
-```
 
 预处理做两件事：在查询的位置写明**从哪张表取哪些行**，在循环的位置写明**对取得的行算什么**。哪怕看得出 `extra` 会抵消，也先照着源码交给工程，不替它算答案。
 
@@ -120,35 +97,32 @@ class BillRow {
 
 循环把「筛选、算一项、累加」揉在每一轮里；关系式把它们分开写，计算的还是同一批数据。如果把条件改成 `if (total < 6 && row.amount > 0)`，就不能照搬成独立的 `where`：对 `[5, 5, 5]`，第三笔会因前两轮已累到 10 而被跳过，原程序返回 10，不是 15。这类循环要保留前一轮的状态和次序。
 
-### 同一段集合运算，Java 和 JavaScript 怎么交付
+### 同一段集合运算，Java 和前端怎么交付
 
 还是这批已经取到的 `rows`。把循环换成 Java Stream，或者把同样的逻辑写成 JavaScript 数组链：
 
-**Java Stream**
+**Java Stream → 局部关系式**
 
-```java
-return rows.stream()
-    .filter(row -> row.amount > 0)
-    .mapToInt(row -> (row.amount + extra) - extra)
-    .sum();
+```diff
+--- a/Preview.java
++++ b/Preview.java
+@@ -1,6 +1,9 @@
+ int total(List<BillRow> rows, int extra) {
+-    return rows.stream()
+-        .filter(row -> row.amount > 0)
+-        .mapToInt(row -> (row.amount + extra) - extra)
+-        .sum();
++    int result;
++    /* @normalizer-ir
++       result = sum from rows as row
++           where row.amount > 0
++           yield (row.amount + extra) - extra
++    */
++    return result;
+ }
 ```
 
-**JavaScript Array**
-
-```javascript
-return rows
-    .filter(row => row.amount > 0)
-    .map(row => (row.amount + extra) - extra)
-    .reduce((total, amount) => total + amount, 0);
-```
-
-预处理不用去模拟库里的迭代器，也不用把两种链都改写成 `for`。它沿着调用链交付同一个计算：
-
-| Java | JavaScript | 交给工程的含义 |
-| --- | --- | --- |
-| `filter(row -> row.amount > 0)` | `filter(row => row.amount > 0)` | 从 `rows` 筛出正金额行。 |
-| `mapToInt(…)` | `map(…)` | 对每一行产生一个值：`(row.amount + extra) - extra`。相同的值不去重。 |
-| `sum()` | `reduce((total, amount) => total + amount, 0)` | 从 0 开始加上每个值。空输入仍为 0。 |
+TypeScript 的 `filter → map → reduce` 在同样的纯计算合同下也对应这三个动作。**共享的是关系语义，不是每个入口都已经接通了这套注释。** 当前独立 `.ts` 的 `module` 入口不消费这种局部指令；已接通的是 Vue 事件场景的准备模块（当前 CLI 要求 `.mjs`），而且只把关系查询交给内核，并不是下面所有扩展指令都支持。因此这里不拿一个目标态的 TS diff 冒充可运行输入。
 
 把同一批数据代到两条链里，可以直接看见每一步的中间结果：
 
@@ -159,11 +133,11 @@ return rows
 | `mapToInt` / `map` | `[(5 + 3) - 3, (5 + 3) - 3] = [5, 5]` |
 | `sum` / 从 0 开始 `reduce` | `0 + 5 + 5 = 10` |
 
-两个版本都交成循环示例里的 `sum from rows as row where … yield …`。其中 `extra` 还在，`rows` 也还是原来的来源；等到工程化简时才消掉 `extra`、把筛选和 SQL 的条件合并。如果同样的函数接收的是前端已经拿到的数组，而不是数据库查询结果，集合操作照样能化简，但不能凭空补上一张表。
+已实现这类交接的入口可以写成循环示例里的 `sum from rows as row where … yield …`。其中 `extra` 还在，`rows` 也还是原来的来源；等到工程化简时才消掉 `extra`、把筛选和 SQL 的条件合并。如果同样的函数接收的是前端已经拿到的数组，而不是数据库查询结果，集合操作照样能化简，但不能凭空补上一张表。
 
 上面的等价有条件：这里的列表和数组都由普通记录组成，JS 数组没有空槽，回调只做字段访问和数值计算，不读索引、不改数组、不抛异常。按实际语言运行时比较，也要保证中间计算和累加在两端都能精确表示。尤其不能拿任意 JavaScript `Number` 套用加减抵消。如果回调会记日志，JS 的 `filter().map()` 先跑完过滤回调再进入映射，顺序 Stream 则可以逐项穿过各步。这种情况下不能把两条链当成同一个纯关系表达式。
 
-## 二、逐层化简：先算行内，再合并行集
+## 三、逐层化简：先算行内，再合并行集
 
 下面用接近 SQL 的记法展示演算，不是在重写应用要发给数据库的 SQL。记 `rows` 为已取得的查询结果；原循环从 0 开始，所以没有命中行时也必须得到 0。
 
@@ -188,57 +162,240 @@ WHERE b.account_id = :accountId
 
 如果另一份实现一开始就把正金额筛选写进 SQL，或者先把列表 `filter` 再 `sum`，在同样的来源、空集和重复行约定下，归一化可以把它们化到同一个结果。关系代数不只是把流程换个写法，它让**不同实现里的同一个业务规则能被算成同一个表达式**。
 
-## 三、换一种集合操作，哪些语义必须带过来
+## 四、换一种集合操作，就换成相应的正式指令
 
-| Java / JavaScript 写法 | 交给工程的操作 | 转译时必须保留 |
-| --- | --- | --- |
-| Stream `filter` / Array `filter` | 筛选 | 谓词要保留原语义。SQL 对 `NULL` 的判断不能照抄成 JS 的真假转换。 |
-| Stream `map` / Array `map` | 投影 | 每个输入项产生什么值，重复项算几次。源代码用到的索引也不能丢。 |
-| Stream `flatMap` / Array `flatMap` | 逐项展开，再拼接 | 有匹配条件的展开可以是连接；不能看到 `flatMap` 就认作按键 JOIN。 |
-| Stream `anyMatch` / Array `some` | 是否存在匹配项 | 空集为假；原来可以短路，不能新增本来不会执行的回调。 |
-| 顺序 Stream `filter(...).findFirst()` / Array `find` | 按原顺序取第一个匹配项 | 无匹配时 Java 返回空 `Optional`，JS 返回 `undefined`。不是随便取一项，也不是对所有行回调完才挑第一项。 |
-| Stream `distinct` / 数组经 `Set` 去重 | 按原相等规则去重 | 保留去重发生在哪一步、什么算同一项。不能把两个字段相同的 JS 对象自动当成同一对象。 |
-| IntStream `sum` / Array `reduce` | 求和，或带初值的折叠 | 只有加总这样的特定合同才能归为求和；任意累加器不一定可以换顺序。 |
-| Java `HashMap.put/getOrDefault` / JS `Map.set/has/get` | 按键覆盖，再按键是否存在取值 | 键存在却存着 `null`，与键不存在不同；JS 还可以显式存 `undefined`。键的相等规则也不能想当然。 |
+### 首项：把排序、命中条件和未命中一起交付
 
-两个短例说明转错会得到什么：
+```diff
+--- a/src/First.java
++++ b/src/First.java
+@@ -1,36 +1,25 @@
+ import java.util.List;
+-import org.apache.ibatis.annotations.Select;
 
-- **找首项。** 对 `[-1, 5, 2]` 找第一个正数，答案是 5。改成先取第一项再筛选，会得到没有结果；改成取最小正数，会得到 2。
-- **按键查默认值。** 如果标题表还没有 `"main"`，就返回默认标题；如果用户明确把 `"main"` 写成了 `null`，就返回 `null`。Java 用 `getOrDefault("main", fallback)`；JS 可以写成 `titles.has("main") ? titles.get("main") : fallback`，不能写成 `titles.get("main") ?? fallback`。后者会把「明确清空」当成「没有设置」。
+ class First {
+-    private final BillMapper billMapper;
+-
+-    First(BillMapper billMapper) {
+-        this.billMapper = billMapper;
+-    }
+-
+     int first(int accountId) {
+-        BillRow match = null;
+-        for (BillRow row : billMapper.selectRows(accountId)) {
+-            if (row.amount > 0) {
+-                match = row;
+-                break;
+-            }
+-        }
++        List<BillRow> rows;
++        /* @normalizer-ir
++           rows = from bill as b
++               where b.account_id == accountId
++               yield { amount: b.amount }
++        */
++        BillRow match;
++        /* @normalizer-ir
++           match = first from rows as row
++               where row.amount > 0
++               order by row.amount
++               yield row else null
++        */
+         if (match != null) return match.amount;
+         return 0;
+     }
+ }
 
-这些不是 API 名称的替换表。要先认出操作和它的合同，工程才能判断哪些关系式可以合并、重排或化简。
-
-### 双重循环：看到的是配对，不是再求一次和
-
-假设手上已有一批账单和一批折扣规则。下面的循环为同账户的每个「账单、规则」组合生成一行预览；它不修改原数组，也不发送请求：
-
-```javascript
-const matches = [];
-for (const bill of bills) {
-    for (const rule of rules) {
-        if (bill.accountId === rule.accountId) {
-            matches.push({ billId: bill.id, ruleId: rule.id });
-        }
-    }
-}
-return matches;
+-interface BillMapper {
+-    @Select("""
+-        SELECT amount
+-        FROM bill
+-        WHERE account_id = #{accountId}
+-        ORDER BY amount
+-    """)
+-    List<BillRow> selectRows(int accountId);
+-}
+-
+ class BillRow {
+     int amount;
+ }
 ```
 
-外层取账单，内层取规则，`if` 给出配对条件，`push` 给出输出字段。这就是**按账户做内连接，再投影出两个 ID**。例如账单 `B1`、`B2` 属于账户 7，`B3` 属于账户 8；规则 `R1`、`R2` 都属于账户 7。输出是 `[(B1,R1), (B1,R2), (B2,R1), (B2,R2)]`：同一账单可以有多个匹配，`B3` 一条都不产出。
+右侧的 `first` 保留查询约定的金额顺序，并用 `else null` 表示找不到记录。Java 仍然走原来的判断及兜底。不能把「先筛再取第一」改成「先取一行再筛」，也不能在一般的有序数组上自行添加最小值排序。
 
-这里返回的是数组，**顺序也是结果**。用连接来表达时，还要保留账单在外、规则在内的原始顺序；用 SQL 式记法，就得带上两个输入的位置并按它们排序：
+### 折叠：保留初值和每一轮怎么更新
 
-```sql
-SELECT b.id AS billId, r.id AS ruleId
-FROM bills AS b
-JOIN rules AS r ON r.account_id = b.account_id
-ORDER BY b.input_pos, r.input_pos
+```diff
+--- a/ReduceValues.java
++++ b/ReduceValues.java
+@@ -1,7 +1,9 @@
+ class ReduceValues {
+     static int sumFrom(int[] values, int initial) {
+-        int total = initial;
+-        for (int value : values) total += value;
++        int total;
++        /* @normalizer-ir
++           total = reduce values from initial as (sum, value) yield sum + value
++        */
+         return total;
+     }
+ }
 ```
 
-这里假定两边的账户标识都是非空整数，`input_pos` 是项在原数组里的唯一位置。少了排序，`JOIN` 只规定哪些行配对，不规定数组元素的先后。如果原内层在首次匹配后就 `break`，那就应交成「每张账单按规则顺序取第一个匹配」，而不是枚举全部配对。
+`initial = 10`、`values = [2, 3]` 时，结果是 15；空输入时仍为 10。若下一轮的筛选取决于累计值，不再是独立的 `where`。是否能交给现有的折叠形式，要核对它能否表达原更新与顺序，不能把任意 `reduce` 都归成求和。
 
-## 四、可以化简计算，不能搬动真实操作
+### 先投影再去重：按账户去重，不是整张账单去重
 
-关系代数也能描述 SQL 写入的目标表、命中条件和新字段值。但能化简条件，不等于能抹掉这次写入。比如「结清本账户未结账单」可以把冗余的筛选化简，不能把更新改成只计算影响了几行；该次更新的执行位置、真实受影响行数和失败行为仍要保留。
+```diff
+--- a/src/BillReport.java
++++ b/src/BillReport.java
+@@ -1,12 +1,13 @@
+-import org.apache.ibatis.annotations.Select;
+-interface BillReport {
+-    @Select("""
+-        SELECT COUNT(DISTINCT account_id)
+-        FROM (
+-            SELECT bill_id, account_id FROM pending_bill
+-            UNION ALL
+-            SELECT bill_id, account_id FROM posted_bill
+-        ) AS all_bills
+-        """)
+-    long countAccounts();
++import java.util.List;
++class AccountRow { int accountId; }
++class BillReport {
++    static long countAccounts() {
++        List<AccountRow> pending;
++        /* @normalizer-ir pending = from pending_bill as p yield {accountId: p.account_id} */
++        List<AccountRow> posted;
++        /* @normalizer-ir posted = from posted_bill as q yield {accountId: q.account_id} */
++        long count;
++        /* @normalizer-ir count = count distinct union pending.accountId, posted.accountId */
++        return count;
++    }
+ }
+```
+
+同一账户的两笔账单仍是不同的账单，但在投影成账户并做不同值计数时，只算一个账户。这段指令交的是投影后的并集计数，不是先对整条账单去重。
+
+### 查键：有键但值为空，不等于没有键
+
+```diff
+--- a/src/Caption.java
++++ b/src/Caption.java
+@@ -1,8 +1,13 @@
+-import java.util.HashMap;
+ class Caption {
++    @normalizer.annotations.Nullable
+     static String select(boolean cleared, String fallback) {
+-        HashMap<String,String> captions = new HashMap<>();
+-        if (cleared) captions.put("main", null);
+-        return captions.getOrDefault("main", fallback);
++        java.util.HashMap<String,String> captions;
++        /* @normalizer-ir captions = value.map_empty(text, text?) */
++        if (cleared) {
++            /* @normalizer-ir captions = value.map_put(captions, "main", null) */
++        }
++        String selected;
++        /* @normalizer-ir selected = value.map_get_or(captions, "main", fallback) */
++        return selected;
+     }
+ }
+```
+
+清空标题时 `"main"` 明确存在，值为 `null`；只有不存在才返回默认标题。正式语法把空映射、写键、查键分成三条指令，并保留原来的分支位置。
+
+### 连接：只交付已支持的输出形状
+
+双重循环若按账户匹配，且每个匹配对只贡献一次计数，可以交成 `count from … join … on …`。比如两笔账单都匹配两条规则，得到 4。若原程序返回配对数组，还要保留两层输入的次序；当前这个 `join` 指令只展示**连接后计数**，不能冒充返回一个有序配对数组的语法。
+
+## 五、可以化简计算，不能搬动真实操作
+
+SQL 写入也能交付目标表、命中条件和新字段值。以下例子约定单条更新原子提交，失败抛出 `DatabaseWriteError`；mapper 只用于装配这个已知数据库操作，不是独立的业务输入。
+
+```diff
+--- a/Settle.java
++++ b/Settle.java
+@@ -1,13 +1,14 @@
+-interface BillMapper {
+-    @Update("""
+-        UPDATE bill SET status = 'CLOSED'
+-        WHERE account_id = #{accountId} AND status = 'OPEN'
+-        """)
+-    int closeOpenBills(int accountId) throws DatabaseWriteError;
+-}
+-
+ class Settle {
+-    static int close(BillMapper mapper, int accountId) throws DatabaseWriteError {
+-        return mapper.closeOpenBills(accountId);
++    static int close(int accountId) throws DatabaseWriteError {
++        int affected;
++        /* @normalizer-ir
++           affected = update bill as b
++               set { status: "CLOSED" }
++               where b.account_id == accountId and b.status == "OPEN"
++               returning affected_rows
++               atomic
++               throws DatabaseWriteError
++        */
++        return affected;
+     }
+ }
+```
+
+把筛选条件化简，不等于能删掉这次写入。比如有两笔未结账单，结果是**修改两笔**并返回 2，而不只是算出 2；发生写入失败时也不能照常返回 2。
 
 读取也是一样：上面的演算只合并**同一批账单上的筛选**。如果原程序先更新再查询，后一次读取可能看见更新后的数据，不能拿入口时的表来替它。归一化要消掉的是计算写法的差别，不是业务行为本身。
+
+## 六、扩展语义语法表
+
+这里列的是 **源码层的扩展语法族**，不是 SQL 全语法，也不是 PERS 输出格式。名字都是占位，实际交付时必须在原作用域绑定。共享解析器能识别一种语法，不等于所有入口或所有操作数组合都能执行。
+
+### 声明标记与语句边界
+
+| 写法 | 语义和限制 |
+| --- | --- |
+| Java `@EntryState`、`@External`、`@Nullable` | 分别标明状态根、真实端口和可空性。Java 标记不带参数；端口的参数、返回和异常由方法签名声明。 |
+| 前端 `@entryState`、`@componentProp Component#instance.prop`、`@external` | 分别绑定状态、原模板属性入口和真实端口。声明只建立身份，不替代实际调用或读写。 |
+| 现有前端准备模块里的 `@entryInputs`、`@callback`、`@param`、`@returns`、`@rejects` | 分别绑定现有适配器的宿主入参与端口签名；同一旧载体里的 `@type`、`@typedef`、`@property` 声明其类型和字段。它们不是目标 TS 交付的类型写法；目标是用原生入口参数与原生类型声明。 |
+| `/* @normalizer-ir target = operation */` | 一块一条指令，放在语句之间。普通目标在同一作用域声明，并在首次读取前由指令初始化；有序栈另有专门绑定。 |
+| `/* @normalizer-ir target += operation */` | 在原位置读已经初始化的目标，再加入本次结果。当前只给 `sum` 和整数区间 `count` 提供这种累加形式。 |
+
+### 关系、集合与循环
+
+| 指令主体 | 读法与边界 |
+| --- | --- |
+| `dst = from source as row … yield { field: expr, … }` | 读表或已取得的行关系，产出指定字段。受支持的载体也可用标量 `yield expr`，不是通用数组构造。 |
+| `where predicate [and predicate …]`、`let name = expr`、`order by key [, key …]` | 查询链的筛选、行内绑定、排序键。当前局部谓词不接收通用 `OR`，排序无任意方向或排序规则子句。 |
+| `n = sum from source as row … yield expr`；也可 `+=` | 求和，空集贡献 0。二维整数数组可写 `sum from groups as group yield sum from group as value yield value`，不是任意深度递归。 |
+| `out = first from rows as row … yield expr else fallback` | 有序首项；记录可 `yield row else null`，标量缺省须满足类型合同。 |
+| `out = first from values[k:] else fallback`；可省略 `[k:]` | 在业务整数数组上按位置选；`k` 是非负整数字面量，省略时为 0，没有该项才用缺省。 |
+| `n = count [distinct] from source as row … [yield expr]` | 普通计数保留重复；在受支持的投影上可按值去重。按行计数与按非空列计数不能混用。 |
+| `n = count groups from source as row by key [, key …]` | 数分组键元组形成的组。当前要求未筛选的已声明表及明确列。 |
+| `n = count from left as a join right as b on predicate [where predicate [and …]]` | 已绑定表关系的内连接计数，不是任意 JOIN 或配对列表投影。 |
+| `n = count distinct union left.field, right.field [, …]` | 至少两支；先投影各支的列，再按并集去重计数，不是通用并集语法。 |
+| `result = reduce values from initial as (acc, item) yield expr` | 有序折叠，保留初值与每轮更新。可用输入类型和更新表达式受执行入口限制。 |
+| `n = count from [lo, hi) as i`；也可 `+=` | 数左闭右开整数区间；端点为整数字面量或已绑定整数，空区间贡献 0。 |
+| `total = fold [lo, hi) as i when i < low continue when i > high break yield i` | 特定的有序索引累加；左界和跳过／终止阈值是整数字面量。不是任意 `for` 或一般谓词折叠。 |
+| `out = choose from members else fallback` | 允许从候选任选，空集用缺省；每个源码位置的选择独立。不能用它代替 `first`。 |
+
+标量式可以使用变量与字段路径、整数字面量、双引号文本、`true/false`、括号、`*`、`+`、`-`、`== != < <= > >=`、`is [not] null`（也识别对应大写关键字）。`and` 用来连接查询筛选，不是可以塞进所有标量位置的宿主运算符。文本只支持双引号和反斜杠的转义；查询中的空值不套用 JS 的真假规则。
+
+### 其他局部扩展
+
+| 指令主体 | 读法与边界 |
+| --- | --- |
+| `m = value.map_empty(text, text?)`；`m = value.map_put(m, "key", value)`；`x = value.map_get_or(m, "key", fallback)` | 当前是局部映射、文本字面量键、可空文本值。写入保持同一绑定；缺省取决于键是否存在。 |
+| `stack = fold opened from [] as (s, item) yield value.push(s, item)` | 栈场景按输入次序压入。 |
+| `stack = fold closed from stack as (s, item) when value.length(s) == 0 throw ErrorType when value.last_or(s, item).id != item.id throw ErrorType yield value.pop(s)`；`empty = value.length(stack) == 0` | 专门的有序栈合同：先查空，再校验同一字段，最后弹出；保留失败与顺序。 |
+| `out = input`；`out = round(value, scale, HALF_UP)` 或 `HALF_EVEN` | 精确小数载体内的复制与舍入。值可为已绑定精确值、小数字面量或精确乘积；位数用非负整数字面量，舍入模式不得靠猜。 |
+
+### 数据库写入
+
+| 指令主体 | 读法 |
+| --- | --- |
+| `n = insert into table values { col: value, … } returning affected_rows atomic throws ErrorType` | 插入指定列和值。 |
+| `n = update table [as t] set { col: value, … } [where t.col == value [and …]] returning affected_rows atomic throws ErrorType` | 在原位置更新命中行。 |
+| `n = delete from table [as t] where t.col == value [and …] returning affected_rows atomic throws ErrorType` | 按显式条件删除，省略条件不表示全表删除。 |
+
+写入值来自闭合变量、整数或文本，写入条件当前是已绑定列的相等合取。三种语法都要交付实际行数、原子性和有依据的异常合同。`where` 用 `==` 和双引号是**源码扩展语法**；最终写入 SQL 才使用 SQL 自己的 `=` 与文本引号。注入指令、工程执行和输出表达是三层，不能互相冒充。
