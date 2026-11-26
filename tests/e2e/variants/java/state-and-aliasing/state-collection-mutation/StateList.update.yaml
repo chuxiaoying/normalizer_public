@@ -72,3 +72,19 @@
       value:
         - { type: java.lang.ArithmeticException, when: 'LENGTH(values) > 0' }
         - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
+- name: state-array-alias-length-is-an-e-observation-without-a-write
+  edits:
+    - { from: 'values[0] = next;', to: '' }
+    - { from: 'return alias[0];', to: 'return alias.length;' }
+  expect:
+    - { path: [R], value: 'LENGTH(values)' }
+    - { path: [S], absent: true }
+    - { path: [throws], absent: true }
+- name: direct-state-array-length-keeps-the-same-acquired-root
+  edits:
+    - { from: 'values[0] = next;', to: '' }
+    - { from: 'return alias[0];', to: 'return this.values.length;' }
+  expect:
+    - { path: [R], value: 'LENGTH(values)' }
+    - { path: [S], absent: true }
+    - { path: [throws], absent: true }

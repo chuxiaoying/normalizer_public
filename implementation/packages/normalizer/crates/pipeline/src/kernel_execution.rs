@@ -652,6 +652,27 @@ impl<'a> Engine<'a> {
     }
 
     fn source_java_array_length(&mut self, target: &J, id: &str, env: &mut Env, path: Expr) -> Result<Option<Expr>> {
+        // An explicitly declared entry-state array is a non-null E root as
+        // well as an ordinary Java array. Do not probe scalar state fields
+        // or a local object that merely has a field named length.
+        let state_name = match target {
+            J::Ident(name) if !env.contains_key(name) => Some(name.as_str()),
+            J::FieldAccess { target, field }
+                if matches!(target.as_ref(), J::Ident(name) if name == "this") => Some(field.as_str()),
+            _ => None,
+        };
+        if let Some(name) = state_name {
+            let owner = id.rsplit_once('.').unwrap().0;
+            if self.project.direct_source && !self.methods[id].syntax.is_static() && !env.contains_key("this")
+                && self.program.find_class(owner).is_some_and(|class| class.fields().iter().any(|field|
+                    field.name() == name && crate::normalized::entry_state(class, field)
+                        && crate::normalized::numeric_array(field.java_type())))
+            {
+                self.budget()?;
+                self.read_entry_state(owner, name, &path)?;
+                return Ok(Some(super::source_arrays::borrowed_array_length(&source_state_symbol(name))));
+            }
+        }
         match target {
             J::Ident(name) => {
                 if let Some(Value::LocalIntArray(array)) = env.get(name) {
@@ -664,12 +685,14 @@ impl<'a> Engine<'a> {
                     // The direct source contract admits all checked integer
                     // array carriers. Length does not read or convert an
                     // element. Retain the adapter's exact int carrier rule.
-                    // State names are not borrowed entry roots.
+                    // Keep the actual P or E root of a local alias.
+                    let state_root = self.project.direct_source && self.source_objects.state_bindings
+                        .values().any(|name| source_state_symbol(name) == *root);
                     let admitted = (self.project.direct_source || java_component.as_deref() == Some("int"))
-                        && self.selected_entry
+                        && (state_root || self.selected_entry
                             .is_some_and(|entry| entry.syntax.params().iter().any(|(_, parameter)| {
                                 parameter == root
-                            }));
+                            })));
                     if admitted {
                         self.budget()?;
                         return Ok(Some(super::source_arrays::borrowed_array_length(root)));
