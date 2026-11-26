@@ -167,8 +167,12 @@
     to: '} catch (RuntimeException ignored) { return 999; } finally {'
 - name: unmatched-remote-failure-propagates-after-finally-write
   edits:
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class RemoteError extends RuntimeException {}
+        class DisjointError extends RuntimeException {}
     - from: 'catch (RemoteError ignored)'
-      to: 'catch (IllegalArgumentException ignored)'
+      to: 'catch (DisjointError ignored)'
   expect:
     - {path: [R], value: '$e_0'}
     - path: [throws]
@@ -179,9 +183,12 @@
 - name: terminal-finally-throw-replaces-the-pending-remote-failure
   edits:
     - from: 'class RemoteError extends RuntimeException {}'
-      to: 'class RemoteError extends RuntimeException {} class TerminalError extends RuntimeException {}'
+      to: |-
+        class RemoteError extends RuntimeException {}
+        class DisjointError extends RuntimeException {}
+        class TerminalError extends RuntimeException {}
     - from: 'catch (RemoteError ignored)'
-      to: 'catch (IllegalArgumentException ignored)'
+      to: 'catch (DisjointError ignored)'
     - from: 'attempts = attempts + 1;'
       to: 'attempts = attempts + 1; throw new TerminalError();'
   expect:
