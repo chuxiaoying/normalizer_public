@@ -595,7 +595,11 @@ impl<'a> Engine<'a> {
             RowOperation::Fold { accumulator, initial, body } => {
                 // The direct row-element recurrence has a bag-sum form.
                 // Other supported arithmetic uses the ordered fold path.
-                need(rows.fields.contains_key(""), "reduce requires a bound numeric array")?;
+                // The parsed reduce has no row clauses. Keep the acquired
+                // array root instead of recovering it from the generic Rows.
+                let Some(Value::Sequence { item: Ty::Integer, name, .. }) = env.get(&query.source) else {
+                    return Err(fail("reduce requires a bound numeric array"));
+                };
                 let start = self.query_value(initial, "", &BTreeMap::new(), env, guard)?;
                 need(start.ty() == Ty::Integer, "reduce needs an exact integer initial value")?;
                 match body {
@@ -605,19 +609,12 @@ impl<'a> Engine<'a> {
                             && matches!(term.as_ref(), Scalar::Path(parts)
                                 if parts.as_slice() == std::slice::from_ref(&query.alias)) =>
                     {
-                        let term = self.query_value(term, &query.alias, &rows.fields, &locals, guard)?;
-                        need(term.ty() == Ty::Integer, "reduce needs exact integer elements")?;
-                        let sum = r::relation_sum(rows.input, term.scalar()?);
+                        let sum = r::relation_sum(RelationExpr::base(name, "value"),
+                            b::acquired_integer_row("value"));
                         let value = scalar_binary(*op)(start.scalar()?, sum);
                         Value::Term(Ty::Integer, math::normalize(value))
                     }
-                    _ => {
-                        let RelationExpr::Base { name, .. } = &rows.input else {
-                            return Err(fail("pure fold requires a direct ordered source array"));
-                        };
-                        need(rows.ordering.is_empty(), "pure fold must preserve source array order")?;
-                        self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard)?
-                    }
+                    _ => self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard)?,
                 }
             }
             RowOperation::FirstValue { value, fallback } => {
