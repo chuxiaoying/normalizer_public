@@ -39,6 +39,13 @@ pub(crate) fn numeric_array(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Array(item) if integral(item))
 }
 
+fn record_array_component(ty: &JavaType) -> Option<&JavaType> {
+    match ty {
+        JavaType::Array(component) if matches!(component.as_ref(), JavaType::Class(_)) => Some(component),
+        _ => None,
+    }
+}
+
 fn scalar(t: &JavaType) -> bool {
     integral(t)
         || matches!(t, JavaType::Primitive(n) if n == "boolean")
@@ -422,7 +429,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             resolved: catch_types.entry(id.clone()).or_default(),
         };
         statements(body, id, &mut calls, &mut catches)?;
-        static_types::validate(program, owner, m, id, body)?;
+        static_types::validate(program, owner, m, id, body, &layouts)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
             let (target_owner, target_member) = match call {
@@ -591,6 +598,11 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 initializer: None,
                 ..
             } if scalar(java_type) || numeric_array(java_type) || matches!(java_type,JavaType::Generic(_,_)|JavaType::Class(_)) => {}
+            S::VarDecl {
+                java_type,
+                initializer: Some(e @ E::Ident(_)),
+                ..
+            } if record_array_component(java_type).is_some() => expr(e, at, calls)?,
             S::VarDecl {
                 java_type,
                 initializer: Some(e),

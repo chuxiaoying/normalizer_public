@@ -126,6 +126,7 @@ struct Admission<'a> {
     class: &'a JavaClass,
     method: &'a JavaMethod,
     id: &'a str,
+    layouts: &'a BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl Admission<'_> {
@@ -472,6 +473,17 @@ impl Admission<'_> {
                     if let Some(value) = initializer {
                         let actual = self.expression_in_context(value, scope, self.root_object_target(java_type))?;
                         let label = format!("initializer for {name}");
+                        // Record arrays share one semantic sequence type; keep
+                        // their Java component identity at the source boundary.
+                        if let Some(component) = super::record_array_component(java_type) {
+                            if !super::declared_reference(component, self.layouts)
+                                || !matches!(value, E::Ident(_))
+                                || self.declared_type(value, scope).as_ref() != Some(java_type)
+                            {
+                                return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                                    "{label} must alias an array of the same declared record component")));
+                            }
+                        }
                         self.check_assignment_narrowing(Some(java_type), value, scope, &label)?;
                         self.compatible(Kind::declared(java_type), actual, &label)?;
                     }
@@ -539,7 +551,7 @@ impl Admission<'_> {
     }
 }
 
-pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S]) -> Result<(), String> {
+pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S], layouts: &BTreeMap<String, BTreeMap<String, String>>) -> Result<(), String> {
     let mut scope = method.params().iter().map(|(ty, name)| (name.clone(), Binding::plain(ty.clone()))).collect();
-    Admission { program, class, method, id }.block(body, &mut scope)
+    Admission { program, class, method, id, layouts }.block(body, &mut scope)
 }
