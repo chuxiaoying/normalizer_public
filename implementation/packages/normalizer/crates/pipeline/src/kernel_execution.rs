@@ -830,11 +830,8 @@ impl Engine<'_> {
                 need(v.ty() == Ty::Bool, "not requires bool")?;
                 Ok(Value::Term(Ty::Bool, b::not(v.scalar()?)))
             }
-            J::Cast {
-                target_type,
-                operand,
-            } if matches!(target_type, JavaType::Primitive(n) if n == "long") =>
-            {
+            // Source admission only accepts the integral widening cast.
+            J::Cast { operand, .. } => {
                 let operand = self.java_expr(operand, id, env, path)?;
                 need(
                     operand.ty() == Ty::Integer,
@@ -1097,9 +1094,10 @@ impl Engine<'_> {
         };
         if primitive_type != "integer" || !fields.is_empty() { return false; }
         self.realtime_effects.events().iter().any(|event| {
-            let realtime_state::EffectOperation::Port { id, receipt } = &event.operation else { return false; };
+            let realtime_state::EffectOperation::Port { receipt, .. } = &event.operation else { return false; };
+            // A source Port produces a bare integer symbol only on its
+            // nonthrowing return route. SQL counts have their own event kind.
             receipt.binding_id() == *binding_id
-                && self.project.source_ports.get(id).is_some_and(|port| port.throws.is_empty())
                 && b::path_implies(&self.normal_path(path.clone()), &event.guard)
         })
     }
