@@ -188,7 +188,7 @@ impl Engine<'_> {
     }
 
     pub(super) fn construct_generic_product(
-        &mut self, proof: &crate::normalized::generic_product::Product<'_>, args: Vec<Value>,
+        &mut self, proof: &crate::normalized::generic_product::InstantiatedProduct<'_, '_>, args: Vec<Value>,
     ) -> Result<Value> {
         need(args.len() == proof.arity(), "generic product arity")?;
         let mut fields = BTreeMap::new();

@@ -21,11 +21,10 @@ pub(crate) fn prove(class: &JavaClass) -> Option<Product<'_>> {
         || !constructor.throws().is_empty() || !constructor.annotations().is_empty()
         || constructor.arity() != class.fields().len() || class.fields().is_empty()
     { return None; }
-    let mut used_names = std::collections::BTreeSet::new();
-    if !constructor.params().iter().all(|(_, name)| used_names.insert(name)
-        && !simulator_parser::is_reserved_identifier(name)
-        && constructor.param_annotations(name).is_empty())
-    { return None; }
+    // The Java parser has already bound distinct, non-reserved parameters.
+    if !constructor.params().iter().all(|(_, name)| constructor.param_annotations(name).is_empty()) {
+        return None;
+    }
     let param_slot = |ty: &JavaType| {
         let JavaType::Class(parameter) = ty else { return None; };
         parameters.iter().position(|name| name == parameter)
@@ -50,14 +49,23 @@ pub(crate) fn prove(class: &JavaClass) -> Option<Product<'_>> {
     Some(Product { class, field_from_argument, argument_type_parameter })
 }
 
-pub(crate) fn instantiated<'a>(program: &'a JavaProgram, ty: &JavaType) -> Option<Product<'a>> {
+#[derive(Debug)]
+pub(crate) struct InstantiatedProduct<'program, 'arguments> {
+    proof: Product<'program>,
+    arguments: &'arguments [JavaType],
+}
+
+pub(crate) fn instantiated<'program, 'arguments>(
+    program: &'program JavaProgram,
+    ty: &'arguments JavaType,
+) -> Option<InstantiatedProduct<'program, 'arguments>> {
     let JavaType::Generic(name, args) = ty else { return None; };
     let class = program.find_class(name)?;
     if args.len() != class.type_parameters().len()
         || !args.iter().all(|arg| matches!(arg, JavaType::Class(name)
             if name == "java.lang.String" || name == "String" && program.find_class(name).is_none()))
     { return None; }
-    prove(class)
+    Some(InstantiatedProduct { proof: prove(class)?, arguments: args })
 }
 
 pub(crate) fn same_instantiation(program: &JavaProgram, a: &JavaType, b: &JavaType) -> bool {
@@ -69,17 +77,16 @@ pub(crate) fn same_instantiation(program: &JavaProgram, a: &JavaType, b: &JavaTy
     a.name() == b.name()
 }
 
-impl<'a> Product<'a> {
-    pub(crate) fn name(&self) -> String { self.class.full_name() }
+impl<'program> InstantiatedProduct<'program, '_> {
+    pub(crate) fn name(&self) -> String { self.proof.class.full_name() }
 
-    pub(crate) fn bindings(&self) -> &[(&'a str, usize)] { &self.field_from_argument }
+    pub(crate) fn bindings(&self) -> &[(&'program str, usize)] { &self.proof.field_from_argument }
 
-    pub(crate) fn arity(&self) -> usize { self.argument_type_parameter.len() }
+    pub(crate) fn arity(&self) -> usize { self.proof.argument_type_parameter.len() }
 
-    pub(crate) fn field_type(&self, field: &str, ty: &JavaType) -> Option<JavaType> {
-        let JavaType::Generic(_, args) = ty else { return None; };
-        let (_, index) = self.field_from_argument.iter().find(|(name, _)| *name == field)?;
-        args.get(self.argument_type_parameter[*index]).cloned()
+    pub(crate) fn field_type(&self, field: &str) -> Option<JavaType> {
+        let (_, index) = self.proof.field_from_argument.iter().find(|(name, _)| *name == field)?;
+        self.arguments.get(self.proof.argument_type_parameter[*index]).cloned()
     }
 }
 
@@ -97,7 +104,7 @@ mod tests {
         let ty = JavaType::Generic("Item".into(), vec![text.clone(), alias.clone()]);
         let product = instantiated(&ast, &ty).unwrap();
         assert_eq!(product.bindings(), &[("value", 0), ("other", 1)]);
-        assert_eq!(product.field_type("other", &ty), Some(alias.clone()));
+        assert_eq!(product.field_type("other"), Some(alias.clone()));
         assert!(same_instantiation(&ast, &ty, &JavaType::Generic("Item".into(), vec![alias, text])));
         let invalid = parse("class Item<X,Y> { final Y other; final X value; Item(X first,Y second) { this.value = second; this.other = first; } }",
             "Item.java", &ParseOptions::default()).unwrap();

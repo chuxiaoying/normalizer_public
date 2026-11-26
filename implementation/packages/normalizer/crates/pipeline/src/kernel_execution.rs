@@ -253,7 +253,7 @@ impl<'a> Engine<'a> {
             J::FieldAccess { target, field } => {
                 let value_type = self.source_declared_type(target, id)?;
                 if let Some(product) = crate::normalized::generic_product::instantiated(self.program, &value_type) {
-                    return product.field_type(field, &value_type)
+                    return product.field_type(field)
                         .ok_or_else(|| fail("undeclared generic product field"));
                 }
                 let JavaType::Class(owner) = value_type else {
@@ -328,7 +328,7 @@ impl<'a> Engine<'a> {
     fn source_field(&self, receiver: &J, field: &str, id: &str) -> Result<()> {
         let ty = self.source_declared_type(receiver, id)?;
         if let Some(product) = crate::normalized::generic_product::instantiated(self.program, &ty) {
-            return need(product.field_type(field, &ty).is_some(), "undeclared generic product field");
+            return need(product.field_type(field).is_some(), "undeclared generic product field");
         }
         let owner = self
             .project

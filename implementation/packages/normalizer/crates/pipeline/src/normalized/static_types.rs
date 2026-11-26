@@ -207,7 +207,7 @@ impl Admission<'_> {
             E::FieldAccess { target, field } => {
                 let target = self.declared_type(target, scope)?;
                 if let Some(product) = super::generic_product::instantiated(self.program, &target) {
-                    return product.field_type(field, &target);
+                    return product.field_type(field);
                 }
                 let JavaType::Class(owner) = target else { return None };
                 self.program.find_class(&owner)?.fields().iter().find(|f| f.name() == field)
