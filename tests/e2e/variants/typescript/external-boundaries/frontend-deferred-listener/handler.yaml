@@ -205,3 +205,57 @@
       value:
         - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
         - call: { external: notices.notify, args: [], returns: void, result: $e_1 }
+
+- name: lexical-callback-captures-host-despite-registrar-parameter
+  edits:
+  - from: function listen(callback
+    to: function listen(notices
+  - from: pending = callback
+    to: pending = notices
+
+- name: lexical-callback-captures-host-on-immediate-and-deferred-invocation
+  edits:
+  - from: function listen(callback
+    to: function listen(notices
+  - from: pending = callback
+    to: pending = notices
+  - from: audit.registered()
+    to: notices(); audit.registered()
+  expect:
+  - path: [S]
+    value:
+    - call: { external: notices.notify, args: [], returns: void, result: $e_0 }
+    - call: { external: audit.registered, args: [], returns: void, result: $e_1 }
+    - call: { external: notices.notify, args: [], returns: void, result: $e_2, when: deliver }
+
+- name: lexical-registrar-receiver-is-really-shadowed
+  edits:
+  - from: '{ notify(): void }'
+    to: '{ notify(): void; toString(): void }'
+  - from: function listen(callback
+    to: function listen(notices
+  - from: pending = callback
+    to: pending = notices
+  - from: audit.registered()
+    to: notices.toString(); audit.registered()
+  reject: ['[NORM-TS-MODULE]', 'local name shadows declared listener host']
+
+- name: lexical-entry-receiver-is-really-shadowed
+  edits:
+  - from: '{ notify(): void }'
+    to: '{ notify(): void; toString(): void }'
+  - from: handle(deliver
+    to: handle(notices
+  - from: if (deliver) pending!()
+    to: if (notices) pending!()
+  - from: notices.notify()
+    to: notices.toString()
+  reject: ['[NORM-TS-MODULE]', 'local name shadows declared listener host']
+
+- name: lexical-registrar-slot-shadow-does-not-register-the-entry-callback
+  edits:
+  - from: function listen(callback
+    to: function listen(pending
+  - from: pending = callback
+    to: pending = pending
+  reject: ['[NORM-TS-MODULE]', 'listener registration must write the entry callback slot from its callback parameter']

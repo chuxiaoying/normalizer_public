@@ -17,7 +17,7 @@ function blockStatements(node) {
 }
 
 export function compileTypedListener(physicalPath, sf, fn) {
-  checkedTypeScript(physicalPath, sf, node => node === fn || ts.isVariableStatement(node));
+  const checker = checkedTypeScript(physicalPath, sf, node => node === fn || ts.isVariableStatement(node));
   if (!fn.body || fn.asteriskToken || fn.modifiers?.some(m => is(m, ts.SyntaxKind.AsyncKeyword))) {
     fail('listener entry requires a synchronous source definition');
   }
@@ -41,7 +41,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
       const target = root.name.text + '.' + signature.name.text;
       if (contracts.has(target)) fail('duplicate listener target');
       const port = markers.length ? 'sync_' + contracts.size : null;
-      contracts.set(target, port);
+      contracts.set(target, { declaration: root, port });
       if (port) {
         ports[port] = {origin: {path: 'Module.ts', excerpt: host.getText(sf)}, endpoint: target,
           params: [], returns: 'unit', throws: [], heap_effect: 'none', argument_observation: 'immutable_value', effect: 'sync'};
@@ -79,6 +79,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
     fail('listener callback needs a closed local string return');
   }
 
+  const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   let serial = 0;
   const steps = [];
   function callExpression(st) {
@@ -89,13 +90,15 @@ export function compileTypedListener(physicalPath, sf, fn) {
     const callee = callExpression(st);
     if (!callee || !ts.isPropertyAccessExpression(callee) || callee.questionDotToken
         || !ts.isIdentifier(callee.expression)) fail('listener effect must be a direct closed host call');
-    const root = callee.expression.text;
-    if ([...params, pending.name.text, register.name.text, parameter.name.text].includes(root)) {
+    const target = callee.expression.text + '.' + callee.name.text;
+    const contract = contracts.get(target);
+    // A callback runs at the dispatch site, but its names bind at definition.
+    const declaration = declarationOf(callee.expression);
+    if (declaration && contract && declaration !== contract.declaration) {
       fail('local name shadows declared listener host');
     }
-    const target = root + '.' + callee.name.text;
-    if (!contracts.has(target)) fail('listener effect target has no closed source signature');
-    steps.push({op: 'call_sync', port: contracts.get(target), target, site: 'sync_call_' + serial++, condition});
+    if (!contract || declaration !== contract.declaration) fail('listener effect target has no closed source signature');
+    steps.push({op: 'call_sync', port: contract.port, target, site: 'sync_call_' + serial++, condition});
   }
   const executeCallback = condition => { for (const st of callback) lowerExternal(st, condition); };
   let saved = false;
@@ -103,6 +106,9 @@ export function compileTypedListener(physicalPath, sf, fn) {
     const expr = ts.isExpressionStatement(st) ? st.expression : null;
     if (expr && ts.isBinaryExpression(expr) && is(expr.operatorToken, ts.SyntaxKind.EqualsToken)
         && named(expr.left, pending.name.text) && named(expr.right, parameter.name.text)) {
+      if (declarationOf(expr.left) !== pending || declarationOf(expr.right) !== parameter) {
+        fail('listener registration must write the entry callback slot from its callback parameter');
+      }
       if (saved) fail('listener source slot must be assigned only once');
       saved = true;
     } else if (named(callExpression(st), parameter.name.text)) {
