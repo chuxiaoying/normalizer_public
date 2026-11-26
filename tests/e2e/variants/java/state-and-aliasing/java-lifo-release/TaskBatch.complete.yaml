@@ -80,3 +80,11 @@
   expect:
     - path: [throws, 0, when]
       value: LENGTH(opened) > LENGTH(closed) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE opened[i].id != closed[LENGTH(closed) - 1 - i].id)
+
+- name: the-same-field-name-does-not-certify-the-same-record-type
+  edits:
+    - {from: 'class Task { int id; }', to: 'class Task { int id; } class Completed { int id; }'}
+    - {from: 'Task[] opened, Task[] closed', to: 'Task[] opened, Completed[] closed'}
+  reject:
+    - '[NORM-PROJECT]'
+    - local stack requires one declared integer field in the same input record type
