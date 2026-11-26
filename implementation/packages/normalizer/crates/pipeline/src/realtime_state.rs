@@ -551,7 +551,33 @@ fn canonicalize_realtime_case(expression: Expr) -> Expr {
             }
         }
     }
-    math::normalize(b::normal_return_case_when(earlier, last))
+    let expression = math::normalize(b::normal_return_case_when(earlier, last));
+    factor_array_sum_delta(&expression).unwrap_or(expression)
+}
+
+// A successful slot replacement and its caught-failure return both observe
+// the same input total. Reuse that acquired pure sum; do not move the
+// possibly out-of-bounds slot observation outside the success arm.
+fn factor_array_sum_delta(expression: &Expr) -> Option<Expr> {
+    use math::domains::relation::RelationExpr;
+    use math::{BinOpKind::{Add, Sub}, RelationAggregateKind::{FirstValue, NthValue, Sum}};
+    let ([(guard, yes)], no) = expression.as_total_case_when()? else { return None; };
+    for (adjusted, original, enabled) in [(yes, no, guard.clone()), (no, yes, b::not(guard.clone()))] {
+        let Some((Sum, RelationExpr::Base { name, alias }, Some(row), None)) = original.as_relation_aggregate() else { continue; };
+        if alias != "value" || row.as_row_value() != Some("value") { continue; }
+        let Some((Add, left, right)) = adjusted.as_binop() else { continue; };
+        for (remainder, replacement) in [(left, right), (right, left)] {
+            let Some((Sub, total, slot)) = remainder.as_binop() else { continue; };
+            if total != original { continue; }
+            let Some((FirstValue | NthValue, RelationExpr::Base { name: source, alias }, _, _)) =
+                slot.as_relation_aggregate() else { continue; };
+            if source != name || alias != "value" { continue; }
+            let delta = b::case_when(vec![(enabled.clone(), b::sub(replacement.clone(), slot.clone()))], b::lit_int(0));
+            let candidate = math::normalize(b::add(original.clone(), delta));
+            if candidate.size() < expression.size() { return Some(candidate); }
+        }
+    }
+    None
 }
 
 /// Join two completion outcomes at their earliest common continuation.

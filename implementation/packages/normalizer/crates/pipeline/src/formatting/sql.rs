@@ -31,6 +31,7 @@ pub struct FormatCtx {
     business_states: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
+    business_value_guard: bool,
     /// PERST: External binding_id → 0-based 编号
     e_renumber: HashMap<u64, usize>,
 
@@ -50,6 +51,7 @@ impl Default for FormatCtx {
             business_states: Default::default(),
             business_receipt_guards: Default::default(),
             business_evaluation_guard: None,
+            business_value_guard: false,
             e_renumber: HashMap::new(),
         }
     }
@@ -330,7 +332,7 @@ pub(crate) fn format_array_failure_union(expr: &Expr, ctx: &FormatCtx) -> Option
 }
 
 fn try_format_array_bound(op: BinOpKind, left: &Expr, right: &Expr, ctx: &FormatCtx) -> Option<String> {
-    if op != BinOpKind::Gt { return None; }
+    if ctx.business_value_guard || op != BinOpKind::Gt { return None; }
     let name = array_cardinality_name(left, RelationAggregateKind::Count)?;
     let Some(Lit::Int(index)) = right.as_lit() else { return None };
     if !ctx.scalar_arrays.contains(name) || *index <= 0 { return None; }
@@ -410,15 +412,17 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
             parts.push(format!("ELSE {value}"));
             break;
         }
+        let prior = std::mem::replace(&mut ctx.business_value_guard, business);
         let guard = format_expr_with_ctx(guard, ctx);
+        ctx.business_value_guard = prior;
         parts.push(format!("WHEN {guard} THEN {value}"));
     }
     let array_index_arm = business && branches.len() == 2
-        && branches[1].1.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
+        && branches.iter().any(|(_, value)| value.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
             kind == RelationAggregateKind::NthValue
                 && matches!(relation, math::domains::relation::RelationExpr::Base { name, .. }
                     if ctx.scalar_arrays.contains(name))
-        });
+        }));
     if business && branches.len() == 2 && (branches[0].0.as_sym_var().is_some() || array_index_arm) {
         parts.push("END".into());
         return parts.join(" ");

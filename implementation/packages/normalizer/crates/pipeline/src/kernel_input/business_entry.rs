@@ -322,7 +322,7 @@ impl EntryContext {
     pub(super) fn source_identity_names(&self, result: &ExecutionResult) -> BTreeMap<i64, String> {
         result.source_identity_parameters.iter().filter_map(|(id, root)| {
             let ty = self.parameter_type(root)?.trim_end_matches('?');
-            self.types.contains_key(ty).then(|| (*id, self.qualified("P", root)))
+            (self.types.contains_key(ty) || ty == "number[]").then(|| (*id, self.qualified("P", root)))
         }).chain(result.source_identity_states.iter().filter_map(|(id, binding)| {
             let root = result.source_state_bindings.get(binding)?;
             let state = self.environment.get(root)?;

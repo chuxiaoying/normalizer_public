@@ -28,7 +28,7 @@ impl Engine<'_> {
                 else { return Err(fail("local stack requires bound record arrays")); };
             let owner = self.source_relations.record_inputs.get(name)
                 .ok_or_else(|| fail("local stack array needs a declared entry origin"))?;
-            need(!self.source_array_writes.contains_key(name), "local stack arrays are read-only acquired inputs")?;
+            need(!self.source_array_may_have_writes(name), "local stack arrays are read-only acquired inputs")?;
             Ok((name.clone(), owner))
         };
         let (opens, opened_owner) = root_of(opens)?;

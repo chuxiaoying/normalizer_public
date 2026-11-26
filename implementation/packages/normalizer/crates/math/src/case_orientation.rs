@@ -252,3 +252,22 @@ mod totality_and_polarity_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod acquired_array_case_tests {
+    use crate::{builder as b, normalize};
+    use crate::domains::relation::{self as r, RelationExpr};
+
+    #[test]
+    fn nonzero_exact_array_slice_uses_positive_length_base_guard() {
+        let root = RelationExpr::base("values", "value");
+        let offset = b::lit_int(1);
+        let count = r::relation_count(root.clone());
+        let nth = r::relation_nth_value(root, offset.clone());
+        let empty = b::le(count.clone(), offset.clone());
+        let present = b::gt(count, offset);
+        let initial = b::case_when(vec![(empty, b::lit_int(0))], nth.clone());
+        let expected = b::case_when(vec![(present, nth)], b::lit_int(0));
+        assert_eq!(normalize(initial), expected);
+    }
+}

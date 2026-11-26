@@ -78,6 +78,25 @@ fn original_slot(root: &str, index: i64) -> Expr {
     math::normalize(r::relation_nth_value(initial_array(root), b::lit_int(index)))
 }
 
+fn slot_delta(value: Expr, original: &Expr, path: &Expr) -> Expr {
+    if value == *original {
+        return b::lit_int(0);
+    }
+    // A guarded write only changes contribution where it occurred. Keep the
+    // old slot read inside that branch, not in the no-write or OOB paths.
+    if let Some(([(guard, written)], fallback)) = value.as_total_case_when() {
+        if fallback == original {
+            let mut pending = Vec::new();
+            guard.for_each_conjunct(|term| {
+                if !b::path_implies(path, term) { pending.push(term.clone()); }
+            });
+            let guard = pending.into_iter().fold(b::lit_bool(true), b::and);
+            return b::case_when(vec![(guard, b::sub(written.clone(), original.clone()))], b::lit_int(0));
+        }
+    }
+    b::sub(value, original.clone())
+}
+
 impl Engine<'_> {
     pub(super) fn source_local_array_initializer(&self, values: Vec<Value>) -> Result<LocalIntArray> {
         let entries = values.into_iter().map(exact_java_int).collect::<Result<_>>()?;
@@ -96,6 +115,44 @@ impl Engine<'_> {
         self.acquire_source_state_root(format!("array:{root}"))
     }
 
+    fn array_roots_may_alias(&self, left: &str, right: &str) -> bool {
+        if left == right { return true; }
+        let Some(selected) = self.selected_entry else { return false; };
+        let ty = |name: &str| selected.syntax.params().iter()
+            .find(|(ty, param)| param == name && crate::normalized::numeric_array(ty))
+            .map(|(ty, _)| ty);
+        ty(left).is_some_and(|left| ty(right) == Some(left))
+    }
+
+    pub(super) fn source_array_may_have_writes(&self, root: &str) -> bool {
+        self.source_array_writes.keys().any(|other| self.array_roots_may_alias(root, other))
+    }
+
+    // Input arrays with the same Java element type may denote the same
+    // object. Use the public identity map rather than comparing heap numbers.
+    // Other root kinds are not admitted to cross-root mutation below.
+    fn array_alias_guard(&mut self, left: &str, right: &str) -> Option<Expr> {
+        if left == right { return Some(b::lit_bool(true)); }
+        if !self.array_roots_may_alias(left, right) { return None; }
+        let (left, right) = if left <= right { (left, right) } else { (right, left) };
+        let first = self.source_array_reference(left);
+        let second = self.source_array_reference(right);
+        for (reference, name) in [(&first, left), (&second, right)] {
+            self.source_objects.compared_parameters.insert(reference.as_heap_ref()?, name.to_owned());
+        }
+        Some(b::eq(first, second))
+    }
+
+    fn array_slot_sources(&mut self, root: &str, index: i64) -> Vec<(Expr, Expr)> {
+        let roots: Vec<_> = self.source_array_writes.iter()
+            .filter_map(|(name, indices)| indices.contains(&index).then(|| name.clone()))
+            .collect();
+        roots.into_iter().filter_map(|other| {
+            let aliases = self.array_alias_guard(root, &other)?;
+            Some((self.source_array_reference(&other), aliases))
+        }).collect()
+    }
+
     fn check_source_bounds(&mut self, root: &str, index: i64, path: &Expr) -> Expr {
         let fails = math::normalize(bounds_failure(root, index));
         self.throw_source_on_path(b::and(path.clone(), fails.clone()), OUT_OF_BOUNDS);
@@ -105,9 +162,6 @@ impl Engine<'_> {
     pub(super) fn source_array_store(&mut self, array: Value, index: Value, rhs: Value, path: Expr) -> Result<()> {
         need(rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
         let root = array_root(array)?;
-        // Do not assume that separately supplied arrays are different
-        // instances. Until cross-root alias analysis exists, a mutating source
-        // entry may expose only one such root.
         let entry = self.selected_entry.ok_or_else(|| fail("array mutation requires a source entry"))?;
         let (owner, _) = entry.id.rsplit_once('.').ok_or_else(|| fail("missing source owner"))?;
         let parameters = entry.syntax.params().iter().filter(|(ty, _)| crate::normalized::numeric_array(ty)).count();
@@ -115,7 +169,9 @@ impl Engine<'_> {
             self.program.find_class(owner).map_or(0, |class| class.fields().iter().filter(|field|
                 crate::normalized::entry_state(class, field) && crate::normalized::numeric_array(field.java_type())).count())
         };
-        need(parameters + states == 1, "array mutation needs one exposed root; distinct source arrays may alias")?;
+        need(parameters + states == 1 || (states == 0 && entry.syntax.params().iter()
+            .any(|(ty, name)| name == &root && crate::normalized::numeric_array(ty))),
+            "array mutation needs statically bound parameter roots or a sole state root")?;
         let index = index_value(index)?;
         let value = rhs.scalar()?;
         let path = self.normal_path(path);
@@ -150,8 +206,9 @@ impl Engine<'_> {
         let index = index_value(index)?;
         let path = self.normal_path(path);
         let guard = self.check_source_bounds(&root, index, &path);
-        let identity = self.source_array_reference(&root);
-        let slot = self.realtime_store.read_with_initial(&identity, &index.to_string(), &guard, Some(original_slot(&root, index)))
+        let sources = self.array_slot_sources(&root, index);
+        let slot = self.realtime_store.read_matching_with_initial(&index.to_string(), &guard, Some(original_slot(&root, index)),
+            |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
             .ok_or_else(|| fail("indexed observation has no value"))?;
         Ok(Value::Term(Ty::Integer, slot))
     }
@@ -163,29 +220,30 @@ impl Engine<'_> {
         let each = b::row_value("value");
         let each = if offset == 0 { each } else { b::add(each, b::lit_int(offset)) };
         let mut total = b::add(start, r::relation_sum(initial_array(&root), each));
-        let identity = self.source_array_reference(&root);
-        if let Some(indices) = self.source_array_writes.get(&root) {
-            for &index in indices {
+        let indices: BTreeSet<_> = self.source_array_writes.values().flatten().copied().collect();
+        if !indices.is_empty() {
+            for &index in &indices {
                 let original = original_slot(&root, index);
                 let bound = math::normalize(b::not(bounds_failure(&root, index)));
                 let valid = math::normalize(b::and(path.clone(), bound.clone()));
-                let updated = self.realtime_store.read_with_initial(&identity, &index.to_string(), &valid, Some(original.clone()))
+                let sources = self.array_slot_sources(&root, index);
+                let updated = self.realtime_store.read_matching_with_initial(&index.to_string(), &valid, Some(original.clone()),
+                    |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
                     .ok_or_else(|| fail("indexed observation has no value"))?;
                 if updated == original { continue; }
                 // Offset applies to every row before and after replacement, so
                 // it cancels between the old and new contributions.
-                if b::path_implies(&path, &bound) {
+                let is_guarded_write = updated.as_total_case_when()
+                    .is_some_and(|(_, fallback)| fallback == &original);
+                if is_guarded_write {
+                    // A successful same-object indexed write itself proves
+                    // that the slot exists; its guard protects the old read.
+                    total = b::add(total, slot_delta(updated, &original, &path));
+                } else if b::path_implies(&path, &bound) {
                     total = b::add(b::sub(total, original), updated);
-                } else if indices.len() == 1 {
-                    // One conditional overwrite selects between two complete
-                    // aggregate observations of the same root. Reuse the
-                    // shared CASE join used when a source return is already
-                    // split. No slot read moves outside its bounds domain.
-                    let adjusted = b::add(b::sub(total.clone(), original), updated);
-                    total = realtime_state::join_value(bound, adjusted, total);
                 } else {
-                    // Keep multiple guarded corrections linear in the number
-                    // of written indices rather than duplicating the sum tree.
+                    // The input aggregate is acquired on both paths. Select
+                    // only the indexed delta inside the bounds domain.
                     let correction = b::case_when(vec![(bound, b::sub(updated, original))], b::lit_int(0));
                     total = b::add(total, correction);
                 }

@@ -28,6 +28,27 @@ pub(super) struct Relations {
     pub(super) first_rows: BTreeMap<i64, OrderedRows>,
 }
 
+/// Here the producer has proved a closed exact-integer sum with the
+/// zero default. Admit that sum into AC only with ordinary already-bound
+/// exact integer inputs/literals in the initializer; other expressions
+/// retain their scope and the conservative generic math behavior.
+fn add_closed_integer_sum(initial: Expr, sum: Expr) -> Expr {
+    fn terms(value: &Expr, out: &mut Vec<Expr>) -> bool {
+        if let Some((BinOpKind::Add, left, right)) = value.as_binop() {
+            return terms(left, out) && terms(right, out);
+        }
+        let admitted = matches!(value.as_lit(), Some(math::Lit::Int(_) | math::Lit::BigInt(_)))
+            || matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter {name, primitive_type})
+                if primitive_type == "integer" && !name.starts_with('$') && !name.contains(['.', '[', ']']));
+        if admitted && value != &b::lit_int(0) { out.push(value.clone()); }
+        admitted
+    }
+    let mut addends = vec![sum.clone()];
+    if !terms(&initial, &mut addends) { return b::add(initial, sum); }
+    addends.sort_by_cached_key(|term| math::canonical_order_key(term, &math::DefaultSortContext));
+    addends.into_iter().reduce(b::add).expect("closed sum is present")
+}
+
 pub(super) fn scalar_binary(op: Op) -> fn(Expr, Expr) -> Expr {
     match op {
         Op::Add => b::add,
@@ -415,7 +436,7 @@ impl<'a> Engine<'a> {
         guard: &Expr,
     ) -> Result<()> {
         if let Some(Value::Sequence { name, .. }) = env.get(&query.source) {
-            need(!self.source_array_writes.contains_key(name),
+            need(!self.source_array_may_have_writes(name),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
         if let Operation::OnRows(RowOperation::EagerPath { link, leaf }) = &query.operation {
@@ -456,7 +477,7 @@ impl<'a> Engine<'a> {
                 let length = r::relation_count(relation.clone());
                 let none = if offset.bits() == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
                 let nth = r::relation_nth_value(relation, index);
-                let value = b::case_when(vec![(none, default.scalar()?)], nth);
+                let value = math::normalize(b::case_when(vec![(none, default.scalar()?)], nth));
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
                 return Ok(());
             }
@@ -495,7 +516,7 @@ impl<'a> Engine<'a> {
                 let summed = if query.accumulate {
                     let prior = env.get(&query.binding).ok_or_else(|| fail("+= needs an initialized local"))?;
                     need(prior.ty() == Ty::Integer, "+= requires a number")?;
-                    b::add(prior.scalar()?, summed)
+                    add_closed_integer_sum(prior.scalar()?, summed)
                 } else { summed };
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, math::normalize(summed)));
                 return Ok(());
@@ -736,7 +757,11 @@ impl<'a> Engine<'a> {
                     {
                         let sum = r::relation_sum(RelationExpr::base(name, "value"),
                             b::acquired_integer_row("value"));
-                        let value = scalar_binary(*op)(start.scalar()?, sum);
+                        let value = match op {
+                            Op::Add => add_closed_integer_sum(start.scalar()?, sum),
+                            Op::Sub => b::sub(start.scalar()?, sum),
+                            _ => unreachable!("fold above admits only add/sub"),
+                        };
                         Value::Term(Ty::Integer, math::normalize(value))
                     }
                     _ => self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard)?,
