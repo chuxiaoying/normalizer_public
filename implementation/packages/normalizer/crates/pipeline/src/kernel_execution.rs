@@ -618,14 +618,30 @@ impl Engine<'_> {
         self.source_local_array_allocation(size, path)
     }
 
-    fn local_java_array_length(&mut self, target: &J, id: &str, env: &mut Env, path: Expr) -> Result<Option<i64>> {
+    fn source_java_array_length(&mut self, target: &J, id: &str, env: &mut Env, path: Expr) -> Result<Option<Expr>> {
         match target {
             J::Ident(name) => {
                 if let Some(Value::LocalIntArray(array)) = env.get(name) {
                     // Charge the child identifier visit just as generic expression
                     // evaluation did; the immutable length itself needs no path.
                     self.budget()?;
-                    return Ok(Some(array.length()));
+                    return Ok(Some(b::lit_int(array.length())));
+                }
+                if let Some(Value::Sequence { item: Ty::Integer, name: root, java_component, .. }) = env.get(name) {
+                    // A local alias retains the original entry parameter. A
+                    // borrowed length reads its cardinality, not an element.
+                    // State arrays and nullable receivers are a separate route.
+                    let admitted = java_component.as_deref() == Some("int")
+                        && !self.project.source_nullable_entry_parameters.contains(root)
+                        && self.selected_entry.and_then(|entry| self.methods.get(entry))
+                            .is_some_and(|method| method.syntax.params().iter().any(|(ty, parameter)| {
+                                parameter == root && matches!(ty, JavaType::Array(item)
+                                    if crate::normalized::java_int(item))
+                            }));
+                    if admitted {
+                        self.budget()?;
+                        return Ok(Some(super::source_arrays::borrowed_array_length(root)));
+                    }
                 }
                 Ok(None)
             }
@@ -640,12 +656,13 @@ impl Engine<'_> {
                     let value = self.java_expr(element, id, env, active)?;
                     need(value.ty() == Ty::Integer, "expected Java int for local array")?;
                 }
-                Ok(Some(elements.len() as i64))
+                Ok(Some(b::lit_int(elements.len() as i64)))
             }
             J::ArrayAllocation { element_type, length } => {
                 self.budget()?;
                 let path = self.normal_path(path);
-                Ok(Some(self.evaluate_local_array_allocation(element_type, length, id, env, path)?.length()))
+                let length = self.evaluate_local_array_allocation(element_type, length, id, env, path)?.length();
+                Ok(Some(b::lit_int(length)))
             }
             _ => Ok(None),
         }
@@ -710,8 +727,8 @@ impl Engine<'_> {
             }
             J::FieldAccess { target, field } => {
                 if field == "length" {
-                    if let Some(length) = self.local_java_array_length(target, id, env, path.clone())? {
-                        return Ok(Value::Term(Ty::Integer, b::lit_int(length)));
+                    if let Some(length) = self.source_java_array_length(target, id, env, path.clone())? {
+                        return Ok(Value::Term(Ty::Integer, length));
                     }
                 }
                 self.source_field(target, field, id)?;
