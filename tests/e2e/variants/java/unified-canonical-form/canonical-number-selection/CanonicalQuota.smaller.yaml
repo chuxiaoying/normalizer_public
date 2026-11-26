@@ -29,3 +29,27 @@
           WHEN quota > total THEN quota
           ELSE total
         END
+- name: exact-decimal-strict-minimum
+  edits:
+    - from: 'static int smaller(int quota, int total)'
+      to: 'static double smaller(double quota, double total)'
+    - from: |-
+        if (total <= quota) return total;
+                return quota;
+      to: 'return quota < total ? quota : total;'
+- name: exact-decimal-nonstrict-minimum
+  edits:
+    - from: 'static int smaller(int quota, int total)'
+      to: 'static double smaller(double quota, double total)'
+    - from: |-
+        if (total <= quota) return total;
+                return quota;
+      to: 'return quota <= total ? quota : total;'
+- name: exact-decimal-minimum-with-reversed-arms
+  edits:
+    - from: 'static int smaller(int quota, int total)'
+      to: 'static double smaller(double quota, double total)'
+    - from: |-
+        if (total <= quota) return total;
+                return quota;
+      to: 'return total <= quota ? total : quota;'

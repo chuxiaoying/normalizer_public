@@ -92,8 +92,19 @@ pub fn ordered_number_selection(
     ]))
 }
 
-fn explicit_integer(value: &Expr) -> bool {
-    has_integer_evidence(value) || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
+fn has_total_number_selection_evidence(value: &Expr) -> bool {
+    has_integer_evidence(value)
+        || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
+        // The adapter tags finite exact decimal inputs explicitly. Only a
+        // direct parameter is acquired unconditionally; a numeric field or
+        // receipt annotation alone would not prove its evaluation domain.
+        || matches!(
+            value.as_sym_var(),
+            Some(SymVarOrigin::Parameter { name, primitive_type })
+                if primitive_type == crate::domains::decimal::VALUE_TAG
+                    && !name.starts_with('$')
+                    && !name.contains(['.', '[', ']'])
+        )
 }
 
 // Lower ranks are the published semantic policies.  The policy is part of
@@ -201,7 +212,7 @@ pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) ->
     let (condition, yes) = &branches[0];
     let no = &branches[1].1;
     if selection_comparison(condition, yes, no).is_some() {
-        if !explicit_integer(yes) || !explicit_integer(no) {
+        if !has_total_number_selection_evidence(yes) || !has_total_number_selection_evidence(no) {
             return None;
         }
         let canonical = ordered_number_selection(condition, yes, no, context)?;

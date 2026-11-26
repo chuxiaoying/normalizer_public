@@ -47,3 +47,6 @@
 - name: half-even-midpoint-rounds-away-from-an-odd-neighbour
   edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(2.355, 2, HALF_EVEN)'}]
   expect: [{path: [R], value: '2.36'}]
+- name: constant-product-and-no-op-round-retain-exact-value
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(1.25 * 2.5, 4, HALF_EVEN)'}]
+  expect: [{path: [R], value: '3.125'}]
