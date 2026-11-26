@@ -3,6 +3,7 @@
 import ts from 'typescript';
 import { unwrapParens } from './ir.mjs';
 import { checkedTypeScript, failTypedModule, typedParameterNames } from './typed-module.mjs';
+import { normalizerMarkers, singleAnnotatedBinding } from './module-projection.mjs';
 
 const fail = failTypedModule;
 const is = (node, kind) => node?.kind === kind;
@@ -17,22 +18,34 @@ function blockStatements(node) {
   return ts.isBlock(node) ? [...node.statements] : [node];
 }
 
-export function compileTypedListener(physicalPath, sf, fn) {
+export function compileTypedListener(physicalPath, sf, fn, modulePath) {
   const checker = checkedTypeScript(physicalPath, sf);
   const params = typedParameterNames(fn);
   const contracts = new Map(), ports = {}, externalResults = {};
   for (const host of sf.statements) {
     if (host === fn) continue;
-    const [root] = host.declarationList.declarations;
-    const markers = ts.getJSDocTags(host);
-    if (markers.some(tag => tag.tagName.text !== 'external')) fail('unsupported listener host contract tag');
+    if (!ts.isVariableStatement(host) || !host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {
+      fail('listener requires a closed top-level host declaration');
+    }
+    const root = singleAnnotatedBinding(host, 'listener host must mark one named declaration', fail);
+    const markers = normalizerMarkers(host, fail);
+    if (markers.size && !markers.has('external') || root.initializer || !root.type || !ts.isTypeLiteralNode(root.type)) {
+      fail('listener host requires a closed declared receiver interface or source shape');
+    }
     for (const signature of root.type.members) {
+      if (!ts.isMethodSignature(signature) || !ts.isIdentifier(signature.name) ||
+          signature.questionToken || signature.typeParameters?.length ||
+          signature.parameters.length || !is(signature.type, ts.SyntaxKind.VoidKeyword)) {
+        fail('listener requires a named required zero-argument void member');
+      }
       const target = root.name.text + '.' + signature.name.text;
-      const port = markers.length ? 'sync_' + contracts.size : null;
-      contracts.set(target, { declaration: root, port });
+      const port = markers.has('external') ? 'sync_' + contracts.size : null;
+      const endpoint = modulePath + '#' + target;
+      if (contracts.has(target)) fail('duplicate listener host member ' + target);
+      contracts.set(target, { declaration: root, signature, port, endpoint });
       if (port) {
-        ports[port] = {origin: {path: 'Module.ts', excerpt: host.getText(sf)}, endpoint: target,
-          params: [], returns: 'unit', throws: [], heap_effect: 'none', argument_observation: 'immutable_value', effect: 'sync'};
+        ports[port] = { origin: {path: 'Module.ts', excerpt: host.getText(sf)}, endpoint,
+          params: [], returns: 'unit', throws: [], heap_effect: 'none', argument_observation: 'immutable_value', effect: 'sync' };
         externalResults[port] = 'void';
       }
     }
@@ -79,15 +92,21 @@ export function compileTypedListener(physicalPath, sf, fn) {
     if (expr && !expr.questionDotToken && !expr.arguments.length) return expr.expression;
   }
   function lowerExternal(st, condition) {
-    const callee = callExpression(st);
+    const raw = callExpression(st);
+    const callee = raw && unwrapParens(raw);
+    if (!callee || !ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression) || callee.questionDotToken) {
+      fail('listener body requires a directly observed call');
+    }
     const target = callee.expression.text + '.' + callee.name.text;
     const contract = contracts.get(target);
     // A callback runs at the dispatch site, but its names bind at definition.
     const declaration = declarationOf(callee.expression);
-    if (declaration && contract && declaration !== contract.declaration) {
+    if (contract && (declaration !== contract.declaration ||
+        !checker.getSymbolAtLocation(callee.name)?.declarations?.includes(contract.signature))) {
       fail('local name shadows declared listener host');
     }
-    steps.push({op: 'call_sync', port: contract.port, target, site: 'sync_call_' + serial++, condition});
+    steps.push({op: 'call_sync', port: contract?.port ?? null, target: contract?.port ? contract.endpoint : target,
+      site: 'sync_call_' + serial++, condition});
   }
   const executeCallback = condition => { for (const st of callback) lowerExternal(st, condition); };
   let saved = false;
@@ -128,11 +147,24 @@ export function compileTypedListener(physicalPath, sf, fn) {
     }
     return value('bool', numericTruth(node));
   }
+  function dispatch(st, condition) {
+    const raw = callExpression(st);
+    let expr = raw && unwrapParens(raw);
+    if (expr && ts.isNonNullExpression(expr)) expr = unwrapParens(expr.expression);
+    if (named(expr, pending.name.text) && declarationOf(expr) === pending) {
+      executeCallback(condition);
+    } else {
+      lowerExternal(st, condition);
+    }
+  }
+  const invert = cond => cond.op === 'const' ? value('bool', !cond.value) : {op: 'not', value: cond};
   for (const st of dispatches) {
-    if (!ts.isIfStatement(st) || st.elseStatement)
-      fail('listener dispatch requires a single guarded branch');
+    if (!ts.isIfStatement(st)) fail('listener dispatch requires an observed guarded branch');
     const condition = gate(st.expression);
-    for (const _ of blockStatements(st.thenStatement)) executeCallback(condition);
+    for (const branch of blockStatements(st.thenStatement)) dispatch(branch, condition);
+    if (st.elseStatement) {
+      for (const branch of blockStatements(st.elseStatement)) dispatch(branch, invert(condition));
+    }
   }
   steps.push({op: 'return', value: value('unit', null)});
   return {params, excerpt: fn.getText(sf), ports, externalResults,

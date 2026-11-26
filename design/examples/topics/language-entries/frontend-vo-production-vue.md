@@ -161,12 +161,14 @@ rename to src/ArrearsPage.ts
 +}
 
  interface ProfileClient {
-   /** rejects with ProfileFetchError */
+-  /** rejects with ProfileFetchError */
++  /** @N rejects ProfileFetchError */
    fetchProfile(accountId: number): Promise<Profile>
  }
 
  interface ArrearsClient {
-   /** rejects with BillQueryError */
+-  /** rejects with BillQueryError */
++  /** @N rejects BillQueryError */
    queryOpenBills(accountId: number): Promise<BillRow[]>
  }
 
@@ -222,7 +224,7 @@ rename to src/ArrearsPage.ts
 
 `@N entryState` 标明 `arrears` 属于已创建的页面实例。本次入口开始时，宿主交付账户和日期；形参 `accountId` 和 `today` 是本次调用的 P。源码在首次等待前把日期存入 `todayAtEntry`，等待后的筛选只读该局部值。若原入口在等待后重新观察可变的宿主状态，不能把那次观察提前或当作同一个 P。
 
-两个 `@N external` 声明标记实际端口。源场景已有闭合的完成合同：`profileClient.fetchProfile` 成功返回 `Profile`、失败为 `ProfileFetchError`；`arrearsClient.queryOpenBills` 成功返回 `BillRow[]`、失败为 `BillQueryError`。交付时须同端口绑定携带这份已核实的失败合同；仅凭 TypeScript 的 `Promise<T>` 签名不能推知拒绝类型，普通说明注释也不是推断规则。
+两个 `@N external` 声明标记实际端口。源场景已有闭合的完成合同：`profileClient.fetchProfile` 成功返回 `Profile`、失败为 `ProfileFetchError`；`arrearsClient.queryOpenBills` 成功返回 `BillRow[]`、失败为 `BillQueryError`。分析副本用方法上的 `@N rejects ErrorType` 交付这份已核实的失败合同，要求类型可解析到随项目交付的异常类。仅凭 TypeScript 的 `Promise<T>` 签名不能推知拒绝类型，普通说明注释也不是推断规则。
 
 惰性条件的任一分支也可以引用这类调用不变量。归一化结果只选择真实分支的值：两个分支若引用同一个 P，结果就是该入参本身；等待后的直接读取与等待前保存的局部别名等价。读取 P 不产生新的 E 或 S，也不改变写入、调用和等待的顺序。该式只对已声明为调用不变量的 P 成立，不允许提前观察可变状态、外部回执或执行分支中的外部调用。
 

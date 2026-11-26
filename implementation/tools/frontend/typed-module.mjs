@@ -19,20 +19,30 @@ export function typedParameterNames(fn) {
   return fn.parameters.map(param => param.name.text);
 }
 
-export function checkedTypeScript(physicalPath, sf) {
+export function typeScriptProgram(physicalPath, sf, fail = failTypedModule) {
   let hasImport = false;
   const inspect = node => {
+    if (node.kind === ts.SyntaxKind.AnyKeyword) fail('explicit any is not an admitted analysis type');
     if (ts.isImportTypeNode(node) || node.kind === ts.SyntaxKind.ImportKeyword) hasImport = true;
     ts.forEachChild(node, inspect);
   };
   inspect(sf);
-  if (hasImport) failTypedModule('typed module cannot import outside declarations');
+  if (hasImport) fail('typed module cannot import outside declarations');
   const options = {strict: true, noEmit: true, noResolve: true, types: [], target: ts.ScriptTarget.ES2022};
   const host = ts.createCompilerHost(options);
   const readSource = host.getSourceFile.bind(host);
   host.getSourceFile = (name, ...args) => name === physicalPath ? sf : readSource(name, ...args);
   const checked = ts.createProgram([physicalPath], options, host);
   const errors = [...checked.getSyntacticDiagnostics(), ...checked.getSemanticDiagnostics()];
-  if (errors.length) failTypedModule(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
-  return checked.getTypeChecker();
+  return { checker: checked.getTypeChecker(), errors };
+}
+
+export function assertTypeScript(errors, fail = failTypedModule) {
+  if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
+}
+
+export function checkedTypeScript(physicalPath, sf, fail = failTypedModule) {
+  const { checker, errors } = typeScriptProgram(physicalPath, sf, fail);
+  assertTypeScript(errors, fail);
+  return checker;
 }

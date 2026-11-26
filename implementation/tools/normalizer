@@ -10,8 +10,8 @@ usage() {
   cat <<'EOF'
 Usage:
   implementation/tools/normalizer source SOURCE_DIR Class.method
-  implementation/tools/normalizer module PROJECT_ROOT ENTRY_FILE FUNCTION
-  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE:FUNCTION --source ORIGINAL.vue
+  implementation/tools/normalizer module PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
+  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION --source ORIGINAL.vue
   implementation/tools/normalizer test business-examples
   implementation/tools/normalizer test pers-goldens
   implementation/tools/normalizer test seed-patches

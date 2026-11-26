@@ -85,8 +85,8 @@ function compileProjection(projection) {
   return { type: returned.type, body, reads: reads.values(), environment };
 }
 
-function projectionContract(modulePath, moduleText, name, original) {
-  const projection = readModuleProjection(modulePath, moduleText, name, original);
+function projectionContract(modulePath, moduleText, name) {
+  const projection = readModuleProjection(modulePath, moduleText, name);
   const { type, body, reads, environment } = compileProjection(projection);
   const params = [], javaParams = [], declarations = [], bindings = {};
   for (const { name, path, type } of reads) {
@@ -110,14 +110,14 @@ function projectionContract(modulePath, moduleText, name, original) {
     } },
     functions: { run: {
       java: `T.run(${javaParams.join(',')})`, params, returns,
-      origin: { path: 'Prepared.mjs', excerpt: `function ${name}` }, body,
+      origin: { path: 'Prepared.ts', excerpt: `function ${name}` }, body,
     } },
   };
   return project;
 }
 
-function eventContract(modulePath, moduleText, name, original) {
-  const event = readModuleEvent(modulePath, moduleText, name, original);
+function eventContract(modulePath, moduleText, name, physicalPath) {
+  const event = readModuleEvent(modulePath, moduleText, name, physicalPath);
   const entry = 'T.run';
   const source = 'class T { static native void run(); }\n';
   function kernelType(domain, seen = new Set()) {
@@ -136,7 +136,7 @@ function eventContract(modulePath, moduleText, name, original) {
       endpoint: port.endpoint, effect: 'async-barrier', heap_effect: 'none', argument_observation: 'immutable_value',
       params: port.params.map(({name, type}) => ({name, type: kernelType(type)})),
       returns: kernelType(port.returns), throws: port.throws,
-      origin: {path: 'Prepared.mjs', excerpt: port.endpoint},
+      origin: {path: 'Prepared.ts', excerpt: port.excerpt},
     };
     externalResults[port.id] = port.returns;
     for (const type of port.throws) exceptions[type] = 'unit';
@@ -150,25 +150,26 @@ function eventContract(modulePath, moduleText, name, original) {
       external_results: externalResults,
     }},
     functions: {run: {java: 'T.run()', params: [], returns: 'unit',
-      origin: {path: 'Prepared.mjs', excerpt: `function ${name}`},
+      origin: {path: 'Prepared.ts', excerpt: `function ${name}`},
       body: {op: 'settled', returns: 'unit', steps: event.steps}}},
   };
 }
 
 export function buildModuleProject({ scene, root, file, name, original, directory }) {
   const build = {event: eventContract, projection: projectionContract}[vueScenario(scene)];
-  if (!build || extname(original) !== '.vue' || extname(file) !== '.mjs') {
-    throw new Error('SCENARIO_MODULE_INPUT: expected a supported scenario with its Vue source and prepared .mjs module');
+  if (!build || extname(original) !== '.vue' || extname(file) !== '.ts') {
+    throw new Error('SCENARIO_MODULE_INPUT: expected a supported scenario with its Vue source and prepared .ts module');
   }
   const source = projectSources(root);
   const component = source(original);
   const module = source(file);
   accessSync(component.path, constants.R_OK);
   const moduleText = readFileSync(module.path, 'utf8');
-  const project = build(module.declared, moduleText, name, component.name);
+  const project = build(module.name, moduleText, name, module.declared);
   const [entry] = project.entries;
   writeFileSync(join(directory, 'Normalized.java'), project.source_text);
-  writeFileSync(join(directory, 'Prepared.mjs'), moduleText);
+  writeFileSync(join(directory, 'Prepared.ts'), moduleText);
+  writeFileSync(join(directory, 'Original.vue'), readFileSync(component.path));
   const projectPath = join(directory, 'project.json');
   writeFileSync(projectPath, JSON.stringify(project, null, 2) + '\n');
   return { projectPath, entry };

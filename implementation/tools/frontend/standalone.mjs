@@ -8,7 +8,8 @@ import ts from 'typescript';
 import { definedModuleExport, lowerExpression, parseSourceModule, unwrapParens as unwrap } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
-import { typedModuleAst } from './typed-module.mjs';
+import { checkedTypeScript, failTypedModule, typedModuleAst } from './typed-module.mjs';
+import { entryLocator } from './entry-locator.mjs';
 import { localDirectives } from './local-directives.mjs';
 import { projectSources } from './project-source.mjs';
 
@@ -23,6 +24,10 @@ const carrier = domain => domain === readonlyVector ? 'int[]'
   : domain === nullableText ? 'String' : domains.get(domain)[0];
 const valueType = domain => domain === readonlyVector ? 'vector<number>' : parameter(domain);
 function declaredParameter(node, sf) {
+  if (node && ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword &&
+      ts.isArrayTypeNode(node.type) && node.type.elementType.kind === ts.SyntaxKind.NumberKeyword) {
+    return readonlyVector;
+  }
   if (node && ts.isTypeReferenceNode(node)
       && ts.isIdentifier(node.typeName) && node.typeName.text === 'ReadonlyArray'
       && node.typeArguments?.length === 1
@@ -68,6 +73,7 @@ function leadingParameterCall(fn, params) {
       declared.add(name.text);
     }
   }
+  if (!top) return;
   const expression = unwrap(top);
   const awaited = ts.isAwaitExpression(expression);
   const call = awaited ? unwrap(expression.expression) : expression;
@@ -80,7 +86,7 @@ function leadingParameterCall(fn, params) {
   }
 }
 
-function mapEntries(node, names) {
+function mapEntries(node, names, fail, typed) {
   node = unwrap(node);
   const argument = ts.isNewExpression(node) && ts.isIdentifier(node.expression)
     && node.expression.text === 'Map' && node.arguments?.length === 1 && unwrap(node.arguments[0]);
@@ -96,8 +102,11 @@ function mapEntries(node, names) {
     const nullFirst = operator === ts.SyntaxKind.EqualsEqualsEqualsToken;
     const empty = conditional && unwrap(nullFirst ? candidate.whenTrue : candidate.whenFalse);
     const present = conditional && unwrap(nullFirst ? candidate.whenFalse : candidate.whenTrue);
-    const entry = present && ts.isArrayLiteralExpression(present) && present.elements.length === 1
+    let entry = present && ts.isArrayLiteralExpression(present) && present.elements.length === 1
       && unwrap(present.elements[0]);
+    // TS can prove a fresh literal has two readonly slots. Other assertions
+    // are not evidence for the shape or origin of a business value.
+    if (typed && entry && ts.isAsExpression(entry) && entry.type.getText() === 'const') entry = unwrap(entry.expression);
     if ((!nullFirst && operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken)
         || !empty || !ts.isArrayLiteralExpression(empty) || empty.elements.length
         || !entry || !ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2
@@ -126,29 +135,49 @@ const numericOperators = {
 };
 
 function compile(source, file, entry, physicalPath) {
-  if (file.endsWith('.ts')) {
-    const {sf, fn} = typedModuleAst(source, physicalPath, entry);
+  const typed = file.endsWith('.ts');
+  const failInput = typed ? failTypedModule : fail;
+  const {sf, fn} = typed
+    ? typedModuleAst(source, physicalPath, entry)
+    : (() => {
+      const sf = parseSourceModule(file, source, failInput);
+      return {sf, fn: definedModuleExport(sf, entry, failInput)};
+    })();
+  if (typed) {
+    const formals = namedParameters(fn.parameters);
+    if (formals.error) failInput(formals.error);
     const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
-    const typed = isListener ? compileTypedListener(physicalPath, sf, fn)
-      : compileTypedTuple(physicalPath, sf, fn);
-    const params = typed.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
-    const returns = isListener ? 'void' : 'number';
-    return projectInput(file, entry, params, returns, false, returns, typed.result, typed.excerpt, typed);
+    const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
+    if (isListener || isTuple) {
+      const shape = isListener ? compileTypedListener(physicalPath, sf, fn, file)
+        : compileTypedTuple(physicalPath, sf, fn);
+      const params = shape.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
+      const returns = isListener ? 'void' : 'number';
+      return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
+    }
   }
-  const sf = parseSourceModule(file, source, fail);
-  const fn = definedModuleExport(sf, entry, fail);
+  return compileScalar(sf, fn, file, entry, physicalPath, failInput, typed);
+}
+
+function compileScalar(sf, fn, file, entry, physicalPath, fail, typed) {
   // Imports, executable top-level initialization and other module state
   // cannot be ignored by a closed standalone scalar adapter.
-  if (sf.statements.some(node => !ts.isFunctionDeclaration(node))) fail('standalone scalar modules require closed function declarations');
+  if (sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
+      !(typed && (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node))))) {
+    fail('standalone scalar modules require closed function declarations');
+  }
   localDirectives(sf, fn.body).requireConsumed();
   if (fn.asteriskToken) fail('generator entry requires a closed completion contract: ' + entry);
   const formals = namedParameters(fn.parameters);
   const call = formals.names && leadingParameterCall(fn, formals.names);
-  if (call) return { closure: { schema: 'normalizer.standalone-closure/1', file, entry, ...call } };
+  if (call) {
+    if (typed) checkedTypeScript(physicalPath, sf);
+    return { closure: { schema: 'normalizer.standalone-closure/1', file, entry, ...call } };
+  }
   if (fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
-  const declaredReturn = ts.getJSDocReturnType(fn);
+  const declaredReturn = typed ? fn.type : ts.getJSDocReturnType(fn);
   const orderedMap = declaredOrderedMap(declaredReturn);
   const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf);
   if (!orderedMap && (!parameter(returnDomain) || returnDomain === nullableText)) fail('expected declared business scalar or non-null readonly Vector return type');
@@ -159,17 +188,18 @@ function compile(source, file, entry, physicalPath) {
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
     const [tag, ...more] = ts.getJSDocParameterTags(param);
-    const domain = declaredParameter(tag?.typeExpression?.type, sf);
+    const domain = declaredParameter(typed ? param.type : tag?.typeExpression?.type, sf);
     if (more.length || !parameter(domain) || (!orderedMap && domain === nullableText)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
     names.set(param.name.text, {name: binding, type: parameter(domain)});
     return {publicName: param.name.text, name: binding, domain, position};
   });
   function expression(expr) {
     if (expr.op === 'var') {
       const binding = names.get(expr.name);
+      if (!binding) fail('unbound scalar value ' + expr.name);
       return {type: binding.type, node: internal('var', {name: binding.name})};
     }
     if (expr.op === 'literal' && (expr.type === 'boolean' || expr.type === 'number' && Number.isSafeInteger(expr.value))) {
@@ -200,10 +230,12 @@ function compile(source, file, entry, physicalPath) {
     if (expr.op === 'array') {
       if (expr.items.some(item => item.op === 'opaque')) fail('readonly Vector literal requires a closed list of numbers');
       const items = expr.items.map(expression);
+      if (items.some(item => item.type !== 'number')) fail('readonly Vector literal requires a closed list of numbers');
       return {type: 'number[]', node: internal('value.number_vector', {items: items.map(item => item.node)})};
     }
     if (expr.op === 'select') {
       const test = expression(expr.condition), yes = expression(expr.whenTrue), no = expression(expr.whenFalse);
+      if (test.type !== 'bool' || yes.type !== no.type) fail('conditional requires a Boolean and two matching business value types');
       return {type: yes.type, node: internal('if', {cond: test.node, then: yes.node, else: no.node})};
     }
     fail('unsupported standalone scalar operation ' + expr.op);
@@ -212,8 +244,9 @@ function compile(source, file, entry, physicalPath) {
   if (remaining.length || !last || !ts.isReturnStatement(last) || !last.expression) fail('expected one closed return expression');
   const returns = orderedMap ? 'map<text,text>' : parameter(returnDomain);
   const body = orderedMap
-    ? internal('value.ordered_text_map', {entries: mapEntries(last.expression, names)})
+    ? internal('value.ordered_text_map', {entries: mapEntries(last.expression, names, fail, typed)})
     : expression(lowerExpression(last.expression, sf)).node;
+  if (typed) checkedTypeScript(physicalPath, sf);
   return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf));
 }
 
@@ -252,7 +285,10 @@ function publishKernelFailure(result) {
 }
 
 try {
-  const [kernel, rootArg, file, entry] = process.argv.slice(2);
+  const [kernel, rootArg, fileOrFlag, entryOrLocator] = process.argv.slice(2);
+  const {file, name: entry} = fileOrFlag === '--entry'
+    ? entryLocator(entryOrLocator, failTypedModule)
+    : entryLocator(fileOrFlag + '#' + entryOrLocator, fail);
   const { declared, name, path } = projectSources(rootArg)(file);
   const source = readFileSync(path, 'utf8');
   const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, declared);

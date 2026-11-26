@@ -22,7 +22,7 @@ struct Call {
     awaited: bool,
 }
 
-// This envelope identifies a parsed JavaScript call for a diagnostic. These
+// This envelope identifies a parsed module call for a diagnostic. These
 // names are not being admitted as typed PERS or Java carrier identifiers.
 fn source_identifier(name: &str) -> bool {
     !name.is_empty() && name.bytes().enumerate().all(|(index, byte)|
@@ -36,7 +36,7 @@ pub fn validate(input: &[u8]) -> Result<(), String> {
     let entry: Entry = serde_json::from_slice(input).map_err(|_| error("invalid standalone entry closure"))?;
     let mut params = BTreeSet::new();
     if entry.schema != "normalizer.standalone-closure/1"
-        || !(entry.file.ends_with(".js") || entry.file.ends_with(".mjs"))
+        || !(entry.file.ends_with(".ts") || entry.file.ends_with(".js") || entry.file.ends_with(".mjs"))
         || entry.file.chars().any(char::is_control)
         || !std::path::Path::new(&entry.file).components().all(|c| matches!(c, std::path::Component::Normal(_)))
         || !source_identifier(&entry.entry) || !source_identifier(&entry.call.member)
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn closure_requires_an_admitted_module_path_and_each_identifier() {
-        for filename in ["/src/input.js", "src/input.ts"] {
+        for filename in ["/src/input.js", "src/input.vue"] {
             let mut wrong_file = envelope();
             wrong_file["file"] = json!(filename);
             assert_rejected(wrong_file);
@@ -129,9 +129,9 @@ mod tests {
     }
 
     #[test]
-    fn a_parsed_mjs_call_with_dollar_identifiers_keeps_the_no_source_diagnostic() {
+    fn a_parsed_typed_call_with_dollar_identifiers_keeps_the_no_source_diagnostic() {
         let mut valid = envelope();
-        valid["file"] = json!("src/input.mjs");
+        valid["file"] = json!("src/input.ts");
         valid["entry"] = json!("$entry");
         valid["parameters"] = json!(["$input", "other"]);
         valid["call"]["receiver"] = json!("$input");
@@ -141,7 +141,7 @@ mod tests {
             .expect_err("the no-source call explicitly aborts");
         let message = panic.downcast_ref::<String>().unwrap();
         assert!(message.contains(
-            "[NORM-OUT-OF-SOURCE] kind=ABORT location=src/input.mjs#$entry:await target=$input.$read"
+            "[NORM-OUT-OF-SOURCE] kind=ABORT location=src/input.ts#$entry:await target=$input.$read"
         ));
     }
 }

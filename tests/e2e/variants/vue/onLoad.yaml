@@ -150,3 +150,16 @@
   reject:
   - 'SCENARIO_MODULE_INPUT:'
   - local IR requires a writable local assignment in this block
+- name: missing-machine-readable-rejection-contract-is-not-inferred-from-prose
+  edits:
+  - file: src/ArrearsPage.ts
+    from: '/** @N rejects ProfileFetchError */'
+    to: '/** rejects with ProfileFetchError */'
+  reject: ['SCENARIO_MODULE_INPUT:', 'awaited external port requires a closed Promise<Element> and named rejection types']
+
+- name: a-rejection-name-must-bind-to-a-project-exception
+  edits:
+  - file: src/ArrearsPage.ts
+    from: '/** @N rejects ProfileFetchError */'
+    to: '/** @N rejects MissingProfileError */'
+  reject: ['SCENARIO_MODULE_INPUT:', 'unresolved project exception declaration MissingProfileError']
