@@ -1048,6 +1048,37 @@ fn compare_integer_floor(op: BinOpKind, left: &Value, right: &Value, domain: &Ex
         .or_else(|| against_literal(op.swapped_comparison()?, right, left, domain))
 }
 
+#[cfg(test)]
+mod guarded_count_comparison_contract {
+    use super::*;
+    use BinOpKind::*;
+
+    fn literal(n: i64) -> Value {
+        Value::Term(Ty::Integer, b::lit_int(n))
+    }
+
+    #[test]
+    fn a_count_floor_only_decides_comparisons_justified_by_the_bound() {
+        let guard = b::param("acquired", ScalarSymbolType::Boolean);
+        let count = Value::IntegerFloor {
+            value: b::param("count", ScalarSymbolType::Integer),
+            lower: 0.into(),
+            domain: guard.clone(),
+        };
+        for (op, threshold, expected) in [
+            (Lt, 0, Some(false)), (Le, -1, Some(false)), (Eq, -1, Some(false)),
+            (Gt, -1, Some(true)), (Ge, 0, Some(true)), (Ne, -1, Some(true)),
+            (Lt, 1, None), (Le, 0, None), (Eq, 0, None),
+            (Gt, 0, None), (Ge, 1, None), (Ne, 0, None),
+        ] {
+            assert_eq!(compare_integer_floor(op, &count, &literal(threshold), &guard), expected);
+        }
+        assert_eq!(compare_integer_floor(Gt, &literal(0), &count, &guard), Some(false));
+        assert_eq!(compare_integer_floor(Lt, &literal(-1), &count, &guard), Some(true));
+        assert_eq!(compare_integer_floor(Ge, &count, &literal(0), &b::lit_bool(true)), None);
+    }
+}
+
 impl Engine<'_> {
     pub(super) fn has_observable_boundary(&self) -> bool {
         !self.project.heap_fields.is_empty()
