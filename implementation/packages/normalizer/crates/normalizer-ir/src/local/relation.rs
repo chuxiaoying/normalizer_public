@@ -72,6 +72,7 @@ enum Kind {
 enum Yield {
     Fields(Vec<(String, Scalar)>),
     Value(Scalar),
+    FirstValue { value: Scalar, fallback: Scalar },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -312,12 +313,11 @@ fn parse_query_tail(
         }
         *t = nested;
         let inner = parse_query_tail(String::new(), false, t, Kind::Sum, false)?;
-        let Operation::OnRows(RowOperation::Sum(value)) = inner.operation else {
-            return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
+        let value = match inner.operation {
+            Operation::OnRows(RowOperation::Sum(value))
+                if inner.source == alias && inner.alias != alias => value,
+            _ => return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into()),
         };
-        if inner.source != alias || inner.alias == alias {
-            return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
-        }
         return Ok(Query {
             binding, accumulate, source, alias, clauses,
             operation: Operation::NestedSum { alias: inner.alias, clauses: inner.clauses, value },
@@ -325,22 +325,19 @@ fn parse_query_tail(
     } else {
         Yield::Value(scalar(t)?)
     };
-    if kind == Kind::First {
+    let projection = if kind == Kind::First {
         t.expect("else")?;
-        if !t.take("null") {
+        if t.take("null") {
+            projection
+        } else {
             let Yield::Value(value) = projection else {
                 return Err("scalar first fallback requires a scalar projection".into());
             };
-            let fallback = scalar(t)?;
-            if !t.rest().is_empty() {
-                return Err(format!("trailing relation input: {}", t.rest()));
-            }
-            return Ok(Query {
-                binding, accumulate, source, alias, clauses,
-                operation: Operation::OnRows(RowOperation::FirstValue { value, fallback }),
-            });
+            Yield::FirstValue { value, fallback: scalar(t)? }
         }
-    }
+    } else {
+        projection
+    };
     if !t.rest().is_empty() {
         return Err(format!("trailing relation input: {}", t.rest()));
     }
@@ -351,6 +348,8 @@ fn parse_query_tail(
         (Kind::Count | Kind::CountDistinct, Yield::Value(Scalar::Path(path)))
             if path.as_slice() == std::slice::from_ref(&alias) =>
                 RowOperation::Count { distinct: kind == Kind::CountDistinct },
+        (Kind::First, Yield::FirstValue { value, fallback }) =>
+            RowOperation::FirstValue { value, fallback },
         (Kind::First, Yield::Value(Scalar::Path(path)))
             if path.as_slice() == std::slice::from_ref(&alias) => RowOperation::FirstRow,
         // No input types or acquired values can make this pair legal.
