@@ -44,3 +44,14 @@
     - from: 'yield row.dueDate else 0'
       to: 'yield row.dueDate else accountId'
   expect: [{path: [R], value: accountId}]
+- name: computed-row-member-is-not-a-column
+  edits:
+    - {from: 'int accountId;', to: 'int accountId; int synthetic;'}
+    - from: 'yield { accountId: b.account_id, dueDate: b.due_date, id: b.id }'
+      to: 'yield { accountId: b.account_id, dueDate: b.due_date, id: b.id, synthetic: 7 }'
+- name: projected-local-parameter-does-not-replace-physical-filter-column
+  edits:
+    - {from: 'accountId: b.account_id', to: 'accountId: accountId'}
+- name: physical-filter-column-is-independent-of-operand-order
+  edits:
+    - {from: 'b.account_id == accountId', to: 'accountId == b.account_id'}

@@ -46,3 +46,23 @@
     - 0
     - when
     value: EXISTS (SELECT 1 FROM indices(LENGTH(opened)) AS i WHERE opened[i].id != opened[LENGTH(opened) - 1 - i].id)
+- name: stack-tracks-the-selected-integer-field
+  edits:
+    - {from: 'int id;', to: 'int sequence;'}
+    - {from: 'value.last_or(s, task).id != task.id', to: 'value.last_or(s, task).sequence != task.sequence'}
+  expect:
+    - path: [types, Task, fields]
+      value: {sequence: number}
+    - path: [throws, 0, when]
+      value: LENGTH(closed) > LENGTH(opened) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE closed[i].sequence != opened[LENGTH(opened) - 1 - i].sequence)
+- name: acquired-array-aliases-keep-original-position-roots
+  edits:
+    - from: 'static boolean complete(Task[] opened, Task[] closed) {'
+      to: 'static boolean complete(Task[] opened, Task[] closed) { Task[] incoming = opened; Task[] outgoing = closed;'
+    - {from: 'fold opened from []', to: 'fold incoming from []'}
+    - {from: 'fold closed from stack', to: 'fold outgoing from stack'}
+- name: unused-stack-result-does-not-suppress-failure
+  edits:
+    - {from: 'return empty;', to: 'return true;'}
+  expect:
+    - {path: [R], value: 'true'}
