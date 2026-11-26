@@ -40,6 +40,7 @@ pub enum Projection {
     GroupKeys(Vec<Scalar>),
     JoinCount { source: String, alias: String, on: Scalar, filters: Vec<Scalar> },
     FirstValue { value: Scalar, fallback: Scalar },
+    FirstArray { offset: num_bigint::BigUint, fallback: Scalar },
     Fields(Vec<(String, Scalar)>),
     Fold { accumulator: String, initial: Scalar, body: Scalar },
 }
@@ -49,7 +50,6 @@ pub enum Kind {
     Rows,
     Sum,
     First,
-    FirstScalar(num_bigint::BigUint),
     Reduce,
     Count,
     CountDistinct,
@@ -204,8 +204,9 @@ fn parse_query_tail(
             let default = scalar(t)?;
             if !t.rest().is_empty() { return Err("trailing scalar first input".into()); }
             return Ok(Query {
-                binding, accumulate, kind: Kind::FirstScalar(offset.unwrap_or_default()), source,
-                alias: String::new(), clauses: vec![], projection: Projection::Value(default),
+                binding, accumulate, kind, source,
+                alias: String::new(), clauses: vec![],
+                projection: Projection::FirstArray { offset: offset.unwrap_or_default(), fallback: default },
             });
         }
     }

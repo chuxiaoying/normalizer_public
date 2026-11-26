@@ -318,7 +318,7 @@ impl Engine<'_> {
                 let [alias, link, leaf] = parts.as_slice() else {
                     return Err(fail("eager record projection requires one nullable member hop"));
                 };
-                need(alias == &query.alias && query.clauses.is_empty() && !query.accumulate,
+                need(alias == &query.alias && query.clauses.is_empty(),
                     "eager record projection requires an unfiltered source-order path")?;
                 let Some(Value::Sequence { item: Ty::Ref, name, .. }) =
                     env.get(&query.source) else { return Err(fail("eager projection requires a directly bound record array")); };
@@ -344,12 +344,11 @@ impl Engine<'_> {
                 return Ok(());
             }
         }
-        if let Kind::FirstScalar(offset) = &query.kind {
+        if let Projection::FirstArray { offset, fallback } = &query.projection {
             let Some(Value::Sequence { item: Ty::Integer, name, .. }) =
                 env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };
             let relation = RelationExpr::base(name, "value");
-            let Projection::Value(default) = &query.projection else { return Err(fail("scalar first requires a fallback value")); };
-            let default = self.query_value(default, "", &BTreeMap::new(), env, guard)?;
+            let default = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
             need(default.ty() == Ty::Integer, "scalar first requires a numeric fallback")?;
             need(decl.is_none_or(crate::normalized::integral), "scalar first requires a numeric local")?;
             let index = b::lit_integer(offset.clone());
@@ -364,7 +363,7 @@ impl Engine<'_> {
             let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
                 return Err(fail("nested sum requires a directly bound two-dimensional array"));
             };
-            need(**element == Ty::Integer && query.kind == Kind::Sum,
+            need(**element == Ty::Integer,
                 "nested sum requires exact integer elements")?;
             let fresh = |prefix: &str| {
                 let mut name = prefix.to_owned();
