@@ -528,6 +528,28 @@ mod content_graph_contract {
     use super::*;
     use simulator_parser::{parse, ParseOptions};
 
+    #[test]
+    fn nested_borrows_do_not_acquire_a_public_root_identity() {
+        let parameter = |path: &str| Origin::Parameter { path: path.into(), nullable: false };
+        assert!(matches!(borrowed_root(&parameter("request")), Some(BorrowedRoot::Parameter("request"))));
+        assert!(borrowed_root(&parameter("request.child")).is_none());
+        let state = |path| Origin::State { binding: 0, path };
+        assert!(matches!(borrowed_root(&state(Vec::new())), Some(BorrowedRoot::State(0))));
+        assert!(borrowed_root(&state(vec!["child".into()])).is_none());
+    }
+
+    #[test]
+    fn identity_partition_does_not_assume_an_untracked_arm_was_acquired() {
+        let mut objects = SourceObjects::default();
+        objects.objects.insert(1, ("Node".into(), Origin::Allocation));
+        let ready = b::param("ready", ScalarSymbolType::Boolean);
+        let allocation = b::heap_ref(1);
+        let known = b::case_when(vec![(ready.clone(), allocation.clone())], b::lit_null());
+        let untracked = b::case_when(vec![(ready, b::heap_ref(-2))], allocation);
+        assert!(objects.has_complete_identity_partition(&known));
+        assert!(!objects.has_complete_identity_partition(&untracked));
+    }
+
     fn local_graph(back_edge: &str) -> Loaded {
         let source = format!(r#"
             class GraphNode {{
