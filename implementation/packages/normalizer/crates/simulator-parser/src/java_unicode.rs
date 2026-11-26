@@ -117,3 +117,20 @@ pub(super) fn translate(source: &str) -> Result<Option<Translation>, (usize, &'s
     origins.push(source.len());
     Ok(Some(Translation { text, origins, surrogates }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_after_a_crlf_points_to_the_original_next_token() {
+        for source in ["\\u0061\r\nnext", r"\u0061\u000d\u000anext"] {
+            let translated = translate(source).unwrap().unwrap();
+            assert_eq!(translated.text, "a\r\nnext");
+            assert_eq!(translated.raw_offset(1, 1), 0);
+            assert_eq!(translated.raw_offset(1, 2), 6);
+            assert_eq!(translated.raw_offset(2, 1), source.find("next").unwrap());
+            assert_eq!(translated.raw_offset(3, 1), source.len());
+        }
+    }
+}
