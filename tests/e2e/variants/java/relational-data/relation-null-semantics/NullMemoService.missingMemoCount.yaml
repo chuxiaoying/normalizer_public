@@ -96,6 +96,9 @@
         static int missingMemoCount(MemoFilter request) {
                 int accountId = request.accountId;
   expect:
+    - path: [types]
+      add:
+        MemoFilter: {fields: {accountId: number}}
     - path: [P, parameters]
       value:
         request: {position: 0, type: MemoFilter}

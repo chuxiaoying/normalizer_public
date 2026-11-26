@@ -13,7 +13,7 @@
   edits:
     - {from: 'class Node { Node next; int value; }', to: 'class Node { Node next; Node other; int value; }'}
     - from: 'root.next = root;'
-      to: 'Node leaf = new Node(); root.next = leaf; root.other = leaf; root.next.value = 12;'
+      to: 'Node leaf = new Node(); root.next = leaf; root.other = leaf; Node throughNext = root.next; throughNext.value = 12;'
     - {from: 'return root.next.value;', to: 'return root.other.value;'}
   expect:
     - {path: [R], value: '12'}
