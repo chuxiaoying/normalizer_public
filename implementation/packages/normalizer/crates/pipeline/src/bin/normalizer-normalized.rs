@@ -11,8 +11,7 @@ fn run() -> Result<(), String> {
     }
     match args.as_slice() {
         [mode, path, entry] if mode == "--project" => {
-            let project = pipeline::kernel_input::Loaded::load_for_entry(std::path::Path::new(path))?;
-            print!("{}", project.project_pers(entry)?);
+            print!("{}", pipeline::kernel_input::Loaded::project_pers(std::path::Path::new(path), entry)?);
         }
         [mode, root, entry] if mode == "--source" => {
             let path = std::path::Path::new(root);

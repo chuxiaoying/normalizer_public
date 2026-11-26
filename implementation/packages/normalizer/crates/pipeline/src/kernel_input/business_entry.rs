@@ -155,10 +155,12 @@ impl Loaded {
         context.render_source(&self.project, &result, method)
     }
 
-    pub fn project_pers(&self, entry: &str) -> Result<String> {
-        let result = self.normalize(entry)?;
-        match self.project.entry_contexts.get(entry) {
-            Some(context) => context.render_source(&self.project, &result, self.entry_method(entry)?.1),
+    /// Validate and run one closed adapter entry; do not execute unrelated methods.
+    pub fn project_pers(path: &Path, entry: &str) -> Result<String> {
+        let loaded = Self::read_adapter_project(path)?;
+        let result = loaded.normalize(entry)?;
+        match loaded.project.entry_contexts.get(entry) {
+            Some(context) => context.render_source(&loaded.project, &result, loaded.entry_method(entry)?.1),
             None => Err("missing business entry context".into()),
         }
     }

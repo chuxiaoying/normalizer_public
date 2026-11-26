@@ -441,8 +441,7 @@ impl Loaded {
         // receiver; auditing a constructor as a stand-alone call has no meaning.
         Ok(Self { project, program })
     }
-    /// Load the closed adapter project without executing unrelated methods.
-    pub fn load_for_entry(path: &Path) -> Result<Self> {
+    fn read_adapter_project(path: &Path) -> Result<Self> {
         let load_started = Instant::now();
         let path = path.canonicalize().map_err(|e| fail(e.to_string()))?;
         let root = path.parent().ok_or_else(|| fail("missing project root"))?;
@@ -508,18 +507,7 @@ impl Loaded {
             load_started,
             format!("classes={}", program.classes().len()),
         );
-        let loaded = Self { project, program };
-        let prepare_started = Instant::now();
-        let e = loaded.prepare()?;
-        for id in &loaded.project.entries {
-            need(e.methods.contains_key(id), "entry missing")?;
-        }
-        emit_stage_profile(
-            "prepare",
-            prepare_started,
-            format!("methods={}", e.methods.len()),
-        );
-        Ok(loaded)
+        Ok(Self { project, program })
     }
     fn engine(&self) -> Engine<'_> {
         Engine {
@@ -675,9 +663,18 @@ impl Loaded {
         Ok(e)
     }
     fn normalize(&self, entry: &str) -> Result<ExecutionResult> {
+        let adapter_prepare = (!self.project.direct_source).then(Instant::now);
+        let mut e = self.prepare()?;
+        // The adapter prepares every declaration, but executes only the
+        // selected entry. Reuse this verified engine rather than rebuilding it.
+        if let Some(started) = adapter_prepare {
+            for id in &self.project.entries {
+                need(e.methods.contains_key(id), "entry missing")?;
+            }
+            emit_stage_profile("prepare", started, format!("methods={}", e.methods.len()));
+        }
         let selected = self.project.entries.iter().find(|s| *s == entry)
             .ok_or_else(|| fail("entry not declared"))?;
-        let mut e = self.prepare()?;
         e.selected_entry = Some(selected.as_str());
         e.entry_context = self.project.entry_contexts.get(entry);
         let m = *e.methods.get(entry).ok_or_else(|| fail("entry method missing"))?;
