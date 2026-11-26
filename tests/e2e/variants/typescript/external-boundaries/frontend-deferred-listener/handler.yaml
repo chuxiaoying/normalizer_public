@@ -439,3 +439,19 @@
         returns: void
         result: $e_2
         when: NOT (deliver)
+- name: reversed-callback-equality-keeps-the-registration-binding
+  edits:
+    - {from: 'audit.registered()', to: 'if (pending === callback) audit.registered()'}
+- name: text-on-the-left-still-selects-the-deliver-domain
+  edits:
+    - {from: 'if (deliver) pending!()', to: 'if ("send" === (deliver ? "send" : "")) pending!()'}
+- name: matching-the-false-text-arm-dispatches-only-when-not-delivered
+  edits:
+    - {from: 'if (deliver) pending!()', to: 'if ("" === (deliver ? "send" : "")) pending!()'}
+  expect:
+    - {path: [S, 1, call, when], value: 'NOT (deliver)'}
+- name: same-text-in-both-arms-dispatches-unconditionally
+  edits:
+    - {from: 'if (deliver) pending!()', to: 'if ((deliver ? "send" : "send") === "send") pending!()'}
+  expect:
+    - {path: [S, 1, call, when], absent: true}
