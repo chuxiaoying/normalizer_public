@@ -340,6 +340,7 @@ pub(crate) struct SourceEvidence {
     pub(crate) exception_parents: BTreeMap<String, String>,
     pub(crate) catch_types: CatchTypes,
     pub(crate) ports: BTreeMap<String, source_ports::SourcePort>,
+    pub(crate) nullable_entry_parameters: BTreeSet<String>,
 }
 
 /// Validate every supplied method, including unused helpers.
@@ -355,6 +356,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
     };
     let mut methods = BTreeMap::new();
     let mut classes = BTreeSet::new();
+    let mut nullable_entry_parameters = BTreeSet::new();
     for c in program.classes() {
         let name = c.full_name();
         if !classes.insert(name.clone()) {
@@ -395,11 +397,14 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
                 return Err(error("NORM-METHOD-SHAPE", &id));
             }
             for (ty, parameter) in m.params() {
-                source_nullable_parameter(m, parameter, ty)
+                let nullable = source_nullable_parameter(m, parameter, ty)
                     .map_err(|detail| crate::preprocess::required(
                         "NORM-SOURCE-ANNOTATION", &format!("{id}.{parameter}"), &detail,
                         "请按当前源码合同修改参数注解；不要删除来源语义。",
                     ))?;
+                if nullable && id == entry {
+                    nullable_entry_parameters.insert(parameter.clone());
+                }
             }
             if m.body().is_none() && !m.is_native() {
                 return Err(error("NORM-MISSING-BODY", &id));
@@ -492,7 +497,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
     for id in graph.keys() {
         visit(id, &graph, &mut BTreeSet::new(), &mut done)?;
     }
-    Ok(SourceEvidence { layouts, exception_parents: exceptions, catch_types, ports })
+    Ok(SourceEvidence { layouts, exception_parents: exceptions, catch_types, ports, nullable_entry_parameters })
 }
 
 enum SourceCall {

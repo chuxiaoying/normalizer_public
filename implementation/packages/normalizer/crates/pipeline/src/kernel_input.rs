@@ -167,6 +167,8 @@ pub struct Project {
     source_exception_parents: BTreeMap<String, String>,
     #[serde(skip)]
     source_catch_types: crate::normalized::CatchTypes,
+    #[serde(skip)]
+    source_nullable_entry_parameters: BTreeSet<String>,
     schema: String,
     source: String,
     source_text: String,
@@ -402,6 +404,7 @@ impl Loaded {
             exception_parents: source_exception_parents,
             catch_types: source_catch_types,
             ports: source_ports,
+            nullable_entry_parameters: source_nullable_entry_parameters,
         } = crate::normalized::validate(&program, entry)?;
         let ports = source_ports::contracts(&program, &source_ports)?;
         let exceptions = source_exception_parents
@@ -426,6 +429,7 @@ impl Loaded {
             source_ports,
             source_exception_parents,
             source_catch_types,
+            source_nullable_entry_parameters,
             schema: KERNEL_INPUT_SCHEMA.into(),
             source: "<parsed-java-source>".into(),
             source_text: String::new(),
@@ -688,10 +692,12 @@ impl Loaded {
             .enumerate()
             .map(|(index, (t, n))| {
                 let expected = e.method_parameter_type(entry, index, n)?;
-                e.entry_argument(
-                    n, t, &expected,
-                    crate::normalized::source_nullable_parameter(m, n, t)?,
-                )
+                let nullable = if self.project.direct_source {
+                    self.project.source_nullable_entry_parameters.contains(n)
+                } else {
+                    crate::normalized::source_nullable_parameter(m, n, t)?
+                };
+                e.entry_argument(n, t, &expected, nullable)
             })
             .collect::<Result<_>>()?;
         let entry_started = Instant::now();

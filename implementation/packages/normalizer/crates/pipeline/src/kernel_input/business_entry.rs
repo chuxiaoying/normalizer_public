@@ -144,7 +144,7 @@ impl Loaded {
             },
             parameters: method.params().iter().enumerate().map(|(position, (ty, name))| {
                 let mut domain = source_type(ty)?.to_owned();
-                if crate::normalized::source_nullable_parameter(method, name, ty)? {
+                if self.project.source_nullable_entry_parameters.contains(name) {
                     domain.push('?');
                 }
                 Ok((name.clone(), Parameter { position, ty: domain }))
