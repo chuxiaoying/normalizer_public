@@ -84,9 +84,9 @@ export function compileTypedTuple(physicalPath, sf, fn) {
       return {kind: 'literal', items: expression.elements.map(slot)};
     }
   }
-  function plan(statements, fallthrough = () => fail('tuple helper has no return on a path')) {
+  function plan(statements, fallthrough) {
     const [head, ...tail] = statements;
-    if (!head) return fallthrough();
+    if (!head) return fallthrough?.();
     if (ts.isIfStatement(head)) {
       const cond = head.elseStatement ? lowerBool(head.expression, scope) : simpleBool(head.expression, scope);
       const known = exactBool(cond);
