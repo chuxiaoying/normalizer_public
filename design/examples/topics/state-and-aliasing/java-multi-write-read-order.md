@@ -131,14 +131,12 @@ class StoreRoute {
 ```yaml
 schema: normalizer.pers/1
 entry: { function: src/StoreRoute.java#Beans.ENTRY.next, returns: number }
-types:
-  RouteQuota: { fields: { units: number } }
 P:
   parameters:
     units: { position: 0, type: number }
     replace: { position: 1, type: bool }
 E:
-  quota: { kind: state, source: src/StoreRoute.java#Beans.ENTRY.quota, type: RouteQuota }
+  quota: { kind: state, source: src/StoreRoute.java#Beans.ENTRY.quota, fields: { units: number } }
 S:
   - write: { target: quota.units, value: units, when: replace and units > 0 }
   - write: { target: quota.units, value: '2', when: NOT (replace) }

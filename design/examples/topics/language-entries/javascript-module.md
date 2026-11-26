@@ -18,6 +18,9 @@ export function total(value, base) { return value + base; }
 ## AI 预处理结果
 
 ```diff
+diff --git a/src/total.js b/src/total.ts
+rename from src/total.js
+rename to src/total.ts
 --- a/src/total.js
 +++ b/src/total.ts
 @@ -1,2 +1 @@
@@ -53,6 +56,9 @@ export function choose(values) {
 ```
 
 ```diff
+diff --git a/src/vector-case.js b/src/vector-case.ts
+rename from src/vector-case.js
+rename to src/vector-case.ts
 --- a/src/vector-case.js
 +++ b/src/vector-case.ts
 @@ -1,7 +1,3 @@
@@ -97,6 +103,9 @@ export function pair(enabled, left, right, fixed) {
 ```
 
 ```diff
+diff --git a/src/vector-construction.js b/src/vector-construction.ts
+rename from src/vector-construction.js
+rename to src/vector-construction.ts
 --- a/src/vector-construction.js
 +++ b/src/vector-construction.ts
 @@ -1,10 +1,3 @@
@@ -150,6 +159,9 @@ export function labels(a, b, c) {
 此合同要求一个原生 Map 构造和闭合的字面条目组装。数组返回值不是 Map；可空入参必须由自身的空值判断保护后才插入，不能无条件插入，也不能在该判断下用恰好同名的文本字面量替代入参。
 
 ```diff
+diff --git a/src/ordered-map.js b/src/ordered-map.ts
+rename from src/ordered-map.js
+rename to src/ordered-map.ts
 --- a/src/ordered-map.js
 +++ b/src/ordered-map.ts
 @@ -1,13 +1,7 @@

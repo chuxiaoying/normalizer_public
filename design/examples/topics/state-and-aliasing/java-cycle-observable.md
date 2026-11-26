@@ -55,7 +55,7 @@ types:
   Node: { fields: { next: Node, value: number } }
 entry: { function: src/CycleState.java#Beans.ENTRY.read, returns: number }
 P: { parameters: {} }
-E: { root: { kind: state, source: 'src/CycleState.java#Beans.ENTRY.root', type: Node } }
+E: { root: { kind: state, source: 'src/CycleState.java#Beans.ENTRY.root', fields: { next: Node, value: number } } }
 R: root.next.value
 ```
 

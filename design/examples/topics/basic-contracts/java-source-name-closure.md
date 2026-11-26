@@ -48,7 +48,7 @@ R: '12'
 
 这个对照修改的是生产输入布局，不是 AI 预处理。把 `OtherPrice` 的完整声明放进同目录文件，所选入口与绑定不变，仍返回 `12`。
 
-```diff
+```diff-example
 --- a/src/Catalog.java
 +++ b/src/Catalog.java
 @@ -1,9 +1,6 @@

@@ -78,7 +78,7 @@ E:
   quota:
     kind: state
     source: src/QuotaService.java#QuotaService.INSTANCE.quota
-    type: Quota
+    fields: { units: number }
 
 R: adjustment + (P.quota.units - E.quota.units)
 ```

@@ -67,7 +67,7 @@ P:
   parameters:
     observer: { position: 0, type: 'Quota?' }
 E:
-  quota: { kind: state, source: src/Account.java#Beans.ENTRY.quota, type: Quota }
+  quota: { kind: state, source: src/Account.java#Beans.ENTRY.quota, fields: { units: number } }
 S:
   - write: { target: quota.units, value: '7' }
 R: |-

@@ -85,13 +85,11 @@ class Beans {
 
 ```yaml
 schema: normalizer.pers/1
-types:
-  Quota: { fields: { units: number } }
 entry: { function: src/Counter.java#Beans.ENTRY.readPair, returns: number }
 P:
   parameters: {}
 E:
-  zebra: { kind: state, source: src/Counter.java#Beans.ENTRY.zebra, type: Quota }
-  amber: { kind: state, source: src/Counter.java#Beans.ENTRY.amber, type: Quota }
+  zebra: { kind: state, source: src/Counter.java#Beans.ENTRY.zebra, fields: { units: number } }
+  amber: { kind: state, source: src/Counter.java#Beans.ENTRY.amber, fields: { units: number } }
 R: amber.units + zebra.units
 ```

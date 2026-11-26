@@ -469,7 +469,7 @@ topics:
       - id: number-division-zero
         status: seeded
         surface: java/javascript/typescript
-        focus: 除零的业务异常与拒绝边界
+        focus: 除零异常与非零路径的精确化简
         test_status: covered
       - id: number-compare-boundaries
         status: seeded
@@ -499,7 +499,7 @@ topics:
         status: seeded
         test_status: covered
         surface: javascript
-        focus: JavaScript 模块函数入口
+        focus: JavaScript 经强类型预处理后的模块函数入口
       - id: entry-typescript-function
         status: planned
         surface: typescript
@@ -574,7 +574,7 @@ topics:
       - id: basic-unsupported-source-boundary
         status: seeded
         surface: java/javascript/typescript
-        focus: 语言源码无法表达时的明确拒绝
+        focus: 已定位入口中未闭合的原生调用必须明确拒绝
         test_status: covered
 compositions:
   loops-and-collections:

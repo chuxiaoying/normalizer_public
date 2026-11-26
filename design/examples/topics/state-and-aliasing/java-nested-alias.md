@@ -46,11 +46,6 @@ class Beans {
 ```yaml
 schema: normalizer.pers/1
 
-types:
-  Box:
-    fields:
-      value: number
-
 entry:
   function: src/Alias.java#Beans.ENTRY.read
   returns: number
@@ -62,7 +57,7 @@ E:
   box:
     kind: state
     source: src/Alias.java#Beans.ENTRY.box
-    type: Box
+    fields: { value: number }
 
 R: box.value
 ```

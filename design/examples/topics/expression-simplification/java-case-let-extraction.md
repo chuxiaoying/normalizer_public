@@ -55,6 +55,19 @@ R: |-
 
 ## 被重复的聚合本身包含完整 CASE
 
+```java
+class CaseReuse {
+    static int square(int[] values, boolean enabled, int extra) {
+        int offset = enabled ? extra : 0;
+        int total = 0;
+        for (int value : values) {
+            total += value + offset;
+        }
+        return total * total;
+    }
+}
+```
+
 源码按数组顺序累加。数组长度来自输入，预处理把这段可完整表达的累加交给局部关系指令，保留初值、行表达式和后续的平方，不能预先计算总和。
 
 ```diff

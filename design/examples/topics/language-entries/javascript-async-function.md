@@ -25,6 +25,9 @@ export async function total(source) {
 **缺少执行定义。** 先将原合同交付为明确 TypeScript 声明，再保留同一输入与调用供拒绝测试。类型签名不能补造 `read()` 的方法体或外部边界。
 
 ```diff
+diff --git a/src/total.js b/src/total.ts
+rename from src/total.js
+rename to src/total.ts
 --- a/src/total.js
 +++ b/src/total.ts
 @@ -1,5 +1,4 @@
