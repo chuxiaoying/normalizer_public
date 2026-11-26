@@ -18,3 +18,10 @@ variants:
     edits:
       - { from: 'const value = await source.read();', to: 'const { value } = await source.read();' }
     reject: ['[NORM-JS-MODULE]', 'async entry requires a closed completion contract']
+  - name: a-direct-synchronous-call-still-needs-source-or-an-external-contract
+    edits:
+      - { from: 'export async function', to: 'export function' }
+      - { from: 'await source.read()', to: 'source.read()' }
+      - { from: '{ read: () => Promise<number> }', to: '{ read: () => number }' }
+      - { from: '@returns {Promise<number>}', to: '@returns {number}' }
+    reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', '[NORM-ENGINE-FAILURE]', '#total:call', 'source.read']

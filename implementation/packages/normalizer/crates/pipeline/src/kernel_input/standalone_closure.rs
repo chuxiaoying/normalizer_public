@@ -43,3 +43,60 @@ pub fn validate(input: &[u8]) -> Result<(), String> {
     let target = format!("{}.{}", entry.call.receiver, entry.call.member);
     crate::preprocess::out_of_source(&location, &target)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::validate;
+    use serde_json::{json, Value};
+
+    fn envelope() -> Value {
+        json!({
+            "schema": "normalizer.standalone-closure/1",
+            "file": "src/input.js", "entry": "entry",
+            "parameters": ["input", "other"],
+            "call": { "receiver": "input", "member": "read", "awaited": true }
+        })
+    }
+
+    fn assert_rejected(input: Value) {
+        let result = validate(&serde_json::to_vec(&input).unwrap());
+        assert_eq!(
+            result.unwrap_err(),
+            "[NORM-STANDALONE-CLOSURE] call must name a member on a distinct declared module parameter"
+        );
+    }
+
+    #[test]
+    fn closure_budget_precedes_decoding() {
+        assert_eq!(
+            validate(&vec![b' '; 65_537]).unwrap_err(),
+            "[NORM-STANDALONE-CLOSURE] input too large"
+        );
+    }
+
+    #[test]
+    fn closure_schema_and_source_provenance_are_admitted_separately() {
+        let mut wrong_version = envelope();
+        wrong_version["schema"] = json!("normalizer.standalone-closure/2");
+        assert_rejected(wrong_version);
+
+        let mut control_in_path = envelope();
+        control_in_path["file"] = json!("src/input\tname.js");
+        assert_rejected(control_in_path);
+
+        let mut parent_in_path = envelope();
+        parent_in_path["file"] = json!("src/../input.js");
+        assert_rejected(parent_in_path);
+    }
+
+    #[test]
+    fn closure_checks_distinct_formals_and_receiver_identity() {
+        let mut duplicate = envelope();
+        duplicate["parameters"] = json!(["input", "input"]);
+        assert_rejected(duplicate);
+
+        let mut undeclared = envelope();
+        undeclared["call"]["receiver"] = json!("third");
+        assert_rejected(undeclared);
+    }
+}

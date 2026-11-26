@@ -515,3 +515,121 @@ impl Engine<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod adapter_contract_tests {
+    use super::*;
+    use serde_json::{json, Value as JsonValue};
+
+    fn project(steps: Vec<JsonValue>) -> JsonValue {
+        json!({
+            "schema": "normalizer.kernel-input/1",
+            "source": "Carrier.java",
+            "source_text": "class Entry { static native void run(); }",
+            "entries": ["Entry.run"],
+            "entry_contexts": {
+                "Entry.run": {
+                    "function": "Prepared.ts#run", "returns": "void", "parameters": {},
+                    "external_results": { "notice": "void" }
+                }
+            },
+            "ports": {
+                "notice": {
+                    "origin": { "path": "Prepared.ts", "excerpt": "notices.send()" },
+                    "endpoint": "notices.send", "effect": "sync", "params": [],
+                    "returns": "unit", "throws": [], "heap_effect": "none",
+                    "argument_observation": "immutable_value"
+                }
+            },
+            "functions": {
+                "run": {
+                    "java": "Entry.run()", "params": [], "returns": "unit",
+                    "origin": { "path": "Prepared.ts", "excerpt": "notices.send()" },
+                    "body": { "op": "settled", "returns": "unit", "steps": steps }
+                }
+            }
+        })
+    }
+
+    fn unit_return() -> JsonValue {
+        json!({ "op": "return", "value": { "op": "const", "type": "unit", "value": null } })
+    }
+
+    fn sync_call() -> JsonValue {
+        json!({ "op": "call_sync", "port": "notice", "target": "notices.send", "site": "call1" })
+    }
+
+    fn at_project_boundary(doc: &JsonValue) -> Result<String> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+
+        let path = std::env::temp_dir().join(format!(
+            "normalizer-adapter-contract-{}-{}", std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path);
+        std::fs::write(fixture.0.join("Carrier.java"), doc["source_text"].as_str().unwrap()).unwrap();
+        std::fs::write(fixture.0.join("Prepared.ts"), "notices.send()\n").unwrap();
+        let input = fixture.0.join("Project.json");
+        std::fs::write(&input, serde_json::to_vec(doc).unwrap()).unwrap();
+        Loaded::project_pers(&input, "Entry.run")
+    }
+
+    #[test]
+    fn listener_sync_admits_only_the_exact_declared_call() {
+        let control = project(vec![sync_call(), unit_return()]);
+        let pers = at_project_boundary(&control).expect("declared sync event has PERS");
+        let pers: serde_yaml::Value = serde_yaml::from_str(&pers).unwrap();
+        let events = pers["S"].as_sequence().expect("sync effect sequence");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["call"]["external"].as_str(), Some("notices.send"));
+
+        for (field, replacement) in [
+            ("endpoint", json!("other.send")),
+            ("effect", json!("async-barrier")),
+            ("params", json!([{ "name": "value", "type": "number" }])),
+            ("returns", json!("number")),
+        ] {
+            let mut variant = control.clone();
+            variant["ports"]["notice"][field] = replacement;
+            let problem = at_project_boundary(&variant).unwrap_err();
+            assert!(problem.contains("listener call requires a declared normal zero-argument void sync port"), "{field}: {problem}");
+        }
+    }
+
+    #[test]
+    fn builtin_throw_contract_does_not_authorize_an_invalid_invoke_site() {
+        let mut doc = project(vec![
+            json!({ "op": "task_invoke", "name": "task1", "port": "notice", "site": "bad-site", "args": [] }),
+            json!({ "op": "task_wait", "name": "done", "task": { "op": "var", "name": "task1" } }),
+            unit_return(),
+        ]);
+        doc["ports"]["notice"]["effect"] = json!("async-barrier");
+        doc["ports"]["notice"]["throws"] = json!(["java.lang.IllegalArgumentException"]);
+
+        let declared: Project = serde_json::from_value(doc.clone()).unwrap();
+        let admitted = declared.validate_state_metadata().expect("built-in does not need a duplicate exception declaration");
+        assert_eq!(
+            admitted["notice"].completion.exceptions.get("java.lang.IllegalArgumentException"),
+            Some(&Ty::Unit)
+        );
+        let problem = at_project_boundary(&doc).unwrap_err();
+        assert!(problem.contains("invalid call site/arity"), "{problem}");
+    }
+
+    #[test]
+    fn invalid_lexical_local_fails_without_pers() {
+        let doc = project(vec![
+            json!({ "op": "let", "name": "bad-local", "value": { "op": "const", "type": "number", "value": 7 } }),
+            unit_return(),
+        ]);
+        let problem = at_project_boundary(&doc).unwrap_err();
+        assert!(problem.contains("action locals must be fresh lexical names"), "{problem}");
+    }
+}
