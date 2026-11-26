@@ -23,9 +23,11 @@
   edits:
   - from: return ids[0];
     to: return ids[1];
-  reject:
-  - '[NORM-PROJECT]'
-  - eager record projection currently supports only its first element
+  expect:
+  - path: [R]
+    value: "(SELECT r.ticket.id FROM rows AS r)[1]"
+  - path: [throws, 0, when]
+    value: 'LENGTH(rows) <= 1 AND NOT (EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL))'
 - name: missing-nullability-contract-is-not-treated-as-eager-null-check
   edits:
   - from: '@N.Nullable Ticket ticket;'
@@ -39,9 +41,15 @@
     to: firstId(Row[] rows, Row extra)
   - from: return ids[0];
     to: return extra.ticket.id;
-  reject:
-  - '[NORM-PROJECT]'
-  - ordinary object field read has no nullable member acquisition proof
+  expect:
+  - path: [P, parameters, extra]
+    add: { position: 1, type: Row }
+  - path: [R]
+    value: extra.ticket.id
+  - path: [throws]
+    value:
+    - type: java.lang.NullPointerException
+      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL) OR extra.ticket == null
 - name: a-typed-row-array-alias-preserves-source-and-eager-checks
   edits:
     - {from: 'int[] ids;', to: 'Row[] same = rows; int[] ids;'}

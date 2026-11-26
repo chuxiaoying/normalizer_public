@@ -16,7 +16,14 @@
   edits:
     - {from: 'int total(int[] values, int next)', to: 'int total(int[] values, int next, int[] other)'}
     - {from: 'int[] alias = values;', to: 'int[] alias = other;'}
-  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'distinct source arrays may alias']
+  expect:
+    - { path: [P, parameters, other], add: { position: 2, type: 'number[]' } }
+    - path: [R]
+      value: |-
+        COALESCE(SUM(SELECT value FROM other), 0) + CASE
+          WHEN other == values THEN next - FIRST(value FROM other)
+          ELSE 0
+        END
 
 - name: caught-store-continues-with-the-same-alias
   edits:
@@ -31,9 +38,9 @@
     - { path: [throws], absent: true }
     - path: [R]
       value: |-
-        CASE
-          WHEN LENGTH(values) <= 1 THEN COALESCE(SUM(SELECT value FROM values), 0)
-          ELSE COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next
+        COALESCE(SUM(SELECT value FROM values), 0) + CASE
+          WHEN LENGTH(values) > 1 THEN next - values[1]
+          ELSE 0
         END
 
 - name: ordinary-helper-catch-has-the-same-store-and-return
@@ -69,9 +76,9 @@
     - { path: [throws], absent: true }
     - path: [R]
       value: |-
-        CASE
-          WHEN LENGTH(values) <= 1 THEN COALESCE(SUM(SELECT value FROM values), 0)
-          ELSE COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next
+        COALESCE(SUM(SELECT value FROM values), 0) + CASE
+          WHEN LENGTH(values) > 1 THEN next - values[1]
+          ELSE 0
         END
 
 - name: committed-write-survives-a-later-caught-explicit-throw
@@ -86,9 +93,9 @@
     - { path: [throws], absent: true }
     - path: [R]
       value: |-
-        CASE
-          WHEN LENGTH(values) > 0 THEN COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values) + next
-          ELSE COALESCE(SUM(SELECT value FROM values), 0)
+        COALESCE(SUM(SELECT value FROM values), 0) + CASE
+          WHEN LENGTH(values) > 0 THEN next - FIRST(value FROM values)
+          ELSE 0
         END
 
 - name: guarded-caught-store-does-not-write-on-the-disabled-path
@@ -108,9 +115,9 @@
     # long-array arm replace its contribution with the last guarded slot.
     - path: [R]
       value: |-
-        CASE
-          WHEN LENGTH(values) <= 1 THEN COALESCE(SUM(SELECT value FROM values), 0)
-          ELSE COALESCE(SUM(SELECT value FROM values), 0) - values[1] + CASE WHEN enabled AND LENGTH(values) >= 2 THEN next ELSE values[1] END
+        COALESCE(SUM(SELECT value FROM values), 0) + CASE
+          WHEN enabled AND LENGTH(values) > 1 THEN next - values[1]
+          ELSE 0
         END
 
 - name: unmatched-catch-does-not-convert-bounds-failure-to-a-sum
@@ -148,8 +155,8 @@
           WHEN LENGTH(values) > 0 THEN next - FIRST(value FROM values)
           ELSE 0
         END + CASE
-          WHEN LENGTH(values) <= 1 THEN 0
-          ELSE next + 1 - values[1]
+          WHEN LENGTH(values) > 1 THEN next + 1 - values[1]
+          ELSE 0
         END
 
 - name: same-slot-shadowing-keeps-both-effects-but-only-the-latest-in-the-sum
@@ -168,7 +175,7 @@
     - { path: [throws], absent: true }
     - path: [R]
       value: |-
-        CASE
-          WHEN LENGTH(values) > 0 THEN COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values) + next + 1
-          ELSE COALESCE(SUM(SELECT value FROM values), 0)
+        COALESCE(SUM(SELECT value FROM values), 0) + CASE
+          WHEN LENGTH(values) > 0 THEN next + 1 - FIRST(value FROM values)
+          ELSE 0
         END

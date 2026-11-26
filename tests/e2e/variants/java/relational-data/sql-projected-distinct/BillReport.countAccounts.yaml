@@ -41,8 +41,8 @@
     value: "SELECT COUNT(*) FROM (\n  SELECT DISTINCT account_id FROM pending_bill\n) AS accounts"
 - name: private-record-and-query-aliases-do-not-leak
   edits:
-  - from: List<AccountRow> pending;
-    to: List<AccountRow> early;
+  - from: AccountRow[] pending;
+    to: AccountRow[] early;
   - from: 'pending = from pending_bill as p yield {accountId: p.account_id}'
     to: 'early = from pending_bill as raw yield {accountId: raw.account_id}'
   - from: pending.accountId, posted.accountId
