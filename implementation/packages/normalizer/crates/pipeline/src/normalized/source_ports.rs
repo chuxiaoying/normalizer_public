@@ -1,5 +1,5 @@
-//! A source port is a final injected field marked @External and a declared
-//! method on its interface. An unannotated or bodyless call is never a port.
+//! A source port is a final injected field marked @N.External and a declared
+//! external method. Bodylessness alone, including native, never makes a port.
 use super::*;
 use simulator_parser::{JavaClass, JavaField};
 
@@ -22,8 +22,15 @@ pub(crate) fn receiver(expr: &E) -> Option<&str> {
 pub(crate) fn declares_bodyless_member(class: &JavaClass, member: &str, arity: usize) -> bool {
     let mut declarations = class.methods().iter()
         .filter(|method| method.name() == member && method.arity() == arity);
-    declarations.next().is_some_and(|method| method.body().is_none())
+    declarations.next().is_some_and(|method| external_member(class, method))
         && declarations.next().is_none()
+}
+
+fn external_member(class: &JavaClass, method: &simulator_parser::JavaMethod) -> bool {
+    method.body().is_none()
+        && !method.is_static()
+        && !method.is_constructor()
+        && (class.is_interface() || method.is_native())
 }
 
 #[derive(Clone)]
@@ -54,12 +61,13 @@ pub(crate) fn declarations(
             };
             let declaration = program
                 .find_class(interface)
-                .filter(|class| class.is_interface())
+                .filter(|class| class.is_interface()
+                    || class.methods().iter().any(|method| external_member(class, method)))
                 .ok_or_else(|| error("NORM-EXTERNAL-TYPE", interface))?;
             for method in declaration.methods() {
-                if method.body().is_some()
-                    || method.is_static()
-                    || method.is_constructor()
+                // The constructor, if present, is assembly, not a port member.
+                if !declaration.is_interface() && method.is_constructor() { continue; }
+                if !external_member(declaration, method)
                     || !method.annotations().is_empty()
 
                     || method

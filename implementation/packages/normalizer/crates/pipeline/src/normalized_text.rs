@@ -9,16 +9,25 @@ pub(crate) enum SourceIntrinsic {
 }
 
 pub(crate) fn source_intrinsic(
+    program: &simulator_parser::JavaProgram,
     class: &simulator_parser::JavaClass,
     target: &str,
     arity: usize,
 ) -> Option<SourceIntrinsic> {
-    if !class.imports().iter().any(|import| import == SOURCE_IMPORT) {
+    let (receiver, member) = target.split_once('.')?;
+    let bound = match receiver {
+        "N" => crate::normalized::imports_official_n(class),
+        "NormalizedText" => class.imports().iter().any(|import| import == SOURCE_IMPORT),
+        _ => false,
+    };
+    if !bound || class.fields().iter().any(|field| field.name() == receiver)
+        || program.classes().iter().any(|ty| ty.simple_name().rsplit('.').next() == Some(receiver))
+    {
         return None;
     }
-    match (target, arity) {
-        ("NormalizedText.trim", 1) => Some(SourceIntrinsic::Trim),
-        ("NormalizedText.defaultIfBlank", 2) => Some(SourceIntrinsic::DefaultIfBlank),
+    match (member, arity) {
+        ("trim", 1) => Some(SourceIntrinsic::Trim),
+        ("defaultIfBlank", 2) => Some(SourceIntrinsic::DefaultIfBlank),
         _ => None,
     }
 }

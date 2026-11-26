@@ -153,6 +153,38 @@ fn source_layouts_with_receiver(
 }
 const ENTRY_STATE: &str = "normalizer.annotations.EntryState";
 const NULLABLE: &str = "normalizer.annotations.Nullable";
+pub(crate) const N_IMPORT: &str = "normalizer.intrinsics.N";
+
+fn official_member(marker: &str) -> Option<(&'static str, &'static str)> {
+    match marker {
+        ENTRY_STATE => Some(("N.EntryState", "normalizer.intrinsics.N.EntryState")),
+        NULLABLE => Some(("N.Nullable", "normalizer.intrinsics.N.Nullable")),
+        source_ports::IMPORT => Some(("N.External", "normalizer.intrinsics.N.External")),
+        _ => None,
+    }
+}
+
+pub(crate) fn imports_official_n(class: &simulator_parser::JavaClass) -> bool {
+    class.imports().iter().any(|name| name == N_IMPORT)
+        && class.imports().iter().all(|name| name == N_IMPORT
+            || name.rsplit('.').next() != Some("N"))
+        && !class.has_unbound_imports()
+}
+
+/// The closed Java profile admits no package declarations. Refuse an ambiguous
+/// local type rather than treating its nested markers as Normalizer markers.
+fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
+    let declared_n = program.classes().iter()
+        .any(|class| class.simple_name().rsplit('.').next() == Some("N"));
+    let counterfeit_namespace = program.classes().iter().any(|class| {
+        let name = class.simple_name();
+        name == N_IMPORT || name.strip_prefix(N_IMPORT).is_some_and(|tail| tail.starts_with('.'))
+    });
+    if counterfeit_namespace || declared_n && program.classes().iter().any(imports_official_n) {
+        return Err(error("NORM-INTRINSIC-SHADOW", N_IMPORT));
+    }
+    Ok(())
+}
 
 fn source_marker(
     class: &simulator_parser::JavaClass,
@@ -160,10 +192,19 @@ fn source_marker(
     qualified: &str,
 ) -> bool {
     let [annotation] = annotations else { return false; };
-    !annotation.has_arguments()
-        && (annotation.name() == qualified
-            || (qualified.rsplit('.').next() == Some(annotation.name())
-                && class.imports().iter().any(|name| name == qualified)))
+    if annotation.has_arguments() {
+        return false;
+    }
+    if official_member(qualified).is_some_and(|(short, full)| {
+        annotation.name() == full || (annotation.name() == short && imports_official_n(class))
+    }) {
+        return true;
+    }
+    // Continue decoding explicitly bound legacy annotations in existing
+    // adapters; an application marker with only a matching suffix is not one.
+    annotation.name() == qualified
+        || (qualified.rsplit('.').next() == Some(annotation.name())
+            && class.imports().iter().any(|name| name == qualified))
 }
 
 pub(crate) fn entry_state(
@@ -173,12 +214,12 @@ pub(crate) fn entry_state(
     source_marker(class, field.annotations(), ENTRY_STATE)
 }
 pub(crate) fn source_nullable_parameter(
-    method: &simulator_parser::JavaMethod, name: &str, ty: &JavaType,
+    class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod, name: &str, ty: &JavaType,
 ) -> Result<bool, String> {
     match method.param_annotations(name) {
         [] => Ok(false),
-        [annotation] if annotation.name() == NULLABLE
-            && !annotation.has_arguments() && matches!(ty, JavaType::Class(_)) => Ok(true),
+        annotations @ [_] if matches!(ty, JavaType::Class(_))
+            && source_marker(class, annotations, NULLABLE) => Ok(true),
         [annotation] => Err(format!("unsupported source parameter annotation {}", annotation.name())),
         _ => Err("multiple source parameter annotations cannot define nullability".into()),
     }
@@ -206,7 +247,7 @@ pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> b
     class.imports().iter().all(|name| {
         matches!(
             name.as_str(),
-            source_ports::IMPORT | ENTRY_STATE | NULLABLE | "java.util.List" | crate::normalized_text::SOURCE_IMPORT
+            source_ports::IMPORT | ENTRY_STATE | NULLABLE | N_IMPORT | "java.util.List" | crate::normalized_text::SOURCE_IMPORT
         )
     })
 }
@@ -366,6 +407,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
 pub(crate) fn validate_with_receiver(
     program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>,
 ) -> Result<SourceEvidence, String> {
+    validate_official_namespace(program)?;
     external_polling::validate_entry(program, entry)?;
     let exceptions = source_exceptions(program)?;
     let layouts = source_layouts_with_receiver(program, receiver)?;
@@ -409,13 +451,13 @@ pub(crate) fn validate_with_receiver(
             }
             if (!m.annotations().is_empty() && !nullable_text_return(c, m))
 
-                || (!m.is_constructor() && !supported(m.return_type()))
+                || (!m.is_constructor() && !matches!(m.return_type(), JavaType::Void) && !supported(m.return_type()))
                 || m.params().iter().any(|(t, _)| !supported(t))
             {
                 return Err(error("NORM-METHOD-SHAPE", &id));
             }
             for (ty, parameter) in m.params() {
-                let nullable = source_nullable_parameter(m, parameter, ty)
+                let nullable = source_nullable_parameter(c, m, parameter, ty)
                     .map_err(|detail| crate::preprocess::required(
                         "NORM-SOURCE-ANNOTATION", &format!("{id}.{parameter}"), &detail,
                         "请按当前源码合同修改参数注解；不要删除来源语义。",
@@ -467,7 +509,8 @@ pub(crate) fn validate_with_receiver(
             if ports.get(&format!("{}.{target}", owner.full_name())).is_some_and(|port| port.params.len() == arity) {
                 continue;
             }
-            if crate::normalized_text::source_intrinsic(owner, &target, arity).is_some() {
+            if !m.params().iter().any(|(_, parameter)| parameter == &target_owner)
+                && crate::normalized_text::source_intrinsic(program, owner, &target, arity).is_some() {
                 continue;
             }
             // Calls already have their declaring name and member. Preserve
@@ -835,6 +878,54 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
 mod source_declaration_contracts {
     use super::*;
     use simulator_parser::{parse, ParseOptions};
+
+    #[test]
+    fn official_n_annotates_and_admits_text_without_guessing_local_n() {
+        let source = r#"
+            import normalizer.intrinsics.N;
+            class Entry {
+                @N.EntryState int prior;
+                @N.Nullable static String trim(@N.Nullable String raw) {
+                    return N.trim(raw);
+                }
+            }
+        "#;
+        let program = parse(source, "Entry.java", &ParseOptions::default()).unwrap();
+        let evidence = validate(&program, "Entry.trim").ok().expect("official binding");
+        assert!(evidence.nullable_entry_parameters.contains("raw"));
+        let class = program.find_class("Entry").unwrap();
+        assert!(entry_state(class, &class.fields()[0]));
+        assert!(nullable_text_return(class, &class.methods()[0]));
+
+        let shadowed = format!("{source} class N {{ static String trim(String raw) {{ return raw; }} }}");
+        let program = parse(&shadowed, "Entry.java", &ParseOptions::default()).unwrap();
+        assert!(validate(&program, "Entry.trim").err().unwrap().contains("NORM-INTRINSIC-SHADOW"));
+
+        let unbound = parse(
+            "class Entry { @N.EntryState int prior; static int read() { return 0; } }",
+            "Entry.java", &ParseOptions::default(),
+        ).unwrap();
+        assert!(validate(&unbound, "Entry.read").is_err());
+    }
+
+    #[test]
+    fn a_native_declaration_is_a_port_only_through_an_explicit_receiver() {
+        let source = r#"
+            import normalizer.intrinsics.N;
+            class Entry {
+                @N.External private final Client client;
+                Entry(Client client) { this.client = client; }
+                void notify(int value) { client.notify(value); }
+            }
+            class Client { native void notify(int value); }
+        "#;
+        let program = parse(source, "Entry.java", &ParseOptions::default()).unwrap();
+        let ports = source_ports::declarations(&program, &BTreeMap::new()).unwrap();
+        assert!(ports.contains_key("Entry.client.notify"));
+        let unmarked = source.replace("@N.External ", "");
+        let program = parse(&unmarked, "Entry.java", &ParseOptions::default()).unwrap();
+        assert!(source_ports::declarations(&program, &BTreeMap::new()).unwrap().is_empty());
+    }
 
     #[test]
     fn an_implicit_constructor_only_closes_the_empty_argument_call() {

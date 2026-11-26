@@ -826,10 +826,9 @@ impl<'a> Engine<'a> {
                             // An ordinary input that shadows a marked receiver
                             // does not inherit the field's external contract.
                             if self.program.find_class(&interface).is_some_and(|class| {
-                                class.is_interface()
-                                    && crate::normalized::source_ports::declares_bodyless_member(
-                                        class, method, args.len(),
-                                    )
+                                crate::normalized::source_ports::declares_bodyless_member(
+                                    class, method, args.len(),
+                                )
                             }) && receiver.scalar().is_ok_and(|reference| {
                                 reference.as_heap_ref().is_some()
                                     && self.source_objects.allocation_owner(&reference).is_none()
@@ -873,7 +872,7 @@ impl<'a> Engine<'a> {
                     .program
                     .find_class(id.rsplit_once('.').unwrap().0)
                     .and_then(|caller| {
-                        crate::normalized_text::source_intrinsic(caller, &callee, vs.len())
+                        crate::normalized_text::source_intrinsic(self.program, caller, &callee, vs.len())
                     })
                 {
                     need(

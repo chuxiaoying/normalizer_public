@@ -219,6 +219,25 @@ impl Admission<'_> {
             E::Lit(JavaLit::Null) => Kind::Null,
             E::FieldAccess { target, .. } => { self.expression(target, scope)?; declared() }
             E::MethodCall { target, method, args } => {
+                if let Some(E::Ident(receiver)) = target.as_deref() {
+                    if self.binding(receiver, scope).is_none() {
+                        let callee = format!("{receiver}.{method}");
+                        if crate::normalized_text::source_intrinsic(
+                            self.program, self.class, &callee, args.len(),
+                        ).is_some() {
+                            for (index, argument) in args.iter().enumerate() {
+                                let kind = self.expression(argument, scope)?;
+                                if !matches!(kind, Kind::Text | Kind::Null | Kind::Unresolved)
+                                    || index == 1 && matches!(kind, Kind::Null)
+                                {
+                                    return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                                        "standard text intrinsic has an argument outside its declared text domain"));
+                                }
+                            }
+                            return Ok(Kind::Text);
+                        }
+                    }
+                }
                 let callee = self.method(target.as_deref(), method, args.len(), scope);
                 for (i, arg) in args.iter().enumerate() {
                     let actual = self.expression(arg, scope)?;
