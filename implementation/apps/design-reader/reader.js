@@ -8,6 +8,7 @@
   const mobile = matchMedia('(max-width: 720px)');
   let pagePath;
   let outline = [];
+  const expandedTopics = new Set();
 
   function route(path, section) {
     return '#/' + path.split('/').map(encodeURIComponent).join('/') + (section ? '#' + encodeURIComponent(section) : '');
@@ -35,38 +36,77 @@
     return page.title.replace(/^Hello World\s*[:：]\s*/i, '');
   }
 
+  function topicOf(page) {
+    // The existing directory tree also works when the linked test catalog is unavailable.
+    const folder = /^(design\/examples\/(?:topics|compositions)\/[^/]+)\//.exec(page.path)?.[1];
+    const topic = folder && byPath.get(folder + '/README.md');
+    return topic?.group === page.group ? topic : null;
+  }
+
+  function appendDocument(container, page, matches = [], title = shortTitle(page)) {
+    const a = link(page.path === home ? '设计首页' : title, route(page.path));
+    if (page.path === pagePath) a.setAttribute('aria-current', 'page');
+    container.append(a);
+    for (const heading of matches) {
+      const match = link(heading.text, route(page.path, heading.id));
+      match.className = 'case-match';
+      container.append(match);
+    }
+  }
+
   function drawDocuments() {
     const query = filter.value.toLocaleLowerCase().trim();
+    const contains = page => (page.title + ' ' + page.path).toLocaleLowerCase().includes(query);
     const groups = new Map();
     for (const page of pages) {
       if (page.group === '参考资料') continue;
+      const topic = topicOf(page);
       const matches = query && page.group === '测试用例'
         ? page.headings.filter(heading => heading.text.toLocaleLowerCase().includes(query))
         : [];
-      if (!matches.length && !(page.title + ' ' + page.path).toLocaleLowerCase().includes(query)) continue;
+      if (!matches.length && !contains(page) && !(topic && contains(topic))) continue;
       if (!groups.has(page.group)) groups.set(page.group, []);
-      groups.get(page.group).push({page, matches});
+      groups.get(page.group).push({page, matches, topic});
     }
     const nav = $('documents');
     nav.replaceChildren();
     const order = ['设计导览', '基础主题', '联合主题', '种子清单', '测试用例'];
     const ranked = [...groups].sort(([a], [b]) => (order.includes(a) ? order.indexOf(a) : 9) - (order.includes(b) ? order.indexOf(b) : 9));
+    const activePage = byPath.get(pagePath);
+    const activeTopic = activePage && topicOf(activePage);
     for (const [group, docs] of ranked) {
       const section = document.createElement('section');
       section.className = 'nav-group';
       const label = document.createElement('h3');
       label.textContent = group;
       section.append(label);
-      for (const {page, matches} of docs) {
-        const title = page.path === home ? '设计首页' : shortTitle(page);
-        const a = link(title, route(page.path));
-        if (page.path === pagePath) a.setAttribute('aria-current', 'page');
-        section.append(a);
-        for (const heading of matches) {
-          const match = link(heading.text, route(page.path, heading.id));
-          match.className = 'case-match';
-          section.append(match);
+
+      const branches = new Map();
+      for (const {page, matches, topic} of docs) {
+        if (!topic) {
+          appendDocument(section, page, matches);
+          continue;
         }
+        if (!branches.has(topic)) branches.set(topic, []);
+        if (page !== topic) branches.get(topic).push(page);
+      }
+      for (const topic of pages.filter(page => branches.has(page))) {
+        const branch = document.createElement('details');
+        branch.className = 'nav-topic';
+        branch.open = Boolean(query) || topic === activeTopic || expandedTopics.has(topic.path);
+        const summary = document.createElement('summary');
+        summary.textContent = shortTitle(topic);
+        summary.addEventListener('click', () => {
+          if (query) return;
+          if (branch.open) expandedTopics.delete(topic.path);
+          else expandedTopics.add(topic.path);
+        });
+        const children = document.createElement('div');
+        children.className = 'nav-topic-children';
+        appendDocument(children, topic, [], '主题导读');
+        for (const page of branches.get(topic)) appendDocument(children, page);
+        branch.append(summary, children);
+        section.append(branch);
       }
       nav.append(section);
     }
@@ -204,7 +244,8 @@
       if (mobile.matches) setMenu(true); else filter.focus();
     }
     if (event.key === 'Tab' && document.body.classList.contains('menu-open')) {
-      const focusables = Array.from($('sidebar').querySelectorAll('button, input, a[href]'));
+      const focusables = Array.from($('sidebar').querySelectorAll('button, input, summary, a[href]'))
+        .filter(el => el.getClientRects().length);
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       if (event.shiftKey && document.activeElement === first) {
