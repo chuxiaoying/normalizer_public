@@ -58,3 +58,17 @@
       value:
         - { type: java.lang.ArithmeticException, when: 'LENGTH(values) > 0' }
         - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
+- name: completed-write-survives-when-later-rhs-leaves-no-normal-path
+  edits:
+    - from: 'return alias[0];'
+      to: 'alias[1] = 3 / 0; return alias[0];'
+  expect:
+    - path: [R]
+      value: '⊥'
+    - path: [S]
+      value:
+        - write: { target: 'values[0]', value: next, when: 'LENGTH(values) > 0' }
+    - path: [throws]
+      value:
+        - { type: java.lang.ArithmeticException, when: 'LENGTH(values) > 0' }
+        - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
