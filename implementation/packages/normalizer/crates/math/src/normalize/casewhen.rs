@@ -181,18 +181,26 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
         // 时才会被检查；若二者互补，第二个 cond 在该语境下必为 true，
         // 因此可归一为默认 else。
         // 只处理相邻互补，不做跨分支重排；比较反演 / De Morgan 互补由 is_not_of 证明。
-        let (canonicalized, canonicalized_changed) =
-            canonicalize_adjacent_not_complement(&covered_stripped);
-
-        // 2. 过滤掉 condition = false 的死分支，并在 true 分支处截断后续分支。
+        // Work from the original neighbor, not the rewritten guard. No
+        // branch after the first true guard can affect the result.
+        let mut canonicalized_changed = false;
         let mut filtered: Vec<(Expr, Expr)> = Vec::new();
-        for (c, v) in &canonicalized {
-            if let ExprKind::Lit(Lit::Bool(false)) = c.kind() {
-                continue; // 死分支，跳过
+        for (idx, (original, value)) in covered_stripped.iter().enumerate() {
+            let complementary = idx > 0
+                && (is_not_of(original, &covered_stripped[idx - 1].0)
+                    || is_not_of(&covered_stripped[idx - 1].0, original));
+            canonicalized_changed |= complementary;
+            let condition = if complementary {
+                crate::builder::lit_bool(true)
+            } else {
+                original.clone()
+            };
+            if condition.as_bool() == Some(false) {
+                continue;
             }
-            filtered.push((c.clone(), v.clone()));
-            if let ExprKind::Lit(Lit::Bool(true)) = c.kind() {
-                // 一旦遇到 true 分支，后续所有分支都是死分支
+            let is_default = condition.as_bool() == Some(true);
+            filtered.push((condition, value.clone()));
+            if is_default {
                 break;
             }
         }
@@ -1056,27 +1064,6 @@ fn is_demorgan_conj_implied_by_prev_failure(
             .into_iter()
             .any(|idx| current_conjuncts.get(idx) == Some(cond))
     })
-}
-
-fn canonicalize_adjacent_not_complement(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
-    let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(branches.len());
-    let mut changed = false;
-
-    for (idx, (cond, value)) in branches.iter().enumerate() {
-        // 使用原始 branches 的前一项，不使用 out.last()。本规则只表达“原始相邻
-        // 分支互补”，避免 canonicalize 过程中把已改写的 true 再参与二次推理。
-        let new_cond = if idx > 0
-            && (is_not_of(cond, &branches[idx - 1].0) || is_not_of(&branches[idx - 1].0, cond))
-        {
-            changed = true;
-            crate::builder::lit_bool(true)
-        } else {
-            cond.clone()
-        };
-        out.push((new_cond, value.clone()));
-    }
-
-    (out, changed)
 }
 
 fn is_not_of(cond: &Expr, expected_inner: &Expr) -> bool {

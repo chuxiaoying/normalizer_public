@@ -9,40 +9,6 @@ use crate::domains::relation::RelationExpr;
 use crate::expr::{Expr, ExprKind, RelationAggregateKind};
 use std::time::Instant;
 
-fn relation_aggregate_fields(
-    expr: &Expr,
-) -> Option<(
-    RelationAggregateKind,
-    &RelationExpr,
-    &Option<Expr>,
-    &Option<Expr>,
-)> {
-    let ExprKind::RelationAggregate {
-        kind,
-        relation,
-        select_expr,
-        default_expr,
-    } = expr.kind()
-    else {
-        return None;
-    };
-    Some((*kind, relation.as_ref(), select_expr, default_expr))
-}
-
-fn relation_aggregate_expr(
-    kind: RelationAggregateKind,
-    relation: RelationExpr,
-    select_expr: Option<Expr>,
-    default_expr: Option<Expr>,
-) -> Expr {
-    Expr::new(ExprKind::RelationAggregate {
-        kind,
-        relation: Box::new(relation),
-        select_expr,
-        default_expr,
-    })
-}
-
 /// Exact cardinality is nonnegative and is zero exactly for an empty relation.
 /// This does not inspect signed_word/count-distinct/sum wrappers: overflow and
 /// projection semantics cannot be inferred from their printed shape.
@@ -57,7 +23,7 @@ fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     } else {
         return None;
     };
-    let (RelationAggregateKind::Count, relation, None, None) = relation_aggregate_fields(query)?
+    let (RelationAggregateKind::Count, relation, None, None) = query.as_relation_aggregate()?
     else {
         return None;
     };
@@ -74,13 +40,13 @@ fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
 /// An empty relation has no rows to count, sum, test, or select.
 fn rewrite_empty_aggregate(expr: &Expr) -> Option<Expr> {
     use RelationAggregateKind::*;
-    let (kind, RelationExpr::Empty, _, default) = relation_aggregate_fields(expr)? else {
+    let (kind, RelationExpr::Empty, _, default) = expr.as_relation_aggregate()? else {
         return None;
     };
     match kind {
         Count | Sum => Some(builder::lit_int(0)),
         Exists => Some(builder::lit_bool(false)),
-        FirstValue => default.clone(),
+        FirstValue => default.cloned(),
         NthValue => None,
     }
 }
@@ -91,7 +57,7 @@ fn rewrite_empty_aggregate(expr: &Expr) -> Option<Expr> {
 /// Only layouts with a certified single output binder are admitted here.
 fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
     let (RelationAggregateKind::NthValue, relation, Some(index), Some(default)) =
-        relation_aggregate_fields(expr)?
+        expr.as_relation_aggregate()?
     else {
         return None;
     };
@@ -109,11 +75,10 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
         }
     }
     let alias = ordered_row_alias(relation)?;
-    Some(relation_aggregate_expr(
-        RelationAggregateKind::FirstValue,
+    Some(crate::domains::relation::relation_first_value(
         relation.clone(),
-        Some(builder::row_value(alias)),
-        Some(default.clone()),
+        builder::row_value(alias),
+        default.clone(),
     ))
 }
 
@@ -124,7 +89,7 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
 /// language.
 pub(crate) fn simplify(expr: &Expr) -> Expr {
     let profile = if crate::profile::enabled() {
-        relation_aggregate_fields(expr).map(|(kind, relation, select_expr, _)| {
+        expr.as_relation_aggregate().map(|(kind, relation, select_expr, _)| {
             let shape = relation_profile_shape(relation);
             (kind, relation, select_expr, shape, Instant::now())
         })
@@ -137,7 +102,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
         .unwrap_or_else(|| expr.clone());
     if let Some((kind, relation, select_expr, (input_size, input_depth), start)) = profile {
         let output_relation =
-            relation_aggregate_fields(&output).map(|(_, relation, _, _)| relation);
+            output.as_relation_aggregate().map(|(_, relation, _, _)| relation);
         let (output_size, output_depth) = output_relation
             .map(relation_profile_shape)
             .unwrap_or((0, 0));
@@ -218,7 +183,7 @@ fn relation_kind(kind: RelationAggregateKind) -> &'static str {
     }
 }
 
-fn projection_kind(select_expr: &Option<Expr>) -> &'static str {
+fn projection_kind(select_expr: Option<&Expr>) -> &'static str {
     let Some(select_expr) = select_expr else {
         return "none";
     };
