@@ -518,6 +518,25 @@ impl Expr {
         self.1.has_heap_ref
     }
 
+    /// Test for a lazy relation observation in this expression tree.
+    /// A bare relation is not itself an observation of its rows.
+    pub(crate) fn contains_relation_aggregate(&self) -> bool {
+        match self.kind() {
+            ExprKind::RelationAggregate { .. } => true,
+            ExprKind::Call { args, .. } | ExprKind::ArrayLit(args) => {
+                args.iter().any(Expr::contains_relation_aggregate)
+            }
+            ExprKind::BinOp { left, right, .. } => {
+                left.contains_relation_aggregate() || right.contains_relation_aggregate()
+            }
+            ExprKind::UnaryOp { operand, .. } => operand.contains_relation_aggregate(),
+            ExprKind::CaseWhen { branches } => branches.iter().any(|(condition, value)| {
+                condition.contains_relation_aggregate() || value.contains_relation_aggregate()
+            }),
+            _ => false,
+        }
+    }
+
     /// O(1) 查询表达式是否包含 CaseWhen。
     pub fn has_case_when(&self) -> bool {
         self.1.has_case_when

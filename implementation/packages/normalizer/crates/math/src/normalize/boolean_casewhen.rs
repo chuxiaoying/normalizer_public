@@ -108,26 +108,8 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     expanded
 }
 
-/// 判断表达式是否"布尔语义"（保守）。
-fn contains_lazy_relation(expr: &Expr) -> bool {
-    match expr.kind() {
-        ExprKind::RelationAggregate { .. } => true,
-        ExprKind::Call { args, .. } | ExprKind::ArrayLit(args) => {
-            args.iter().any(contains_lazy_relation)
-        }
-        ExprKind::BinOp { left, right, .. } => {
-            contains_lazy_relation(left) || contains_lazy_relation(right)
-        }
-        ExprKind::UnaryOp { operand, .. } => contains_lazy_relation(operand),
-        ExprKind::CaseWhen { branches } => branches
-            .iter()
-            .any(|(cond, value)| contains_lazy_relation(cond) || contains_lazy_relation(value)),
-        _ => false,
-    }
-}
-
 pub(crate) fn is_boolean_expr(expr: &Expr) -> bool {
-    if contains_lazy_relation(expr) {
+    if expr.contains_relation_aggregate() {
         return false;
     }
     match expr.kind() {

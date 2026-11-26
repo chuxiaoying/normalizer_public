@@ -260,7 +260,7 @@ fn predicate_family_rank(expr: &Expr) -> u8 {
                 op,
                 BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
             ) {
-                if contains_aggregate(left) || contains_aggregate(right) {
+                if left.contains_relation_aggregate() || right.contains_relation_aggregate() {
                     return 7;
                 }
                 return 5;
@@ -566,22 +566,6 @@ fn is_internal_subject_key(key: &str) -> bool {
 
 fn is_null_comparison(op: BinOpKind, left: &Expr, right: &Expr) -> bool {
     matches!(op, BinOpKind::Eq | BinOpKind::Ne) && (left.is_null() || right.is_null())
-}
-
-fn contains_aggregate(expr: &Expr) -> bool {
-    match expr.kind() {
-        ExprKind::RelationAggregate { .. } => true,
-        ExprKind::UnaryOp { operand, .. } => contains_aggregate(operand),
-        ExprKind::BinOp { left, right, .. } => {
-            contains_aggregate(left) || contains_aggregate(right)
-        }
-        ExprKind::Call { args, .. } => args.iter().any(contains_aggregate),
-        ExprKind::CaseWhen { branches } => branches
-            .iter()
-            .any(|(cond, value)| contains_aggregate(cond) || contains_aggregate(value)),
-        ExprKind::ArrayLit(items) => items.iter().any(contains_aggregate),
-        _ => false,
-    }
 }
 
 fn aggregate_kind_rank(kind: RelationAggregateKind) -> u8 {

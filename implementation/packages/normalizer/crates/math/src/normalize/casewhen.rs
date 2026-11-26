@@ -426,7 +426,7 @@ fn project_values_under_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Ex
 }
 
 pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
-    if domain.as_bool() == Some(true) || is_projectable_boolean_value(value) {
+    if domain.as_bool() == Some(true) || super::boolean_casewhen::is_boolean_expr(value) {
         return project_boolean_condition_under_domain(value, domain);
     }
 
@@ -482,22 +482,6 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
         // A host branch is not proof about values bound inside a relation.
         // Relation projection has its own same-row proof.
         _ => value.clone(),
-    }
-}
-
-fn is_projectable_boolean_value(expr: &Expr) -> bool {
-    if super::boolean_casewhen::is_boolean_expr(expr) {
-        return true;
-    }
-    match expr.kind() {
-        ExprKind::SymVar { origin } => match origin {
-            crate::symvar::SymVarOrigin::Parameter { primitive_type, .. }
-            | crate::symvar::SymVarOrigin::External { primitive_type, .. }
-            | crate::symvar::SymVarOrigin::Temporal { primitive_type, .. } => {
-                primitive_type == "boolean"
-            }
-        },
-        _ => false,
     }
 }
 
