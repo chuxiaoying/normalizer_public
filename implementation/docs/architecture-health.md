@@ -7,6 +7,7 @@
 ```sh
 python3 -B implementation/tools/architecture/health.py
 python3 -B implementation/tools/architecture/health.py --json
+python3 -B -m unittest discover -s tests/architecture
 ```
 
 ## 健康标准
@@ -17,7 +18,9 @@ python3 -B implementation/tools/architecture/health.py --json
 | 入口可发现性 | 检查根说明、设计总纲、架构、贡献、验证、维护文档和统一 CLI | 必要入口全部存在 | agent 需要猜命令、猜职责或猜验证路径 |
 | 文件尺寸债务 | Rust 文件超过 3000 行的数量计分；超过 2000 行单独列入审查清单 | 超过 3000 行长期为 0；超过 2000 行不得无审查增长 | 单文件承担过多阶段，agent 难以建立局部证据 |
 | AI 维护合同 | 检查 agent 维护、贡献和三模块架构文档中的责任层、证据链和输入输出边界 | 三份维护合同都存在且关键主张不漂移 | AI 可能在错误层补丁、从 actual 反填 expected 或绕过统一 IR |
-| 内核输入协议分层 | 检查 `normalizer.kernel-input/1`、设计案例、场景 adapter，以及诊断类别和职责术语 | 所有入口统一使用当前协议；加载诊断使用 `kernel_input`，执行诊断使用 `kernel_execution` | 旧协议名或旧模块术语泄漏到公共入口，导致 AI 把历史职责当成当前职责 |
+| 内核输入协议分层 | 检查 `normalizer.kernel-input/1`、当前文档、源码、场景适配和测试中的协议名与职责术语，并检查诊断类别 | 所有入口统一使用当前协议；加载诊断使用 `kernel_input`，执行诊断使用 `kernel_execution` | 旧协议名或旧模块术语泄漏到公共入口，导致 AI 把历史职责当成当前职责 |
+
+协议明细的 `active_materials` 是扫描范围内第一方文本材料的文件数；不包含依赖、缓存、构建产物和扫描器本身。
 
 综合分数是上述五个维度的算术平均，适用于同一版本维度下的静态比较。PERS 的实际业务行为需另行验证。`normalizer.architecture-health/3` 的 JSON 报告还保留每一项的明细，便于 agent 在改动前后比较证据。
 

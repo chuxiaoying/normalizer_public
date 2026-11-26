@@ -65,7 +65,7 @@
   edits:
     - from: NormalizedText.trim(raw)
       to: 'NormalizedText.trim("\q")'
-  reject: ['SOURCE-PARSE-FAILED', 'invalid Java literal escape']
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'invalid Java literal escape']
 
 - name: octal-literal-accepts-full-byte-range
   edits:

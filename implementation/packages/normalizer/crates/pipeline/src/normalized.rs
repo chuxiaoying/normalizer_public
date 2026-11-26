@@ -300,6 +300,15 @@ pub(crate) fn protected_return(body: &[S]) -> bool {
         if prefix.iter().all(|s| matches!(s, S::VarDecl { initializer: Some(_), .. })))
 }
 
+/// Only a fieldless, source-declared type-only exception with an implicit
+/// constructor is eligible for a terminal throw in the supported finally subset.
+pub(crate) fn finally_throw<'a>(statement: &'a S) -> Option<&'a str> {
+    match statement {
+        S::Throw(E::New { java_type: JavaType::Class(class), args }) if args.is_empty() => Some(class),
+        _ => None,
+    }
+}
+
 fn validate_protected_try(body: &[S], id: &str) -> Result<(), String> {
     let [S::Try { body, catches, finally_block }] = body else { return Ok(()); };
     if protected_return(body) && (finally_block.is_none()
@@ -367,7 +376,10 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
             }
             for (ty, parameter) in m.params() {
                 source_nullable_parameter(m, parameter, ty)
-                    .map_err(|detail| format!("{id}.{parameter}: {detail}"))?;
+                    .map_err(|detail| crate::preprocess::required(
+                        "NORM-SOURCE-ANNOTATION", &format!("{id}.{parameter}"), &detail,
+                        "请按当前源码合同修改参数注解；不要删除来源语义。",
+                    ))?;
             }
             if m.body().is_none() && !m.is_native() {
                 return Err(error("NORM-MISSING-BODY", &id));
@@ -500,7 +512,13 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
             S::Try { body, catches, finally_block } if !catches.is_empty() => {
                 statements(body, at, calls)?;
                 for handler in catches { statements(handler.body(), at, calls)?; }
-                if let Some(finally) = finally_block { statements(finally, at, calls)?; }
+                if let Some(finally) = finally_block {
+                    let body = match finally.split_last() {
+                        Some((last, prefix)) if finally_throw(last).is_some() => prefix,
+                        _ => finally,
+                    };
+                    statements(body, at, calls)?;
+                }
             }
             S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { .. }
                 | normalizer_ir::local::LocalIr::LocalMapPut { .. }

@@ -381,7 +381,10 @@ impl Engine<'_> {
                         "invalid state field path",
                     )?;
                     let context = self.entry_context.ok_or_else(|| fail("state write requires the selected entry context"))?;
-                    let domain = context.state_field(root, fields)?;
+                    let domain = context.state_field(root, fields).map_err(|detail| crate::preprocess::required(
+                        "NORM-STATE-DECLARATION", &format!("{root}.{}", fields.join(".")), &detail,
+                        "请在当前入口声明真实的状态字段和类型。",
+                    ))?;
                     let expected = match domain {
                         "number" => Ty::Integer,
                         "bool" => Ty::Bool,

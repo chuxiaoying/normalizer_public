@@ -81,7 +81,11 @@ impl<'a> Parser<'a> {
         if self.eat_keyword("try") {
             return self.parse_try();
         }
-        for keyword in ["switch", "synchronized", "do", "assert"] {
+        let synchronized_at = self.pos;
+        if self.eat_keyword("synchronized") {
+            return Err(self.err_at(synchronized_at, "[JAVA-MONITOR] synchronized block requires explicit preprocessing"));
+        }
+        for keyword in ["switch", "do", "assert"] {
             if self.eat_keyword(keyword) {
                 return Err(self.err(&format!("{keyword} requires explicit preprocessing")));
             }
@@ -413,13 +417,14 @@ impl<'a> Parser<'a> {
     fn try_parse_vardecl(&mut self) -> Result<Option<(JavaStatement, Vec<JavaStatement>)>, ParseError> {
         let save = self.pos;
         self.skip_ws();
-        // Local variable annotations are legal Java syntax (for example
-        // `@SuppressWarnings("unchecked") Set<String> set = ...;`). They do
-        // not affect normalized business semantics, but parser must accept
-        // them so unrelated source-root files do not block target entries.
-        let _annotations = self.read_annotations()?;
-        self.skip_ws();
-        self.eat_keyword("final");
+        let annotation_at = self.pos;
+        let mut annotations = self.read_annotations()?;
+        if self.eat_keyword("final") {
+            annotations.extend(self.read_annotations()?);
+        }
+        if annotations.iter().any(|annotation| annotation.name() != "java.lang.SuppressWarnings") {
+            return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] unsupported local variable annotation"));
+        }
         let base_ty = match parse_type(self) {
             Some(t) => t,
             None => {

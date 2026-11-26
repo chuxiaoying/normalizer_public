@@ -1,4 +1,5 @@
 import YAML from '../../tools/frontend/node_modules/yaml/dist/index.js';
+import { applyExpectedChanges } from '../../../tests/e2e/business_example_series.mjs';
 
 function escape(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -27,7 +28,12 @@ function addSeedLinks(seed, metadata, entries) {
   const meta = '<p class="seed-test-meta">主主题 <code>' + escape(metadata.topic) + '</code> · 类型 <code>' +
     escape(metadata.kind) + '</code>' + (metadata.related.length ? ' · 关联 <code>' + escape(metadata.related.join(', ')) + '</code>' : '') + '</p>';
   const nav = '<nav class="seed-test-jump" aria-label="关联测试">' + summary + (shortcuts ? ' ' + shortcuts : '') + '</nav>';
-  seed.html = seed.html.replace('</h1>', () => '</h1>' + meta + nav);
+  const intent = /(<h2[^>]*>设计意图<\/h2>[\s\S]*?)(?=<h[12]\b|$)/;
+  if (intent.test(seed.html)) {
+    seed.html = seed.html.replace(intent, (_, content) => '<section class="seed-intent">' + content + '</section>' + meta + nav);
+  } else {
+    seed.html = seed.html.replace('</h1>', () => '</h1>' + meta + nav);
+  }
   if (!entries.length) return;
 
   seed.headings.push({ id: 'seed-tests', text: '关联测试用例', level: 2 });
@@ -67,7 +73,7 @@ function renderOutcome(test, original, entry, codeBlock) {
   if (test.reject) {
     const fragments = '<ul>' + test.reject.map(fragment => '<li><code>' + escape(fragment) + '</code></li>').join('') + '</ul>';
     const outcome = test.inheritsRejection ? '沿用原例的拒绝预期。' : '预期拒绝。';
-    const explanation = outcome + 'CLI 非零退出，标准输出为空，标准错误须包含以下全部片段。';
+    const explanation = outcome + 'CLI 非零退出，标准输出为空，首条诊断必须匹配下面的错误标记，标准错误还须包含具体原因。';
     const identity = (isOriginal || test.inheritsRejection) && test.rejection ?
       '<p>诊断还须包含入口 <code>' + escape(entry) + '</code>，并以独立词标明 <code>kind=' +
         escape(test.rejection.split('\n', 1)[0]) + '</code>。</p>' : '';
@@ -78,11 +84,17 @@ function renderOutcome(test, original, entry, codeBlock) {
 
   let differences = '';
   if (test.changes.length) {
-    const changes = test.changes.map(({path, value, absent}) => {
-      const previous = path.reduce((object, field) => object[field], original.expected);
-      const after = absent ? '' : yaml(value).replace(/\n$/, '');
-      const label = '<p><code>' + escape(fieldName(path)) + '</code>' + (absent ? '：该字段不存在' : '') + '</p>';
-      return label + codeBlock(diffSnippet(yaml(previous).replace(/\n$/, ''), after), 'diff');
+    let snapshot = original.expected;
+    const changes = test.changes.map(change => {
+      const { path, absent } = change;
+      const addition = Object.hasOwn(change, 'add');
+      const lookup = object => path.reduce((node, field) => node?.[field], object);
+      const before = addition ? '' : yaml(lookup(snapshot)).replace(/\n$/, '');
+      snapshot = applyExpectedChanges(snapshot, [change]);
+      const after = absent ? '' : yaml(lookup(snapshot)).replace(/\n$/, '');
+      const label = '<p><code>' + escape(fieldName(path)) + '</code>' +
+        (absent ? '：该字段不存在' : addition ? '：新增字段' : '') + '</p>';
+      return label + codeBlock(diffSnippet(before, after), 'diff');
     });
     differences = '<h3>预期 PERS 变更</h3>' + changes.join('');
   } else if (!isOriginal) {

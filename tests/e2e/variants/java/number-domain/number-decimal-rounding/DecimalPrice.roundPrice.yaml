@@ -1,0 +1,49 @@
+- name: round-to-three-places
+  edits:
+    - from: 'round(value, 2, HALF_UP)'
+      to: 'round(value, 3, HALF_UP)'
+  expect:
+    - path: [R]
+      value: 'ROUND(value, 3, "HALF_UP")'
+- name: round-taxed-value
+  edits:
+    - from: 'round(value, 2, HALF_UP)'
+      to: 'round(value * 1.13, 2, HALF_UP)'
+  expect:
+    - path: [R]
+      value: 'ROUND(value * 1.13, 2, "HALF_UP")'
+- name: retain-unrounded-value
+  edits:
+    - from: 'rounded = round(value, 2, HALF_UP)'
+      to: 'rounded = value'
+  expect:
+    - path: [R]
+      value: value
+- name: explicit-half-even-at-other-precision
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(value, 4, HALF_EVEN)'}]
+  expect: [{path: [R], value: 'ROUND(value, 4, "HALF_EVEN")'}]
+- name: positive-midpoint-half-up
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(2.345, 2, HALF_UP)'}]
+  expect: [{path: [R], value: '2.35'}]
+- name: negative-midpoint-half-up
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(-2.345, 2, HALF_UP)'}]
+  expect: [{path: [R], value: '-2.35'}]
+- name: negative-midpoint-half-even
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(-2.345, 2, HALF_EVEN)'}]
+  expect: [{path: [R], value: '-2.34'}]
+- name: exact-carry-outside-binary64-precision
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(9007199254740993.995, 2, HALF_UP)'}]
+  expect: [{path: [R], value: '9007199254740994'}]
+- name: midpoint-requires-a-source-mode
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(value, 2)'}]
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'decimal rounding requires an explicit midpoint mode']
+
+- name: exact-decimal-just-below-half-even-midpoint
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(2.344999999999999999999999999999, 2, HALF_EVEN)'}]
+  expect: [{path: [R], value: '2.34'}]
+- name: exact-decimal-just-above-half-even-midpoint
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(2.345000000000000000000000000001, 2, HALF_EVEN)'}]
+  expect: [{path: [R], value: '2.35'}]
+- name: half-even-midpoint-rounds-away-from-an-odd-neighbour
+  edits: [{from: 'round(value, 2, HALF_UP)', to: 'round(2.355, 2, HALF_EVEN)'}]
+  expect: [{path: [R], value: '2.36'}]

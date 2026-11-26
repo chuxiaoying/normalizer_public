@@ -1,0 +1,19 @@
+- name: write-second-slot
+  edits:
+    - from: 'values[0] = next'
+      to: 'values[1] = next'
+  expect:
+    - { path: [S, 0, write, target], value: 'values[1]' }
+    - { path: [S, 0, write, when], value: 'LENGTH(values) >= 2' }
+    - { path: [throws, 0, when], value: 'LENGTH(values) <= 1' }
+    - { path: [R], value: 'COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next' }
+- name: projected-offset
+  edits: [{ from: 'total += value', to: 'total += value + 1' }]
+  expect:
+    - path: [R]
+      value: COALESCE(SUM(SELECT value + 1 FROM values), 0) - FIRST(value FROM values) + next
+- name: do-not-assume-input-arrays-are-distinct
+  edits:
+    - {from: 'int total(int[] values, int next)', to: 'int total(int[] values, int next, int[] other)'}
+    - {from: 'int[] alias = values;', to: 'int[] alias = other;'}
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'distinct source arrays may alias']

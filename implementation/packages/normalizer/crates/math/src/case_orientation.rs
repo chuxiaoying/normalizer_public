@@ -97,7 +97,7 @@ fn explicit_integer(value: &Expr) -> bool {
 }
 
 // Lower ranks are the published semantic policies.  The policy is part of
-// the key before local shape/cost tie-breakers, so a generic comparator cannot
+// the key before the structural tie-breakers, so a generic comparator cannot
 // undo a domain-specific representative on a later normalization pass.
 fn domain_policy_rank(condition: &Expr, yes: &Expr, no: &Expr) -> u8 {
     // A numeric indicator names its true domain and falls back to zero.
@@ -152,12 +152,23 @@ pub fn preferred_complement(
         return None;
     }
     let complement = crate::normalize_with(crate::builder::not(condition.clone()), context);
+    // Complexity is a candidate constraint, never a sorting preference.
+    let negate = |left: &Expr, right: &Expr| {
+        matches!(left.as_unary_op(), Some((crate::expr::UnaryOpKind::Not, operand)) if operand == right)
+    };
+    // A lone NOT only reverses the CASE decision; it does not add a
+    // second predicate evaluation or receipt observation.
+    if complement.size() != condition.size()
+        && !negate(&complement, condition) && !negate(condition, &complement)
+    {
+        return None;
+    }
     prefer_complement(condition, &complement, yes, no, context).then_some(complement)
 }
 
 /// Compare an already canonical complement supplied by a certified local
 /// domain. The caller proves complementary guards in that SAME domain; this
-/// function only reuses the common cost/key direction, never normalizes CASE.
+/// function only reuses the common structural direction, never normalizes CASE.
 pub fn prefer_complement(
     condition: &Expr,
     complement: &Expr,
@@ -204,4 +215,21 @@ pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) ->
         (complement, branches[1].1.clone()),
         (crate::builder::lit_bool(true), branches[0].1.clone()),
     ]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{builder as b, DefaultSortContext};
+
+    #[test]
+    fn structural_case_key_uses_both_arms_to_break_equal_guards() {
+        let guard = b::param("guard", "boolean");
+        let one = b::lit_int(1);
+        let seven = b::lit_int(7);
+        let nine = b::lit_int(9);
+        assert!(candidate_precedes(&guard, &one, &nine, &guard, &seven, &nine, &DefaultSortContext));
+        assert!(candidate_precedes(&guard, &one, &seven, &guard, &one, &nine, &DefaultSortContext));
+        assert!(!candidate_precedes(&guard, &one, &nine, &guard, &one, &seven, &DefaultSortContext));
+    }
 }

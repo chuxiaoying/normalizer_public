@@ -97,7 +97,7 @@ case "$command" in
       business-examples)
         ensure_frontend_dependencies tests
         ensure_kernel
-        exec node --test "$ROOT/../tests/e2e/business_examples.test.mjs"
+        exec node --test "$ROOT/../tests/e2e/oracle.test.mjs" "$ROOT/../tests/e2e/business_examples.test.mjs"
         ;;
       *)
         usage >&2

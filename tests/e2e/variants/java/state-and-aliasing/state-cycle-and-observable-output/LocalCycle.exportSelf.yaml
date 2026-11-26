@@ -1,0 +1,4 @@
+reject: ['[NORM-CYCLIC-CONTENT-EXIT]', 'kind=ABORT', 'LocalCycle.exportSelf']
+variants:
+  - name: another-scalar-does-not-break-cycle
+    edits: [{ from: 'root.value = 7;', to: 'root.value = 8;' }]

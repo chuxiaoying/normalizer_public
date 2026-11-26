@@ -1,0 +1,13 @@
+reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', '[NORM-ENGINE-FAILURE]', 'total', 'source.read', 'unsupported']
+variants:
+  - name: add-offset-does-not-close-read
+    edits: [{ from: 'value + 1', to: 'value + 2' }]
+  - name: argument-named-ports-is-not-external
+    edits:
+      - { from: 'total(source)', to: 'total(ports)' }
+      - { from: 'await source.read()', to: 'await ports.read()' }
+      - { from: '}} source @returns', to: '}} ports @returns' }
+    reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', '[NORM-ENGINE-FAILURE]', 'total', 'ports.read']
+  - name: optional-call-is-not-a-definite-call
+    edits: [{ from: 'await source.read()', to: 'await source?.read()' }]
+    reject: ['[NORM-JS-MODULE]', 'async entry requires a closed completion contract']

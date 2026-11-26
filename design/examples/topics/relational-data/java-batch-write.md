@@ -1,5 +1,9 @@
 # Hello World：关系批量写入
 
+## 设计意图
+
+检验批量关系写入及其审计事件的真实因果链。各语句受影响行数、成功失败与后续动作分别观察；按名排序异常结果时不得挪动 SQL 事件。
+
 ## 输入原始代码
 
 amount 是入口参数，不是表列。仅当 amount 大于零才发起一次原子的多行 UPDATE；更新命中账户的全部行。失败时整条语句不提交并传播 DatabaseWriteError；受影响行数不作为方法返回值。
@@ -94,7 +98,12 @@ S:
     when: amount > 0
 R: amount
 throws:
-  - { type: DatabaseWriteError, when: 'amount > 0 AND completion.is_throw($e_0, DatabaseWriteError)' }
+  - type: DatabaseWriteError
+    when: |-
+      CASE
+        WHEN amount > 0 THEN completion.is_throw($e_0, DatabaseWriteError)
+        ELSE false
+      END
 ```
 
 ## 两条独立语句的部分失败
@@ -166,7 +175,11 @@ throws:
   - type: AuditInsertError
     when: completion.is_throw($e_0, AuditInsertError)
   - type: CloseUpdateError
-    when: completion.is_return($e_0) AND completion.is_throw($e_1, CloseUpdateError)
+    when: |-
+      CASE
+        WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, CloseUpdateError)
+        ELSE false
+      END
 ```
 
 一个变体只改变第二条语句的状态值，不改第一条写入、执行顺序或失败域。另一个变体让第二条写入的异常名 `AaaUpdateError` 排在第一条的 `ZzzInsertError` 前。只有终态 `throws` 展示顺序对换：第二条仍要求 `$e_0` 正常完成，`S` 仍先 INSERT、后 UPDATE。两个终态域互斥，因此排序不改变哪次失败会先发生。

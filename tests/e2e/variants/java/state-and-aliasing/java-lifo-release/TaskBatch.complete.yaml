@@ -1,0 +1,48 @@
+- name: rename-fold-bindings-without-changing-position-semantics
+  edits:
+  - from: opened from [] as (s, task)
+    to: opened from [] as (running, member)
+  - from: closed from stack as (s, task)
+    to: closed from stack as (running, member)
+  - from: value.push(s, task)
+    to: value.push(running, member)
+  - from: value.length(s)
+    to: value.length(running)
+  - from: value.last_or(s, task).id != task.id
+    to: value.last_or(running, member).id != member.id
+  - from: value.pop(s)
+    to: value.pop(running)
+- name: mismatched-field-is-not-a-valid-symmetric-position-test
+  edits:
+  - from: '!= task.id'
+    to: '!= task.other'
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - unbound local stack operand
+- name: both-failure-guards-must-throw-the-same-type
+  edits:
+  - from: == 0 throw IllegalArgumentException
+    to: == 0 throw IllegalStateException
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - unbound local stack operand
+- name: the-record-members-used-for-matching-must-be-integer
+  edits:
+  - from: int id;
+    to: boolean id;
+  reject:
+  - '[NORM-PROJECT]'
+  - local stack requires one declared integer field
+- name: reusing-the-same-array-removes-only-the-length-error
+  edits:
+  - from: fold closed from stack
+    to: fold opened from stack
+  expect:
+  - path:
+    - R
+    value: 'true'
+  - path:
+    - throws
+    - 0
+    - when
+    value: EXISTS (SELECT 1 FROM indices(LENGTH(opened)) AS i WHERE opened[i].id != opened[LENGTH(opened) - 1 - i].id)

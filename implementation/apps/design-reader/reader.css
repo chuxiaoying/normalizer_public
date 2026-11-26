@@ -72,6 +72,9 @@ kbd { font: 11px/17px var(--mono); border: 1px solid var(--line); border-radius:
 #article th, #article td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 #article th { color: var(--ink); background: #ebeee5; font-size: 12px; font-weight: 650; border-top: 1px solid var(--line); }
 #article td a { font-weight: 550; }
+#article .seed-intent { margin: 0 0 18px; padding: 14px 18px; border: 1px solid var(--line); border-inline-start: 4px solid var(--accent); border-radius: 4px; background: #f0f4ea; }
+#article .seed-intent h2 { margin: 0 0 6px; padding: 0; border: 0; font-size: 20px; }
+#article .seed-intent > :last-child { margin-bottom: 0; }
 .seed-test-jump { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 15px; margin-block: 15px 22px; padding: 10px 14px; background: #eaf2ea; border-left: 3px solid var(--accent); font-size: 13px; }
 .seed-test-meta { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .seed-test-jump a:first-child { font-weight: 650; }

@@ -1,0 +1,84 @@
+- name: change-catch-fallback
+  edits:
+  - from: return 0;
+    to: return -1;
+  expect:
+  - path:
+    - R
+    value: "CASE\n  WHEN completion.is_throw($e_0, RemoteError) THEN -1\n  ELSE $e_0\nEND"
+- name: count-two-completions
+  edits:
+  - from: attempts = attempts + 1;
+    to: attempts = attempts + 2;
+  expect:
+  - path:
+    - S
+    - 1
+    - write
+    - value
+    value: attempts + 2
+- name: return-from-finally-overrides-try-and-catch
+  edits:
+  - from: attempts = attempts + 1;
+    to: attempts = attempts + 1; return 42;
+  expect:
+  - path:
+    - R
+    value: '42'
+- name: reject-try-with-resources-instead-of-dropping-it
+  edits:
+  - from: try {
+    to: try (java.io.StringReader resource = new java.io.StringReader("")) {
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - kind=PREPROCESS_REQUIRED
+  - try-with-resources is not supported
+- name: reject-multi-catch-instead-of-dropping-a-type
+  edits:
+  - from: catch (RemoteError ignored)
+    to: catch (RemoteError | IllegalStateException ignored)
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - kind=PREPROCESS_REQUIRED
+  - multi-catch is not supported
+- name: type-only-exception-walks-its-parents-not-an-unrelated-handler
+  edits:
+  - from: class RemoteError extends RuntimeException {}
+    to: 'class ParentError extends RuntimeException {}
+
+      class RemoteError extends ParentError {}
+
+      class OtherError extends RuntimeException {}'
+  - from: catch (RemoteError ignored)
+    to: catch (OtherError ignored) { return 999; } catch (RuntimeException ignored)
+- name: type-only-exception-hierarchy-cannot-cycle
+  edits:
+  - from: class RemoteError extends RuntimeException {}
+    to: 'class ParentError extends RemoteError {}
+
+      class RemoteError extends ParentError {}'
+  reject:
+  - '[NORM-EXCEPTION-CYCLE]'
+  - ParentError
+- name: type-only-exception-hierarchy-must-reach-the-supported-root
+  edits:
+  - from: class RemoteError extends RuntimeException {}
+    to: 'class ParentError extends java.lang.Exception {}
+
+      class RemoteError extends ParentError {}'
+  reject:
+  - '[NORM-EXCEPTION-BASE]'
+  - ParentError
+- name: always-throw-after-finally-write
+  edits:
+  - from: attempts = attempts + 1;
+    to: attempts = attempts + 1; throw new RemoteError();
+  expect:
+  - path:
+    - R
+    value: ⊥
+  - path:
+    - throws
+    add:
+    - type: RemoteError
+      when: 'true'

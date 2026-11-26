@@ -1,0 +1,46 @@
+- name: explicit-initializer-with-trailing-comma
+  edits:
+  - from: '{2, 7}'
+    to: new int[]{2, 7,}
+- name: array-slot-order-must-not-sort
+  edits:
+  - from: '{2, 7}'
+    to: '{7, 2}'
+  expect:
+  - path:
+    - R
+    value: '72'
+- name: comparison-is-not-generic-nesting
+  edits:
+  - from: '{2, 7}'
+    to: '{(1 < 2 ? 2 : 9), 7}'
+- name: missing-array-separator-must-not-ignore-source
+  edits:
+  - from: '{2, 7}'
+    to: '{2 7}'
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+- name: array-declarator-can-keep-brackets-after-its-name
+  edits:
+  - from: int[] values
+    to: int values[]
+- name: array-suffix-belongs-only-to-its-comma-declarator
+  edits:
+  - from: int[] values = {2, 7}
+    to: int first = 2, values[] = {first, 7}
+- name: unclosed-second-array-declarator-cannot-disappear
+  edits:
+  - from: int[] values = {2, 7}
+    to: int first = 2, values[ = {first, 7}
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - expected ']' in array declarator
+- name: business-number-type-does-not-widen-explicit-java-array-elements
+  edits:
+  - from: int[] values = {2, 7}
+    to: long[] values = new int[]{2, 7}
+  - from: return values[0] * 10 + values[1];
+    to: return values.length;
+  reject:
+  - '[NORM-PROJECT]'
+  - Java array element type differs from the declared array

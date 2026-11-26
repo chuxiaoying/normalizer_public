@@ -1,0 +1,429 @@
+- name: an-identifier-that-starts-with-a-keyword-is-not-reserved
+  edits:
+  - from: booleanValue
+    to: returnValue
+- name: constant-false-does-not-encounter-a-native-call
+  edits:
+  - from: return value;
+    to: if (false) return booleanValue(); return value;
+- name: reaching-a-native-call-without-external-contract-panics
+  edits:
+  - from: return value;
+    to: int result = booleanValue(); return result;
+  reject:
+  - '[NORM-OUT-OF-SOURCE]'
+  - target=TicketCode.booleanValue
+  - '[NORM-ENGINE-FAILURE]'
+- name: a-native-method-cannot-pretend-to-provide-a-java-body
+  edits:
+  - from: booleanValue();
+    to: booleanValue() { return 5; }
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-NATIVE-DECLARATION]'
+  - requires a semicolon
+- name: unmarked-bodyless-class-method-is-not-a-native-declaration
+  edits:
+  - from: static native int
+    to: static int
+  reject:
+  - '[NORM-MISSING-BODY]'
+  - TicketCode.booleanValue
+- name: contradictory-modifiers-cannot-hide-an-illegal-declaration
+  edits:
+  - from: static native int
+    to: static abstract native int
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-NATIVE-DECLARATION]'
+  - incompatible native method modifier
+- name: a-reached-native-call-in-a-return-uses-the-same-kernel-failure
+  edits:
+  - from: return value;
+    to: return booleanValue();
+  reject:
+  - '[NORM-OUT-OF-SOURCE]'
+  - target=TicketCode.booleanValue
+  - '[NORM-ENGINE-FAILURE]'
+- name: missing-parameter-name-is-not-a-zero-argument-method
+  edits:
+  - from: static int readValid(int value) { return value; }
+    to: static int readValid(int) { return 7; }
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-PARAMETER]'
+  - expected a parameter name
+- name: trailing-comma-does-not-disappear-from-a-parameter-list
+  edits:
+  - from: int readValid(int value)
+    to: int readValid(int value,)
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-PARAMETER]'
+  - expected a parameter type
+- name: varargs-cannot-precede-another-parameter
+  edits:
+  - from: int readValid(int value)
+    to: int readValid(int... values, int value)
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-PARAMETER]'
+  - varargs must be the final parameter
+- name: duplicate-names-do-not-create-one-parameter
+  edits:
+  - from: int readValid(int value)
+    to: int readValid(int value, int value)
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-PARAMETER]'
+  - reserved or duplicate parameter name
+- name: each-named-parameter-survives-a-comment-and-final
+  edits:
+  - from: int readValid(int value)
+    to: int readValid(final /* input */ int value)
+- name: empty-import-is-not-dropped
+  edits:
+  - from: class TicketCode {
+    to: import ; class TicketCode {
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-IMPORT]'
+  - expected a qualified import name
+- name: import-statement-requires-its-own-semicolon
+  edits:
+  - from: class TicketCode {
+    to: import java.util.List class TicketCode {
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-IMPORT]'
+  - expected semicolon
+- name: a-closed-source-contract-does-not-infer-wildcard-imports
+  edits:
+  - from: class TicketCode {
+    to: import java.util.*; class TicketCode {
+  reject:
+  - '[NORM-CLASS-SHAPE]'
+  - TicketCode
+- name: a-closed-source-contract-does-not-infer-static-imports
+  edits:
+  - from: class TicketCode {
+    to: import static java.lang.Math.abs; class TicketCode {
+  reject:
+  - '[NORM-CLASS-SHAPE]'
+  - TicketCode
+- name: comments-between-qualified-import-components-keep-the-explicit-type
+  edits:
+  - from: class TicketCode {
+    to: import java.util /* explicit type */ . List; class TicketCode {
+- name: an-escaped-line-terminator-is-not-silently-ignored-by-comment-lexing
+  edits:
+  - from: return value;
+    to: 'int result = value; // \u000a result = result + 1;
+
+      return result;'
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-UNICODE-ESCAPE]'
+- name: doubled-backslash-remains-literal-and-is-not-a-java-source-escape
+  edits:
+  - from: return value;
+    to: String literal = "\\u0061"; return value;
+- name: cr-and-crlf-both-end-line-comments
+  edits:
+  - from: return value;
+    to: "int result = value; // CR\r result = result + 1; // CRLF\r\n result = result + 1; return result;"
+  expect:
+  - path:
+    - R
+    value: value + 2
+- name: cr-only-line-count-keeps-the-physical-declaration-location
+  edits:
+  - from: class TicketCode {
+    to: "class TicketCode {\r    static int return() { return 0; }\r"
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - 'src/TicketCode.java:2:16:'
+  - TicketCode.return
+- name: unterminated-trailing-comment-cannot-hide-invalid-source
+  edits:
+  - from: 'static native int booleanValue();
+
+      }'
+    to: 'static native int booleanValue();
+
+      } /*'
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-COMMENT]'
+  - unclosed block comment
+- name: unclosed-comment-in-a-method-points-to-the-comment
+  edits:
+  - from: return value;
+    to: /* return value;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-COMMENT]'
+  - unclosed block comment
+- name: missing-return-terminator-is-not-a-successful-result
+  edits:
+  - from: return value;
+    to: return value
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-SEMICOLON]'
+  - return value
+- name: missing-terminator-in-an-unused-field-is-not-ignored
+  edits:
+  - from: class TicketCode {
+    to: class TicketCode { int cache
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-SEMICOLON]'
+  - field declaration
+- name: assignment-must-not-absorb-its-missing-terminator
+  edits:
+  - from: return value;
+    to: int result = value; result = result + 1 return result;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-SEMICOLON]'
+  - assignment
+- name: a-field-cannot-use-a-reserved-method-keyword
+  edits:
+  - from: class TicketCode {
+    to: class TicketCode { int return;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-RESERVED-FIELD-NAME]'
+- name: unsupported-runtime-type-test-is-rejected-at-its-token
+  edits:
+  - from: class TicketCode {
+    to: class TicketCode { static boolean unused(TicketCode code) { return code instanceof TicketCode; }
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-UNSUPPORTED-TYPE-TEST]'
+  - instanceof
+- name: a-longer-identifier-is-not-the-instanceof-keyword
+  edits:
+  - from: return value;
+    to: int instanceofValue = value; return instanceofValue;
+- name: comma-declarators-execute-concrete-initializers-in-source-order
+  edits:
+  - from: return value;
+    to: int first = 3, second = first + 1, third = second * 2; return third;
+  expect:
+  - path:
+    - R
+    value: '8'
+- name: comma-declarators-retain-the-surrounding-symbolic-scope
+  edits:
+  - from: return value;
+    to: int first = value, second = first - 1; first = second + 1; return first;
+- name: literal-first-exact-offset-cancels-the-subtraction-too
+  edits:
+  - from: return value;
+    to: return 1 + (value - 1);
+- name: combining-unequal-exact-offsets-preserves-the-sign
+  edits:
+  - from: return value;
+    to: return 2 + (value - 5);
+  expect:
+  - path:
+    - R
+    value: value - 3
+- name: combining-unequal-exact-offsets-can-leave-an-addition
+  edits:
+  - from: return value;
+    to: return (value - 2) + 5;
+  expect:
+  - path:
+    - R
+    value: value + 3
+- name: a-local-declaration-cannot-act-as-an-unbraced-if-body
+  edits:
+  - from: return value;
+    to: if (true) int first = 3, second = first + 1; return value;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-LOCAL-SCOPE]'
+- name: multi-induction-for-initializers-are-not-the-certified-loop-form
+  edits:
+  - from: return value;
+    to: for (int i = 0, j = 1; i < 2; i++) { value = value + j; } return value;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-FOR-INITIALIZER]'
+- name: an-imported-host-date-does-not-imply-a-source-domain
+  edits:
+  - from: class TicketCode {
+    to: import java.time.LocalDate; class TicketCode {
+  - from: int readValid(int value)
+    to: LocalDate readValid(LocalDate value)
+  reject:
+  - '[NORM-CLASS-SHAPE]'
+  - TicketCode
+- name: a-lexical-block-can-update-but-not-redeclare-its-outer-result
+  edits:
+  - from: return value;
+    to: int result = value; { int local = value + 1; result = local + 1; } return result;
+  expect:
+  - path:
+    - R
+    value: value + 2
+- name: a-name-declared-in-a-closed-block-can-be-used-again-afterward
+  edits:
+  - from: return value;
+    to: '{ int local = value + 1; } int local = value; return local;'
+- name: a-block-local-does-not-become-an-input-from-the-caller
+  edits:
+  - from: return value;
+    to: '{ int local = value + 1; } return local;'
+  reject:
+  - '[NORM-PROJECT]'
+  - undefined Java variable local
+- name: a-return-in-a-standalone-block-finishes-the-method
+  edits:
+  - from: return value;
+    to: '{ return 7; }'
+  expect:
+  - path:
+    - R
+    value: '7'
+- name: an-empty-statement-does-not-add-a-business-action
+  edits:
+  - from: return value;
+    to: ; return value;
+- name: syntax-diagnostic-keeps-the-physical-position-inside-two-blocks
+  edits:
+  - from: return value;
+    to: "if (true) {\n            {\n                return null instanceof TicketCode ? 7 : 8;\n            }\n        }\n        return\
+      \ 0;"
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - 'src/TicketCode.java:4:29:'
+  - '[JAVA-UNSUPPORTED-TYPE-TEST]'
+- name: a-nested-finally-diagnostic-keeps-the-original-file-position
+  edits:
+  - from: return value;
+    to: "try {\r\n            return value;\r\n        } catch (RuntimeException ignored) {\r\n            return 7;\r\n        } finally\
+      \ {\r\n            {\r\n                boolean unsupported = null instanceof TicketCode;\r\n            }\r\n        }"
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - 'src/TicketCode.java:8:44:'
+  - '[JAVA-UNSUPPORTED-TYPE-TEST]'
+- name: constructor-generic-arguments-require-a-closing-delimiter
+  edits:
+  - from: static native int booleanValue();
+    to: "static native int booleanValue();\n    static int helper() {\n        java.util.List<String> values = new java.util.ArrayList<String();\n\
+      \        return 1;\n    }"
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-CREATION-TYPE]'
+  - expected a complete type
+- name: constructor-generic-arguments-require-a-type-after-the-comma
+  edits:
+  - from: static native int booleanValue();
+    to: "static native int booleanValue();\n    static int helper() {\n        java.util.List<String> values = new java.util.ArrayList<String,>();\n\
+      \        return 1;\n    }"
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-CREATION-TYPE]'
+  - expected a complete type
+- name: a-valid-diamond-reaches-the-existing-source-contract
+  edits:
+  - from: static native int booleanValue();
+    to: "static native int booleanValue();\n    static int helper() {\n        java.util.List<String> values = new java.util.ArrayList<>();\n\
+      \        return 1;\n    }"
+  reject:
+  - '[NORM-STATEMENT]'
+  - PREPROCESS_REQUIRED
+  - TicketCode.helper
+- name: a-generic-source-class-does-not-become-a-concrete-class
+  edits:
+  - from: class TicketCode {
+    to: class TicketCode<T> {
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-TYPE-PARAMETERS]'
+- name: a-generic-source-method-does-not-become-a-concrete-method
+  edits:
+  - from: static int readValid
+    to: static <T> int readValid
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-TYPE-PARAMETERS]'
+- name: an-unused-generic-nested-class-is-not-discarded
+  edits:
+  - from: class TicketCode {
+    to: class TicketCode { static class Extra<T> {}
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-TYPE-PARAMETERS]'
+- name: a-local-variable-is-not-an-external-port-declaration
+  edits:
+  - file: src/TicketCode.java
+    from: return value;
+    to: '@normalizer.annotations.External int result = value; return result;'
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-LOCAL-ANNOTATION]'
+- name: a-local-annotation-cannot-declare-input-nullability
+  edits:
+  - file: src/TicketCode.java
+    from: return value;
+    to: '@normalizer.annotations.Nullable int result = value; return result;'
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-LOCAL-ANNOTATION]'
+- name: compile-time-only-qualified-warning-metadata-keeps-the-return
+  edits:
+  - file: src/TicketCode.java
+    from: return value;
+    to: '@java.lang.SuppressWarnings("unchecked") int result = value; return result;'
+- name: a-native-modifier-cannot-disappear-from-a-nested-type
+  edits:
+  - file: src/TicketCode.java
+    from: class TicketCode {
+    to: class TicketCode { native static class Extra {}
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-NATIVE-DECLARATION]'
+  - a nested type cannot be native
+- name: a-trailing-default-clause-is-not-an-ordinary-method-body
+  edits:
+  - file: src/TicketCode.java
+    from: static native int booleanValue();
+    to: static native int booleanValue(); static int helper() default 7;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-DECLARATION-DEFAULT]'
+- name: a-native-method-has-no-default-value
+  edits:
+  - file: src/TicketCode.java
+    from: booleanValue();
+    to: booleanValue() default 7;
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-NATIVE-DECLARATION]'
+  - cannot have a default value
+- name: a-synchronized-method-is-not-an-unlocked-computation
+  edits:
+  - file: src/TicketCode.java
+    from: static int readValid
+    to: static synchronized int readValid
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-MONITOR]'
+- name: a-synchronized-block-is-not-an-ordinary-lexical-block
+  edits:
+  - file: src/TicketCode.java
+    from: return value;
+    to: synchronized (TicketCode.class) { return value; }
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - '[JAVA-MONITOR]'
+- name: an-unreached-bodyless-native-declaration-does-not-lock
+  edits:
+  - file: src/TicketCode.java
+    from: static native int booleanValue
+    to: static synchronized native int booleanValue

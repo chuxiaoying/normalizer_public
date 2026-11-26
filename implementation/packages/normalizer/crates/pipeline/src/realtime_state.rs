@@ -71,6 +71,14 @@ impl Completion {
         Some(alternatives)
     }
 
+    pub(crate) fn is_always_throwing(&self) -> bool {
+        self.terminal_alternatives().is_some_and(|alternatives| {
+            !alternatives.is_empty() && alternatives.iter().all(|alternative| {
+                matches!(alternative.outcome, CompletionOutcome::Throw { .. })
+            })
+        })
+    }
+
     /// Project the normal-return part of a terminal completion. Throwing
     /// alternatives leave their domain absent from the CASE expression, which
     /// matches the PERS convention that `R` is defined only on normal return.

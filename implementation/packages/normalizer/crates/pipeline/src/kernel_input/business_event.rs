@@ -21,6 +21,11 @@ pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String 
                 BinOpKind::And => (2, "and"),
                 _ => return crate::format_expr_with_ctx(expr, ctx),
             };
+            if let Some(guarded) =
+                crate::formatting::sql::business_value::format_guarded_boolean(op, left, right, ctx)
+            {
+                return guarded;
+            }
             let group = format!(
                 "{} {symbol} {}",
                 render(left, rank, ctx),
@@ -64,8 +69,11 @@ pub(super) fn observations(
     let arrays = entry.scalar_array_symbols();
     let identities = entry.source_identity_names(result);
     let mut names = names;
-    let returned = result.realtime_completion.value_on_normal_exit()
-        .ok_or_else(|| fail("no normal settled return"))?;
+    let returned = match result.realtime_completion.value_on_normal_exit() {
+        Some(value) => value,
+        None if result.realtime_completion.is_always_throwing() => b::lit_null(),
+        None => return Err(fail("no normal settled return")),
+    };
     let mut add_declared_paths = |expression: &Expr| {
         expression.walk(&mut |part| {
             if let Some(SymVarOrigin::Parameter { name, .. }) = part.as_sym_var() {
@@ -139,7 +147,9 @@ pub(super) fn observations(
         }
         if let EffectOperation::Sql(sql) = &event.operation {
             let (response, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
-            let mut item = sql.project(&event.args, &receipt, &mut tables, &mut ctx)?;
+            let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
+                sql.project(&event.args, &receipt, &mut tables, ctx)
+            })?;
             if event.guard.as_bool() != Some(true) {
                 item["when"] = json!(crate::format_expr_with_ctx(&event.guard, &mut ctx));
             }
@@ -190,11 +200,9 @@ pub(super) fn observations(
                 if normal.as_bool().is_none() {
                     ctx.display_business_value(normal, format!("completion.is_return({output})"));
                 }
-                let args: Vec<_> = event
-                    .args
-                    .iter()
-                    .map(|arg| crate::format_expr_with_ctx(arg, &mut ctx))
-                    .collect();
+                let args: Vec<_> = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
+                    event.args.iter().map(|arg| crate::format_expr_with_ctx(arg, ctx)).collect()
+                });
                 (
                     "call",
                     json!({"external":contract.endpoint,"args":args,"returns":name,"result":output}),
@@ -206,7 +214,9 @@ pub(super) fn observations(
                 };
                 let value = match value.as_bool() {
                     Some(literal) => json!(literal),
-                    None => json!(crate::formatting::sql::business_value::format_value(value, &mut ctx)),
+                    None => json!(ctx.with_business_evaluation_guard(&event.guard, |ctx| {
+                        crate::formatting::sql::business_value::format_value(value, ctx)
+                    })),
                 };
                 (
                     "write",
@@ -217,7 +227,9 @@ pub(super) fn observations(
                 let [value] = event.args.as_slice() else { return Err(fail("missing array write value")); };
                 need(arrays.contains(root), "array write needs a declared P or E root")?;
                 let name = names.get(root).ok_or_else(|| fail("unbound array write target"))?;
-                let value = crate::formatting::sql::business_value::format_value(value, &mut ctx);
+                let value = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
+                    crate::formatting::sql::business_value::format_value(value, ctx)
+                });
                 ("write", json!({"target":format!("{name}[{index}]"),"value":value}))
             }
             _ => return Err(fail("unsupported event in port/state sequence")),
@@ -330,8 +342,9 @@ pub(super) fn observations(
         normalized
     };
     ctx.set_temporal_names(publication.aliases);
-    ctx.protect_business_return();
-    let returned = if entry.return_type() == "void" {
+    let returned = if result.realtime_completion.is_always_throwing() {
+        "⊥".into()
+    } else if entry.return_type() == "void" {
         need(returned.is_null(), "non-void return in void event")?;
         "void".into()
     } else {

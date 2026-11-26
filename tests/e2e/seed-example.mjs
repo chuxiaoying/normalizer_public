@@ -23,6 +23,8 @@ export function* readSeedBlocks(root, name) {
 }
 
 function loadExamples(root, name) {
+  const sourceMarkdown = readFileSync(join(root, name), 'utf8');
+  assert.match(sourceMarkdown, /^# [^\r\n]+\r?\n\r?\n## 设计意图\r?\n\r?\n\S/, 'Missing top design intent: ' + name);
   const cases = [];
   let source;
   let patch;

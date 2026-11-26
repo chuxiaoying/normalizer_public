@@ -742,7 +742,11 @@ impl Loaded {
             "completed_entry_execute",
             "",
         );
-        let source_record_return = e.source_record(m.return_type(), &value)?;
+        let source_record_return = if e.realtime_completion.is_always_throwing() {
+            None
+        } else {
+            e.source_record(m.return_type(), &value)?
+        };
         let realtime_completion = e.realtime_completion.replace_continue(
             realtime_state::Completion::Return(value.scalar()?),
         );

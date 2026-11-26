@@ -1,5 +1,9 @@
 # 终态异常：按载荷排序，不按源码抛出先后排序
 
+## 设计意图
+
+检验相同异常类型在不同载荷、有效域及实际回执下的唯一终态形态。可对已取得的结果按规范排序，不能倒排外部事件或跨成功／失败路径偷用载荷。
+
 ## 输入原始代码
 
 校验返回原编号。编号 1 与编号 2 各有不同的异常消息，编号 3 仅声明运行时异常的类型。三种域互斥。
@@ -78,8 +82,8 @@ R: code
 S:
   - call: { external: classifier.rank, args: [code], returns: number, result: '$e_0', when: enabled }
 throws:
-  - { type: java.lang.RuntimeException, when: 'enabled and $e_0 == 1', payload: '"alpha"' }
-  - { type: java.lang.RuntimeException, when: 'enabled and $e_0 == 2', payload: '"zeta"' }
+  - { type: java.lang.RuntimeException, when: 'CASE WHEN enabled THEN $e_0 == 1 ELSE false END', payload: '"alpha"' }
+  - { type: java.lang.RuntimeException, when: 'CASE WHEN enabled THEN $e_0 == 2 ELSE false END', payload: '"zeta"' }
 ```
 
 ## 外部异常载荷必须来自它自己的回执

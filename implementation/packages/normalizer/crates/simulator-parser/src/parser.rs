@@ -129,7 +129,7 @@ impl<'a> Parser<'a> {
         (line, col)
     }
 
-    fn err_at(&self, offset: usize, msg: &str) -> ParseError {
+    pub(crate) fn err_at(&self, offset: usize, msg: &str) -> ParseError {
         let (line, col) = self.location(offset);
         ParseError::Syntax { file: self.file.clone(), line, col, msg: msg.to_string() }
     }
@@ -666,13 +666,18 @@ fn parse_class_body(
         let mut is_volatile = false;
         let mut is_native = false;
         let mut native_modifier_conflict = false;
+        let mut synchronized_at = None;
         loop {
             p.skip_ws();
             if p.eat_keyword("public")
                 || p.eat_keyword("private")
                 || p.eat_keyword("protected")
-                || p.eat_keyword("synchronized")
             {
+                continue;
+            }
+            let modifier_at = p.pos;
+            if p.eat_keyword("synchronized") {
+                synchronized_at = Some(modifier_at);
                 continue;
             }
             if p.eat_keyword("abstract") || p.eat_keyword("default")
@@ -702,6 +707,9 @@ fn parse_class_body(
         }
 
         p.skip_ws();
+        if let Some(at) = synchronized_at.filter(|_| !is_native) {
+            return Err(p.err_at(at, "[JAVA-MONITOR] synchronized method requires explicit preprocessing"));
+        }
         let nested_kind = if p.eat_keyword("class") {
             Some(false)
         } else if p.eat_keyword("interface") {
@@ -712,6 +720,9 @@ fn parse_class_body(
             None
         };
         if let Some(nested_is_interface) = nested_kind {
+            if is_native {
+                return Err(p.err("[JAVA-NATIVE-DECLARATION] a nested type cannot be native"));
+            }
             let nested_simple = p
                 .read_ident()
                 .ok_or_else(|| p.err("expected nested class name"))?;
@@ -830,23 +841,12 @@ fn parse_class_body(
             p.skip_ws();
             let throws = parse_throws(&mut p)?;
             p.skip_ws();
+            let default_at = p.pos;
             if p.eat_keyword("default") {
                 if is_native {
-                    return Err(p.err("[JAVA-NATIVE-DECLARATION] native method cannot have a default value"));
+                    return Err(p.err_at(default_at, "[JAVA-NATIVE-DECLARATION] native method cannot have a default value"));
                 }
-                while let Some(c) = p.peek() {
-                    if c == b';' {
-                        break;
-                    }
-                    if c == b'(' {
-                        let _ = p.skip_balanced_parens()?;
-                    } else if c == b'{' {
-                        let _ = p.skip_balanced_braces()?;
-                    } else {
-                        p.pos += 1;
-                    }
-                    p.skip_ws();
-                }
+                return Err(p.err_at(default_at, "[JAVA-DECLARATION-DEFAULT] method default value requires explicit preprocessing"));
             }
             p.skip_ws();
             let body = if is_native {

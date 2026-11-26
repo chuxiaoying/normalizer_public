@@ -1,0 +1,44 @@
+- name: single-initializer-is-not-size-three
+  edits:
+  - from: new int[3]
+    to: new int[]{3}
+  expect:
+  - path:
+    - R
+    value: '13'
+- name: empty-initializer-keeps-zero-length
+  edits:
+  - from: new int[3]
+    to: new int[]{}
+  - from: values.length * 10 + values[0]
+    to: values.length
+  expect:
+  - path:
+    - R
+    value: '0'
+- name: nested-arrays-do-not-borrow-the-int-array-contract
+  edits:
+  - from: values.length * 10 + values[0]
+    to: (new int[][]{{1}}).length
+  reject:
+  - '[NORM-EXPRESSION]'
+- name: sized-allocation-keeps-its-declared-java-element-type
+  edits:
+  - from: int[] values = new int[3]
+    to: long[] values = new int[3]
+  - from: return values.length * 10 + values[0];
+    to: return values.length;
+  reject:
+  - '[NORM-PROJECT]'
+  - Java array element type differs from the declared array
+- name: reassigning-an-array-keeps-the-parameters-original-component-type
+  edits:
+  - from: int sized()
+    to: int sized(long[] values)
+  - from: int[] values = new int[3]
+    to: values = new int[3]
+  - from: return values.length * 10 + values[0];
+    to: return values.length;
+  reject:
+  - '[NORM-PROJECT]'
+  - Java array element type differs from the declared array

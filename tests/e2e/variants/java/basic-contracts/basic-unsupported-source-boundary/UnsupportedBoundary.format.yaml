@@ -1,0 +1,12 @@
+reject: ['[NORM-UNBOUND-CALL]', 'kind=PREPROCESS_REQUIRED', 'Integer.toString/1']
+variants:
+  - name: use-string-value-of
+    edits:
+      - from: 'Integer.toString(value)'
+        to: 'String.valueOf(value)'
+    reject: ['[NORM-UNBOUND-CALL]', 'kind=PREPROCESS_REQUIRED', 'String.valueOf/1']
+  - name: increment-before-format
+    edits:
+      - from: 'Integer.toString(value)'
+        to: 'Integer.toString(value + 1)'
+    reject: ['[NORM-UNBOUND-CALL]', 'kind=PREPROCESS_REQUIRED', 'Integer.toString/1']

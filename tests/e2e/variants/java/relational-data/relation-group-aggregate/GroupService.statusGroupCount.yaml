@@ -1,0 +1,44 @@
+- name: group-by-account
+  edits:
+    - from: 'by b.status'
+      to: 'by b.account_id'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM (
+              SELECT bill.account_id
+              FROM bill
+              GROUP BY bill.account_id
+            ) AS groups
+          ),
+          0
+        )
+- name: group-by-status-and-account
+  edits:
+    - from: 'by b.status'
+      to: 'by b.status, b.account_id'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM (
+              SELECT bill.status, bill.account_id
+              FROM bill
+              GROUP BY bill.status, bill.account_id
+            ) AS groups
+          ),
+          0
+        )
+- name: reject-undeclared-key
+  edits: [{from: 'by b.status', to: 'by b.unlisted'}]
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'unknown projected field']
+- name: filtered-group-input-is-not-admitted
+  edits:
+    - from: 'from bill as row yield'
+      to: 'from bill as row where false yield'
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'group count currently requires an unfiltered table declaration']

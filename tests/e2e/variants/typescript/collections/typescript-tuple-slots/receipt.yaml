@@ -1,0 +1,74 @@
+- name: rest-count-excludes-the-two-fixed-slots
+  edits:
+  - from: '"sent", "ack"'
+    to: '"sent", "ack", "settled"'
+  expect:
+  - path:
+    - R
+    value: "CASE\n  WHEN detailed AND NOT (failed) THEN 3\n  ELSE 0\nEND"
+- name: a-present-but-unsuccessful-reply-does-not-count-its-traces
+  edits:
+  - from: '{ ok: true }, "sent"'
+    to: '{ ok: false }, "sent"'
+  expect:
+  - path:
+    - R
+    value: '0'
+- name: optional-slot-with-explicit-undefined-is-not-a-success
+  edits:
+  - from: '{ ok: true }, "sent"'
+    to: undefined, "sent"
+  expect:
+  - path:
+    - R
+    value: '0'
+- name: omitted-optional-reply-is-not-shifted-into-the-first-slot
+  edits:
+  - from: return ["offline"]
+    to: return [undefined]
+- name: required-first-slot-cannot-be-removed-by-shifting-the-array
+  edits:
+  - from: '[undefined, { ok: true }, "sent", "ack"]'
+    to: '[{ ok: true }, "sent", "ack"]'
+  reject:
+  - '[NORM-TS-MODULE]'
+  - is not assignable to type 'string'
+- name: text-that-says-undefined-is-not-the-undefined-value
+  edits:
+  - from: '[undefined, { ok: true }, "sent", "ack"]'
+    to: '["undefined", { ok: true }, "sent", "ack"]'
+  expect:
+  - path:
+    - R
+    value: '0'
+- name: missing-optional-boolean-field-does-not-count-rest
+  edits:
+  - from: 'ok: boolean'
+    to: 'ok?: boolean'
+  - from: '{ ok: true }, "sent"'
+    to: '{}, "sent"'
+  expect:
+  - path:
+    - R
+    value: '0'
+- name: truthiness-of-a-string-length-is-not-an-optional-boolean-flag
+  edits:
+  - from: error === undefined && result?.ok
+    to: error?.length
+  reject:
+  - '[NORM-TS-MODULE]'
+  - optional tuple condition must be a Boolean flag
+- name: type-only-import-is-not-opened-by-the-closed-module-typecheck
+  edits:
+  - from: type Reply =
+    to: type Indirect = import("./missing").Indirect; type Reply =
+  reject:
+  - '[NORM-TS-MODULE]'
+  - typed module cannot import outside declarations
+- name: a-reserved-local-directive-is-never-silently-ignored
+  edits:
+  - from: if (failed) return
+    to: /* @normalizer-ir retained = 2 */ if (failed) return
+  reject:
+  - 'SCENARIO_MODULE_INPUT:'
+  - '@normalizer-ir'

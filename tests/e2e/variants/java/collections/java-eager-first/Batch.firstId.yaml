@@ -1,0 +1,44 @@
+- name: changing-private-query-and-array-names-keeps-the-same-path
+  edits:
+  - from: int[] ids;
+    to: int[] projected;
+  - from: ids = from rows as row yield row.ticket.id
+    to: projected = from rows as candidate yield candidate.ticket.id
+  - from: return ids[0];
+    to: return projected[0];
+- name: even-an-unused-result-still-checks-all-rows
+  edits:
+  - from: return ids[0];
+    to: return 7;
+  expect:
+  - path:
+    - R
+    value: '7'
+  - path:
+    - throws
+    value:
+    - type: java.lang.NullPointerException
+      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)
+- name: a-second-index-is-not-silently-replaced-by-first
+  edits:
+  - from: return ids[0];
+    to: return ids[1];
+  reject:
+  - '[NORM-PROJECT]'
+  - eager record projection currently supports only its first element
+- name: missing-nullability-contract-is-not-treated-as-eager-null-check
+  edits:
+  - from: '@normalizer.annotations.Nullable Ticket ticket;'
+    to: Ticket ticket;
+  reject:
+  - '[NORM-PROJECT]'
+  - eager projection member requires an explicit nullable record declaration
+- name: ordinary-dereference-is-not-covered-by-eager-projection-proof
+  edits:
+  - from: firstId(Row[] rows)
+    to: firstId(Row[] rows, Row extra)
+  - from: return ids[0];
+    to: return extra.ticket.id;
+  reject:
+  - '[NORM-PROJECT]'
+  - ordinary object field read has no nullable member acquisition proof

@@ -49,7 +49,7 @@
     }
     const nav = $('documents');
     nav.replaceChildren();
-    const order = ['设计导览', '基础主题', '联合主题', '种子清单', '待迁移案例', '测试用例'];
+    const order = ['设计导览', '基础主题', '联合主题', '种子清单', '测试用例'];
     const ranked = [...groups].sort(([a], [b]) => (order.includes(a) ? order.indexOf(a) : 9) - (order.includes(b) ? order.indexOf(b) : 9));
     for (const [group, docs] of ranked) {
       const section = document.createElement('section');

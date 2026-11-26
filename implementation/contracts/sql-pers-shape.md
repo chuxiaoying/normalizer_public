@@ -23,11 +23,11 @@ SQL 表关系
 P 和 E 每个名称都必须有明确来源。公共来源放父级，局部来源放子级：
 
 ```yaml
+schema: normalizer.pers/1
+
 entry:
   function: src/ArrearsService.java#ArrearsService.calculatePayable
-  signature:
-    parameters: [number, date]
-    returns: money
+  returns: number
 
 P:
   parameters:
@@ -36,19 +36,26 @@ P:
       type: number
     today:
       position: 1
-      type: date
+      type: number
 
 E:
   bill:
-    account_id: number
-    due_date: date
-    amount: money
-    waived_amount: money
-    priority: number
-    status: text
+    kind: table
+    source: bill
+    columns:
+      account_id: number
+      due_date: number
+      amount: number
+      waived_amount: number
+      priority: number
+      status: text
+
+R: |-
+  COALESCE(SUM(SELECT bill.amount FROM bill
+    WHERE bill.account_id == accountId AND bill.due_date <= today), 0)
 ```
 
-公式中使用 `bill`、`bill.account_id` 和 `bill.amount`。`bill` 本身就是数据库表的命名空间，列直接嵌套在其下。SQL 别名在 AI 预处理阶段消化，PERS 只保留物理列名和业务类型，不再重复声明一套 PERS 列名。输入提供 catalog 或 schema 时，表的完整数据库限定名作为关系来源身份保留。相同物理表的多次引用使用不同的 PERS 关系根或表达式别名区分。
+公式中使用 `bill`、`bill.account_id` 和 `bill.amount`。`bill` 本身就是数据库表的命名空间，列类型在 `E.bill.columns` 中声明。SQL 别名在 AI 预处理阶段消化，PERS 只保留物理列名和业务类型，不再重复声明一套 PERS 列名。输入提供 catalog 或 schema 时，表的完整数据库限定名作为关系来源身份保留。相同物理表的多次引用使用不同的 PERS 关系根或表达式别名区分。
 
 ## 关系表达式
 
@@ -199,7 +206,7 @@ R: |-
 
 ## NULL、异常和边界
 
-关系谓词保留 SQL 三值逻辑。需要区分 NULL 时使用表达式：
+支持的关系改写必须保持 SQL 三值逻辑，不能把 UNKNOWN 当成宿主 Boolean 再套用排中律。当前局部关系输入的可空文本判断覆盖 `IS NULL` 和 `IS NOT NULL`；不要由这两个操作推断已支持 nullable 比较、析取或一般三值演算。不支持的谓词应明确拒绝，或在预处理时交付可证明等价且受支持的表达。需要区分 NULL 时使用：
 
 ```yaml
 R: bill.amount IS NULL

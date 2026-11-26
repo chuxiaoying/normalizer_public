@@ -30,7 +30,7 @@ pub struct FormatCtx {
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
-    format_guarded_business_return: bool,
+    business_evaluation_guard: Option<Expr>,
     heap_renumber: HashMap<i64, usize>,
     next: usize,
     /// PERST: External binding_id → 0-based 编号
@@ -51,7 +51,7 @@ impl Default for FormatCtx {
             business_projections: Vec::new(),
             business_states: Default::default(),
             business_receipt_guards: Default::default(),
-            format_guarded_business_return: false,
+            business_evaluation_guard: None,
             heap_renumber: HashMap::new(),
             next: 1,
             e_renumber: HashMap::new(),
@@ -105,7 +105,16 @@ impl FormatCtx {
         self.scalar_arrays = arrays;
     }
 
-    pub(crate) fn protect_business_return(&mut self) { self.format_guarded_business_return = true; }
+    pub(crate) fn with_business_evaluation_guard<T>(
+        &mut self,
+        guard: &Expr,
+        render: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let prior = self.business_evaluation_guard.replace(guard.clone());
+        let rendered = render(self);
+        self.business_evaluation_guard = prior;
+        rendered
+    }
 
     pub(crate) fn for_business(inputs: std::collections::BTreeMap<String, String>, business_states: std::collections::BTreeMap<u64,String>) -> Self {
         Self { business_inputs: Some(inputs), business_states, ..Self::default() }

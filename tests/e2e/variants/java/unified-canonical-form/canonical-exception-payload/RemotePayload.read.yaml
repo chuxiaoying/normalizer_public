@@ -1,0 +1,84 @@
+- name: class-without-payload-publishes-only-the-type
+  edits:
+  - from: String payload;
+    to: ''
+  expect:
+  - path:
+    - throws
+    - 0
+    - payload
+    absent: true
+  - path:
+    - throws
+    - 0
+    - payload_type
+    absent: true
+- name: scalar-integer-payload-uses-the-same-receipt-projection
+  edits:
+  - from: String payload;
+    to: int payload;
+  expect:
+  - path:
+    - throws
+    - 0
+    - payload_type
+    value: number
+- name: arbitrary-reference-is-not-an-exception-payload-contract
+  edits:
+  - from: String payload;
+    to: Object payload;
+  reject:
+  - '[NORM-EXCEPTION-DECLARATION]'
+- name: two-throwing-calls-keep-distinct-payload-and-acquisition-path
+  edits:
+  - from: return rates.read(input);
+    to: return rates.read(rates.read(input));
+  expect:
+  - path:
+    - R
+    value: $e_1
+  - path:
+    - S
+    value:
+    - call:
+        external: rates.read
+        args:
+        - input
+        returns: number
+        result: $e_0
+    - call:
+        external: rates.read
+        args:
+        - $e_0
+        returns: number
+        result: $e_1
+        when: completion.is_return($e_0)
+  - path:
+    - throws
+    value:
+    - type: RemoteFault
+      when: completion.is_throw($e_0, RemoteFault)
+      payload: completion.payload($e_0, RemoteFault)
+      payload_type: text?
+    - type: RemoteFault
+      when: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, RemoteFault)
+          ELSE false
+        END
+      payload: completion.payload($e_1, RemoteFault)
+      payload_type: text?
+- name: a-declared-payload-does-not-exist-when-the-call-never-runs
+  edits:
+  - from: return rates.read(input);
+    to: if (false) return rates.read(input); return input;
+  expect:
+  - path:
+    - R
+    value: input
+  - path:
+    - S
+    absent: true
+  - path:
+    - throws
+    absent: true

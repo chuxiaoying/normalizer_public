@@ -1,6 +1,6 @@
 # 任务身份、观察前缀与纯完成值（扩展目标）
 
-本文的 `task.value`、参数化 `pure_value` 与任意任务前缀格式是设计目标，不是当前生产 CLI 的通用输出。当前可运行的任务和事件场景以 [Vue 生产种子](../../../design/examples/series-1/frontend-vo-production-vue.md)及其正式回归为准。
+本文的 `task.value`、参数化 `pure_value` 与任意任务前缀格式是设计目标，不是当前生产 CLI 的通用输出。当前可运行的任务和事件场景以 [Vue 生产种子](../../../design/examples/topics/language-entries/frontend-vo-production-vue.md)及其正式回归为准。
 
 最终异步 PERS 的 R 仍返回任务值，不把将来得到的标量充当同步返回。数学构造 `task.value(ref.task_local(N), $t_K)` 将本次入口调用中新鲜的任务身份与同文档中的已认证完成值定义配对。编号只在本次入口调用内有效；同一任务所有引用相等，不同任务及不同入口调用的身份互异。定义引用由内核登记产生，不能用未知函数名或字符串伪造。
 

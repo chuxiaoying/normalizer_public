@@ -1,5 +1,9 @@
 # Hello World：finally 在正常和异常路径都产生状态写入
 
+## 设计意图
+
+检验正常返回、已捕获和未捕获异常都按真实顺序进入 finally。finally 写入不能丢失；异常类型相同、父类匹配或无关处理器必须按各自可达条件区分。
+
 ## 输入原始代码
 
 外部读取成功时返回分数，声明的异常由 catch 转成零。finally 无论哪条路径完成都会把入口状态中的尝试次数加一。
@@ -49,11 +53,7 @@ AI 只在外部端口和已有状态声明处增加 Normalizer 自身的标记�
      int attempts;
 ```
 
-**预处理 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 只有 Java 外部对象和实例字段；new 只增加 `@External` 与 `@EntryState`，保留 try/catch/finally 的控制流和写入位置。 | 预处理补充边界身份，不能把 finally 提前合并进正常返回，也不能把异常路径当成普通默认值。最终顺序由统一执行内核表达。 |
+**预处理要点**：预处理补充边界身份，不能把 finally 提前合并进正常返回，也不能把异常路径当成普通默认值。最终顺序由统一执行内核表达。
 
 ## 归一化最终结果
 
@@ -94,12 +94,10 @@ R: |-
   END
 ```
 
-**PERS 结果 diff**
-
-| 差异点（old → new） | 升级思想 |
-|---|---|
-| old 的 finally 写入只在 Java 控制流中出现；new 在 S 中把外部调用和无论完成结果都发生的 `attempts` 写入按顺序列出，R 单独表达 catch 后的零值。 | finally 是完成路径上的有序业务效果。它不能被吸收进 R，也不能因为异常被 catch 就从 S 中删除。 |
+**PERS 验收要点**：finally 是完成路径上的有序业务效果。它不能被吸收进 R，也不能因为异常被 catch 就从 S 中删除。
 
 派生对照在 finally 写入后执行 `return 42`。无论外部调用正常完成还是被 catch，R 都是 42，S 仍按原顺序包含外部调用及一次状态写入。
 
 **只按类型匹配的对照**　外部端口仍声明抛出 `RemoteError`，但增加 `ParentError`，让继承链成为 `RemoteError → ParentError → RuntimeException`。先放一个不匹配的同级 `OtherError` handler，再捕获 `RuntimeException`。应穿过中间父类命中后者，不会返回第一个 handler 的 999。回执里仍是实际的 `RemoteError`，finally 仍仅写一次。此例不读取或构造异常对象的载荷。继承有环或根不在当前 RuntimeException 合同内时，必须在源码合同校验时拒绝。
+
+若 finally 写入后无条件抛出 `RemoteError`，则它取代 try 和 catch 的所有正常完成。S 仍保留同一次外部调用及写入；`R: ⊥`，`throws` 在全域报告 `RemoteError`。

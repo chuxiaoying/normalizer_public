@@ -1,0 +1,34 @@
+- name: fixed-dispatch
+  edits:
+  - from: 'fixed ? new FixedFee() : new ScaledFee()'
+    to: new FixedFee()
+  expect:
+  - path:
+    - R
+    value: value - 1
+- name: scaled-dispatch
+  edits:
+  - from: 'fixed ? new FixedFee() : new ScaledFee()'
+    to: new ScaledFee()
+  expect:
+  - path:
+    - R
+    value: value * 2
+- name: top-level-java-allows-an-empty-declaration
+  edits:
+  - from: interface Fee
+    to: ; interface Fee
+- name: top-level-garbage-is-not-skipped
+  edits:
+  - from: interface Fee
+    to: nonsense interface Fee
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - expected class or interface declaration
+- name: parameterized-interface-is-not-erased
+  edits:
+  - from: class FixedFee implements Fee
+    to: class FixedFee implements Fee<String>
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - generic supertype requires explicit preprocessing

@@ -305,6 +305,11 @@ impl Engine<'_> {
             return Ok(Value::Term(self.project.result_type(self.methods[id].return_type())?,result));
         }
         if self.methods[id].is_constructor() { return Ok(Value::Term(Ty::Unit,b::lit_null())); }
+        if self.realtime_completion.is_always_throwing() {
+            // No expression can observe this carrier; the completion records
+            // the actual exit and enclosing catches consume that completion.
+            return Ok(Value::Term(self.project.result_type(self.methods[id].return_type())?, b::lit_null()));
+        }
         value.ok_or_else(||fail("missing return"))
     }
 

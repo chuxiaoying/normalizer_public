@@ -47,7 +47,6 @@ function group(path) {
   if (path === 'design/examples/seeds.yaml' || path === 'design/examples/seed-manifest.yaml' || path === 'design/examples/seed-plan.yaml') return '种子清单';
   if (path.startsWith('design/examples/topics/')) return '基础主题';
   if (path.startsWith('design/examples/compositions/')) return '联合主题';
-  if (path.startsWith('design/examples/series-1/') || path.startsWith('design/examples/series-2/')) return '待迁移案例';
   return '设计导览';
 }
 

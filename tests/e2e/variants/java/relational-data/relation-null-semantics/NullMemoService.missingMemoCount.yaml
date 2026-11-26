@@ -1,0 +1,37 @@
+- name: count-present-memo
+  edits:
+    - from: 'row.memo IS NULL'
+      to: 'row.memo IS NOT NULL'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NOT NULL
+          ),
+          0
+        )
+- name: shift-account-filter
+  edits:
+    - from: 'b.account_id == accountId'
+      to: 'b.account_id == accountId + 1'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId + 1
+              AND bill.memo IS NULL
+          ),
+          0
+        )
+- name: reject-unadmitted-three-valued-disjunction
+  edits:
+    - from: 'row.memo IS NULL'
+      to: 'row.memo == "x" OR row.memo != "x"'
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'OR is not supported in local relation predicates']

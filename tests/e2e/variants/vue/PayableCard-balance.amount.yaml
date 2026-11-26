@@ -33,4 +33,4 @@
     - file: src/ArrearsPage.mjs
       from: '/** @componentProp PayableCard#balance.amount */'
       to: '/** Missing explicit component observation. */'
-  reject: ['SCENARIO_MODULE_INPUT', 'missing or invalid @componentProp on amount']
+  reject: ['SCENARIO_MODULE_INPUT:', 'missing or invalid @componentProp on amount']

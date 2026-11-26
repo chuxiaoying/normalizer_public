@@ -1,118 +1,90 @@
 - name: replace-total-at-second-directive
   edits:
-    - file: src/ArrearsPage.mjs
-      from: |-
-        yield netAmount
-            */
-      to: |-
-        yield netAmount
-            */
-            /* @normalizer-ir total = sum from rows as row yield row.priority */
+  - file: src/ArrearsPage.mjs
+    from: "yield netAmount\n    */"
+    to: "yield netAmount\n    */\n    /* @normalizer-ir total = sum from rows as row yield row.priority */"
   expect:
-    - path: [S, 5, write, value]
-      value: |-
-        CASE
-          WHEN $e_0.quota < COALESCE(
-            SUM(
-              SELECT row.priority
-              FROM $e_1 AS row
-            ),
-            0
-          ) THEN $e_0.quota
-          ELSE COALESCE(
-            SUM(
-              SELECT row.priority
-              FROM $e_1 AS row
-            ),
-            0
-          )
-        END
-
+  - path:
+    - S
+    - 5
+    - write
+    - value
+    value: "CASE\n  WHEN $e_0.quota < COALESCE(\n    SUM(\n      SELECT row.priority\n      FROM $e_1 AS row\n    ),\n    0\n  ) THEN\
+      \ $e_0.quota\n  ELSE COALESCE(\n    SUM(\n      SELECT row.priority\n      FROM $e_1 AS row\n    ),\n    0\n  )\nEND"
 - name: accumulate-into-initialized-zero
   edits:
-    - file: src/ArrearsPage.mjs
-      from: |-
-        let total
-            /* @normalizer-ir
-               total = sum
-      to: |-
-        let total = 0
-            /* @normalizer-ir
-               total += sum
-
+  - file: src/ArrearsPage.mjs
+    from: "let total\n    /* @normalizer-ir\n       total = sum"
+    to: "let total = 0\n    /* @normalizer-ir\n       total += sum"
 - name: unknown-second-directive
   edits:
-    - file: src/ArrearsPage.mjs
-      from: |-
-        yield netAmount
-            */
-      to: |-
-        yield netAmount
-            */
-            /* @normalizer-ir total = unknown_operation rows */
-  reject: ['expected a typed relation query']
-
+  - file: src/ArrearsPage.mjs
+    from: "yield netAmount\n    */"
+    to: "yield netAmount\n    */\n    /* @normalizer-ir total = unknown_operation rows */"
+  reject:
+  - 'SCENARIO_KERNEL_FAILED:'
+  - '[NORM-PROJECT]'
+  - kind=PREPROCESS_REQUIRED
+  - expected a typed relation query
 - name: directive-inside-write-value
   edits:
-    - file: src/ArrearsPage.mjs
-      from: 'arrears.status.failed = true'
-      to: 'arrears.status.failed = /* @normalizer-ir total = sum from rows as row yield row.priority */ true'
-  reject: ['@normalizer-ir must appear between statements']
-
+  - file: src/ArrearsPage.mjs
+    from: arrears.status.failed = true
+    to: arrears.status.failed = /* @normalizer-ir total = sum from rows as row yield row.priority */ true
+  reject:
+  - 'SCENARIO_MODULE_INPUT:'
+  - '@normalizer-ir must appear between statements'
 - name: later-sum-adds-to-existing-binding
   edits:
-    - file: src/ArrearsPage.mjs
-      from: |-
-        yield netAmount
-            */
-      to: |-
-        yield netAmount
-            */
-            const first = total
-            /* @normalizer-ir total += sum from rows as row
-                 where row.dueDate <= props.today and row.priority >= profile.minPriority
-                 let netAmount = row.amount - row.waivedAmount
-                 where netAmount > 0 yield netAmount */
-    - file: src/ArrearsPage.mjs
-      from: 'total > profile.quota ? profile.quota : total'
-      to: 'total === first + first ? 701 : 702'
+  - file: src/ArrearsPage.mjs
+    from: "yield netAmount\n    */"
+    to: "yield netAmount\n    */\n    const first = total\n    /* @normalizer-ir total += sum from rows as row\n         where row.dueDate\
+      \ <= props.today and row.priority >= profile.minPriority\n         let netAmount = row.amount - row.waivedAmount\n         where\
+      \ netAmount > 0 yield netAmount */"
+  - file: src/ArrearsPage.mjs
+    from: 'total > profile.quota ? profile.quota : total'
+    to: 'total === first + first ? 701 : 702'
   expect:
-    - path: [S, 5, write, value]
-      value: "701"
-
+  - path:
+    - S
+    - 5
+    - write
+    - value
+    value: '701'
 - name: capture-invariant-today-before-await
   edits:
-    - file: src/ArrearsPage.mjs
-      from: 'export async function onLoad() {'
-      to: |-
-        export async function onLoad() {
-          const todayAtEntry = props.today
-    - file: src/ArrearsPage.mjs
-      from: 'row.dueDate <= props.today'
-      to: 'row.dueDate <= todayAtEntry'
+  - file: src/ArrearsPage.mjs
+    from: '  const todayAtEntry = props.today
 
+      '
+    to: ''
+  - file: src/ArrearsPage.mjs
+    from: row.dueDate <= todayAtEntry
+    to: row.dueDate <= props.today
 - name: both-sides-of-await-read-the-same-invariant-today
   edits:
-    - file: src/ArrearsPage.mjs
-      from: 'export async function onLoad() {'
-      to: |-
-        export async function onLoad() {
-          const todayAtEntry = props.today
-    - file: src/ArrearsPage.mjs
-      from: 'row.dueDate <= props.today'
-      to: |-
-        row.dueDate <= props.today
-                   and row.dueDate <= todayAtEntry
-
+  - file: src/ArrearsPage.mjs
+    from: row.dueDate <= todayAtEntry
+    to: "row.dueDate <= todayAtEntry\n           and row.dueDate <= props.today"
 - name: synchronous-entry-hides-await
   edits:
-    - file: src/ArrearsPage.mjs
-      from: 'export async function onLoad() {'
-      to: 'export function onLoad() {'
-  reject: ['SCENARIO_MODULE_INPUT', 'entry needs an exported async function']
+  - file: src/ArrearsPage.mjs
+    from: export async function onLoad() {
+    to: export function onLoad() {
+  reject:
+  - 'SCENARIO_MODULE_INPUT:'
+  - entry needs an exported async function
 - name: a-state-write-must-use-a-field-declared-for-this-entry
   edits:
-    - file: src/ArrearsPage.mjs
-      from: 'arrears.status.ready = true'
-      to: 'arrears.status.neverDeclared = true'
-  reject: ['SCENARIO_KERNEL_FAILED', 'undeclared state field']
+  - file: src/ArrearsPage.mjs
+    from: arrears.status.ready = true
+    to: arrears.status.neverDeclared = true
+  reject:
+  - 'SCENARIO_KERNEL_FAILED:'
+  - '[NORM-STATE-DECLARATION]'
+  - undeclared state field
+- name: reuse-entry-today-through-local-alias
+  edits:
+  - file: src/ArrearsPage.mjs
+    from: const todayAtEntry = props.today
+    to: "const dateSnapshot = props.today\n  const todayAtEntry = dateSnapshot"

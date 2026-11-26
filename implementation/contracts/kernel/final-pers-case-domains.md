@@ -2,7 +2,7 @@
 
 CASE 条件不是互不相关的过滤器。第 i 臂的有效域是“前面的臂全部未命中，且本臂条件成立”。在原顺序内可以剥去已由前臂失败证明的 guard；删除、重排或合并臂时，必须恢复有效域。
 
-例如 `CASE P → D; (Q || R) → X; true → D END`，X 的完整条件是 `!P && (Q || R)`。保留 OR 为一个分组只能改变表示，不能把条件改成 `Q || R`。当 P=true、Q=true、R=false 时，原式必须返回 D；旧的分组路径错误地返回了 X。
+例如 `CASE P → D; (Q || R) → X; true → D END`，X 的完整条件是 `!P && (Q || R)`。保留 OR 为一个分组只能改变表示，不能把条件改成 `Q || R`。当 P=true、Q=true、R=false 时，原式必须返回 D。
 
 嵌套的普通值 CASE 也可能没有显式默认臂，其未命中结果是隐式 null。`CASE P → (CASE Q → X END); true → D END` 展平为 `CASE (P && Q) → X; P → null; true → D END`。内层最后一个显式条件不能自动当作 true，内层未命中也不能跌入外层后续的 D。外层本身没有默认臂时，仍保留对应未命中的 null 语义。
 

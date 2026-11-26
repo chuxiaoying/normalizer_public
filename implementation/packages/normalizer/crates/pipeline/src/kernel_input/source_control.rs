@@ -304,7 +304,20 @@ impl Engine<'_> {
             // frame's domain. Its abrupt completion overrides the saved one.
             self.realtime_throws.truncate(prior_realtime_throws);
             self.realtime_completion = Completion::Continue;
-            self.source_steps(finally, id, &mut env.clone(), path.clone())?;
+            let trailing_throw = finally.split_last().and_then(|(last, prefix)|
+                crate::normalized::finally_throw(last).map(|class| (class, prefix)));
+            let body = trailing_throw.map_or(finally, |(_, prefix)| prefix);
+            self.source_steps(body, id, &mut env.clone(), path.clone())?;
+            if let Some((class, _)) = trailing_throw {
+                let owner = id.rsplit_once('.').map(|(owner, _)| owner).unwrap_or("");
+                let exceptions = &self.project.source_exception_parents;
+                let class = crate::normalized::exception_name(class, owner, exceptions)
+                    .filter(|name| exceptions.contains_key(name))
+                    .ok_or_else(|| fail("finally throw requires a source-declared type-only exception"))?;
+                self.realtime_completion = self.realtime_completion.replace_continue(
+                    Completion::Throw { class, payload: None },
+                );
+            }
             let finished = self.realtime_completion.replace_continue(saved);
             self.realtime_throws.truncate(prior_realtime_throws);
             self.realtime_throws.extend(finished.clone().alternatives().into_iter().filter_map(|alt| {
