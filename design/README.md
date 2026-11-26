@@ -6,7 +6,7 @@
 ./design/open.command
 ```
 
-脚本会自动打开[本地阅览器](http://127.0.0.1:4176/)。首次启动需要 Node.js 24 或更高版本和 npm，缺少的项目依赖会自动安装，不需要构建 Rust 内核。保留启动窗口即可继续浏览，按 Ctrl+C 停止。更多说明见[阅览器文档](../implementation/apps/design-reader/README.md)。
+脚本会自动打开本地阅览器。默认端口是 4176；如果被其他程序占用，会换一个可用端口，实际地址显示在终端。再次启动会关闭同一份仓库中已确认的旧阅览器。首次启动需要 Node.js 24 或更高版本和 npm，缺少的项目依赖会自动安装，不需要构建 Rust 内核。保留启动窗口即可继续浏览，按 Ctrl+C 停止。更多说明见[阅览器文档](../implementation/apps/design-reader/README.md)。
 
 设计种子和派生案例的覆盖原则见[种子覆盖审查](seed-coverage-audit.md)。
 

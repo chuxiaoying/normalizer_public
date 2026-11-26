@@ -4,12 +4,12 @@ import { createServer } from 'node:http';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadContent } from './content.mjs';
+import { claimReader, listenReader } from './lifecycle.mjs';
 
-const appDir = fileURLToPath(new URL('.', import.meta.url));
+const appDir = await realpath(fileURLToPath(new URL('.', import.meta.url)));
 const root = await realpath(resolve(appDir, '../../..'));
 const host = '127.0.0.1';
-const port = 4176;
-const address = `http://${host}:${port}`;
+const defaultPort = 4176;
 const identity = `Normalizer Design Reader\n${root}`;
 let linkedSources = new Set();
 
@@ -35,7 +35,7 @@ async function renderPage(offline) {
     .replace('__READER_DATA__', () => json);
 }
 
-function openBrowser() {
+function openBrowser(address) {
   const command = process.platform === 'darwin' ? 'open' : 'xdg-open';
   const browser = spawn(command, [address], { detached: true, stdio: 'ignore' });
   browser.on('error', () => console.error(`请在浏览器打开 ${address}`));
@@ -43,6 +43,8 @@ function openBrowser() {
 }
 
 async function serve(open) {
+  let port = defaultPort;
+  let address;
   const server = createServer(async (req, res) => {
     const send = (status, type, body) => {
       res.writeHead(status, { 'Content-Type': type + '; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -68,15 +70,35 @@ async function serve(open) {
       return send(error.code === 'ENOENT' ? 404 : 500, 'text/plain', '读取文档失败，请检查源文件后刷新。');
     }
   });
+  let finishStartup;
+  const ready = new Promise(resolve => { finishStartup = resolve; });
+  const control = await claimReader(root, async () => {
+    await ready;
+    if (!server.listening) return;
+    await new Promise(resolve => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
+  });
+  const close = () => {
+    control.close();
+    server.close();
+    server.closeAllConnections();
+  };
+  process.once('SIGINT', close);
+  process.once('SIGTERM', close);
   try {
-    await new Promise((ok, fail) => server.once('error', fail).listen(port, host, ok));
+    await listenReader(server, { host, defaultPort, identity, appDir });
+    port = server.address().port;
+    address = `http://${host}:${port}`;
+    console.log(address);
+    if (open) openBrowser(address);
   } catch (error) {
-    if (error.code !== 'EADDRINUSE') throw error;
-    const existing = await fetch(address + '/_reader', { signal: AbortSignal.timeout(2000) });
-    if (await existing.text() !== identity) throw new Error(`端口 ${port} 正被其他程序使用`);
+    close();
+    throw error;
+  } finally {
+    finishStartup();
   }
-  console.log(address);
-  if (open) openBrowser();
 }
 
 const args = process.argv.slice(2);
