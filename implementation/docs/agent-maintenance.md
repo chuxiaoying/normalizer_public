@@ -32,6 +32,7 @@
 ```sh
 python3 -B implementation/tools/architecture/health.py --json
 cargo fmt --manifest-path implementation/packages/normalizer/Cargo.toml --all -- --check
+git diff --cached --check
 ```
 
 

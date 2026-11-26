@@ -8,7 +8,8 @@ implementation/tools/normalizer help
 implementation/tools/normalizer test business-examples
 implementation/tools/normalizer test pers-goldens
 implementation/tools/normalizer test seed-patches
-python3 -B implementation/tools/docs/check_links.py
+implementation/tools/normalizer test engineering
+implementation/tools/normalizer test kernel-units
 ```
 
 使用[入门示例](../../usage/getting-started.md)检查 CLI 的源码入口。构建和命令检查只覆盖相应入口的可运行性。从仓库根运行 `implementation/tools/normalizer test business-examples` 执行首批种子的 CLI 验收，覆盖范围与变体约定见[独立测试区](../../tests/README.md)。

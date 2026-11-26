@@ -6,17 +6,6 @@ MANIFEST="$ROOT/packages/normalizer/Cargo.toml"
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/packages/normalizer/target}"
 KERNEL="$TARGET_DIR/debug/normalizer-normalized"
 
-if [[ -n "${CARGO:-}" ]]; then
-  cargo_cmd="$CARGO"
-elif command -v cargo >/dev/null 2>&1; then
-  cargo_cmd=$(command -v cargo)
-elif [[ -n "${HOME:-}" && -x "$HOME/.cargo/bin/cargo" ]]; then
-  cargo_cmd="$HOME/.cargo/bin/cargo"
-else
-  echo "cargo not found; set CARGO to a standard cargo executable" >&2
-  exit 127
-fi
-
 usage() {
   cat <<'EOF'
 Usage:
@@ -26,12 +15,29 @@ Usage:
   implementation/tools/normalizer test business-examples
   implementation/tools/normalizer test pers-goldens
   implementation/tools/normalizer test seed-patches
+  implementation/tools/normalizer test engineering
+  implementation/tools/normalizer test kernel-units
 
 source, module and scenario write final business PERS to stdout.
 EOF
 }
 
+cargo_command() {
+  if [[ -n "${CARGO:-}" ]]; then
+    printf '%s\n' "$CARGO"
+  elif command -v cargo >/dev/null 2>&1; then
+    command -v cargo
+  elif [[ -n "${HOME:-}" && -x "$HOME/.cargo/bin/cargo" ]]; then
+    printf '%s\n' "$HOME/.cargo/bin/cargo"
+  else
+    echo "cargo not found; set CARGO to a standard cargo executable" >&2
+    return 127
+  fi
+}
+
 ensure_kernel() {
+  local cargo_cmd
+  cargo_cmd=$(cargo_command)
   if [[ ! -x "$KERNEL" ]] || find "$ROOT/packages/normalizer/crates" "$MANIFEST" "$ROOT/packages/normalizer/Cargo.lock" \
       -type f \( -name '*.rs' -o -name '*.toml' -o -name 'Cargo.lock' \) \
       -newer "$KERNEL" -print -quit | grep -q .; then
@@ -86,6 +92,14 @@ case "$command" in
   test)
     require_args 2 "$#"
     case "$2" in
+      kernel-units)
+        cargo_cmd=$(cargo_command)
+        exec "$cargo_cmd" test --locked --target-dir "$TARGET_DIR" --manifest-path "$MANIFEST" --workspace --lib
+        ;;
+      engineering)
+        python3 -B -m unittest discover -s "$ROOT/../tests/architecture"
+        exec python3 -B "$ROOT/tools/docs/check_links.py"
+        ;;
       seed-patches)
         ensure_frontend_dependencies
         exec node "$ROOT/../tests/e2e/check-seed-patches.mjs"

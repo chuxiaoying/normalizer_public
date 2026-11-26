@@ -7,7 +7,7 @@
 ```sh
 python3 -B implementation/tools/architecture/health.py
 python3 -B implementation/tools/architecture/health.py --json
-python3 -B -m unittest discover -s tests/architecture
+implementation/tools/normalizer test engineering
 ```
 
 ## 健康标准
@@ -57,5 +57,5 @@ python3 -B -m unittest discover -s tests/architecture
 
 - 先读根目录 [AGENTS.md](../../AGENTS.md) 和 [README.md](../../README.md)。
 - 架构边界读 [三模块架构](architecture-three-modules.md)，维护路由读 [Agent 维护路由](agent-maintenance.md)。
-- 运行检查使用 `implementation/tools/architecture/health.py`、`implementation/tools/docs/check_links.py`。
+- 架构评分由 `implementation/tools/architecture/health.py` 生成；架构工具与文档链接通过 `implementation/tools/normalizer test engineering` 验收。
 - 归一化代码按 crate 和最终产物合同定位，避免从 fixture 名称反推内核责任。
