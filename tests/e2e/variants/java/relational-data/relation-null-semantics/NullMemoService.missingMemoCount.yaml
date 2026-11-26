@@ -45,3 +45,24 @@
     - { from: 'return count;', to: 'if (count == 0) return 99; return count;' }
   expect:
     - { path: [R], value: '99' }
+- name: lowercase-sql-null-is-the-same-predicate
+  edits:
+    - { from: 'row.memo IS NULL', to: 'row.memo is null' }
+
+- name: acquired-count-cannot-be-at-most-minus-one
+  edits:
+    - { from: 'return count;', to: 'return count <= -1 ? 7 : 11;' }
+  expect:
+    - { path: [R], value: '11' }
+
+- name: acquired-count-is-never-minus-one
+  edits:
+    - { from: 'return count;', to: 'return count != -1 ? 7 : 11;' }
+  expect:
+    - { path: [R], value: '7' }
+
+- name: acquired-count-is-at-least-zero
+  edits:
+    - { from: 'return count;', to: 'return count >= 0 ? 7 : 11;' }
+  expect:
+    - { path: [R], value: '7' }

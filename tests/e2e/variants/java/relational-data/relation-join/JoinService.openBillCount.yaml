@@ -35,3 +35,35 @@
 - name: reject-unknown-join-column
   edits: [{from: 'a.id == b.account_id', to: 'a.id == b.unlisted'}]
   reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'undeclared query input b']
+- name: count-unequal-join-keys-with-multiplicity
+  edits:
+    - from: 'a.id == b.account_id'
+      to: 'a.id != b.account_id'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id != b.account_id
+            WHERE a.id == accountId
+              AND b.status == "OPEN"
+          ),
+          0
+        )
+- name: retain-all-matches-without-where
+  edits:
+    - from: 'where a.id == accountId and b.status == "OPEN"'
+      to: ' '
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id == b.account_id
+          ),
+          0
+        )
