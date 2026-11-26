@@ -96,8 +96,12 @@ fn remove_repeated_classes(equations: Vec<Equation>, conjuncts: &[Expr]) -> Opti
         }
     }
     if classes.len() == conjuncts.len() { return None; }
-    classes.into_iter().filter_map(|(equation, index, repeated)| {
-        repeated.then(|| predicate(&equation).unwrap_or_else(|| conjuncts[index].clone()))
+    classes.into_iter().map(|(equation, index, repeated)| {
+        if repeated {
+            predicate(&equation).unwrap_or_else(|| conjuncts[index].clone())
+        } else {
+            conjuncts[index].clone()
+        }
     }).reduce(b::and)
 }
 
@@ -153,6 +157,11 @@ fn solve_full_rank(equations: &[Equation], variables: BTreeSet<String>) -> Optio
             row[col] = BigInt::zero();
         }
         previous = pivot[col].clone();
+    }
+    // The n pivot columns are zero in every remaining row. Any nonzero
+    // right-hand side in that tail is an inconsistent original constraint.
+    if rows[n..].iter().any(|row| !row[n].is_zero()) {
+        return Some(b::lit_bool(false));
     }
     let mut solution = vec![BigInt::zero(); n];
     for col in (0..n).rev() {
