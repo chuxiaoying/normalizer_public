@@ -56,3 +56,21 @@
   reject:
   - '[NORM-JS-MODULE]'
   - expected declared business scalar or non-null readonly Vector for values
+- name: readonly-vector-length-is-at-least-zero
+  edits:
+  - from: 'values.length > 0 ? 7 : 11'
+    to: 'values.length >= 0 ? 7 : 11'
+  expect:
+  - path: [R]
+    value: '7'
+- name: readonly-vector-length-cannot-equal-negative-one
+  edits:
+  - from: 'values.length > 0 ? 7 : 11'
+    to: 'values.length !== -1 ? 7 : 11'
+  expect:
+  - path: [R]
+    value: '7'
+- name: readonly-vector-length-at-most-zero-means-exactly-empty
+  edits:
+  - from: 'values.length > 0 ? 7 : 11'
+    to: 'values.length <= 0 ? 11 : 7'
