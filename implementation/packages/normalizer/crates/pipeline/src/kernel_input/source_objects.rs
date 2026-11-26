@@ -137,9 +137,8 @@ impl Engine<'_> {
             self.source_objects
                 .objects
                 .insert(reference.id(), (target.into(), Origin::State { binding: bind, path: Vec::new() }));
-            let reference = b::heap_ref(reference.id());
-            self.state_roots.insert(format!("{owner}.{name}"), reference.clone());
-            reference
+            self.state_roots.insert(format!("{owner}.{name}"), reference.id());
+            b::heap_ref(reference.id())
         } else {
             let primitive = scalar_origin_type(&ty)?;
             b::param(source_state_symbol(name), primitive)
@@ -149,12 +148,7 @@ impl Engine<'_> {
     }
 
     fn scalar_state_reference(&mut self, owner: &str, name: &str) -> Expr {
-        let key = format!("{owner}.{name}");
-        if let Some(reference) = self.state_roots.get(&key) { return reference.clone(); }
-        let reference = self.heap.new_path_object();
-        let reference = b::heap_ref(reference.id());
-        self.state_roots.insert(key, reference.clone());
-        reference
+        self.acquire_source_state_root(format!("{owner}.{name}"))
     }
 
     pub(super) fn read_entry_state(&mut self, owner: &str, name: &str, path: &Expr) -> Result<Value> {

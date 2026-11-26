@@ -713,7 +713,7 @@ impl Loaded {
             source_identity_parameters: e.source_objects.compared_parameters,
             source_identity_states: e.source_objects.compared_states,
             source_record_return,
-            host_state_roots: e.state_roots.values().filter_map(Expr::as_heap_ref).collect(),
+            host_state_roots: e.state_roots.into_values().collect(),
             source_tables: e.source_relations.tables,
             realtime_store: e.realtime_store,
             realtime_local_allocations: e.realtime_local_allocations,

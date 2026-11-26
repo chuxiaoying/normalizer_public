@@ -37,7 +37,7 @@ pub(super) struct Engine<'a> {
     pub(super) settled_task_frame: bool,
     pub(super) selected_entry: Option<&'a str>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
-    pub(super) state_roots: BTreeMap<String, Expr>,
+    pub(super) state_roots: BTreeMap<String, i64>,
     pub(super) checked_ports: BTreeMap<String, actions::CheckedPort>,
     pub(super) pending_ports: BTreeMap<u64, String>,
     pub(super) caught_exceptions: Option<Vec<realtime_state::CompletionAlternative>>,
@@ -1175,6 +1175,11 @@ impl Engine<'_> {
             );
             self.realtime_throws.push(path);
         }
+    }
+
+    pub(super) fn acquire_source_state_root(&mut self, key: String) -> Expr {
+        let id = *self.state_roots.entry(key).or_insert_with(|| self.heap.new_path_object().id());
+        b::heap_ref(id)
     }
 
     pub(super) fn normal_path(&self, path: Expr) -> Expr {

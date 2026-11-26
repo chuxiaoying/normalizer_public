@@ -86,11 +86,7 @@ impl Engine<'_> {
     }
 
     fn source_array_reference(&mut self, root: &str) -> Expr {
-        let key = format!("array:{root}");
-        if let Some(reference) = self.state_roots.get(&key) { return reference.clone(); }
-        let reference = b::heap_ref(self.heap.new_path_object().id());
-        self.state_roots.insert(key, reference.clone());
-        reference
+        self.acquire_source_state_root(format!("array:{root}"))
     }
 
     fn check_source_bounds(&mut self, root: &str, index: i64, path: &Expr) -> Expr {
