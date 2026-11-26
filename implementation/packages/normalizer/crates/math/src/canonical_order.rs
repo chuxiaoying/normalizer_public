@@ -59,14 +59,7 @@ pub fn canonical_order_ordered_comparison(
                 None
             }
         }
-        BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge => {
-            if canonical_order_orient_ordered_predicate_to_rhs(op, left, right, ctx) {
-                Some((op.swapped_comparison()?, true))
-            } else {
-                None
-            }
-        }
-        _ => None,
+        _ => ordered_comparison_view(op, left, right, ctx).filter(|&(_, swap)| swap),
     }
 }
 
@@ -559,15 +552,6 @@ pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> E
         }
     }
     expr.clone()
-}
-
-fn canonical_order_orient_ordered_predicate_to_rhs(
-    op: BinOpKind,
-    left: &Expr,
-    right: &Expr,
-    ctx: &dyn SortContext,
-) -> bool {
-    ordered_comparison_view(op, left, right, ctx).is_some_and(|(_, swap)| swap)
 }
 
 fn canonical_order_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> bool {
