@@ -9,29 +9,8 @@ use crate::{
     Expr, Lit,
 };
 
-fn is_integer_zero(value: &Expr) -> bool {
-    value
-        .as_lit()
-        .and_then(Lit::as_integer)
-        .is_some_and(|value| value == 0.into())
-}
-
 fn has_integer_evidence(value: &Expr) -> bool {
     value.as_sym_var().is_some_and(|origin| origin.primitive_type() == "integer")
-}
-
-fn is_positive_subject(value: &Expr) -> Option<&Expr> {
-    let (op, left, right) = value.as_binop()?;
-    match op {
-        BinOpKind::Gt if is_integer_zero(right) => Some(left),
-        _ => None,
-    }
-}
-
-fn is_already_positive_count_form(condition: &Expr, yes: &Expr, no: &Expr) -> bool {
-    is_positive_subject(condition).is_some_and(|subject| {
-        has_integer_evidence(subject) && is_integer_zero(no) && yes == subject
-    })
 }
 
 /// Comparison with the THEN value on the left. Both arms must be exactly
@@ -97,23 +76,28 @@ fn has_total_number_selection_evidence(value: &Expr) -> bool {
         )
 }
 
-// Lower ranks are the published semantic policies.  The policy is part of
-// the key before the structural tie-breakers, so a generic comparator cannot
-// undo a domain-specific representative on a later normalization pass.
-fn domain_policy_rank(condition: &Expr, yes: &Expr, no: &Expr) -> u8 {
-    // A numeric indicator names its true domain and falls back to zero.
-    let indicator = is_integer_zero(no)
-        && yes
-            .as_lit()
-            .and_then(Lit::as_integer)
-            .is_some_and(|n| n == 1.into());
-    if indicator || is_already_positive_count_form(condition, yes, no) {
-        return 0;
+// Complements are already proved by the caller and normalized in the
+// same context. Choose the base of the predicate pair without inspecting
+// the arm values: an ELSE null or a numeric 0/1 is not a direction policy.
+fn compare_polarity(left: &Expr, right: &Expr) -> Option<std::cmp::Ordering> {
+    use crate::expr::UnaryOpKind::Not;
+    use std::cmp::Ordering::{Greater, Less};
+    if matches!(right.as_unary_op(), Some((Not, operand)) if operand == left) {
+        return Some(Less);
     }
-    if no.is_null() {
-        return 1;
+    if matches!(left.as_unary_op(), Some((Not, operand)) if operand == right) {
+        return Some(Greater);
     }
-    2
+    let (l, a, b) = left.as_binop()?;
+    let (r, c, d) = right.as_binop()?;
+    if a != c || b != d || l.complemented_comparison() != Some(r) {
+        return None;
+    }
+    match l {
+        BinOpKind::Gt | BinOpKind::Lt | BinOpKind::Eq => Some(Less),
+        BinOpKind::Le | BinOpKind::Ge | BinOpKind::Ne => Some(Greater),
+        _ => None,
+    }
 }
 
 fn candidate_precedes(
@@ -125,10 +109,8 @@ fn candidate_precedes(
     right_no: &Expr,
     context: &dyn SortContext,
 ) -> bool {
-    let left_policy = domain_policy_rank(left_condition, left_yes, left_no);
-    let right_policy = domain_policy_rank(right_condition, right_yes, right_no);
-    if left_policy != right_policy {
-        return left_policy < right_policy;
+    if let Some(order) = compare_polarity(left_condition, right_condition) {
+        return order.is_lt();
     }
     crate::canonical_order_compare(left_condition, right_condition, context)
         .then_with(|| crate::canonical_order_compare(left_yes, right_yes, context))
@@ -182,7 +164,7 @@ fn preferred_complement_for_shape(
 /// Return the canonical representative when a total binary CASE should use
 /// its complemented guard.  This is the single structural entry point for
 /// callers that must preserve CASE laziness while sharing the published
-/// domain policy and ordering key.
+/// predicate polarity and ordering key.
 pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
     let ([(condition, yes)], no) = expression.as_total_case_when()? else {
         return None;
@@ -238,21 +220,23 @@ mod totality_and_polarity_tests {
     }
 
     #[test]
-    fn positive_count_policy_preserves_the_same_subject_and_zero_fallback() {
+    fn opposite_threshold_guards_converge_even_with_a_null_arm() {
         let n = b::param("n", ScalarSymbolType::Integer);
-        let other = b::param("other", ScalarSymbolType::Integer);
-        let zero = b::lit_int(0);
-        let positive = b::gt(n.clone(), zero.clone());
+        let two = b::lit_int(2);
+        let expected = b::case_when(vec![(b::gt(n.clone(), two.clone()), b::lit_null())], b::lit_int(7));
+        let inverted = b::case_when(vec![(b::le(n, two), b::lit_int(7))], b::lit_null());
+        assert_eq!(crate::normalize(inverted), expected);
+        assert_eq!(crate::normalize(expected.clone()), expected);
+    }
 
-        assert_eq!(domain_policy_rank(&positive, &n, &zero), 0);
-        assert_eq!(domain_policy_rank(&positive, &other, &zero), 2);
-        assert_eq!(domain_policy_rank(&positive, &n, &b::lit_null()), 1);
-        assert_eq!(domain_policy_rank(&b::ge(n.clone(), zero.clone()), &n, &zero), 2);
-        let fraction = b::param("fraction", ScalarSymbolType::ExactDecimal);
-        assert_eq!(
-            domain_policy_rank(&b::gt(fraction.clone(), zero.clone()), &fraction, &zero),
-            2
-        );
+    #[test]
+    fn zero_one_result_does_not_override_equality_polarity() {
+        let value = b::param("qty", ScalarSymbolType::Integer);
+        let zero = b::lit_int(0);
+        let one = b::lit_int(1);
+        let expected = b::case_when(vec![(b::eq(value.clone(), zero.clone()), zero.clone())], one.clone());
+        let initial = b::case_when(vec![(b::ne(value, zero.clone()), one)], zero);
+        assert_eq!(crate::normalize(initial), expected);
     }
 
     #[test]

@@ -88,14 +88,16 @@ fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_c
     if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
         // Normalize guards before comparison to avoid commuting AND terms
         // forever between this rule and the normal boolean ordering.
-        let arms = ranged
+        let arms: Vec<_> = ranged
             .into_iter()
             .map(|(c, v)| (crate::normalize_with(c, ctx), v))
             .collect();
-        // A certified complete integer partition is already in its
-        // terminal domain form. Later prior-failure stripping must not
-        // remove bounds that this partition would restore next iteration.
-        return crate::builder::case_when(arms, fallback);
+        // The range calculation proves each effective domain, but an
+        // ordered CASE only needs to state what prior failures do not
+        // already imply. Run the same projection inside this rule so a
+        // later range pass cannot restore and publish the redundant bound.
+        let (guards, _) = strip_redundant_path_guards(&arms);
+        return crate::builder::case_when(guards, fallback);
     }
 
     // 0. 路径守卫冗余消除（新增规则）：
@@ -585,7 +587,9 @@ fn strip_redundant_path_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>,
 /// 检查 cond 是否是 NOT(expected) 对任一 prev_cond 成立。
 fn is_not_of_any(cond: &Expr, prev_conds: &[&Expr]) -> bool {
     for prev in prev_conds {
-        if is_not_of(cond, prev) {
+        if is_not_of(cond, prev)
+            || flatten_or(prev).iter().any(|disjunct| is_not_of(cond, disjunct))
+        {
             return true;
         }
     }
