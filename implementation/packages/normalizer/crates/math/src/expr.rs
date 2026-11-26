@@ -678,73 +678,66 @@ impl ExprProfile {
         p
     }
 
-    fn from_children(
-        size: usize,
-        depth: usize,
-        children: impl IntoIterator<Item = ExprProfile>,
-    ) -> Self {
-        let mut vars = BTreeSet::new();
-        let mut has_heap_ref = false;
-        let mut has_case_when = false;
-        let mut has_relation_aggregate = false;
-        for child in children {
-            vars.extend(child.vars);
-            has_heap_ref |= child.has_heap_ref;
-            has_case_when |= child.has_case_when;
-            has_relation_aggregate |= child.has_relation_aggregate;
-        }
-        Self {
-            size,
-            depth,
-            vars,
-            has_heap_ref,
-            has_case_when,
-            has_relation_aggregate,
-            structural_hash: 0,
+    fn include_child_shape(&mut self, child: &Self) {
+        self.size += child.size;
+        self.depth = self.depth.max(1 + child.depth);
+        self.has_heap_ref |= child.has_heap_ref;
+        self.has_case_when |= child.has_case_when;
+        self.has_relation_aggregate |= child.has_relation_aggregate;
+    }
+
+    fn include_child(&mut self, child: &Self) {
+        self.include_child_shape(child);
+        for var in &child.vars {
+            if !self.vars.contains(var) {
+                self.vars.insert(var.clone());
+            }
         }
     }
 
+    fn from_children<'a>(children: impl IntoIterator<Item = &'a Self>) -> Self {
+        let mut parent = Self::leaf();
+        for child in children {
+            parent.include_child(child);
+        }
+        parent
+    }
+
+    fn wrapped(mut self) -> Self {
+        self.size += 1;
+        self.depth += 1;
+        self
+    }
+
     fn relation(relation: &crate::domains::relation::RelationExpr) -> Self {
+        use crate::domains::relation::RelationExpr as R;
         match relation {
-            crate::domains::relation::RelationExpr::Empty => Self::leaf(),
-            crate::domains::relation::RelationExpr::Base { name, alias } => {
+            R::Empty => Self::leaf(),
+            R::Base { name, alias } => {
                 let mut p = Self::leaf();
                 p.vars.insert(name.clone());
                 p.vars.insert(alias.clone());
                 p
             }
-            crate::domains::relation::RelationExpr::Vector { value, alias } => {
-                let mut p = Self::from_children(
-                    1 + value.size(),
-                    1 + value.depth(),
-                    [value.1.as_ref().clone()],
-                );
+            R::Vector { value, alias } => {
+                let mut p = Self::from_children([value.1.as_ref()]);
                 p.vars.insert(alias.clone());
                 p
             }
-            crate::domains::relation::RelationExpr::Select { predicate, input } => {
-                Self::from_children(
-                    1 + predicate.size() + Self::relation(input).size,
-                    1 + predicate.depth().max(Self::relation(input).depth),
-                    [predicate.1.as_ref().clone(), Self::relation(input)],
-                )
+            R::Select { predicate: value, input } | R::Project { value, input, .. } => {
+                let mut parent = Self::relation(input).wrapped();
+                parent.include_child(value.1.as_ref());
+                parent
             }
-            crate::domains::relation::RelationExpr::Project { value, input, .. } => {
-                Self::from_children(
-                    1 + value.size() + Self::relation(input).size,
-                    1 + value.depth().max(Self::relation(input).depth),
-                    [value.1.as_ref().clone(), Self::relation(input)],
-                )
-            }
-            crate::domains::relation::RelationExpr::Distinct(input) => {
-                let child = Self::relation(input);
-                Self::from_children(1 + child.size, 1 + child.depth, [child])
-            }
-            crate::domains::relation::RelationExpr::Union(branches) => {
-                let children: Vec<_> = branches.iter().map(Self::relation).collect();
-                let size = 1 + children.iter().map(|x| x.size).sum::<usize>();
-                let depth = 1 + children.iter().map(|x| x.depth).max().unwrap_or(0);
-                Self::from_children(size, depth, children)
+            R::Distinct(input) => Self::relation(input).wrapped(),
+            R::Union(branches) => {
+                let mut parent = Self::leaf();
+                for branch in branches {
+                    let child = Self::relation(branch);
+                    parent.include_child_shape(&child);
+                    parent.vars.extend(child.vars);
+                }
+                parent
             }
         }
     }
@@ -755,46 +748,17 @@ impl ExprProfile {
             ExprKind::SymVar { origin } => Self::sym_var(origin),
             ExprKind::HeapRef(_) => Self::heap_ref(),
             ExprKind::RowValue { alias, .. } => Self::row_value(alias),
-            ExprKind::Call {
-                args, ..
-            } => {
-                let child_size: usize = args.iter().map(|a| a.size()).sum();
-                let child_depth: usize = args.iter().map(|a| a.depth()).max().unwrap_or(0);
-                let children = args.iter().map(|a| a.1.as_ref().clone());
-                Self::from_children(1 + child_size, 1 + child_depth, children)
-            }
-            ExprKind::BinOp { left, right, .. } => Self::from_children(
-                1 + left.size() + right.size(),
-                1 + left.depth().max(right.depth()),
-                [left.1.as_ref().clone(), right.1.as_ref().clone()],
-            ),
-            ExprKind::UnaryOp { operand, .. } => Self::from_children(
-                1 + operand.size(),
-                1 + operand.depth(),
-                [operand.1.as_ref().clone()],
-            ),
+            ExprKind::Call { args, .. } | ExprKind::ArrayLit(args) =>
+                Self::from_children(args.iter().map(|arg| arg.1.as_ref())),
+            ExprKind::BinOp { left, right, .. } =>
+                Self::from_children([left.1.as_ref(), right.1.as_ref()]),
+            ExprKind::UnaryOp { operand, .. } => Self::from_children([operand.1.as_ref()]),
             ExprKind::CaseWhen { branches } => {
-                let child_size: usize = branches.iter().map(|(c, v)| c.size() + v.size()).sum();
-                let child_depth: usize = branches
-                    .iter()
-                    .map(|(c, v)| c.depth().max(v.depth()))
-                    .max()
-                    .unwrap_or(0);
                 let mut p = Self::from_children(
-                    1 + child_size,
-                    1 + child_depth,
-                    branches
-                        .iter()
-                        .flat_map(|(c, v)| [c.1.as_ref().clone(), v.1.as_ref().clone()]),
+                    branches.iter().flat_map(|(c, v)| [c.1.as_ref(), v.1.as_ref()]),
                 );
                 p.has_case_when = true;
                 p
-            }
-            ExprKind::ArrayLit(items) => {
-                let child_size: usize = items.iter().map(|a| a.size()).sum();
-                let child_depth: usize = items.iter().map(|a| a.depth()).max().unwrap_or(0);
-                let children = items.iter().map(|a| a.1.as_ref().clone());
-                Self::from_children(1 + child_size, 1 + child_depth, children)
             }
             ExprKind::RelationAggregate {
                 relation,
@@ -802,16 +766,10 @@ impl ExprProfile {
                 default_expr,
                 ..
             } => {
-                let mut children = vec![Self::relation(relation)];
-                if let Some(expr) = select_expr {
-                    children.push(expr.1.as_ref().clone());
+                let mut profile = Self::relation(relation).wrapped();
+                for expr in select_expr.iter().chain(default_expr.iter()) {
+                    profile.include_child(expr.1.as_ref());
                 }
-                if let Some(expr) = default_expr {
-                    children.push(expr.1.as_ref().clone());
-                }
-                let child_size: usize = children.iter().map(|p| p.size).sum();
-                let child_depth: usize = children.iter().map(|p| p.depth).max().unwrap_or(0);
-                let mut profile = Self::from_children(1 + child_size, 1 + child_depth, children);
                 profile.has_relation_aggregate = true;
                 profile
             }
