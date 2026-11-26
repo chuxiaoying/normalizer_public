@@ -10,11 +10,14 @@
 
 ## 设计思想
 
-1. [JVM 模拟器：执行即归约](chapters/01-jvm-symbolic-execution.md)
-2. [多重宇宙的分裂坍缩](chapters/02-universe-split-collapse.md)
-3. [数学化简：把业务条件算出来](chapters/03-mathematical-simplification.md)
-4. [AI 救赎](chapters/04-ai-boundary.md)
-5. [关系代数：让 SQL 和集合运算一起化简](chapters/05-relational-algebra.md)
+- [第一章 · JVM 模拟器：执行即归约](chapters/第一章%20·%20JVM%20模拟器：执行即归约.md)
+- [第二章 · 多重宇宙的分裂坍缩](chapters/第二章%20·%20多重宇宙的分裂坍缩.md)
+- [第三章 · 数学化简：递归地应用定律](chapters/第三章%20·%20数学化简：递归地应用定律.md)
+- [第四章 · AI 救赎](chapters/第四章%20·%20AI%20救赎.md)
+- [第五章 · 关系代数：让 SQL 和集合运算一起化简](chapters/第五章%20·%20关系代数：让%20SQL%20和集合运算一起化简.md)
+- [第六章 · 业务至上](chapters/第六章%20·%20业务至上.md)
+
+[Normalizer 扩展语义参考](extension-semantics-reference.md)集中列出标准操作、声明标记和关系指令。
 
 设计种子和派生案例的覆盖原则见[种子覆盖审查](seed-coverage-audit.md)。
 
