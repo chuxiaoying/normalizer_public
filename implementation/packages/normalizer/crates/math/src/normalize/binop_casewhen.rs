@@ -61,3 +61,59 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
 fn is_leaf(expr: &Expr) -> bool {
     matches!(expr.kind(), ExprKind::Lit(_) | ExprKind::SymVar { .. } | ExprKind::HeapRef(_))
 }
+
+#[cfg(test)]
+mod distribution_boundary_tests {
+    use super::*;
+    use crate::{builder as b, ScalarSymbolType};
+
+    #[test]
+    fn case_distribution_preserves_two_independent_growth_ceilings() {
+        let p = b::param("p", ScalarSymbolType::Boolean);
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let zero = b::lit_int(0);
+        let mut wide = x.clone();
+        while wide.size() <= 2048 {
+            wide = b::add(wide.clone(), wide);
+        }
+        let deep = (0..49).fold(x.clone(), |value, _| b::sub(value, b::lit_int(1)));
+
+        let case = |value| b::case_when(vec![(p.clone(), value)], zero.clone());
+        let wide_case = case(wide);
+        let deep_case = case(deep);
+        assert!(wide_case.depth() <= 48 && wide_case.size() > 2048);
+        assert!(deep_case.size() <= 2048 && deep_case.depth() > 48);
+        for protected in [wide_case, deep_case] {
+            let composed = b::add(protected, b::lit_int(3));
+            assert_eq!(simplify(&composed), composed);
+        }
+
+        let small = b::add(case(x.clone()), b::lit_int(3));
+        assert_eq!(
+            simplify(&small),
+            b::case_when(
+                vec![(p, b::add(x, b::lit_int(3)))],
+                b::add(zero, b::lit_int(3)),
+            )
+        );
+    }
+
+    #[test]
+    fn left_case_subtraction_never_swaps_operand_roles_or_partiality() {
+        let p = b::param("p", ScalarSymbolType::Boolean);
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let partial = b::normal_return_case_when(vec![], (p.clone(), x.clone()));
+        let subtrahend = b::lit_int(2);
+
+        let from_case = simplify(&b::sub(partial.clone(), subtrahend.clone()));
+        let into_case = simplify(&b::sub(subtrahend.clone(), partial));
+        assert_eq!(from_case, b::normal_return_case_when(vec![], (
+            p.clone(), b::sub(x.clone(), subtrahend.clone())
+        )));
+        assert_eq!(into_case, b::normal_return_case_when(vec![], (
+            p, b::sub(subtrahend, x)
+        )));
+        assert!(from_case.as_total_case_when().is_none());
+        assert!(into_case.as_total_case_when().is_none());
+    }
+}

@@ -74,3 +74,21 @@ mod positional_projection_tests {
         assert!(field_projection(&indices(b::lit_int(3))).is_none());
     }
 }
+
+#[cfg(test)]
+mod common_position_bounds_tests {
+    use super::*;
+
+    #[test]
+    fn common_prefix_bound_is_symmetric_but_observes_both_lists() {
+        let opened = relation_count(RelationExpr::base("opened", "item"));
+        let closed = relation_count(RelationExpr::base("closed", "item"));
+
+        let ordered = minimum(closed.clone(), opened.clone());
+        assert_eq!(ordered, minimum(opened.clone(), closed.clone()));
+        let (op, keys) = ordered.as_call().expect("independent bounds require minimum");
+        assert_eq!(crate::func_name(op), "LEAST");
+        assert_eq!(keys, &[closed, opened.clone()]);
+        assert_eq!(minimum(opened.clone(), opened.clone()), opened);
+    }
+}

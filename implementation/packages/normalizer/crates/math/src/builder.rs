@@ -1292,3 +1292,35 @@ mod symbolic_proof_boundary_tests {
         ]));
     }
 }
+
+#[cfg(test)]
+mod model_search_limits_tests {
+    use super::*;
+
+    #[test]
+    fn model_search_declines_when_budget_cannot_resolve_a_feasible_assignment() {
+        use CompiledBoolExpr::{And, Atom};
+        let conditions = [And(Box::new(Atom(0)), Box::new(Atom(1)))];
+        let mut exhausted = 0;
+        let mut ample = 3;
+        assert!(!find_boolean_model(&conditions, &mut [None; 2], 0, &mut exhausted));
+        assert!(find_boolean_model(&conditions, &mut [None; 2], 0, &mut ample));
+    }
+
+    #[test]
+    fn implication_at_input_ceiling_does_not_build_a_larger_truth_table() {
+        let guard = |name| {
+            let mut well_typed = param(name, ScalarSymbolType::Boolean);
+            while 2 * (well_typed.size() + 1) < MAX_TRUTH_TABLE_INPUT_SIZE {
+                well_typed = and(well_typed.clone(), well_typed);
+            }
+            not(well_typed)
+        };
+        let left = guard("atCeilingLeft");
+        let right = guard("atCeilingRight");
+        assert_eq!(left.size() + right.size(), MAX_TRUTH_TABLE_INPUT_SIZE);
+        // Both are well-typed complements of repeated Boolean references.
+        // left=true places no restriction on the independent right input.
+        assert!(!path_implies(&left, &right));
+    }
+}
