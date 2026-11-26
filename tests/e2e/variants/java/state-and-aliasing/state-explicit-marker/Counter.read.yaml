@@ -20,3 +20,15 @@
     - path: [S]
       add:
         - write: {target: value, value: value + 1}
+
+- name: fully-qualified-state-marker-does-not-change-the-state-source
+  edits:
+    - {from: '@EntryState', to: '@normalizer.annotations.EntryState'}
+
+- name: an-empty-state-marker-does-not-become-a-configuration-argument
+  edits:
+    - {from: '@EntryState', to: '@EntryState()'}
+
+- name: a-same-named-local-does-not-capture-the-explicit-state-receiver
+  edits:
+    - {from: 'return this.value + 1;', to: 'int value = 9; return this.value + 1;'}
