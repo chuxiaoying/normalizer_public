@@ -58,9 +58,25 @@ fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
 }
 
 pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
-    let ExprKind::BinOp { op: op @ (B::Add | B::Mul), left, right } = expr.kind() else {
+    let ExprKind::BinOp { op: op @ (B::Add | B::Sub | B::Mul), left, right } = expr.kind() else {
         return expr.clone();
     };
+    if *op == B::Sub {
+        // This strict rewrite keeps the exact same acquired base exactly
+        // once. The two other values are integer literals, so no evaluation,
+        // observation or completion domain can be lost or reordered.
+        if let Some((B::Add, base, first)) = left.as_binop() {
+            if exact_business_integer(base, ctx) {
+                if let (Some(first), Some(second)) = (
+                    first.as_lit().and_then(Lit::as_integer),
+                    right.as_lit().and_then(Lit::as_integer),
+                ) {
+                    return apply_offset(base, first - second);
+                }
+            }
+        }
+        return expr.clone();
+    }
     let start = std::time::Instant::now();
     let total = total_with_temporals(expr, ctx);
     let output = simplify_admitted(expr, *op, left, right, total, ctx);
@@ -152,12 +168,15 @@ fn simplify_admitted(
 fn combine_constant_offset(difference: &Expr, addition: &Expr) -> Option<Expr> {
     let (B::Sub, base, subtraction) = difference.as_binop()? else { return None; };
     let offset = addition.as_lit()?.as_integer()? - subtraction.as_lit()?.as_integer()?;
-    let zero = BigInt::zero();
-    Some(match offset.cmp(&zero) {
+    Some(apply_offset(base, offset))
+}
+
+fn apply_offset(base: &Expr, offset: BigInt) -> Expr {
+    match offset.cmp(&BigInt::zero()) {
         std::cmp::Ordering::Equal => base.clone(),
         std::cmp::Ordering::Less => b::sub(base.clone(), b::lit_integer(-offset)),
         std::cmp::Ordering::Greater => b::add(base.clone(), b::lit_integer(offset)),
-    })
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +203,23 @@ mod temporal_integer_evidence_tests {
         let external = b::sym_e(0, Integer);
         assert!(!total_integer(&external));
         assert!(!total_integer(&b::integer_temporal_result(0)));
+    }
+
+    #[test]
+    fn literal_offsets_fold_without_eliminating_the_acquired_base() {
+        use crate::ScalarSymbolType::{Integer, Text};
+        let acquired = b::sym_e_path(12, vec!["field".into()], Integer);
+        for (offset, expected) in [
+            (1, b::add(acquired.clone(), b::lit_int(1))),
+            (2, acquired.clone()),
+            (3, b::sub(acquired.clone(), b::lit_int(1))),
+        ] {
+            assert_eq!(crate::normalize(b::sub(b::add(acquired.clone(), b::lit_int(2)),
+                b::lit_int(offset))), expected);
+        }
+        let text = b::param("field", Text);
+        let non_numeric = b::sub(b::add(text, b::lit_int(2)), b::lit_int(1));
+        assert_eq!(crate::normalize(non_numeric.clone()), non_numeric);
     }
 
     #[test]
