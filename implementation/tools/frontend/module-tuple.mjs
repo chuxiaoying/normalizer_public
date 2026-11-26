@@ -109,7 +109,7 @@ export function compileTypedTuple(physicalPath, sf, fn) {
   }
   const position = expr => {
     const value = unwrap(expr);
-    return ts.isIdentifier(value) ? positions.get(value.text) : null;
+    if (ts.isIdentifier(value)) return positions.get(value.text);
   };
   function truth(expr) {
     expr = unwrap(expr);
@@ -119,7 +119,8 @@ export function compileTypedTuple(physicalPath, sf, fn) {
       }
       if ([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(expr.operatorToken.kind)) {
         const isUndefined = value => ts.isIdentifier(unwrap(value)) && unwrap(value).text === 'undefined';
-        const item = position(isUndefined(expr.left) ? expr.right : isUndefined(expr.right) ? expr.left : expr);
+        const subject = isUndefined(expr.left) ? expr.right : isUndefined(expr.right) ? expr.left : undefined;
+        const item = subject && position(subject);
         if (!item || item.rest) fail('undefined test needs one tuple slot');
         const tested = observe('is_undefined', {index: item.index});
         return expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ? tested : n('not', {value: tested});
