@@ -65,8 +65,7 @@ function leadingParameterCall(fn) {
       && !(ts.isExpressionStatement(statement) && i === 0)) return null;
   }
   const declaration = ts.isVariableStatement(first) ? first.declarationList.declarations[0] : null;
-  const top = declaration ? declaration.initializer
-    : ts.isReturnStatement(first) || ts.isExpressionStatement(first) ? first.expression : null;
+  const top = declaration ? declaration.initializer : first.expression;
   if (!top) return null;
   const expression = unwrap(top);
   const awaited = ts.isAwaitExpression(expression);

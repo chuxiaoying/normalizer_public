@@ -4,7 +4,7 @@ use super::{
     realtime_state::{Completion, CompletionAlternative, CompletionOutcome},
     Engine, Env, Expr, Result, Ty, Value, S,
 };
-use normalizer_ir::local::ScalarOperand;
+use normalizer_ir::local::IntegerOperand;
 use simulator_parser::ast::CatchClause;
 
 impl Engine<'_> {
@@ -109,20 +109,19 @@ impl Engine<'_> {
     }
 
     pub(super) fn execute_index_fold(
-        &self, binding: &str, lower: &math::Integer, upper: &ScalarOperand,
+        &self, binding: &str, lower: &math::Integer, upper: &IntegerOperand,
         skip_before: &math::Integer, stop_after: &math::Integer, env: &mut Env,
     ) -> Result<()> {
         let current = env.get(binding).ok_or_else(|| fail("indexed fold needs an initialized accumulator"))?;
         need(current.ty() == Ty::Integer, "indexed fold needs a numeric accumulator")?;
         let mut total = current.scalar()?;
         let end = match upper {
-            ScalarOperand::Integer(n) => b::lit_integer(n.clone()),
-            ScalarOperand::Local(name) => {
+            IntegerOperand::Integer(n) => b::lit_integer(n.clone()),
+            IntegerOperand::Local(name) => {
                 let value = env.get(name).ok_or_else(|| fail("unbound indexed fold upper bound"))?;
                 need(value.ty() == Ty::Integer, "indexed fold upper bound must be numeric")?;
                 value.scalar()?
             }
-            ScalarOperand::Text(_) => return Err(fail("indexed fold upper bound must be numeric")),
         };
         let first = std::cmp::max(lower, skip_before);
         if stop_after < first { return Ok(()); }
@@ -148,20 +147,19 @@ impl Engine<'_> {
         &self,
         binding: &str,
         accumulate: bool,
-        lower: &ScalarOperand,
-        upper: &ScalarOperand,
+        lower: &IntegerOperand,
+        upper: &IntegerOperand,
         env: &mut Env,
     ) -> Result<()> {
-        let endpoint = |value: &ScalarOperand| match value {
-            ScalarOperand::Integer(n) => Ok(b::lit_integer(n.clone())),
-            ScalarOperand::Local(n) => {
+        let endpoint = |value: &IntegerOperand| match value {
+            IntegerOperand::Integer(n) => Ok(b::lit_integer(n.clone())),
+            IntegerOperand::Local(n) => {
                 let value = env
                     .get(n)
                     .ok_or_else(|| fail(format!("unbound range endpoint {n}")))?;
                 need(value.ty() == Ty::Integer, "integer range endpoint required")?;
                 value.scalar()
             }
-            ScalarOperand::Text(_) => Err(fail("integer range endpoint required")),
         };
         let length = math::normalize(b::sub(endpoint(upper)?, endpoint(lower)?));
         let count = b::case_when(vec![

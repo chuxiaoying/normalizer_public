@@ -169,16 +169,13 @@ pub fn preferred_complement(
 /// Compare an already canonical complement supplied by a certified local
 /// domain. The caller proves complementary guards in that SAME domain; this
 /// function only reuses the common structural direction, never normalizes CASE.
-pub fn prefer_complement(
+fn prefer_complement(
     condition: &Expr,
     complement: &Expr,
     yes: &Expr,
     no: &Expr,
     context: &dyn SortContext,
 ) -> bool {
-    if yes.as_case_when().is_some() || no.as_case_when().is_some() {
-        return false;
-    }
     // Selecting one of the compared values has its own canonicalization
     // below. Preserve an untyped choice rather than assuming a total order.
     if selection_comparison(condition, yes, no).is_some() {

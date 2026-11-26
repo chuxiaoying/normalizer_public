@@ -206,6 +206,7 @@ where
         if slot.borrow().is_some() {
             return run();
         }
+        // This outer budget owns the profile run. Nested calls reuse both.
         let run_scope = crate::profile::begin_run();
         let scope = BudgetScope::install(NormalizeBudget::default());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));

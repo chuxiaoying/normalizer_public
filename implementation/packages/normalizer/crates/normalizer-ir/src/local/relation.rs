@@ -6,7 +6,8 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scalar {
     Path(Vec<String>),
-    Literal(ScalarOperand),
+    Integer(num_bigint::BigInt),
+    Text(String),
     Bool(bool),
     Binary(Op, Box<Scalar>, Box<Scalar>),
     NullPredicate { value: Box<Scalar>, negated: bool },
@@ -35,7 +36,7 @@ pub enum Clause {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Projection {
     Value(Scalar),
-    NestedSum(Box<Query>),
+    NestedSum { alias: String, clauses: Vec<Clause>, value: Scalar },
     GroupKeys(Vec<Scalar>),
     JoinCount { source: String, alias: String, on: Scalar, filters: Vec<Scalar> },
     FirstValue { value: Scalar, fallback: Scalar },
@@ -81,7 +82,8 @@ fn atom(t: &mut Tokens<'_>) -> Result<Scalar, String> {
             }
             Ok(Scalar::Path(path))
         }
-        v => Ok(Scalar::Literal(v)),
+        ScalarOperand::Integer(value) => Ok(Scalar::Integer(value)),
+        ScalarOperand::Text(value) => Ok(Scalar::Text(value)),
     }
 }
 
@@ -292,10 +294,13 @@ fn parse_query(
             return Err("nested sum is limited to two dimensions".into());
         }
         let inner = parse_query(String::new(), false, t, false)?.ok_or("expected an inner sum")?;
-        if inner.source != alias || inner.alias == alias || !matches!(inner.projection, Projection::Value(_)) {
+        let Projection::Value(value) = inner.projection else {
+            return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
+        };
+        if inner.source != alias || inner.alias == alias {
             return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
         }
-        Projection::NestedSum(Box::new(inner))
+        Projection::NestedSum { alias: inner.alias, clauses: inner.clauses, value }
     } else {
         Projection::Value(scalar(t)?)
     };

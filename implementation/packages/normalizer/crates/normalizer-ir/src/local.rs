@@ -14,11 +14,11 @@ pub enum LocalIr {
     ProjectedUnionCount { binding: String, branches: Vec<(String, String)> },
     MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
     Stack(stack::Action),
-    CountRange { binding: String, accumulate: bool, lower: ScalarOperand, upper: ScalarOperand },
+    CountRange { binding: String, accumulate: bool, lower: IntegerOperand, upper: IntegerOperand },
     FoldIndexRange {
         binding: String,
         lower: num_bigint::BigInt,
-        upper: ScalarOperand,
+        upper: IntegerOperand,
         skip_before: num_bigint::BigInt,
         stop_after: num_bigint::BigInt,
     },
@@ -60,6 +60,23 @@ pub enum ScalarOperand {
     Local(String),
     Text(String),
     Integer(num_bigint::BigInt),
+}
+
+/// The closed operands shared by integer ranges and indexed folds.
+#[derive(Clone, Debug, PartialEq)]
+pub enum IntegerOperand {
+    Local(String),
+    Integer(num_bigint::BigInt),
+}
+
+impl IntegerOperand {
+    fn parse(value: ScalarOperand, error: &str) -> Result<Self, String> {
+        match value {
+            ScalarOperand::Local(name) => Ok(Self::Local(name)),
+            ScalarOperand::Integer(value) => Ok(Self::Integer(value)),
+            ScalarOperand::Text(_) => Err(error.into()),
+        }
+    }
 }
 
 impl SqlWrite {
@@ -233,9 +250,8 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         tokens.expect("as")?;
         tokens.name()?; // The binder ranges over each integer; count needs no projection.
         if !tokens.rest().is_empty() { return Err("trailing count-range clauses".into()); }
-        if matches!(lower, ScalarOperand::Text(_)) || matches!(upper, ScalarOperand::Text(_)) {
-            return Err("count range endpoints must be integers".into());
-        }
+        let lower = IntegerOperand::parse(lower, "count range endpoints must be integers")?;
+        let upper = IntegerOperand::parse(upper, "count range endpoints must be integers")?;
         return Ok(LocalIr::CountRange { binding, accumulate, lower, upper });
     }
     if tokens.take("choose") {
@@ -260,12 +276,11 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         tokens.expect("[")?;
         let lower = integer(&mut tokens)?;
         tokens.expect(",")?;
-        let upper = tokens.value()?;
-        if matches!(upper, ScalarOperand::Text(_)) { return Err("expected integer upper bound".into()); }
+        let upper = IntegerOperand::parse(tokens.value()?, "expected integer upper bound")?;
         tokens.expect(")")?;
         tokens.expect("as")?;
         let index = tokens.name()?;
-        if index == binding || matches!(&upper, ScalarOperand::Local(n) if n == &index || n == &binding) {
+        if index == binding || matches!(&upper, IntegerOperand::Local(n) if n == &index || n == &binding) {
             return Err("indexed fold needs separate bound, accumulator and index".into());
         }
         let counter = |t: &mut Tokens<'_>| {

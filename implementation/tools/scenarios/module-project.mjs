@@ -31,7 +31,6 @@ function compileProjection(projection) {
       type = type[name];
     }
     if (typeof type === 'object') return { statePath: target };
-    if (!Object.hasOwn(carriers, type)) throw new Error(`SCENARIO_MODULE_INPUT: ${target} must be a scalar field`);
     if (!reads.has(target)) {
       reads.set(target, { name: `state_${reads.size}`, path: ['E', root, ...path], type });
       environment[root] ??= { kind: 'state', source: state.source, fields: Object.create(null) };

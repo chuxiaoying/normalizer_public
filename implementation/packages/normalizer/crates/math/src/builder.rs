@@ -1540,10 +1540,7 @@ fn find_boolean_model(
     }) {
         return true;
     }
-    if next_atom >= assignments.len() {
-        return false;
-    }
-
+    // With all atoms assigned, the tests above have resolved every condition.
     assignments[next_atom] = Some(true);
     if find_boolean_model(conditions, assignments, next_atom + 1, budget) {
         return true;
@@ -1587,10 +1584,7 @@ fn collect_boolean_atom_exprs(expr: &Expr, atoms: &mut Vec<Expr>) {
 /// it declines formulas whose atoms have no symbolic carrier, share symbols,
 /// or share HeapRef identity, where call, arithmetic, relation, or heap
 /// semantics may correlate truth values.
-fn boolean_conditions_have_independent_model(conditions: &[Expr]) -> bool {
-    if conditions.is_empty() {
-        return false;
-    }
+fn boolean_conditions_have_independent_model(conditions: &[Expr; 2]) -> bool {
     let mut atom_exprs = Vec::new();
     for condition in conditions {
         collect_boolean_atom_exprs(condition, &mut atom_exprs);

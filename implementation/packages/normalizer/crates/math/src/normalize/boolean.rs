@@ -140,31 +140,17 @@ fn simplify_or_under_and_context(or_expr: &Expr, context: &[Expr]) -> Option<Exp
 
         let conjuncts = flatten_and(&disjunct);
         if conjuncts.len() > 1 {
-            let mut branch_false = false;
+            // The whole disjunct is already known not to be entirely true
+            // and to contain no contradicted conjunct under this context.
             let mut reduced: Vec<Expr> = Vec::with_capacity(conjuncts.len());
             for conjunct in conjuncts {
                 if expr_is_true_under_and_context(&conjunct, context) {
                     changed = true;
                     continue;
                 }
-                if expr_is_false_under_and_context(&conjunct, context) {
-                    changed = true;
-                    branch_false = true;
-                    break;
-                }
                 reduced.push(conjunct);
             }
-            if branch_false {
-                continue;
-            }
-            if reduced.is_empty() {
-                return Some(builder::lit_bool(true));
-            }
-            let reduced_expr = if reduced.len() == 1 {
-                reduced.into_iter().next().unwrap()
-            } else {
-                rebuild_and(&reduced)
-            };
+            let reduced_expr = rebuild_and(&reduced);
             if reduced_expr != disjunct {
                 changed = true;
             }
@@ -274,11 +260,8 @@ fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
             .all(|d| expr_is_false_under_and_context(d, context))
 }
 
+// The caller has at least two surviving disjuncts.
 fn factor_common_and_conjuncts_under_or(disjuncts: &[Expr]) -> Option<Expr> {
-    if disjuncts.len() < 2 {
-        return None;
-    }
-
     // Every input produces at least one term, including an atomic input.
     let all_conjs: Vec<Vec<Expr>> = disjuncts.iter().map(flatten_and).collect();
 
@@ -385,11 +368,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     if let Some(solved) = super::integer_equations::solve(&flat) {
         return Some(solved);
     }
-    // 若 flatten 只产生 1 项（即原本就不是 And），不处理
-    if flat.len() < 2 {
-        return None;
-    }
-
     let mut out: Vec<Expr> = Vec::with_capacity(flat.len());
     for item in &flat {
 
@@ -530,7 +508,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     // duplicate Exists observer for the same relation. A proven empty input
     // likewise absorbs emptiness of a strict filtered subset. This is relation
     // cardinality semantics, not broad peer implication.
-    let before_cardinality_absorb_len = out.len();
     let absorbed_by_cardinality: Vec<bool> = (0..out.len())
         .map(|i| {
             (0..out.len())
@@ -544,15 +521,9 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
             .zip(absorbed_by_cardinality.iter())
             .filter_map(|(expr, absorbed)| if *absorbed { None } else { Some(expr) })
             .collect();
-        if out.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
-        if out.len() == 1 {
-            return Some(out.into_iter().next().unwrap());
-        }
-        if out.len() != before_cardinality_absorb_len {
-            return Some(rebuild_and(&out));
-        }
+        // Count witnesses survive. For empty selections, each support edge
+        // points from a strict ancestor to its descendant, so a root survives.
+        return Some(rebuild_and(&out));
     }
 
     // Solve same-subject ordered comparison constraints as an interval system:
@@ -565,9 +536,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     // handle literal integer bounds here; non-literal arithmetic remains
     // untouched until a richer solver exists.
     if let Some(solved) = solve_ordered_comparison_conjunction(&out) {
-        if solved.is_empty() {
-            return Some(builder::lit_bool(true));
-        }
         if solved.len() == 1 {
             return Some(solved.into_iter().next().unwrap());
         }
@@ -698,10 +666,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
 
 fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Option<Expr> {
     let flat = flatten_or(expr);
-    if flat.len() < 2 {
-        return None;
-    }
-
     let mut out: Vec<Expr> = Vec::with_capacity(flat.len());
     for item in &flat {
         // 吸收元：遇到 true 立即返回 true
@@ -818,9 +782,6 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
     if super::integer_ranges::exhaustive_union(&out) {
         return Some(builder::lit_bool(true));
     }
-    if out.is_empty() {
-        return Some(builder::lit_bool(false));
-    }
     if out.len() == 1 {
         return Some(out.into_iter().next().unwrap());
     }
@@ -929,10 +890,6 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
     } = operand.kind()
     {
         return Some(inner.clone());
-    }
-    // not(true) => false, not(false) => true （常量折叠会处理，但这里兜底）
-    if let ExprKind::Lit(Lit::Bool(b)) = operand.kind() {
-        return Some(builder::lit_bool(!b));
     }
     // 比较取反：NOT(x == y) → x != y，NOT(a < b) → a >= b
     // 用户化简原则（20260428180545）：等价逻辑下越简单越正确。

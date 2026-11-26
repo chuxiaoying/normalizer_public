@@ -42,15 +42,9 @@ pub(crate) fn enabled() -> bool {
     profile_path().is_some()
 }
 
-pub(crate) struct RunScope {
-    armed: bool,
-}
+pub(crate) struct RunScope(());
 
 pub(crate) fn begin_run() -> RunScope {
-    let already_active = ACTIVE_RUN_ID.with(|active| active.borrow().is_some());
-    if already_active {
-        return RunScope { armed: false };
-    }
     let configured = CONFIGURED_RUN_ID.get_or_init(|| {
         env::var("NORMALIZER_MATH_PROFILE_RUN_ID")
             .or_else(|_| env::var("NORMALIZER_DEBUG_RUN_ID"))
@@ -65,14 +59,12 @@ pub(crate) fn begin_run() -> RunScope {
         )
     });
     ACTIVE_RUN_ID.with(|active| active.replace(Some(run_id)));
-    RunScope { armed: true }
+    RunScope(())
 }
 
 impl Drop for RunScope {
     fn drop(&mut self) {
-        if self.armed {
-            ACTIVE_RUN_ID.with(|active| active.replace(None));
-        }
+        ACTIVE_RUN_ID.with(|active| active.replace(None));
     }
 }
 
@@ -334,9 +326,6 @@ pub(crate) fn cache_evictions() -> u64 {
 }
 
 pub(crate) fn event_elapsed_if_slow(category: &str, detail: &str, start: Instant) {
-    if !enabled() {
-        return;
-    }
     let elapsed_ms = start.elapsed().as_millis();
     if elapsed_ms >= slow_threshold_ms() {
         event(category, &format!("elapsed_ms={} {}", elapsed_ms, detail));

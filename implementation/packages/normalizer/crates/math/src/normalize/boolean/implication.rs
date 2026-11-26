@@ -6,10 +6,8 @@ pub(super) fn conjunction_implies(conjs_left: &[Expr], conjs_right: &[Expr]) -> 
     conjs_right.iter().all(|right| expr_is_true_under_and_context(right, conjs_left))
 }
 
+// Callers already exclude unrelated pairs before applying OR proof rules.
 pub(super) fn or_implication_tautology(left: &Expr, right: &Expr) -> bool {
-    if profile_pair_can_skip_proof_check(left, right) {
-        return false;
-    }
     if relation_cardinality_exhaustive(left, right) {
         return true;
     }

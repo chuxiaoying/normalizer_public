@@ -46,7 +46,7 @@ fn bind_receipt<'a>(
     event: &'a EffectEvent,
     issued: &mut BTreeSet<u64>,
     ctx: &mut crate::FormatCtx,
-) -> Result<(&'a Expr, String)> {
+) -> Result<(&'a Expr, u64, String)> {
     let response = event.result.as_ref().ok_or_else(|| fail("missing operation receipt"))?;
     let Some(SymVarOrigin::External { binding_id, .. }) = response.as_sym_var() else {
         return Err(fail("invalid operation receipt"));
@@ -54,7 +54,7 @@ fn bind_receipt<'a>(
     let position = issued.len();
     need(issued.insert(*binding_id), "duplicate operation receipt")?;
     ctx.bind_business_event(*binding_id, position, event.guard.clone());
-    Ok((response, format!("$e_{position}")))
+    Ok((response, *binding_id, format!("$e_{position}")))
 }
 
 pub(super) fn observations(
@@ -147,7 +147,7 @@ pub(super) fn observations(
             validate_ids(arg, &issued, None)?;
         }
         if let EffectOperation::Sql(sql) = &event.operation {
-            let (response, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
+            let (response, _, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
             let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                 sql.project(&event.args, &receipt, &mut tables, ctx)
             })?;
@@ -176,7 +176,7 @@ pub(super) fn observations(
                     spec.returns == ty,
                     "external business result disagrees with port type",
                 )?;
-                let (response, output) = bind_receipt(event, &mut issued, &mut ctx)?;
+                let (response, binding_id, output) = bind_receipt(event, &mut issued, &mut ctx)?;
                 for (class, failed, payload) in spec.throw_variants(response) {
                     if let Some(payload) = payload.filter(|_| project.direct_source
                         && project.exceptions.get(&class).is_some_and(|ty| matches!(ty.as_str(), "text?" | "number")))
@@ -188,10 +188,7 @@ pub(super) fn observations(
                 if !result.temporal_definitions.is_empty() && event.guard.as_bool() == Some(true)
                     && spec.returns == Ty::Integer && !spec.throwing()
                 {
-                    let Some(SymVarOrigin::External { binding_id, .. }) = response.as_sym_var() else {
-                        return Err(fail("missing already bound temporal receipt"));
-                    };
-                    temporal_receipts.insert(*binding_id, output.clone());
+                    temporal_receipts.insert(binding_id, output.clone());
                 }
                 if spec.returns != Ty::Unit {
                     let value = spec.awaited_value(response)?;

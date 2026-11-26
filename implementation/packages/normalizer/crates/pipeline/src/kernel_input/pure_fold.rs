@@ -13,7 +13,7 @@ fn local_body(expr: &Scalar, acc: &str, item: &str) -> Result<Expr> {
     Ok(match expr {
         Scalar::Path(parts) if parts.len() == 1 && parts[0] == acc => b::param("acc", "integer"),
         Scalar::Path(parts) if parts.len() == 1 && parts[0] == item => b::param("item", "integer"),
-        Scalar::Literal(normalizer_ir::local::ScalarOperand::Integer(n)) => b::lit_integer(n.clone()),
+        Scalar::Integer(n) => b::lit_integer(n.clone()),
         Scalar::Binary(op @ (Op::Add | Op::Sub | Op::Mul), left, right) => {
             let build = match op { Op::Add => b::add, Op::Sub => b::sub, _ => b::mul };
             build(local_body(left, acc, item)?, local_body(right, acc, item)?)

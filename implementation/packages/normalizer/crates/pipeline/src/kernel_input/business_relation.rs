@@ -4,7 +4,6 @@
 use super::*;
 use normalizer_ir::local::{
     relation::{Clause, Kind, Op, Projection, Query, Scalar},
-    ScalarOperand,
 };
 
 #[derive(Clone, PartialEq)]
@@ -90,8 +89,8 @@ impl Engine<'_> {
             if let Clause::Where(Scalar::Binary(_, a, b)) = clause {
                 for (subject, evidence) in [(&**a, &**b), (&**b, &**a)] {
                     let ty = match evidence {
-                        Scalar::Literal(ScalarOperand::Integer(_)) => Some(Ty::Integer),
-                        Scalar::Literal(ScalarOperand::Text(_)) => Some(Ty::Text),
+                        Scalar::Integer(_) => Some(Ty::Integer),
+                        Scalar::Text(_) => Some(Ty::Text),
                         Scalar::Path(path) if path.len() == 1 => env.get(&path[0]).map(Value::ty),
                         _ => None,
                     };
@@ -141,11 +140,10 @@ impl Engine<'_> {
     ) -> Result<Value> {
         match scalar {
             Scalar::Bool(value) => Ok(Value::Term(Ty::Bool, b::lit_bool(*value))),
-            Scalar::Literal(ScalarOperand::Text(text)) => Ok(Value::Term(Ty::Text, b::lit_str(text))),
-            Scalar::Literal(ScalarOperand::Integer(n)) => {
+            Scalar::Text(text) => Ok(Value::Term(Ty::Text, b::lit_str(text))),
+            Scalar::Integer(n) => {
                 Ok(Value::Term(Ty::Integer, b::lit_integer(n.clone())))
             }
-            Scalar::Literal(ScalarOperand::Local(_)) => Err(fail("unexpected local literal")),
             Scalar::Path(path) => {
                 let mut parts = path.iter();
                 let root = parts.next().ok_or_else(|| fail("empty row path"))?;
@@ -314,15 +312,12 @@ impl Engine<'_> {
             env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
             return Ok(());
         }
-        if let Projection::NestedSum(inner) = &query.projection {
+        if let Projection::NestedSum { alias, clauses, value } = &query.projection {
             let Some(Value::Sequence { item: Ty::Seq(element), relation: RelationExpr::Base { name, .. }, .. }) = env.get(&query.source) else {
                 return Err(fail("nested sum requires a directly bound two-dimensional array"));
             };
-            need(**element == Ty::Integer && query.kind == Kind::Sum && inner.kind == Kind::Sum,
+            need(**element == Ty::Integer && query.kind == Kind::Sum,
                 "nested sum requires exact integer elements")?;
-            let Projection::Value(element) = &inner.projection else {
-                return Err(fail("nested sum requires a scalar projection"));
-            };
             let fresh = |prefix: &str| {
                 let mut name = prefix.to_owned();
                 while env.contains_key(&name) || self.source_relations.tables.contains_key(&name) {
@@ -339,16 +334,16 @@ impl Engine<'_> {
             // is an array here, not an integer projection.
             let mut inner_locals = env.clone();
             inner_locals.remove(&query.alias);
-            for clause in &inner.clauses {
+            for clause in clauses {
                 let Clause::Where(p) = clause else {
                     return Err(fail("nested sum supports scalar filters only"));
                 };
-                let predicate = self.query_value(p, &inner.alias, &row, &inner_locals, guard)?;
+                let predicate = self.query_value(p, alias, &row, &inner_locals, guard)?;
                 need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
                 inner_relation = RelationExpr::select(predicate.scalar()?, inner_relation);
             }
             need(query.clauses.is_empty(), "nested sum outer clauses require a group-valued operation")?;
-            let element = self.query_value(element, &inner.alias, &row, &inner_locals, guard)?;
+            let element = self.query_value(value, alias, &row, &inner_locals, guard)?;
             need(element.ty() == Ty::Integer, "sum requires exact integers")?;
             need(decl.is_none_or(crate::normalized::integral), "nested sum requires a numeric local")?;
             let summed = r::relation_sum(outer, r::relation_sum(inner_relation, element.scalar()?));
@@ -573,7 +568,7 @@ impl Engine<'_> {
                         Scalar::Path(parts) => parts.first().is_some_and(|name| name == accumulator),
                         Scalar::Binary(_, l, r) => has_accumulator(l, accumulator) || has_accumulator(r, accumulator),
                         Scalar::NullPredicate { value, .. } => has_accumulator(value, accumulator),
-                        Scalar::Literal(_) | Scalar::Bool(_) => false,
+                        Scalar::Integer(_) | Scalar::Text(_) | Scalar::Bool(_) => false,
                     }
                 }
                 match body {

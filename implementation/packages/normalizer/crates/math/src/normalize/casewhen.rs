@@ -366,37 +366,20 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
         return None;
     }
 
-    let default_value = if let Some((last_cond, last_value)) = branches.last() {
-        if last_cond.as_bool() == Some(true) {
-            // Preserve an explicit first-match default only when it is also
-            // the majority payload. This collapses larger exhaustive
-            // partitions such as `BAD, BAD, OK, OK, true -> BAD` into direct
-            // OK domains plus default BAD, while leaving already-canonical
-            // `OK, OK, true -> BAD` shapes untouched.
-            let Some(default_idx) = values.iter().position(|v| v == last_value) else {
-                return None;
-            };
-            let default_count = counts[default_idx];
-            if counts
-                .iter()
-                .enumerate()
-                .any(|(idx, count)| idx != default_idx && *count > default_count)
-            {
-                return None;
-            }
-            last_value.clone()
-        } else if counts[0] > counts[1] {
-            values[0].clone()
-        } else if counts[1] > counts[0] {
-            values[1].clone()
-        } else {
-            // Equal counts without an explicit default: choose the first
-            // observed payload.  This is deterministic CaseWhen
-            // canonicalization, not a formatter patch.
-            values[0].clone()
+    let (last_cond, last_value) = &branches[branches.len() - 1];
+    let default_value = if last_cond.as_bool() == Some(true) {
+        // An explicit first-match default remains only if its payload is not
+        // less frequent than the other payload.
+        let default_index = usize::from(last_value != &values[0]);
+        if counts[default_index] < counts[1 - default_index] {
+            return None;
         }
+        last_value.clone()
+    } else if counts[1] > counts[0] {
+        values[1].clone()
     } else {
-        return None;
+        // Equal counts without an explicit default choose the first payload.
+        values[0].clone()
     };
 
     let mut out: Vec<(Expr, Expr)> = Vec::new();
@@ -418,7 +401,7 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
     let expands_grouped_binary_partition = branches.len() == 2
         && out.len() == 2
         && branches.iter().any(|(cond, _)| flatten_or(cond).len() > 1);
-    if out.is_empty() || (out.len() + 1 > branches.len() && !expands_grouped_binary_partition) {
+    if out.len() + 1 > branches.len() && !expands_grouped_binary_partition {
         return None;
     }
     out.push((crate::builder::lit_bool(true), default_value));
