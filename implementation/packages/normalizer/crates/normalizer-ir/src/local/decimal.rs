@@ -85,6 +85,12 @@ mod decimal_source_contract {
     }
 
     #[test]
+    fn an_exact_assignment_cannot_bind_the_java_instance_receiver() {
+        assert_eq!(super::super::parse("this = price").unwrap_err(),
+            "[NORM-UNSUPPORTED-LOCAL-IR] cannot bind the Java receiver this");
+    }
+
+    #[test]
     fn malformed_and_excessive_exact_literals_reject_only_at_local_ir_admission() {
         let excessive = format!("round({}, 2)", "1".repeat(4097));
         for (source, diagnostic) in [

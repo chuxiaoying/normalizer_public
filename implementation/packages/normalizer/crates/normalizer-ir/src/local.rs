@@ -174,6 +174,11 @@ impl<'a> Tokens<'a> {
 pub fn parse(input: &str) -> Result<LocalIr, String> {
     let mut tokens = Tokens { source: input };
     let binding = tokens.name()?;
+    // Destination bindings name Java locals, never the instance receiver.
+    // SQL aliases and operand names are parsed separately.
+    if binding == "this" {
+        return Err("[NORM-UNSUPPORTED-LOCAL-IR] cannot bind the Java receiver this".into());
+    }
     let accumulate = tokens.take("+=");
     if !accumulate && !tokens.take("=") {
         return Err("[NORM-UNSUPPORTED-LOCAL-IR] a local definition requires = or +=".into());
