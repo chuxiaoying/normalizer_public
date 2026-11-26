@@ -2,8 +2,8 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 112
-  seeded: 98
+  total: 113
+  seeded: 99
   planned: 14
 topics:
   expression-simplification:
@@ -353,6 +353,11 @@ topics:
     title: 外部边界
     scope: 外部库、端口、回调、成功失败、异常和重试
     seeds:
+      - id: java-external-declaration-types
+        status: seeded
+        test_status: covered
+        surface: java
+        focus: 端口声明类型、返回字段投影和未调用不产生 S
       - id: java-external-library
         status: seeded
         test_status: covered

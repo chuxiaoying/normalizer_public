@@ -28,6 +28,7 @@ seeds:
   frontend-vo-production-vue: { kind: topic, topic: language-entries, related: [state-and-aliasing, external-boundaries] }
   java-expression-simplification: { kind: topic, topic: expression-simplification, related: [control-flow] }
   java-external-library: { kind: topic, topic: external-boundaries, related: [expression-simplification] }
+  java-external-declaration-types: { kind: topic, topic: external-boundaries, related: [objects-and-types] }
   java-loop-bounded-retry: { kind: topic, topic: loops-and-termination, related: [external-boundaries] }
   java-loop-early-exit: { kind: topic, topic: loops-and-termination, related: [collections, control-flow] }
   java-loop-fold: { kind: topic, topic: loops-and-termination, related: [collections] }

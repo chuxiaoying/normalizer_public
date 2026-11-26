@@ -3,6 +3,7 @@ frontend-vo-consumption-vue: topics/language-entries/frontend-vo-consumption-vue
 frontend-vo-production-vue: topics/language-entries/frontend-vo-production-vue.md
 java-expression-simplification: topics/expression-simplification/java-expression-simplification.md
 java-external-library: topics/external-boundaries/java-external-library.md
+java-external-declaration-types: topics/external-boundaries/java-external-declaration-types.md
 java-loop-bounded-retry: topics/loops-and-termination/java-loop-bounded-retry.md
 java-loop-early-exit: topics/loops-and-termination/java-loop-early-exit.md
 java-loop-fold: topics/loops-and-termination/java-loop-fold.md

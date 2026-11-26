@@ -69,6 +69,8 @@ groups:
     expr-unknown-condition-preservation:
     - Unknown.choose
   java/external-boundaries:
+    java-external-declaration-types:
+    - ExternalTypeDemo.label
     external-callback-order:
     - NotifyService.send
     external-exception-propagation:
