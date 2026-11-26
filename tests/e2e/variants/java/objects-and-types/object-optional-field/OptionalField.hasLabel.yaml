@@ -31,3 +31,27 @@
         class OptionalField {
             static int unsupportedSharedCount;
   reject: ['[NORM-FIELD-DECLARATION]', 'kind=PREPROCESS_REQUIRED', 'OptionalField']
+- name: final-record-content-includes-an-uninitialized-nullable-text-field
+  edits:
+    - { from: 'static int hasLabel(', to: 'static Profile hasLabel(' }
+    - { from: 'return profile.label == null ? 0 : 1;', to: 'return new Profile();' }
+  expect:
+    - { path: [entry, returns], value: Profile }
+    - path: [R]
+      value: |-
+        {
+          label: null
+        }
+
+- name: final-record-content-distinguishes-empty-text-from-null
+  edits:
+    - { from: 'static int hasLabel(', to: 'static Profile hasLabel(' }
+    - from: 'return profile.label == null ? 0 : 1;'
+      to: 'Profile out = new Profile(); out.label = ""; return out;'
+  expect:
+    - { path: [entry, returns], value: Profile }
+    - path: [R]
+      value: |-
+        {
+          label: ""
+        }
