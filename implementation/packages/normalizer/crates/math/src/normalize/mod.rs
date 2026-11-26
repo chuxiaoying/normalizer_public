@@ -432,7 +432,7 @@ pub(crate) fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortCont
     let e = crate::canonical_order::orient_ordered_expression(&e, ctx);
     let e = integer_equations::isolate_offset(&e, ctx).unwrap_or(e);
     let e = boolean::simplify(&e, ctx);
-    let e = binop_casewhen::simplify(&e);
+    let e = binop_casewhen::simplify(&e, ctx);
     let e = boolean_casewhen::simplify(&e);
     let e = relation::simplify(&e);
     let e = casewhen::simplify(&e, ctx);

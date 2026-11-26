@@ -85,3 +85,12 @@
           WHEN value > 0 THEN 0
           ELSE 2
         END
+- name: two-acquired-equivalent-case-values-cancel-without-a-cross-product
+  edits:
+    - from: 'return value + base;'
+      to: |-
+        int left = value > 0 ? value + base : value * base;
+                int right = value > 0 ? base + value : base * value;
+                return left - right;
+  expect:
+    - { path: [R], value: '0' }
