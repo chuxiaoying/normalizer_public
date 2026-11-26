@@ -818,6 +818,20 @@ mod source_declaration_contracts {
     use simulator_parser::{parse, ParseOptions};
 
     #[test]
+    fn an_implicit_constructor_only_closes_the_empty_argument_call() {
+        let project = |arguments| {
+            let source = format!("class Box {{ int value; }} class Entry {{
+                static Box build() {{ return new Box({arguments}); }}
+            }}");
+            parse(&source, "Entry.java", &ParseOptions::default()).unwrap()
+        };
+        assert!(validate(&project(""), "Entry.build").is_ok());
+        let error = validate(&project("7"), "Entry.build").err()
+            .expect("an implicit constructor never accepts a supplied argument");
+        assert!(error.contains("[NORM-UNBOUND-CALL]") && error.contains("Box.Box/1"));
+    }
+
+    #[test]
     fn a_native_exact_sum_recognizes_commutation_without_confusing_the_item_and_accumulator() {
         for (write, expected) in [
             ("total = total + row;", Some(("total", 0))),
