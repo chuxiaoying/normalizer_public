@@ -37,6 +37,8 @@ function loadExamples(root, name) {
       source = body;
       patch = undefined;
       hasResult = false;
+    } else if (language === 'diff-example') {
+      continue; // Explicitly non-executable comparison of source layout.
     } else if (language === 'diff') {
       assert.ok(source && !patch && !hasResult, 'Preprocessing diff must follow its original source');
       patch = body;
@@ -73,15 +75,30 @@ export function* loadSeedEntries(root, seeds) {
         : rejection.includes('\n' + exportName.split('.').at(-1) + ':\n'));
       assert.equal(matches.length, 1, 'Expected one seed example for ' + document + ' at ' + entry);
       const fixture = matches[0];
-      const sourceFile = fixture.patch?.match(/^--- a\/(.+)$/m)?.[1] ??
+      const expectedLocator = fixture.expected?.entry?.function;
+      const expectedFile = expectedLocator?.split('#', 1)[0];
+      const patchOriginal = fixture.patch?.match(/^--- a\/(.+)$/m)?.[1];
+      const patchPrepared = fixture.patch?.match(/^\+\+\+ b\/(.+)$/m)?.[1];
+      const rejectionFile = fixture.rejection?.match(/^\s*location: (src\/[^#\s]+)#/m)?.[1];
+      const sourceFile = patchOriginal ?? expectedFile ?? rejectionFile ??
         (extension ? 'src/' + entry.split('#')[0] : 'src/' + entry.split('.')[0] + '.java');
-      assert.equal(fixture.sourceLanguage, language, 'Seed language must match its test group');
-      assert.ok(sourceFile.endsWith(extension ?? '.' + fixture.sourceLanguage), 'Source language and filename disagree: ' + sourceFile);
-      if (fixture.expected) {
-        assert.equal(fixture.expected.entry.function, sourceFile + '#' + exportName, 'Documented entry identity');
+      const mainFile = patchPrepared ?? sourceFile;
+      const sourceExtension = { java: '.java', javascript: '.js', typescript: '.ts', vue: '.vue' }[fixture.sourceLanguage];
+      assert.ok(sourceExtension && sourceFile.endsWith(sourceExtension),
+        'Raw source language and filename disagree: ' + sourceFile);
+      const preparedExtension = language === 'vue' ? '.ts' : extension ?? '.java';
+      assert.ok(mainFile.endsWith(preparedExtension),
+        'Prepared source language and test group disagree: ' + mainFile);
+      assert.ok((language === 'vue') === (fixture.sourceLanguage === 'vue'),
+        'A Vue scenario must retain its original Vue source');
+      if (extension) {
+        assert.equal(mainFile, 'src/' + entry.split('#')[0], 'Prepared module matches its registered entry');
       }
+      const entryFunction = mainFile + '#' + exportName;
+      if (expectedLocator) assert.equal(expectedLocator, entryFunction, 'Documented entry identity');
       fixture.sourceFile = sourceFile;
-      fixture.mainFile = sourceFile.replace(/\.vue$/, '.mjs');
+      fixture.mainFile = mainFile;
+      fixture.entryFunction = entryFunction;
       const { variants, reject } = loadSeries(join(root, seriesFile));
       assert.equal(Boolean(reject), Boolean(fixture.rejection),
         'Seed result and series rejection contract disagree: ' + seedId + ' / ' + entry);

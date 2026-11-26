@@ -109,8 +109,11 @@ function testPage(seed, {entry, seriesFile, tests}, codeBlock) {
   const sections = tests.map(test => {
     let edits = '';
     if (test.edits.length) {
-      edits = '<h3>测试输入改动</h3>' + test.edits.map(({file, from, to}) =>
-        '<p class="test-path"><code>' + escape(file) + '</code></p>' + codeBlock(diffSnippet(from, to), 'diff')).join('');
+      edits = '<h3>测试输入改动</h3>' + test.edits.map(({file, from, to, create}) => {
+        const change = create === undefined ? diffSnippet(from, to) :
+          '--- /dev/null\n+++ b/' + file + '\n' + create.trimEnd().split('\n').map(line => '+' + line).join('\n');
+        return '<p class="test-path"><code>' + escape(file) + '</code></p>' + codeBlock(change, 'diff');
+      }).join('');
     } else {
       edits = '<p>输入取自' + link(seed.path, '种子中的原始代码与 AI 预处理结果') + '。</p>';
     }

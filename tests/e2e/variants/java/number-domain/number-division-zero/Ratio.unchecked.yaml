@@ -1,0 +1,15 @@
+- name: catch-the-zero-divisor-on-the-same-path
+  edits:
+    - from: |-
+        static int unchecked(int divisor) {
+                return divisor / divisor;
+      to: |-
+        static int unchecked(int divisor) {
+                try {
+                    return divisor / divisor;
+                } catch (ArithmeticException ignored) {
+                    return -1;
+                }
+  expect:
+    - {path: [R], value: 'CASE WHEN divisor == 0 THEN -1 ELSE 1 END'}
+    - {path: [throws], absent: true}

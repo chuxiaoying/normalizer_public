@@ -1,12 +1,18 @@
-reject: ['[NORM-CATCH-BODY]', 'kind=PREPROCESS_REQUIRED', 'Guarded.read']
-variants:
-  - name: raise-threshold
-    edits:
-      - from: 'value < 0'
-        to: 'value < 1'
-    reject: ['[NORM-CATCH-BODY]', 'kind=PREPROCESS_REQUIRED', 'Guarded.read']
-  - name: fallback-negative-one
-    edits:
-      - from: 'return 0;'
-        to: 'return -1;'
-    reject: ['[NORM-CATCH-BODY]', 'kind=PREPROCESS_REQUIRED', 'Guarded.read']
+- name: raise-threshold
+  edits:
+    - {from: 'value < 0', to: 'value < 2'}
+  expect:
+    - {path: [R], value: 'CASE WHEN value < 2 THEN 0 ELSE value END'}
+- name: fallback-negative-one
+  edits:
+    - {from: 'return 0;', to: 'return -1;'}
+  expect:
+    - {path: [R], value: 'CASE WHEN value < 0 THEN -1 ELSE value END'}
+- name: negative-path-escapes-unrelated-handler
+  edits:
+    - {from: 'class Guarded {', to: "class OtherValue extends RuntimeException {}\n\nclass Guarded {"}
+    - {from: 'catch (NegativeValue ignored)', to: 'catch (OtherValue ignored)'}
+  expect:
+    - {path: [R], value: value}
+    - path: [throws]
+      add: [{type: NegativeValue, when: 'value < 0'}]

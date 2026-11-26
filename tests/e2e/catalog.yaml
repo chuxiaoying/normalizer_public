@@ -112,6 +112,7 @@ groups:
     - NestedLoop.count
     loop-recursive:
     - Recursive.down
+    - Recursive.finiteDown
     loop-variable-finite-bound:
     - VariableLoop.count
   java/number-domain:
@@ -126,6 +127,7 @@ groups:
     number-division-zero:
     - Ratio.safeDivide
     - AdditionControl.addNonzero
+    - Ratio.unchecked
     number-money-precision:
     - Money.toMinorUnits
   java/objects-and-boundaries:

@@ -22,25 +22,24 @@ function invoke(command, args, cwd, input, env = process.env) {
 }
 
 function checkExample(project, scene, entry, fixture, variant, seedReject) {
-  const { patch, source, sourceFile, mainFile } = fixture;
+  const { patch, source, sourceFile, mainFile, entryFunction } = fixture;
   writePreparedSource(project, sourceFile, source, patch);
   const expected = variant ? applyVariant(project, mainFile, fixture.expected, variant) : fixture.expected;
   let args;
   if (fixture.sourceLanguage === 'vue') {
     assert.ok(scene, 'Vue source requires a registered CLI scene');
-    const exported = entry.split('.').at(-1);
-    args = ['scenario', scene, project, '--entry', mainFile + ':' + exported, '--source', sourceFile];
-  } else if (['javascript', 'typescript'].includes(fixture.sourceLanguage)) {
-    args = ['module', project, sourceFile, entry];
+    args = ['scenario', scene, project, '--entry', entryFunction, '--source', sourceFile];
+  } else if (mainFile.endsWith('.ts')) {
+    args = ['module', project, mainFile, entry];
   } else {
     assert.equal(scene, undefined, 'Java source must use the source CLI route');
-    args = ['source', project, entry];
+    args = ['source', project, entryFunction];
   }
   const { status, stdout, stderr } = invoke(join(root, 'implementation/tools/normalizer'), args, root);
   const fragments = variant?.reject ?? seedReject;
   if (fragments) {
     const kind = !variant?.reject ? fixture.rejection.split('\n')[0] : undefined;
-    assertRejection({ status, stdout, stderr }, !variant?.reject && seedReject.includes('[SOURCE-PARSE-FAILED]') ? fixture.sourceFile : entry, fragments, kind);
+    assertRejection({ status, stdout, stderr }, !variant?.reject && seedReject.includes('[SOURCE-PARSE-FAILED]') ? fixture.sourceFile : entryFunction, fragments, kind);
     return;
   }
   assert.equal(status, 0, stderr.trim() || 'Normalizer failed without a diagnostic');

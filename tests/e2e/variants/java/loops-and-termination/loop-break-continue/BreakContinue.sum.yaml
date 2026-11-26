@@ -1,7 +1,6 @@
 - name: stop-before-five
   edits:
-    - from: "when i > 4 break"
-      to: "when i > 3 break"
+    - {from: 'if (i > 4) break;', to: 'if (i > 3) break;'}
   expect:
     - path: [R]
       value: |-
@@ -10,41 +9,26 @@
           WHEN limit == 3 THEN 2
           ELSE 5
         END
-
-- name: raw-break-requires-explicit-loop-preprocessing
+- name: native-break-exits-on-the-first-candidate
   edits:
-    - from: |-
-        /* @normalizer-ir
-                   total = fold [0, limit) as i
-                     when i < 2 continue
-                     when i > 4 break
-                     yield i
-                */
-      to: |-
-        for (int i = 0; i < limit; i++) {
-                    if (i < 2) break;
-                    total = total + i;
-                }
-  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-LOOP-CONTROL]', 'raw break requires explicit loop preprocessing']
-
-- name: raw-continue-requires-explicit-loop-preprocessing
+    - {from: 'if (i < 2) continue;', to: 'if (i < 2) break;'}
+  expect:
+    - {path: [R], value: '0'}
+- name: native-continue-only-skips-the-first-candidate
   edits:
-    - from: |-
-        /* @normalizer-ir
-                   total = fold [0, limit) as i
-                     when i < 2 continue
-                     when i > 4 break
-                     yield i
-                */
-      to: |-
-        for (int i = 0; i < limit; i++) {
-                    if (i < 2) continue;
-                    total = total + i;
-                }
-  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-LOOP-CONTROL]', 'raw continue requires explicit loop preprocessing']
-
+    - {from: 'if (i < 2) continue;', to: 'if (i < 1) continue;'}
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN limit <= 1 THEN 0
+          WHEN limit == 2 THEN 1
+          WHEN limit == 3 THEN 3
+          WHEN limit == 4 THEN 6
+          ELSE 10
+        END
 - name: first-unskipped-candidate-is-already-beyond-the-stop-bound
   edits:
-    - {from: 'when i > 4 break', to: 'when i > 1 break'}
+    - {from: 'if (i > 4) break;', to: 'if (i > 1) break;'}
   expect:
     - {path: [R], value: '0'}

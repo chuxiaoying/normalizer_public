@@ -1,12 +1,11 @@
-reject: ['[NORM-UNBOUND-CALL]', 'kind=PREPROCESS_REQUIRED', 'Integer.toString/1']
+reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', 'UnsupportedBoundary.runtimeFormat', 'not-support']
 variants:
-  - name: use-string-value-of
+  - name: a-familiar-spelling-does-not-close-an-opaque-method
     edits:
-      - from: 'Integer.toString(value)'
-        to: 'String.valueOf(value)'
-    reject: ['[NORM-UNBOUND-CALL]', 'kind=PREPROCESS_REQUIRED', 'String.valueOf/1']
+      - {from: 'return runtimeFormat(value);', to: 'return toString(value);'}
+      - {from: 'static native String runtimeFormat(int value);', to: 'static native String toString(int value);'}
+    reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', 'UnsupportedBoundary.toString', 'not-support']
   - name: increment-before-format
     edits:
-      - from: 'Integer.toString(value)'
-        to: 'Integer.toString(value + 1)'
-    reject: ['[NORM-UNBOUND-CALL]', 'kind=PREPROCESS_REQUIRED', 'Integer.toString/1']
+      - {from: 'runtimeFormat(value)', to: 'runtimeFormat(value + 1)'}
+    reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', 'UnsupportedBoundary.runtimeFormat', 'not-support']

@@ -1,7 +1,6 @@
 - name: change-second-code
   edits:
-    - from: 'if (code == 2) return 20;'
-      to: 'if (code == 2) return 30;'
+    - {from: 'return 20;', to: 'return 30;'}
   expect:
     - path: [R]
       value: |-
@@ -12,8 +11,7 @@
         END
 - name: change-default
   edits:
-    - from: 'return 0;'
-      to: 'return 1;'
+    - {from: 'return 0;', to: 'return 1;'}
   expect:
     - path: [R]
       value: |-
@@ -22,9 +20,12 @@
           WHEN code == 2 THEN 20
           ELSE 1
         END
-
-- name: unprepared-switch
+- name: native-switch-with-case-block
   edits:
-    - from: 'if (code == 1) return 10;'
-      to: 'switch (code) { case 1: return 10; }'
-  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'switch requires explicit preprocessing']
+    - from: |-
+        case 1:
+                        return 10;
+      to: |-
+        case 1: {
+                        return 10;
+                    }

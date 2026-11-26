@@ -13,7 +13,11 @@
   reject: ['[NORM-DUPLICATE-CLASS]', 'kind=PREPROCESS_REQUIRED', 'location=Price']
 - name: conflicting-top-level-owner-across-files-does-not-bind
   edits:
-    - { file: src/OtherPrice.java, from: 'class OtherPrice {', to: 'class Price {' }
+    - file: src/OtherPrice.java
+      create: |
+        class Price {
+            static int price() { return 99; }
+        }
   reject: ['[NORM-DUPLICATE-CLASS]', 'kind=PREPROCESS_REQUIRED', 'location=Price']
 - name: duplicate-nested-owner-is-invalid-even-if-unreferenced
   edits:

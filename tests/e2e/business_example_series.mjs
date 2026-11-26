@@ -39,10 +39,15 @@ export function loadSeries(file) {
 
 export function resolveVariantEdits(mainFile, edits) {
   return edits.map(edit => {
-    checkKeys(edit, ['file', 'from', 'to']);
+    checkKeys(edit, ['file', 'from', 'to', 'create']);
     const file = edit.file ?? mainFile;
     assert.match(file, /^src\/[\w-]+\.(?:java|vue|mjs|js|ts)$/);
-    assert.ok(typeof edit.from === 'string' && edit.from.length && typeof edit.to === 'string' && edit.from !== edit.to);
+    if (Object.hasOwn(edit, 'create')) {
+      assert.ok(Object.hasOwn(edit, 'file') && !Object.hasOwn(edit, 'from') && !Object.hasOwn(edit, 'to') &&
+        typeof edit.create === 'string' && edit.create.length, 'Create requires a new relative source file and full contents');
+    } else {
+      assert.ok(typeof edit.from === 'string' && edit.from.length && typeof edit.to === 'string' && edit.from !== edit.to);
+    }
     return { ...edit, file };
   });
 }
@@ -53,6 +58,10 @@ export function applyVariant(project, mainFile, baseline, variant) {
   for (const edit of resolveVariantEdits(mainFile, variant.edits)) {
     const { file } = edit;
     const path = join(project, file);
+    if (Object.hasOwn(edit, 'create')) {
+      writeFileSync(path, edit.create, { encoding: 'utf8', flag: 'wx' });
+      continue;
+    }
     const source = readFileSync(path, 'utf8');
     const start = source.indexOf(edit.from);
     assert.ok(start >= 0 && source.lastIndexOf(edit.from) === start, variant.name + ': expected one occurrence of ' + JSON.stringify(edit.from) + ' in ' + file);
