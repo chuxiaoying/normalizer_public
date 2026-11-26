@@ -650,7 +650,38 @@ fn is_not_of(cond: &Expr, expected_inner: &Expr) -> bool {
         } => operand == expected_inner,
         _ => {
             cond.is_comparison_complement(expected_inner)
+                || adjacent_integer_complement(cond, expected_inner)
         }
+    }
+}
+
+/// Two closed adjacent bounds cover the exact integer domain, but not the
+/// wider number domain. Require an acquired total integer explicitly.
+fn adjacent_integer_complement(a: &Expr, b: &Expr) -> bool {
+    use crate::BinOpKind::{Ge, Le};
+    fn closed_bound(expr: &Expr) -> Option<(crate::BinOpKind, &Expr, num_bigint::BigInt)> {
+        let (op, lhs, rhs) = expr.as_binop()?;
+        match op {
+            Ge | Le => {
+                if let Some(bound) = rhs.as_lit().and_then(crate::Lit::as_integer) {
+                    Some((op, lhs, bound))
+                } else {
+                    lhs.as_lit().and_then(crate::Lit::as_integer)
+                        .map(|bound| (if op == Ge { Le } else { Ge }, rhs, bound))
+                }
+            }
+            _ => None,
+        }
+    }
+    let Some((op_a, subject_a, bound_a)) = closed_bound(a) else { return false };
+    let Some((op_b, subject_b, bound_b)) = closed_bound(b) else { return false };
+    if subject_a != subject_b || !super::integer_ac::total_integer(subject_a) {
+        return false;
+    }
+    match (op_a, op_b) {
+        (Le, Ge) => bound_a + 1 == bound_b,
+        (Ge, Le) => bound_b + 1 == bound_a,
+        _ => false,
     }
 }
 
@@ -692,6 +723,21 @@ mod first_match_domain_tests {
 
     fn flag(name: &str) -> Expr {
         b::param(name, crate::ScalarSymbolType::Boolean)
+    }
+
+    #[test]
+    fn adjacent_closed_complements_are_integer_only_and_require_no_gap() {
+        let n = b::param("n", crate::ScalarSymbolType::Integer);
+        let unknown = b::param("n", crate::ScalarSymbolType::ExactDecimal);
+        let complement = |n: Expr, high: i64| {
+            adjacent_integer_complement(
+                &b::le(n.clone(), b::lit_int(-1)),
+                &b::ge(n, b::lit_int(high)),
+            )
+        };
+        assert!(complement(n.clone(), 0));
+        assert!(!complement(n, 1));
+        assert!(!complement(unknown, 0));
     }
 
     #[test]

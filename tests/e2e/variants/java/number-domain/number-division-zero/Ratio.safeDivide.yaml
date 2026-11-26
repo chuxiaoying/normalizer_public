@@ -2,11 +2,11 @@
   edits:
     - {from: 'divisor == 0', to: 'divisor == 1'}
   expect:
-    - {path: [R], value: 'CASE WHEN divisor == 1 THEN 0 ELSE 1 END'}
+    - {path: [R], value: "CASE\n  WHEN divisor == 1 THEN 0\n  ELSE 1\nEND"}
     - path: [throws]
       add: [{type: java.lang.ArithmeticException, when: 'divisor == 0'}]
 - name: negative-fallback
   edits:
     - {from: 'return 0;', to: 'return -1;'}
   expect:
-    - {path: [R], value: 'CASE WHEN divisor == 0 THEN -1 ELSE 1 END'}
+    - {path: [R], value: "CASE\n  WHEN divisor == 0 THEN -1\n  ELSE 1\nEND"}

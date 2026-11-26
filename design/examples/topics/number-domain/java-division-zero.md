@@ -31,7 +31,11 @@ entry: { function: src/Ratio.java#Ratio.safeDivide, returns: number }
 P:
   parameters:
     divisor: { position: 0, type: number }
-R: CASE WHEN divisor == 0 THEN 0 ELSE 1 END
+R: |-
+  CASE
+    WHEN divisor == 0 THEN 0
+    ELSE 1
+  END
 ```
 
 0 返回 0；正负非零整数都返回 1。两个出口都是正常完成，且没有可观察动作。去掉保护时，0 路径真实抛出，不再返回：

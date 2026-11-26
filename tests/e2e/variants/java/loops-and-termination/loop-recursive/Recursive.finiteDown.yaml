@@ -8,4 +8,4 @@
   edits:
     - {from: 'return finiteDown(value - 1) + 1;', to: 'return finiteDown(value - 1) + 2;'}
   expect:
-    - {path: [R], value: 'CASE WHEN value > 0 THEN value * 2 ELSE 0 END'}
+    - {path: [R], value: "CASE\n  WHEN value > 0 THEN value * 2\n  ELSE 0\nEND"}

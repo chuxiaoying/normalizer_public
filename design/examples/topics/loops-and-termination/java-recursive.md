@@ -56,5 +56,9 @@ class Recursive {
 schema: normalizer.pers/1
 entry: { function: src/Recursive.java#Recursive.finiteDown, returns: number }
 P: { parameters: { value: { position: 0, type: number } } }
-R: CASE WHEN value > 0 THEN value ELSE 0 END
+R: |-
+  CASE
+    WHEN value > 0 THEN value
+    ELSE 0
+  END
 ```
