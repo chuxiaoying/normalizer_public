@@ -365,9 +365,9 @@ impl Engine<'_> {
         let left_partition = self.source_objects.has_complete_identity_partition(&left);
         let right_partition = self.source_objects.has_complete_identity_partition(&right);
         if left_partition && right_partition {
-            let mut names = self.source_objects.compared_parameters.clone();
+            let names = &self.source_objects.compared_parameters;
             let order = crate::canonical_names::CanonicalNames {
-                heap: &names, external: None, total_temporals: None, temporals: None,
+                heap: names, external: None, total_temporals: None, temporals: None,
             };
             let key = |(guard, _): &(Expr, Expr)| math::canonical_order_key(guard, &order);
             let a = left.as_case_when().unwrap().iter().map(key);

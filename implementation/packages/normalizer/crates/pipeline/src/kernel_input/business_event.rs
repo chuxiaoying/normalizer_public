@@ -56,7 +56,6 @@ pub(super) fn observations(
     result: &ExecutionResult,
     names: BTreeMap<String, String>,
 ) -> Result<BusinessObservations> {
-    result.check_visible_heap()?;
     let states = result.source_state_bindings.iter()
         .map(|(&id, root)| (id, entry.qualified("E", root))).collect::<BTreeMap<_, _>>();
     let arrays = entry.scalar_array_symbols();

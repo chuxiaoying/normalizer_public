@@ -73,23 +73,6 @@ pub(super) fn valid_record_field(name: &str, typ: &Ty) -> bool {
 
 // Structural types are declarations, never external classes or executable code.
 pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
-    fn parts(s: &str) -> Vec<&str> {
-        let (mut depth, mut start) = (0, 0);
-        let mut result = Vec::new();
-        for (i, c) in s.char_indices() {
-            match c {
-                ',' if depth == 0 => {
-                    result.push(&s[start..i]);
-                    start = i + 1;
-                }
-                _ => {}
-            }
-        }
-        if !s.is_empty() {
-            result.push(&s[start..]);
-        }
-        result
-    }
     if let Some(t) = s
         .strip_prefix("vector<")
         .and_then(|s| s.strip_suffix('>'))
@@ -100,7 +83,7 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
     }
     if let Some(t) = s.strip_prefix("record<").and_then(|s| s.strip_suffix('>')) {
         let mut fields = BTreeMap::new();
-        for p in parts(t) {
+        for p in t.split(',').filter(|_| !t.is_empty()) {
             let (name, typ) = p
                 .split_once(':')
                 .ok_or_else(|| fail("record field needs name:type"))?;

@@ -85,7 +85,6 @@ pub(super) struct Engine<'a> {
     pub(super) branch_splits: usize,
     pub(super) branch_collapses: usize,
     pub(super) max_active_calls: usize,
-    pub(super) budget_reported: bool,
 }
 
 impl Engine<'_> {

@@ -178,7 +178,7 @@ impl EntryContext {
         let state = self.environment.get(root).ok_or("undeclared state root")?;
         if state.kind != "state" || state.source.is_empty() { return Err("invalid state source".into()); }
         if state.fields.is_empty() {
-            let mut domain = state.ty.as_deref().ok_or("undeclared state field")?;
+            let domain = state.ty.as_deref().ok_or("undeclared state field")?;
             return Ok(domain);
         }
         let mut field = state.fields.get(&fields[0]).ok_or("undeclared state field")?;
@@ -327,7 +327,6 @@ impl EntryContext {
         };
         if events.is_empty() {
             if let Some(returned) = total_return {
-                result.check_visible_heap()?;
                 return self.render_output(BusinessOutput::Pure(returned.clone()), result, method, certified_composite_return);
             }
         }
@@ -486,7 +485,7 @@ impl EntryContext {
             BusinessOutput::Observed(observations) => observations.returned.clone(),
             BusinessOutput::Pure(returned) => {
                 if let Some(record) = &result.source_record_return {
-                    let definition = self.types.get(&self.returns).ok_or("result record type is undeclared")?;
+                    self.types.get(&self.returns).ok_or("result record type is undeclared")?;
                     let fields = record.iter().map(|(name, value)| {
                         let rendered = render_value(value)?.replace('\n', "\n  ");
                         Ok(format!("  {name}: {rendered}"))

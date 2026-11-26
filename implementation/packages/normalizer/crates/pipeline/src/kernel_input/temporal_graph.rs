@@ -188,20 +188,9 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
                 check(value, &selected, nodes)?;
                 remaining = later;
             }
-        } else if let Some((op, left, right)) = expression.as_binop() {
+        } else if let Some((_, left, right)) = expression.as_binop() {
             check(left, active, nodes)?;
-            let right_active = match op {
-                _ => active.clone(),
-            };
-            check(right, &right_active, nodes)?;
-        } else {
-            let mut partial = false;
-            expression.walk(&mut |node| {
-                if let Some(id) = temporal_definition_id(node) {
-                    let _ = id;
-                }
-            });
-            need(!partial, "member choice read under an uncertified operator")?;
+            check(right, active, nodes)?;
         }
         Ok(())
     }
