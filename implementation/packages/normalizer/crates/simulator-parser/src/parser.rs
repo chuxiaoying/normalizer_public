@@ -252,6 +252,11 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub(crate) fn require_delimiter(&mut self, token: u8, expected: &str) -> Result<(), ParseError> {
+        if self.eat_char(token) { return Ok(()); }
+        Err(self.err(expected))
+    }
+
     pub(crate) fn require_semicolon(&mut self, position: &str) -> Result<(), ParseError> {
         if self.eat_char(b';') { return Ok(()); }
         Err(self.err(&format!("[JAVA-SEMICOLON] expected ';' after {position}")))
@@ -306,10 +311,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn skip_balanced_braces(&mut self) -> Result<&'a str, ParseError> {
-        self.skip_ws();
-        if !self.eat_char(b'{') {
-            return Err(self.err("expected '{'"));
-        }
+        self.require_delimiter(b'{', "expected '{'")?;
         let start = self.pos;
         let mut depth: i32 = 1;
         while let Some(c) = self.peek() {
@@ -470,17 +472,13 @@ impl<'a> Parser<'a> {
             let name = self.read_qualified_ident()
                 .ok_or_else(|| self.err("[JAVA-IMPORT] expected a qualified import name"))?;
             let wildcard = if self.eat_char(b'.') {
-                if !self.eat_char(b'*') {
-                    return Err(self.err("[JAVA-IMPORT] expected wildcard after trailing dot"));
-                }
+                self.require_delimiter(b'*', "[JAVA-IMPORT] expected wildcard after trailing dot")?;
                 true
             } else { false };
             if !wildcard && !name.contains('.') {
                 return Err(self.err("[JAVA-IMPORT] expected a qualified import name"));
             }
-            if !self.eat_char(b';') {
-                return Err(self.err("[JAVA-IMPORT] expected semicolon"));
-            }
+            self.require_delimiter(b';', "[JAVA-IMPORT] expected semicolon")?;
             if is_static || wildcard {
                 self.has_unbound_imports = true;
             } else {

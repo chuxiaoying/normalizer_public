@@ -436,12 +436,6 @@ pub enum JavaBinOp {
     And,
     Or,
     // 位运算
-    BitAnd,
-    BitOr,
-    BitXor,
-    Shl,
-    Shr,
-    UShr,
 }
 
 /// Java 一元运算符。

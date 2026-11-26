@@ -137,12 +137,6 @@ impl<'a> Parser<'a> {
             ("*=", JavaBinOp::Mul),
             ("/=", JavaBinOp::Div),
             ("%=", JavaBinOp::Mod),
-            ("&=", JavaBinOp::BitAnd),
-            ("|=", JavaBinOp::BitOr),
-            ("^=", JavaBinOp::BitXor),
-            ("<<=", JavaBinOp::Shl),
-            (">>=", JavaBinOp::Shr),
-            (">>>=", JavaBinOp::UShr),
         ]
     }
 
@@ -165,15 +159,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if(&mut self) -> Result<JavaStatement, ParseError> {
-        self.skip_ws();
-        if !self.eat_char(b'(') {
-            return Err(self.err("expected '(' after 'if'"));
-        }
+        self.require_delimiter(b'(', "expected '(' after 'if'")?;
         let condition = self.parse_expression()?;
-        self.skip_ws();
-        if !self.eat_char(b')') {
-            return Err(self.err("expected ')' after if condition"));
-        }
+        self.require_delimiter(b')', "expected ')' after if condition")?;
         let then_body = self.parse_single_or_block()?;
         self.skip_ws();
         let else_body = if self.eat_keyword("else") {
@@ -189,15 +177,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_while(&mut self) -> Result<JavaStatement, ParseError> {
-        self.skip_ws();
-        if !self.eat_char(b'(') {
-            return Err(self.err("expected '(' after 'while'"));
-        }
+        self.require_delimiter(b'(', "expected '(' after 'while'")?;
         let condition = self.parse_expression()?;
-        self.skip_ws();
-        if !self.eat_char(b')') {
-            return Err(self.err("expected ')' after while condition"));
-        }
+        self.require_delimiter(b')', "expected ')' after while condition")?;
         let body = self.parse_single_or_block()?;
         Ok(JavaStatement::While {
             cond: condition,
@@ -206,10 +188,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_for_or_foreach(&mut self) -> Result<JavaStatement, ParseError> {
-        self.skip_ws();
-        if !self.eat_char(b'(') {
-            return Err(self.err("expected '(' after 'for'"));
-        }
+        self.require_delimiter(b'(', "expected '(' after 'for'")?;
         // 尝试识别 for-each: Type name : expr
         let save = self.pos;
         if let Some(fe) = self.try_parse_foreach_head()? {
@@ -259,10 +238,7 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_expression()?)
         };
-        self.skip_ws();
-        if !self.eat_char(b')') {
-            return Err(self.err("expected ')' after for clauses"));
-        }
+        self.require_delimiter(b')', "expected ')' after for clauses")?;
         let body = self.parse_single_or_block()?;
         Ok(JavaStatement::For {
             init,
@@ -300,10 +276,7 @@ impl<'a> Parser<'a> {
             return Ok(None);
         }
         let iterable = self.parse_expression()?;
-        self.skip_ws();
-        if !self.eat_char(b')') {
-            return Err(self.err("expected ')' after for-each"));
-        }
+        self.require_delimiter(b')', "expected ')' after for-each")?;
         Ok(Some((var_type, var_name, iterable)))
     }
 
@@ -339,10 +312,7 @@ impl<'a> Parser<'a> {
             if !self.eat_keyword("catch") {
                 break;
             }
-            self.skip_ws();
-            if !self.eat_char(b'(') {
-                return Err(self.err("expected '(' after 'catch'"));
-            }
+            self.require_delimiter(b'(', "expected '(' after 'catch'")?;
             self.skip_ws();
             self.eat_keyword("final");
             let exception_class = match parse_type(self) {
@@ -356,10 +326,7 @@ impl<'a> Parser<'a> {
             let var_name = self
                 .read_ident()
                 .ok_or_else(|| self.err("expected catch var name"))?;
-            self.skip_ws();
-            if !self.eat_char(b')') {
-                return Err(self.err("expected ')' after catch clause"));
-            }
+            self.require_delimiter(b')', "expected ')' after catch clause")?;
             let body = self.parse_braced_statements()?;
             catches.push(CatchClause {
                 exception_class,
@@ -549,10 +516,7 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(b'?') && self.peek_at(1) != Some(b'?') {
             self.pos += 1;
             let then_e = self.parse_expression()?; // 右结合
-            self.skip_ws();
-            if !self.eat_char(b':') {
-                return Err(self.err("expected ':' in ternary"));
-            }
+            self.require_delimiter(b':', "expected ':' in ternary")?;
             let else_e = self.parse_expression()?;
             return Ok(JavaExpr::Ternary {
                 cond: Box::new(cond),
@@ -572,6 +536,13 @@ impl<'a> Parser<'a> {
             if self.eat_keyword("instanceof") {
                 self.pos = operator;
                 return Err(self.err("[JAVA-UNSUPPORTED-TYPE-TEST] instanceof requires explicit preprocessing"));
+            }
+            if self.starts_with("<<") || self.starts_with(">>")
+                || matches!(self.peek(), Some(b'^'))
+                || (self.peek() == Some(b'|') && !self.starts_with("||"))
+                || (self.peek() == Some(b'&') && !self.starts_with("&&"))
+            {
+                return Err(self.raw_bitwise_error());
             }
             let (op, prec, len) = match self.peek_binop() {
                 Some(t) => t,
@@ -594,9 +565,8 @@ impl<'a> Parser<'a> {
     /// 查看当前位置的二元运算符（不消费）。返回 (op, precedence, byte_len)。
     fn peek_binop(&mut self) -> Option<(JavaBinOp, u8, usize)> {
         self.skip_ws();
-        // `a += b` / `a <<= b` 是语句级复合赋值，不是表达式里的
-        // `a + (= b)`；表达式解析必须停在复合赋值符号前，留给
-        // parse_statement 的 try_compound_assign_op 处理。
+        // Supported arithmetic compound assignments are not binary operators.
+        // Leave their tokens for assignment parsing.
         if self.is_at_compound_assign_op() {
             return None;
         }
@@ -619,20 +589,8 @@ impl<'a> Parser<'a> {
         if self.starts_with(">=") {
             return Some((JavaBinOp::Ge, 9, 2));
         }
-        if self.starts_with(">>>") {
-            return Some((JavaBinOp::UShr, 10, 3));
-        }
-        if self.starts_with("<<") {
-            return Some((JavaBinOp::Shl, 10, 2));
-        }
-        if self.starts_with(">>") {
-            return Some((JavaBinOp::Shr, 10, 2));
-        }
         // 单字节运算符
         match self.peek() {
-            Some(b'|') => Some((JavaBinOp::BitOr, 5, 1)),
-            Some(b'^') => Some((JavaBinOp::BitXor, 6, 1)),
-            Some(b'&') => Some((JavaBinOp::BitAnd, 7, 1)),
             Some(b'<') => Some((JavaBinOp::Lt, 9, 1)),
             Some(b'>') => Some((JavaBinOp::Gt, 9, 1)),
             Some(b'+') => Some((JavaBinOp::Add, 11, 1)),
@@ -642,6 +600,10 @@ impl<'a> Parser<'a> {
             Some(b'%') => Some((JavaBinOp::Mod, 12, 1)),
             _ => None,
         }
+    }
+
+    fn raw_bitwise_error(&self) -> ParseError {
+        self.err("[JAVA-BITWISE] raw bitwise and shift operators require explicit preprocessing")
     }
 
     /// 一元运算 + cast。
@@ -673,9 +635,7 @@ impl<'a> Parser<'a> {
                     operand: Box::new(inner),
                 });
             }
-            Some(b'~') => {
-                return Err(self.err("[JAVA-BITWISE] raw bitwise complement requires explicit preprocessing"));
-            }
+            Some(b'~') => return Err(self.raw_bitwise_error()),
             Some(b'-') => {
                 if let Some(lit) = self.try_parse_negative_min_literal() {
                     return Ok(lit);
@@ -755,10 +715,7 @@ impl<'a> Parser<'a> {
         });
         if is_primitive {
             let ty = parse_type(self).ok_or_else(|| self.err("expected primitive type in cast"))?;
-            self.skip_ws();
-            if !self.eat_char(b')') {
-                return Err(self.err("expected ')' after cast type"));
-            }
+            self.require_delimiter(b')', "expected ')' after cast type")?;
             // Arrays are reference types even when their element type is primitive.
             // Only primitive scalar casts accept a signed unary operand.
             self.skip_ws();
@@ -800,18 +757,11 @@ impl<'a> Parser<'a> {
             self.pos = save;
             return Ok(None);
         }
-        // 额外保守：cast 目标类型必须是 Class 或 Generic，避免 (a+b) 被误判
-        let is_valid_cast_type = match &ty {
-            JavaType::Class(n) => {
-                // 首字母大写或含点，视为类型名
-                n.chars().next().map_or(false, |c| c.is_ascii_uppercase()) || n.contains('.')
+        if let JavaType::Class(name) = &ty {
+            if !name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && !name.contains('.') {
+                self.pos = save;
+                return Ok(None);
             }
-            JavaType::Generic(_, _) | JavaType::Array(_) => true,
-            _ => true,
-        };
-        if !is_valid_cast_type {
-            self.pos = save;
-            return Ok(None);
         }
         let expr = self.parse_unary()?;
         Ok(Some(JavaExpr::Cast {
@@ -850,10 +800,7 @@ impl<'a> Parser<'a> {
                 Some(b'[') => {
                     self.pos += 1;
                     let idx = self.parse_expression()?;
-                    self.skip_ws();
-                    if !self.eat_char(b']') {
-                        return Err(self.err("expected ']' after array index"));
-                    }
+                    self.require_delimiter(b']', "expected ']' after array index")?;
                     expr = JavaExpr::ArrayAccess {
                         target: Box::new(expr),
                         index: Box::new(idx),
@@ -889,10 +836,7 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(b'(') {
             self.pos += 1;
             let inner = self.parse_expression()?;
-            self.skip_ws();
-            if !self.eat_char(b')') {
-                return Err(self.err("expected ')'"));
-            }
+            self.require_delimiter(b')', "expected ')'")?;
             return Ok(inner);
         }
 
@@ -948,17 +892,13 @@ impl<'a> Parser<'a> {
             if self.eat_char(b']') {
                 let mut element_type = ty;
                 while self.eat_char(b'[') {
-                    if !self.eat_char(b']') {
-                        return Err(self.err("expected empty dimension before array initializer"));
-                    }
+                    self.require_delimiter(b']', "expected empty dimension before array initializer")?;
                     element_type = JavaType::Array(Box::new(element_type));
                 }
                 return self.parse_array_initializer(&element_type);
             }
             let length = Box::new(self.parse_expression()?);
-            if !self.eat_char(b']') {
-                return Err(self.err("expected ']' in new array"));
-            }
+            self.require_delimiter(b']', "expected ']' in new array")?;
             return Ok(JavaExpr::ArrayAllocation { element_type: ty, length });
         }
 
@@ -979,9 +919,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array_initializer(&mut self, element_type: &JavaType) -> Result<JavaExpr, ParseError> {
-        if !self.eat_char(b'{') {
-            return Err(self.err("expected '{' for array initializer"));
-        }
+        self.require_delimiter(b'{', "expected '{' for array initializer")?;
         let mut elements = Vec::new();
         while !self.eat_char(b'}') {
             let value = match element_type {
@@ -993,9 +931,7 @@ impl<'a> Parser<'a> {
             if self.eat_char(b',') {
                 continue;
             }
-            if !self.eat_char(b'}') {
-                return Err(self.err("expected ',' or '}' in array initializer"));
-            }
+            self.require_delimiter(b'}', "expected ',' or '}' in array initializer")?;
             break;
         }
         Ok(JavaExpr::ArrayInitializer { element_type: element_type.clone(), elements })
