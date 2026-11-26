@@ -11,4 +11,4 @@
       to: 'from initial + 1'
   expect:
     - path: [R]
-      value: initial + 1 + COALESCE(SUM(SELECT value FROM values), 0)
+      value: initial + COALESCE(SUM(SELECT value FROM values), 0) + 1

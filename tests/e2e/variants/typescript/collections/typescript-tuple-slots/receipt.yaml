@@ -51,13 +51,13 @@
   - path:
     - R
     value: '0'
-- name: truthiness-of-a-string-length-is-not-an-optional-boolean-flag
+- name: string-length-condition-follows-actual-typed-errors
   edits:
   - from: error === undefined && result?.ok
     to: error?.length
-  reject:
-  - '[NORM-TS-MODULE]'
-  - optional tuple condition must be a Boolean flag
+  expect:
+  - path: [R]
+    value: '0'
 - name: type-only-import-is-not-opened-by-the-closed-module-typecheck
   edits:
   - from: type Reply =
@@ -166,34 +166,35 @@
 
 - name: a-number-slot-does-not-stand-in-for-the-error-text
   edits:
-  - from: 'error: string | undefined'
-    to: 'error: number | undefined'
   - from: 'return ["offline"]'
     to: 'return [7]'
-  reject: ['[NORM-TS-MODULE]', 'tuple requires literal slots or distinct constant Boolean record fields']
+  reject: ['[NORM-TS-MODULE]', "is not assignable to type 'string'"]
 
-- name: receipt-record-fields-cannot-publish-nonboolean-payload
+- name: an-unobserved-typed-diagnostic-field-does-not-change-the-count
   edits:
   - from: 'type Reply = { ok: boolean }'
     to: 'type Reply = { ok: boolean; diagnostic?: string }'
   - from: '{ ok: true }, "sent", "ack"'
     to: '{ ok: true, diagnostic: "sent" }, "sent", "ack"'
-  reject: ['[NORM-TS-MODULE]', 'tuple requires literal slots or distinct constant Boolean record fields']
 
-- name: a-typed-tuple-entry-must-preserve-the-closed-helper-call
+
+- name: a-closed-native-tuple-literal-does-not-invent-a-helper-call
   edits:
   - from: 'const [error, result, ...trace] = receipt(failed, detailed)'
     to: 'const [error, result, ...trace]: Receipt = [undefined, { ok: true }]'
-  reject: ['[NORM-TS-MODULE]', 'expected a closed typed tuple entry and one local tuple source helper']
+  expect:
+  - path: [R]
+    value: '0'
 
-- name: a-builtin-truthiness-call-is-not-a-closed-helper-boolean
+- name: a-known-boolean-keeps-its-domain-through-the-standard-conversion
   edits:
   - from: 'receipt(failed, detailed)'
     to: 'receipt(Boolean(failed), detailed)'
-  reject: ['[NORM-TS-MODULE]', 'unsupported tuple helper Boolean expression']
 
-- name: a-builtin-truthiness-call-is-not-a-tuple-observation-predicate
+- name: checking-error-truthiness-does-not-count-successful-traces
   edits:
   - from: 'error === undefined && result?.ok'
     to: 'Boolean(error)'
-  reject: ['[NORM-TS-MODULE]', 'unsupported tuple helper Boolean expression']
+  expect:
+  - path: [R]
+    value: '0'
