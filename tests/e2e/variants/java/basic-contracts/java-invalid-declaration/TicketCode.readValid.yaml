@@ -454,3 +454,7 @@
   expect:
     - { path: [entry, returns], value: text }
     - { path: [R], value: '"甲\"/* } */ //"' }
+- name: legal-class-method-and-field-modifiers-do-not-change-the-entry
+  edits:
+    - { from: 'class TicketCode {', to: 'class TransientCarrier { transient int spare; } final class TicketCode {' }
+    - { from: 'static int readValid', to: 'protected static strictfp int readValid' }

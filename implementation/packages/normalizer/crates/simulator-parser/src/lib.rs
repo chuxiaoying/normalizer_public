@@ -32,3 +32,50 @@ pub use ast::{
 };
 pub use parser::{is_reserved_identifier, parse, ParseError, ParseOptions};
 pub(crate) mod body_parser;
+
+#[cfg(test)]
+mod lexical_regressions {
+    use super::*;
+
+    #[test]
+    fn reference_cast_keeps_identifier_operand() {
+        for name in ["_token", "$token"] {
+            let source = format!(
+                "class Lexical {{ static String read(Object {name}) {{ return (String){name}; }} }}"
+            );
+            let program = parse(&source, "Lexical.java", &ParseOptions::default()).unwrap();
+            let method = &program.find_class("Lexical").unwrap().methods()[0];
+            assert!(matches!(
+                method.body().unwrap(),
+                [JavaStatement::Return(Some(JavaExpr::Cast {
+                    target_type: JavaType::Class(target),
+                    operand,
+                }))] if target == "String" && matches!(operand.as_ref(), JavaExpr::Ident(actual) if actual == name)
+            ));
+        }
+    }
+
+    #[test]
+    fn nested_array_initializer_keeps_expression_and_shorthand_elements() {
+        let program = parse(
+            "class Lexical { static int[][] read(int[] row) { return new int[][]{row, {2, 3}}; } }",
+            "Lexical.java",
+            &ParseOptions::default(),
+        ).unwrap();
+        let method = &program.find_class("Lexical").unwrap().methods()[0];
+        let [JavaStatement::Return(Some(JavaExpr::ArrayInitializer {
+            element_type,
+            elements,
+        }))] = method.body().unwrap() else {
+            panic!("expected an array initializer in the return expression");
+        };
+        assert_eq!(*element_type, JavaType::Array(Box::new(JavaType::Primitive("int".into()))));
+        assert!(matches!(
+            elements.as_slice(),
+            [JavaExpr::Ident(row), JavaExpr::ArrayInitializer { element_type, elements }]
+                if row == "row"
+                    && *element_type == JavaType::Primitive("int".into())
+                    && matches!(elements.as_slice(), [JavaExpr::Lit(JavaLit::Int(2)), JavaExpr::Lit(JavaLit::Int(3))])
+        ));
+    }
+}
