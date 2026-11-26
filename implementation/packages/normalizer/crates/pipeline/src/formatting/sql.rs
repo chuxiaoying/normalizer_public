@@ -170,9 +170,6 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
                     format!(r#"ROUND({}, {scale}, "{}")"#, format_expr_with_ctx(value, ctx), mode.name()),
             };
         }
-        if let Some(query) = relation_query::render(expr, ctx) {
-            return query;
-        }
     }
     // 优先查 Lit
     if let Some(lit) = expr.as_lit() {
@@ -248,57 +245,51 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return format_case_when(branches, ctx);
     }
     if expr.as_relation().is_some() || expr.as_relation_aggregate().is_some() {
-        if let Some(rendered) = format_scalar_array_observation(expr, ctx) {
-            return rendered;
-        }
         if ctx.business_inputs.is_none() {
             // This path is for human diagnostics, not a second PERS syntax.
             return format!("{expr:?}");
         }
-        panic!("[NORM-BUSINESS-EXPRESSION] relation has no canonical PERS renderer");
+        return format_scalar_array_observation(expr, ctx)
+            .or_else(|| relation_query::render(expr, ctx))
+            .expect("[NORM-BUSINESS-EXPRESSION] relation has no canonical PERS renderer");
     }
-    if let Some((key, args)) = expr.as_call() {
-        let registered_name = math::func_name(key);
-        if ctx.business_inputs.is_some() {
-            if let Some((root, position, field)) = math::domains::relation::positional::field_projection(expr) {
-                let position = format_expr_with_ctx(position, ctx);
-                return format!("{}[{position}].{field}", array_name(root, ctx));
-            }
-            if matches!(math::domains::completion::output_name(&registered_name), "completion.is_throw" | "completion.payload") {
-                if let [response, class] = args {
-                    if let Some(math::Lit::Str(name)) = class.as_lit() {
-                        return format!("{}({}, {name})", math::domains::completion::output_name(&registered_name),
-                            format_expr_with_ctx(response, ctx));
-                    }
-                }
-            }
-            let display = match registered_name.as_str() {
-                crate::normalized_text::TRIM_KEY => Some("TRIM"),
-                crate::normalized_text::KEY => Some("blank"),
-                _ => None,
-            };
-            if let (Some(display), [value]) = (display, args) {
-                return format!("{display}({})", format_expr_with_ctx(value, ctx));
-            }
+    // The preceding dispatch exhausts every non-call expression variant.
+    let (key, args) = expr.as_call().expect("unrecognized expression at the formatter boundary");
+    let registered_name = math::func_name(key);
+    if ctx.business_inputs.is_some() {
+        if let Some((root, position, field)) = math::domains::relation::positional::field_projection(expr) {
+            let position = format_expr_with_ctx(position, ctx);
+            return format!("{}[{position}].{field}", array_name(root, ctx));
         }
-        let name = math::domains::completion::output_name(math::domains::composite::output_name(
-            &registered_name,
-        ));
-        if name == "value.input" {
-            if let [value] = args {
-                if let Some(math::Lit::Str(name)) = value.as_lit() {
-                    return name.to_owned();
+        if matches!(math::domains::completion::output_name(&registered_name), "completion.is_throw" | "completion.payload") {
+            if let [response, class] = args {
+                if let Some(math::Lit::Str(name)) = class.as_lit() {
+                    return format!("{}({}, {name})", math::domains::completion::output_name(&registered_name),
+                        format_expr_with_ctx(response, ctx));
                 }
             }
         }
-        let args_str: Vec<String> = args.iter().map(|a| format_expr_with_ctx(a, ctx)).collect();
-        return format!("{}({})", name, args_str.join(", "));
+        let display = match registered_name.as_str() {
+            crate::normalized_text::TRIM_KEY => Some("TRIM"),
+            crate::normalized_text::KEY => Some("blank"),
+            _ => None,
+        };
+        if let (Some(display), [value]) = (display, args) {
+            return format!("{display}({})", format_expr_with_ctx(value, ctx));
+        }
     }
-    // 未识别的 ExprKind：暴露为 Panic（归一化输出应该对每个 ExprKind 都有明确渲染）
-    panic!(
-        "[FORMAT-SQL-UNKNOWN-EXPRKIND] unknown ExprKind in format_expr_with_ctx: {:?}",
-        expr
-    );
+    let name = math::domains::completion::output_name(math::domains::composite::output_name(
+        &registered_name,
+    ));
+    if name == "value.input" {
+        if let [value] = args {
+            if let Some(math::Lit::Str(name)) = value.as_lit() {
+                return name.to_owned();
+            }
+        }
+    }
+    let args_str: Vec<String> = args.iter().map(|a| format_expr_with_ctx(a, ctx)).collect();
+    format!("{}({})", name, args_str.join(", "))
 }
 
 fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<String> {

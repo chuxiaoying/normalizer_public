@@ -34,13 +34,13 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     } else {
         value?
     };
-    if kind == math::RelationAggregateKind::Sum && value == &math::builder::lit_int(1) {
-        if let Some((table, keys)) = crate::kernel_input::business_relation::grouped_table(relation) {
-            let keys = keys.iter().map(|k| crate::format_expr_with_ctx(k, ctx)).collect::<Vec<_>>().join(", ");
-            return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {table}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
-        }
-    }
     if kind == math::RelationAggregateKind::Sum {
+        if value == &one {
+            if let Some((table, keys)) = crate::kernel_input::business_relation::grouped_table(relation) {
+                let keys = keys.iter().map(|k| crate::format_expr_with_ctx(k, ctx)).collect::<Vec<_>>().join(", ");
+                return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {table}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
+            }
+        }
         if let Some(mut join) = crate::kernel_input::business_relation::inner_join_count(relation, value) {
             let rank = |expr: &Expr| {
                 let mut left = false;
@@ -101,17 +101,15 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         flat(predicate, &mut predicates);
         input = inner;
     }
-    let scalar_array = matches!(input, RelationExpr::Base {name, ..} if ctx.scalar_arrays.contains(name));
-    if kind == math::RelationAggregateKind::Exists && scalar_array && predicates.is_empty() && keys.is_empty() {
-        // The already-typed scalar array renderer owns the LENGTH shape.
-        return None;
-    }
+    let scalar_array = match input {
+        RelationExpr::Base { name, .. } if ctx.scalar_arrays.contains(name) => Some(name),
+        _ => None,
+    };
     // Never convert the math layer's ordered first/null observation back
     // to an index. Explicit non-null fallbacks remain a separate contract.
-    if scalar_array && kind == math::RelationAggregateKind::FirstValue
-        && predicates.is_empty() && keys.is_empty() && value.as_row_value() == Some("value")
+    if let Some(name) = scalar_array.filter(|_| kind == math::RelationAggregateKind::FirstValue
+        && predicates.is_empty() && keys.is_empty() && value.as_row_value() == Some("value"))
     {
-        let RelationExpr::Base { name, .. } = input else { unreachable!() };
         let array = super::array_name(name, ctx).to_owned();
         let default = default?;
         if default.is_null() {
@@ -125,7 +123,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     let correlated = matches!(input, RelationExpr::Vector {value, ..} if value.as_row_value().is_some());
     let from = match input {
         RelationExpr::Base { name, alias } if record_array || nested => format!("{name} AS {alias}"),
-        RelationExpr::Base { name, .. } if scalar_array =>
+        RelationExpr::Base { name, .. } if scalar_array.is_some() =>
             super::array_name(name, ctx).to_owned(),
         RelationExpr::Base { name, .. } => name.clone(),
         RelationExpr::Vector { value, alias } => {
@@ -167,10 +165,11 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             math::canonical_order_key(e, &math::DefaultSortContext),
         )
     });
-    let mut select = vec![
-        format!("SELECT {}", fmt(value, ctx)),
-        format!("FROM {from}"),
-    ];
+    let projection = fmt(value, ctx);
+    let mut clauses = vec![format!("FROM {from}")];
+    let inline_body = |clauses: &[String]| {
+        clauses.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ")
+    };
     let predicate_text = |e: &Expr, ctx: &mut crate::FormatCtx| {
         let comparison = e.as_binop().and_then(|(op, left, right)|
             reversed_comparison(op).map(|reverse| (op, reverse, left, right)));
@@ -210,7 +209,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         format!("{} {token} {}", fmt(a, ctx), fmt(z, ctx))
     };
     for (i, p) in predicates.iter().enumerate() {
-        select.push(format!(
+        clauses.push(format!(
             "{} {}",
             if i == 0 { "WHERE" } else { "  AND" },
             predicate_text(p, ctx)
@@ -220,11 +219,10 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         && value.as_row_value().is_some_and(|column| ctx.nullable_columns.contains(column))
         && default.is_some_and(|fallback| !fallback.is_null());
     let presence = nullable_first.then(|| {
-        let from = select[1..].iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ");
-        format!("EXISTS (SELECT 1 {from})")
+        format!("EXISTS (SELECT 1 {})", inline_body(&clauses))
     });
     if !keys.is_empty() {
-        select.push(format!(
+        clauses.push(format!(
             "ORDER BY {}",
             keys.iter()
                 .map(|k| fmt(k, ctx))
@@ -232,17 +230,15 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
                 .join(", ")
         ))
     }
-    if scalar_array && kind == math::RelationAggregateKind::Count {
+    if scalar_array.is_some() && kind == math::RelationAggregateKind::Count {
         let prefix = if distinct { "DISTINCT " } else { "" };
-        let parts = select.join(" ");
-        return Some(format!("COUNT({prefix}{})", parts.strip_prefix("SELECT ")?));
+        return Some(format!("COUNT({prefix}{projection} {})", clauses.join(" ")));
     }
     if kind == math::RelationAggregateKind::Exists {
-        return Some(format!("EXISTS ({})", select.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ")));
+        return Some(format!("EXISTS (SELECT {projection} {})", inline_body(&clauses)));
     }
     if kind == math::RelationAggregateKind::FirstValue && (default.is_some_and(Expr::is_null) || nullable_first) {
-        let query = select.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ");
-        let first = format!("FIRST({})", query.strip_prefix("SELECT ")?);
+        let first = format!("FIRST({projection} {})", inline_body(&clauses));
         if let Some(presence) = presence {
             let fallback = fmt(default?, ctx);
             // CASE distinguishes a NULL on the selected row from absent rows.
@@ -253,16 +249,16 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     let (lead, default) = match kind {
         math::RelationAggregateKind::Sum => ("SUM(", "0".into()),
         math::RelationAggregateKind::FirstValue => {
-            select.push("LIMIT 1".into());
+            clauses.push("LIMIT 1".into());
             ("(", fmt(default?, ctx))
         }
         _ => return None,
     };
-    if scalar_array || record_array || nested || correlated {
-        return Some(format!("COALESCE({lead}{}), {default})", select.join(" ")));
+    if scalar_array.is_some() || record_array || nested || correlated {
+        return Some(format!("COALESCE({lead}SELECT {projection} {}), {default})", clauses.join(" ")));
     }
     Some(format!(
-        "COALESCE(\n  {lead}\n    {}\n  ),\n  {default}\n)",
-        select.join("\n    ")
+        "COALESCE(\n  {lead}\n    SELECT {projection}\n    {}\n  ),\n  {default}\n)",
+        clauses.join("\n    ")
     ))
 }
