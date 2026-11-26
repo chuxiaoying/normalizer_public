@@ -53,7 +53,7 @@ pub fn canonical_order_ordered_comparison(
 ) -> Option<(BinOpKind, bool)> {
     match op {
         BinOpKind::Eq | BinOpKind::Ne => {
-            if canonical_order_orient_equality_to_rhs(left, right, ctx) {
+            if stronger_comparison_subject_is_right(left, right, ctx) {
                 Some((op, true))
             } else {
                 None
@@ -496,10 +496,7 @@ pub fn ordered_comparison_view(
     ) {
         return None;
     }
-    let ls = canonical_order_subject_strength(left, ctx);
-    let rs = canonical_order_subject_strength(right, ctx);
-    let swap =
-        rs > ls || (rs == ls && canonical_order_key(right, ctx) < canonical_order_key(left, ctx));
+    let swap = stronger_comparison_subject_is_right(left, right, ctx);
     Some((if swap { op.swapped_comparison()? } else { op }, swap))
 }
 
@@ -516,21 +513,14 @@ pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> E
     expr.clone()
 }
 
-fn canonical_order_orient_equality_to_rhs(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> bool {
-    let left_strength = canonical_order_subject_strength(left, ctx);
-    let right_strength = canonical_order_subject_strength(right, ctx);
-
-    if right_strength > left_strength {
-        return true;
-    }
-    if left_strength > right_strength {
-        return false;
-    }
-
-    canonical_order_key(right, ctx) < canonical_order_key(left, ctx)
+fn stronger_comparison_subject_is_right(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> bool {
+    canonical_order_subject_strength(left)
+        .cmp(&canonical_order_subject_strength(right))
+        .then_with(|| canonical_order_key(right, ctx).cmp(&canonical_order_key(left, ctx)))
+        .is_lt()
 }
 
-fn canonical_order_subject_strength(expr: &Expr, ctx: &dyn SortContext) -> u8 {
+fn canonical_order_subject_strength(expr: &Expr) -> u8 {
     match expr.kind() {
         ExprKind::Lit(_) | ExprKind::HeapRef(_) | ExprKind::RowValue { .. } => 10,
         ExprKind::RelationAggregate { .. } => 90,
@@ -552,15 +542,10 @@ fn canonical_order_subject_strength(expr: &Expr, ctx: &dyn SortContext) -> u8 {
             }
             crate::symvar::SymVarOrigin::Temporal { .. } => 65,
         },
-        ExprKind::BinOp { .. } | ExprKind::CaseWhen { .. } => {
-            // Compound predicates do not become stronger semantic subjects just
-            // because their internal printed form is longer.  Their stable
-            // position is decided by the display compare key.
-            let _ = ctx;
-            40
-        }
-        ExprKind::UnaryOp { operand, .. } => canonical_order_subject_strength(operand, ctx),
-        ExprKind::ArrayLit(_) => 40,
+        // Compound expressions do not become stronger subjects because their
+        // printed form is longer. Peers are ordered by the display compare key.
+        ExprKind::BinOp { .. } | ExprKind::CaseWhen { .. } | ExprKind::ArrayLit(_) => 40,
+        ExprKind::UnaryOp { operand, .. } => canonical_order_subject_strength(operand),
         ExprKind::Relation(_) => 45,
     }
 }

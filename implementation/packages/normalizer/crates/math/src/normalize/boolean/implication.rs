@@ -1,6 +1,7 @@
 //! 关系与区间蕴含证明规则。
 
 use super::*;
+use crate::domains::relation::RelationExpr;
 
 pub(super) fn conjunction_implies(conjs_left: &[Expr], conjs_right: &[Expr]) -> bool {
     conjs_right.iter().all(|right| expr_is_true_under_and_context(right, conjs_left))
@@ -41,10 +42,7 @@ pub(super) fn relation_exists_or_not_exists_same_relation(
     let Some(exists_relation) = relation_exists_true_relation(exists_expr) else {
         return false;
     };
-    let Some((UnaryOpKind::Not, not_exists_inner)) = not_exists_expr.as_unary_op() else {
-        return false;
-    };
-    let Some(not_exists_relation) = relation_exists_true_relation(not_exists_inner) else {
+    let Some(not_exists_relation) = relation_not_exists_true_relation(not_exists_expr) else {
         return false;
     };
     relation_cardinality_input_matches(exists_relation, not_exists_relation)
@@ -65,12 +63,12 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
 /// Emptiness of an identical input implies emptiness of any strict chain
 /// of selections over that input. Do not infer row identity from aliases.
 pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
-    use crate::domains::relation::RelationExpr;
-    fn absent(expr: &Expr) -> Option<&RelationExpr> {
-        let (UnaryOpKind::Not, exists) = expr.as_unary_op()? else { return None; };
-        relation_exists_true_relation(exists)
-    }
-    let (Some(source), Some(mut candidate)) = (absent(left), absent(right)) else { return false; };
+    let (Some(source), Some(mut candidate)) = (
+        relation_not_exists_true_relation(left),
+        relation_not_exists_true_relation(right),
+    ) else {
+        return false;
+    };
     while let RelationExpr::Select { input, .. } = candidate {
         if input.as_ref() == source { return true; }
         candidate = input;
@@ -83,34 +81,19 @@ pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> 
 /// nonzero matcher used by the reverse implication and zero contradictions.
 pub(super) fn relation_count_positive_lower_bound(
     expr: &Expr,
-) -> Option<&crate::domains::relation::RelationExpr> {
-    let (mut op, left, right) = expr.as_binop()?;
-    let (query, n) = if let Some(crate::Lit::Int(n)) = right.as_lit() {
-        (left, *n)
-    } else if let Some(crate::Lit::Int(n)) = left.as_lit() {
-        op = op.swapped_comparison()?;
-        (right, *n)
-    } else {
-        return None;
-    };
+) -> Option<&RelationExpr> {
+    let (op, relation, n) = relation_count_bound(expr)?;
     let proves_positive = match op {
         BinOpKind::Gt => n >= 0,
         BinOpKind::Ge | BinOpKind::Eq => n >= 1,
         _ => false,
     };
-    if !proves_positive {
-        return None;
-    }
-    let (RelationAggregateKind::Count, relation, None, None) = query.as_relation_aggregate()?
-    else {
-        return None;
-    };
-    Some(relation)
+    proves_positive.then_some(relation)
 }
 
 pub(super) fn relation_cardinality_input_matches(
-    left: &crate::domains::relation::RelationExpr,
-    right: &crate::domains::relation::RelationExpr,
+    left: &RelationExpr,
+    right: &RelationExpr,
 ) -> bool {
     if left == right {
         return true;
@@ -118,15 +101,15 @@ pub(super) fn relation_cardinality_input_matches(
     matches!(
         (left, right),
         (
-            crate::domains::relation::RelationExpr::Base { name: left_name, .. },
-            crate::domains::relation::RelationExpr::Base { name: right_name, .. }
+            RelationExpr::Base { name: left_name, .. },
+            RelationExpr::Base { name: right_name, .. }
         ) if left_name == right_name
     )
 }
 
 pub(super) fn relation_exists_true_relation(
     expr: &Expr,
-) -> Option<&crate::domains::relation::RelationExpr> {
+) -> Option<&RelationExpr> {
     let Some((RelationAggregateKind::Exists, relation, select_expr, default_expr)) =
         expr.as_relation_aggregate()
     else {
@@ -138,57 +121,38 @@ pub(super) fn relation_exists_true_relation(
     Some(relation)
 }
 
-pub(super) fn relation_count_nonzero_relation(
-    expr: &Expr,
-) -> Option<&crate::domains::relation::RelationExpr> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+fn relation_not_exists_true_relation(expr: &Expr) -> Option<&RelationExpr> {
+    let (UnaryOpKind::Not, exists) = expr.as_unary_op()? else {
         return None;
     };
-
-    match op {
-        BinOpKind::Ne => relation_count_zero_comparison(left, right)
-            .or_else(|| relation_count_zero_comparison(right, left)),
-        BinOpKind::Gt => relation_count_zero_comparison(left, right),
-        BinOpKind::Lt => relation_count_zero_comparison(right, left),
-        _ => None,
-    }
+    relation_exists_true_relation(exists)
 }
 
-pub(super) fn relation_count_zero_relation(
-    expr: &Expr,
-) -> Option<&crate::domains::relation::RelationExpr> {
-    if let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand,
-    } = expr.kind()
-    {
+pub(super) fn relation_count_nonzero_relation(expr: &Expr) -> Option<&RelationExpr> {
+    let (op, relation, bound) = relation_count_bound(expr)?;
+    (bound == 0 && matches!(op, BinOpKind::Ne | BinOpKind::Gt)).then_some(relation)
+}
+
+pub(super) fn relation_count_zero_relation(expr: &Expr) -> Option<&RelationExpr> {
+    if let Some((UnaryOpKind::Not, operand)) = expr.as_unary_op() {
         return relation_count_nonzero_relation(operand);
     }
-
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    if *op != BinOpKind::Eq {
-        return None;
-    }
-    relation_count_zero_comparison(left, right)
-        .or_else(|| relation_count_zero_comparison(right, left))
+    let (op, relation, bound) = relation_count_bound(expr)?;
+    (bound == 0 && op == BinOpKind::Eq).then_some(relation)
 }
 
-pub(super) fn relation_count_zero_comparison<'a>(
-    maybe_count: &'a Expr,
-    maybe_zero: &Expr,
-) -> Option<&'a crate::domains::relation::RelationExpr> {
-    if maybe_zero.as_lit() != Some(&Lit::Int(0)) {
-        return None;
-    }
-    let Some((RelationAggregateKind::Count, relation, select_expr, default_expr)) =
-        maybe_count.as_relation_aggregate()
+/// View an integer bound with Count on the left, regardless of source spelling.
+/// Only a bare Count of the same input (no select/default) owns these rules.
+fn relation_count_bound(expr: &Expr) -> Option<(BinOpKind, &RelationExpr, i64)> {
+    let (op, left, right) = expr.as_binop()?;
+    let (op, count, bound) = match (left.as_lit(), right.as_lit()) {
+        (_, Some(Lit::Int(n))) => (op, left, *n),
+        (Some(Lit::Int(n)), _) => (op.swapped_comparison()?, right, *n),
+        _ => return None,
+    };
+    let (RelationAggregateKind::Count, relation, None, None) = count.as_relation_aggregate()?
     else {
         return None;
     };
-    if select_expr.is_some() || default_expr.is_some() {
-        return None;
-    }
-    Some(relation)
+    Some((op, relation, bound))
 }
