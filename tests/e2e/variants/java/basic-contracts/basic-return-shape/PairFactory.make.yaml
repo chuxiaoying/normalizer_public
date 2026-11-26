@@ -10,12 +10,11 @@
           right: value + 2
         }
 
-- name: raw-super-constructor-delegation-is-not-an-ordinary-call
+- name: native-super-constructor-delegation-keeps-the-same-fields
   edits:
-    - from: 'this.left = left;'
-      to: 'super(); this.left = left;'
-  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CONSTRUCTOR-DELEGATION]', 'super(...)']
-- name: raw-this-constructor-delegation-does-not-change-initialization-scope
+    - {from: 'this.left = left;', to: 'super(); this.left = left;'}
+
+- name: native-this-constructor-delegation-keeps-the-same-fields
   edits:
     - from: 'Pair(int left, int right) {'
       to: |-
@@ -27,9 +26,15 @@
       to: |-
         Pair(int left, int right) {
                 this(left);
-  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-CONSTRUCTOR-DELEGATION]', 'this(...)']
 
-- name: a-declared-field-initializer-is-not-silently-discarded
+- name: a-declared-field-initializer-is-observed-before-the-constructor-write
   edits:
-    - { from: 'int left;', to: 'int left = 7;' }
-  reject: ['[NORM-FIELD-DECLARATION]', 'Pair']
+    - {from: 'int left;', to: 'int left = 7;'}
+    - {from: 'this.left = left;', to: 'this.left = this.left + left;'}
+  expect:
+    - path: [R]
+      value: |-
+        {
+          left: value + 7,
+          right: value + 1
+        }

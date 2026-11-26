@@ -87,12 +87,13 @@
     - path: [R]
       value: '33'
 
-- name: an-assigned-outer-short-counter-is-outside-the-documented-finite-profile
+- name: an-assigned-outer-short-counter-within-range-keeps-the-last-step
   edits:
-    - { from: 'int sum = 0;', to: 'short i = 99; int sum = 0;' }
-    - { from: 'int i = 0; i < 3; i++', to: 'i = 0; i < 3; i++' }
-    - { from: 'return sum;', to: 'return sum * 10 + i;' }
-  reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'assignment counter needs an already initialized int/long local']
+    - {from: 'int sum = 0;', to: 'short i = 99; int sum = 0;'}
+    - {from: 'int i = 0; i < 3; i++', to: 'i = 0; i < 3; i++'}
+    - {from: 'return sum;', to: 'return sum * 10 + i;'}
+  expect:
+    - {path: [R], value: '33'}
 
 - name: reversing-the-comparison-operands-keeps-the-same-finite-range
   edits:
@@ -128,12 +129,18 @@
   expect:
     - {path: [R], value: '5'}
 
-- name: a-conditional-write-to-the-induction-variable-needs-a-different-proof
+- name: a-conditional-forward-write-counts-only-the-executed-values
   edits:
     - {from: 'int sum = 0;', to: 'int i = 0; int sum = 0;'}
     - from: 'for (int i = 0; i < 3; i++) sum += i;'
       to: 'for (i = 0; i < 3; i++) { if (i == 1) i = 2; sum += i; }'
-  reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'body must preserve proven induction counter i']
+  expect:
+    - {path: [R], value: '2'}
+- name: repeatedly-resetting-the-counter-cannot-prove-completion
+  edits:
+    - from: 'for (int i = 0; i < 3; i++) sum += i;'
+      to: 'for (int i = 0; i < 3; i++) { if (i == 1) i = 0; sum += i; }'
+  reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'SmallLoop.total']
 
 - name: constant-bound-for-each-without-an-offset-keeps-the-elements
   edits:
@@ -156,14 +163,14 @@
     - { from: 'i++) sum += i;', to: 'other++) sum += i;' }
   reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'SmallLoop.total']
 
-- name: a-field-counter-does-not-get-a-local-induction-proof
+- name: a-private-new-field-counter-has-its-own-termination-proof
   edits:
     - from: 'class SmallLoop {'
       to: |-
         class Counter { int position; }
         class SmallLoop {
-    - from: 'int sum = 0;'
-      to: 'Counter counter = new Counter(); int sum = 0;'
+    - {from: 'int sum = 0;', to: 'Counter counter = new Counter(); Counter alias = counter; int sum = 0;'}
     - from: 'for (int i = 0; i < 3; i++) sum += i;'
-      to: 'for (counter.position = 0; counter.position < 3; counter.position++) sum += counter.position;'
-  reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'SmallLoop.total']
+      to: 'for (counter.position = 0; counter.position < 3; alias.position++) sum += counter.position;'
+  expect:
+    - {path: [R], value: '3'}

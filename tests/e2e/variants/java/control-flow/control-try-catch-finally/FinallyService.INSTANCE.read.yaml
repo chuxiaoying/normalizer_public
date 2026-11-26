@@ -25,22 +25,37 @@
   - path:
     - R
     value: '42'
-- name: reject-try-with-resources-instead-of-dropping-it
+- name: native-try-with-resources-closes-before-finally-on-both-paths
   edits:
-  - from: try {
-    to: try (java.io.StringReader resource = new java.io.StringReader("")) {
-  reject:
-  - '[SOURCE-PARSE-FAILED]'
-  - kind=PREPROCESS_REQUIRED
-  - try-with-resources is not supported
-- name: reject-multi-catch-instead-of-dropping-a-type
+    - from: 'class FinallyService {'
+      to: |-
+        class LocalResource implements AutoCloseable {
+            private final FinallyService owner;
+            LocalResource(FinallyService owner) { this.owner = owner; }
+            public void close() { owner.attempts = owner.attempts + 10; }
+        }
+
+        class FinallyService {
+    - {from: 'try {', to: 'try (LocalResource resource = new LocalResource(this)) {'}
+  expect:
+    - path: [S]
+      value:
+        - call: {external: 'src/FinallyService.java#FinallyService.INSTANCE.client.fetch', args: [accountId], returns: number, result: '$e_0'}
+        - write: {target: attempts, value: 'attempts + 10'}
+        - write: {target: attempts, value: 'attempts + 11'}
+
+- name: native-multi-catch-retains-the-matching-alternative
   edits:
-  - from: catch (RemoteError ignored)
-    to: catch (RemoteError | IllegalStateException ignored)
-  reject:
-  - '[SOURCE-PARSE-FAILED]'
-  - kind=PREPROCESS_REQUIRED
-  - multi-catch is not supported
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class RemoteError extends RuntimeException {}
+        class OtherError extends RuntimeException {}
+    - {from: 'catch (RemoteError ignored)', to: 'catch (OtherError | RemoteError ignored)'}
+- name: reject-overlapping-types-in-one-multi-catch
+  edits:
+    - {from: 'catch (RemoteError ignored)', to: 'catch (RemoteError | RuntimeException ignored)'}
+  reject: ['[NORM-CATCH-TYPE]', 'kind=PREPROCESS_REQUIRED', 'RemoteError', 'RuntimeException']
+
 - name: type-only-exception-walks-its-parents-not-an-unrelated-handler
   edits:
   - from: class RemoteError extends RuntimeException {}
@@ -60,15 +75,20 @@
   reject:
   - '[NORM-EXCEPTION-CYCLE]'
   - ParentError
-- name: type-only-exception-hierarchy-must-reach-the-supported-root
+- name: source-exception-may-reach-the-checked-root
   edits:
-  - from: class RemoteError extends RuntimeException {}
-    to: 'class ParentError extends java.lang.Exception {}
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class ParentError extends java.lang.Exception {}
+        class RemoteError extends ParentError {}
+- name: a-non-throwable-root-is-not-an-exception-contract
+  edits:
+    - from: 'class RemoteError extends RuntimeException {}'
+      to: |-
+        class ParentError {}
+        class RemoteError extends ParentError {}
+  reject: ['[NORM-EXCEPTION-BASE]', 'RemoteError']
 
-      class RemoteError extends ParentError {}'
-  reject:
-  - '[NORM-EXCEPTION-BASE]'
-  - ParentError
 - name: always-throw-after-finally-write
   edits:
   - from: attempts = attempts + 1;
@@ -208,13 +228,15 @@
         - write: {target: attempts, value: 'attempts + 1'}
         - write: {target: attempts, value: 'attempts + 3'}
 
-- name: payload-bearing-terminal-finally-is-outside-the-published-subset
+- name: payload-bearing-terminal-finally-keeps-the-new-failure
   edits:
     - from: 'attempts = attempts + 1;'
       to: 'attempts = attempts + 1; throw new RuntimeException("message");'
-  reject:
-    - '[NORM-PROJECT]'
-    - 'finally throw requires a source-declared type-only exception'
+  expect:
+    - {path: [R], value: '⊥'}
+    - path: [throws]
+      add:
+        - {type: java.lang.RuntimeException, when: 'true', payload: '"message"'}
 
 - name: inactive-finally-return-does-not-erase-pending-result
   edits:
