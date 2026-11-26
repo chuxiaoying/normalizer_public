@@ -770,27 +770,6 @@ fn proof_can_skip_as_unrelated(left: &Expr, right: &Expr) -> bool {
     !proof_inputs_may_interact(left, right)
 }
 
-// Positive Boolean proofs only. Exhausting this local search proves nothing;
-// the complete arithmetic/Boolean proof below remains responsible for the query.
-fn structural_implication(active: &Expr, goal: &Expr, budget: &mut usize) -> bool {
-    if *budget == 0 {
-        return false;
-    }
-    *budget -= 1;
-    if active == goal || goal.as_bool() == Some(true) || active.as_bool() == Some(false) {
-        return true;
-    }
-    if let Some((BinOpKind::And, l, r)) = goal.as_binop() {
-        if structural_implication(active, l, budget) && structural_implication(active, r, budget) {
-            return true;
-        }
-    }
-    if let Some((BinOpKind::And, l, r)) = active.as_binop() {
-        return structural_implication(l, goal, budget) || structural_implication(r, goal, budget);
-    }
-    false
-}
-
 /// Collect exact Boolean facts from a conjunction without interpreting any
 /// arithmetic, call, heap, or relation semantics. A disjunction in the active
 /// path is deliberately rejected because it cannot be represented as one
@@ -949,11 +928,10 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
         );
         return finish(false, Some("run_proof_budget"), true);
     }
-    let structural_proof = structural_implication(active, expr, &mut 2048);
     // Path implication is also an optimization proof. Avoid constructing a
     // second copy of very large merged guards for the arithmetic fallback;
     // failure to prove implication conservatively retains the branch.
-    if !structural_proof && proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
+    if proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
         crate::profile::count(
             &PATH_IMPLIES_BUDGET_SKIPS,
             "math.proof.path_implies.budget_skip",
@@ -968,28 +946,15 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
         );
         return finish(false, Some("input_size_budget"), true);
     }
-    // Propositional validity is sufficient even when the atoms are arithmetic
-    // comparisons. A counterexample is conclusive only for independent Boolean
-    // symbols; correlated comparisons must still use the arithmetic prover.
-    let coverage = if structural_proof {
-        TruthTableCoverage::CoversAll
-    } else if proof_input_size < MAX_TRUTH_TABLE_INPUT_SIZE {
-        // The synthetic NOT adds one node to the already measured input.
+    // Only an exact negative table result replaces the downstream proof.
+    // The synthetic NOT adds one node to the measured input.
+    if proof_input_size < MAX_TRUTH_TABLE_INPUT_SIZE {
         let conditions = [not(active.clone()), expr.clone()];
-        boolean_truth_table_within_size_limit(&conditions)
-    } else {
-        // The unwrapped input fits the arithmetic fallback, but the wrapped
-        // Boolean table does not. Do not report an input-budget decline.
-        TruthTableCoverage::Unknown
-    };
-    match coverage {
-        TruthTableCoverage::CoversAll => {
-            return finish(true, None, false);
-        }
-        TruthTableCoverage::DoesNotCoverAllExact => {
+        if boolean_truth_table_within_size_limit(&conditions)
+            == TruthTableCoverage::DoesNotCoverAllExact
+        {
             return finish(false, None, false);
         }
-        TruthTableCoverage::Unknown => {}
     }
     if proof_can_skip_as_unrelated(active, expr) {
         crate::profile::count(

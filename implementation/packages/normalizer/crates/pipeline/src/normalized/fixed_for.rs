@@ -27,22 +27,11 @@ pub(super) fn assignment_init(init: Option<&S>) -> Option<(&str, &E, &E)> {
     Some((name, target, value))
 }
 
-pub(super) fn may_write_counter(body: &[S], counter: &str) -> bool {
-    body.iter().any(|stmt| match stmt {
-        S::Assign { target: E::Ident(name), .. } => name == counter,
-        S::For { init, body, .. } => assignment_init(init.as_deref())
-            .is_some_and(|(name, ..)| name == counter) || may_write_counter(body, counter),
-        S::Block(body) | S::ForEach { body, .. } =>
-            may_write_counter(body, counter),
-        S::If { then_block, else_block, .. } => may_write_counter(then_block, counter)
-            || else_block.as_ref().is_some_and(|body| may_write_counter(body, counter)),
-        S::Try { body, catches, finally_block } => may_write_counter(body, counter)
-            || catches.iter().any(|handler| may_write_counter(handler.body(), counter))
-            || finally_block.as_ref().is_some_and(|body| may_write_counter(body, counter)),
-        // Directives carry their own writes, not the Java lvalue above.
-        S::LocalIr(_) => true,
-        _ => false,
-    })
+// The assignment-initialized profile proves only a flat body of ordinary
+// assignments to other locals. More complex bodies are not certified.
+pub(super) fn preserves_assignment_counter(body: &[S], counter: &str) -> bool {
+    body.iter().all(|statement| matches!(statement,
+        S::Assign { target: E::Ident(name), .. } if name != counter))
 }
 
 fn declares_counter(statement: &S) -> Option<(&str, &JavaType, &E)> {

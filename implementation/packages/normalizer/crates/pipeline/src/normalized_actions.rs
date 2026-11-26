@@ -256,7 +256,6 @@ fn adapter_scalar_domain(domain: &str) -> Option<Ty> {
     match domain {
         "bool" => Some(Ty::Bool),
         "number" => Some(Ty::Integer),
-        "text" => Some(Ty::Text),
         _ => None,
     }
 }
@@ -339,18 +338,9 @@ impl Engine<'_> {
         // Evaluating an argument may update the engine's effects.
         let arg_types = p.parameters.clone();
         let mut values = Vec::new();
-        for (index, (arg, expected)) in args.iter().zip(arg_types).enumerate() {
+        for (arg, expected) in args.iter().zip(arg_types) {
             let v = self.action_value(arg, env)?;
-            let actual = v.ty();
-            if actual != expected {
-                return Err(fail(format!(
-                    "port argument type mismatch at {}[{}]: expected={} actual={}",
-                    port,
-                    index,
-                    expected.describe(),
-                    actual.describe()
-                )));
-            }
+            need(v.ty() == expected, "port argument type mismatch")?;
             values.push(v.scalar()?);
         }
         Ok(values)

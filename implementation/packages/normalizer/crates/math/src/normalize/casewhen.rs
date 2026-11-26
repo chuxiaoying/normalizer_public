@@ -7,7 +7,7 @@
 //! - 路径守卫冗余消除：branch[k].cond 里 AND 项匹配 NOT(branch[j].cond) (j<k) 剥除
 
 use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
-use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
+use crate::expr::{Expr, ExprKind, Lit, UnaryOpKind};
 use std::collections::HashSet;
 
 pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
@@ -166,32 +166,14 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
         //    非 null value 分支覆盖，应删除，而不是渲染成 `"found:" + null`。
         let (covered_stripped, covered_changed) = dead_branch_by_covered_prev_conds(&same_value_grouped);
 
-        // 1. 先把相邻互补分支 canonicalize 成 else 分支：
-        //    (c, v1), (NOT(c), v2) / (NOT(c), v1), (c, v2) → (first, v1), (true, v2)。
-        //
-        // 语义依据：CaseWhen 按序匹配。第二个分支只有在第一个分支为 false
-        // 时才会被检查；若二者互补，第二个 cond 在该语境下必为 true，
-        // 因此可归一为默认 else。
-        // 只处理相邻互补，不做跨分支重排；比较反演 / De Morgan 互补由 is_not_of 证明。
-        // Work from the original neighbor, not the rewritten guard. No
-        // branch after the first true guard can affect the result.
-        let mut canonicalized_changed = false;
+        // Drop false guards and stop after the first explicit default.
         let mut filtered: Vec<(Expr, Expr)> = Vec::new();
-        for (idx, (original, value)) in covered_stripped.iter().enumerate() {
-            let complementary = idx > 0
-                && (is_not_of(original, &covered_stripped[idx - 1].0)
-                    || is_not_of(&covered_stripped[idx - 1].0, original));
-            canonicalized_changed |= complementary;
-            let condition = if complementary {
-                crate::builder::lit_bool(true)
-            } else {
-                original.clone()
-            };
+        for (condition, value) in &covered_stripped {
             if condition.as_bool() == Some(false) {
                 continue;
             }
             let is_default = condition.as_bool() == Some(true);
-            filtered.push((condition, value.clone()));
+            filtered.push((condition.clone(), value.clone()));
             if is_default {
                 break;
             }
@@ -244,7 +226,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Exp
             || same_value_merged_changed
             || same_value_grouped_changed
             || covered_changed
-            || canonicalized_changed
             || filtered.len() != branches_ref.len()
             || filtered.len() != domain_simplified.len()
             || filtered.len() != same_value_grouped.len()
@@ -323,15 +304,11 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
         return None;
     }
 
-    let (last_cond, last_value) = &branches[branches.len() - 1];
-    let default_value = if last_cond.as_bool() == Some(true) {
-        // An explicit first-match default remains only if its payload is not
-        // less frequent than the other payload.
-        last_value.clone()
-    } else {
-        // Equal counts without an explicit default choose the first payload.
-        values[0].clone()
-    };
+    let (last_cond, default_value) = branches.last()?;
+    if last_cond.as_bool() != Some(true) {
+        return None;
+    }
+    let default_value = default_value.clone();
 
     let mut out: Vec<(Expr, Expr)> = Vec::new();
     for ((_, value), domain) in branches.iter().zip(effective_domains.into_iter()) {

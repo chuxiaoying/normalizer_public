@@ -20,7 +20,6 @@ pub(super) fn column_type(ty: &Ty, nullable_text: bool) -> Option<&'static str> 
         Ty::Integer => Some("number"),
         Ty::Text if nullable_text => Some("text?"),
         Ty::Text => Some("text"),
-        Ty::Bool => Some("bool"),
         _ => None,
     }
 }

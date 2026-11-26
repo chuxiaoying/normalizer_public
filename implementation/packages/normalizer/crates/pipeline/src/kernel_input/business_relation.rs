@@ -56,21 +56,13 @@ impl<'a> Engine<'a> {
             }
             if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
                 return entry.params().iter().any(|(ty, parameter)| parameter == name
-                    && match primitive_type.as_str() {
-                        "integer" => crate::normalized::integral(ty),
-                        "boolean" => matches!(ty, JavaType::Primitive(t) if t == "boolean"),
-                        _ => false,
-                    });
+                    && primitive_type == "integer" && crate::normalized::integral(ty));
             }
             if let Some((op, left, right)) = expr.as_binop() {
                 return matches!(op, BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne
                     | BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
                     | BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
                     && closed(left, table, columns, entry) && closed(right, table, columns, entry);
-            }
-            if let Some((op, operand)) = expr.as_unary_op() {
-                return matches!(op, math::UnaryOpKind::Not | math::UnaryOpKind::Neg)
-                    && closed(operand, table, columns, entry);
             }
             false
         }

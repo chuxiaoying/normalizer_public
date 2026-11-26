@@ -18,31 +18,11 @@ pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bo
     left.vars().is_disjoint(right.vars()) && !(left.has_heap_ref() && right.has_heap_ref())
 }
 
-pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> bool {
-    // A count comparison is not itself a positive Exists. If both
-    // sides are positive, neither orientation can succeed.
-    let (exists_relation, other) = if let Some(relation) = relation_exists_true_relation(left) {
-        (relation, right)
-    } else if let Some(relation) = relation_exists_true_relation(right) {
-        (relation, left)
-    } else {
-        return false;
-    };
-    relation_count_zero_relation(other).is_some_and(|relation| exists_relation == relation)
-}
-
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {
     let Some((op, left_relation, bound)) = relation_count_bound(left) else {
         return false;
     };
-    // Stronger bounds imply Exists, not the reverse. The zero complement
-    // uses only the exact equivalences below.
-    if !match op {
-        BinOpKind::Ne => bound == 0,
-        BinOpKind::Gt => bound >= 0,
-        BinOpKind::Ge | BinOpKind::Eq => bound >= 1,
-        _ => false,
-    } {
+    if op != BinOpKind::Gt || bound < 0 {
         return false;
     }
     let Some(right_relation) = relation_exists_true_relation(right) else {
@@ -74,14 +54,4 @@ pub(super) fn relation_exists_true_relation(
         return None;
     };
     Some(relation)
-}
-
-pub(super) fn relation_count_zero_relation(expr: &Expr) -> Option<&RelationExpr> {
-    let (expr, negated) = match expr.as_unary_op() {
-        Some((UnaryOpKind::Not, operand)) => (operand, true),
-        _ => (expr, false),
-    };
-    let (op, relation, 0) = relation_count_bound(expr)? else { return None; };
-    matches!((op, negated), (BinOpKind::Eq, false) | (BinOpKind::Ne | BinOpKind::Gt, true))
-        .then_some(relation)
 }

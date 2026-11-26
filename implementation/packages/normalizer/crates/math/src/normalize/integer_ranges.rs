@@ -120,9 +120,6 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
         }
         segments.push((start, end, value));
     }
-    if let [(_, _, only_value)] = segments.as_slice() {
-        return Some((vec![], only_value.clone()));
-    }
     // Keep the explicit default and the source's first occurrence of each
     // non-default payload. Partition cells determine effective domains, not a
     // new payload order. In particular do not split a previously grouped
@@ -148,11 +145,11 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
                     continue;
                 }
             }
-            // A segment with no bounds is the sole segment and was
-            // returned above. There is no unconditional guard to build.
+            // Without a bounded guard, keep the original CASE and let
+            // normal CASE simplification select its payload.
             let lower = a.as_ref().map(|n| b::ge(subject.clone(), b::lit_integer(n.clone())));
             let upper = z.as_ref().map(|n| b::le(subject.clone(), b::lit_integer(n.clone())));
-            intervals.extend(lower.into_iter().chain(upper).reduce(b::and));
+            intervals.push(lower.into_iter().chain(upper).reduce(b::and)?);
         }
         if let Some(domain) = intervals.into_iter().reduce(b::or) {
             out.push((domain, value));

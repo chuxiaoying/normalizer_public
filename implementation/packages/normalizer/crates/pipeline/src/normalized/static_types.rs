@@ -28,7 +28,6 @@ impl Kind {
             Self::Number => "number",
             Self::Float => "float",
             Self::Double => "double",
-            Self::DecimalCarrier => "java.math.BigDecimal",
             Self::Bool => "bool",
             Self::Sequence => "source sequence<number>",
             _ => "source value",
@@ -457,7 +456,7 @@ impl Admission<'_> {
         {
             return Err(not_proven("assignment counter needs an already initialized int/long local"));
         }
-        if super::fixed_for::may_write_counter(body, name) {
+        if !super::fixed_for::preserves_assignment_counter(body, name) {
             return Err(not_proven(&format!("body must preserve proven induction counter {name}")));
         }
         Ok(())

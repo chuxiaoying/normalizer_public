@@ -385,7 +385,6 @@ impl Project {
                     JavaType::Array(element) if self.direct_source && crate::normalized::integral(element) =>
                         Ty::Seq(Box::new(Ty::Integer)),
                     _ if self.direct_source && self.source_owner(item).is_some() => Ty::Ref,
-                    _ if adapter_integer_component(item).is_some() => Ty::Integer,
                     _ => return Err(fail("unsupported Java array type")),
                 };
                 Ok(Ty::Seq(Box::new(ty)))
@@ -867,8 +866,7 @@ fn integer_definition_id(expr: &Expr) -> Option<u64> {
 
 fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) -> Result<Value> {
     Ok(match t {
-        Ty::Unit => Value::Term(Ty::Unit, b::lit_null()),
-        Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) => Value::Term(
+        Ty::Vector(_) | Ty::Record(_) => Value::Term(
             t.clone(),
             math::domains::composite::apply(
                 "value.input",
@@ -894,7 +892,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
         Ty::Integer => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Integer)),
         Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),
         Ty::Text => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Text)),
-        Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
+        Ty::Unit | Ty::Task(_) | Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
             return Err(fail("this value type has no input symbol contract")),
     })
 }
@@ -903,13 +901,7 @@ type Env = BTreeMap<String, Value>;
 fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
     let then_ty = yes.ty();
     let else_ty = no.ty();
-    if then_ty != else_ty {
-        return Err(fail(format!(
-            "branch result type mismatch: then={} else={}",
-            then_ty.describe(),
-            else_ty.describe()
-        )));
-    }
+    need(then_ty == else_ty, "branch result type mismatch")?;
     let (yes, no) = match (yes, no) {
         (Value::LocalTextMap(yes), Value::LocalTextMap(no)) =>
             return Ok(Value::LocalTextMap(yes.join(c, no))),

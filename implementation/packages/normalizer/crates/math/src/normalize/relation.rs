@@ -30,7 +30,6 @@ fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     let exists = || crate::domains::relation::relation_exists(relation.clone());
     Some(match op {
         Eq | Le => builder::not(exists()),
-        Ne | Gt => exists(),
         _ => return None,
     })
 }

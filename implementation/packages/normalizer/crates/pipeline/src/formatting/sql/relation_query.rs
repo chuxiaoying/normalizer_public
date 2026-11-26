@@ -57,13 +57,8 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
                 if left { 0 } else if right { 1 } else { 2 }
             };
             let fmt_predicate = |expr: &Expr, ctx: &mut crate::FormatCtx| {
-                let Some((op, reverse, left, right)) = comparison(expr) else {
+                let Some((op, _, left, right)) = comparison(expr) else {
                     return crate::format_expr_with_ctx(expr, ctx);
-                };
-                let (op, left, right) = if rank(right) < rank(left) {
-                    (reverse, right, left)
-                } else {
-                    (op, left, right)
                 };
                 let token = super::binop_display_token(op);
                 format!("{} {token} {}", crate::format_expr_with_ctx(left, ctx), crate::format_expr_with_ctx(right, ctx))

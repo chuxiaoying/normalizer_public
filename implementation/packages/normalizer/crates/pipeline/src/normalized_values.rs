@@ -9,38 +9,14 @@ enum ValueBoundary {
 }
 
 impl Ty {
-    pub(crate) fn describe(&self) -> String {
-        match self {
-            Self::Unit => "unit".into(),
-            Self::Task(t) => format!("task<{}>", t.describe()),
-            Self::Bool => "bool".into(),
-            Self::Integer => "number".into(),
-            Self::Decimal => "exact decimal".into(),
-            Self::Text => "text?".into(),
-            Self::OrderedTextMap => "map<text,text>".into(),
-            Self::LocalTextMap => "local nonescaping text map".into(),
-            Self::LocalRelation => "local nonescaping relation".into(),
-            Self::Ref => "ref?".into(),
-            Self::Vector(t) => format!("vector<{}>", t.describe()),
-            Self::Record(f) => format!(
-                "record<{}>",
-                f.iter()
-                    .map(|(n, t)| format!("{n}:{}", t.describe()))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
-            Self::Seq(item) => format!("source sequence<{}>", item.describe()),
-        }
-    }
     fn value_allowed(&self, boundary: ValueBoundary) -> bool {
         let state = boundary == ValueBoundary::State;
         match self {
             Self::Unit | Self::Bool | Self::Integer | Self::Text => true,
             Self::OrderedTextMap | Self::Ref => state,
-            Self::Task(t) => state && t.value_allowed(boundary),
             Self::Vector(t) => t.value_allowed(boundary),
             Self::Record(fields) => fields.values().all(|field| field.value_allowed(boundary)),
-            Self::Decimal | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
+            Self::Task(_) | Self::Decimal | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
         }
     }
 
@@ -59,8 +35,7 @@ impl Ty {
             Self::Bool => Primitive::Boolean,
             Self::Integer => Primitive::Number,
             Self::Text => Primitive::String,
-            Self::Task(_)
-            | Self::Vector(_)
+            Self::Vector(_)
             | Self::Record(_)
             | Self::OrderedTextMap => Primitive::Composite,
             _ => return Err(fail("state values cannot erase source sequence contracts")),

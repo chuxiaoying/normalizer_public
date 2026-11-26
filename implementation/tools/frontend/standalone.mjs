@@ -62,8 +62,7 @@ function leadingParameterCall(fn, params) {
   const declared = new Set(params);
   const closedPrefix = nodes.every((statement, index) => {
     if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) {
-      return ts.isReturnStatement(statement) && index === nodes.length - 1
-        || ts.isExpressionStatement(statement) && index === 0;
+      return ts.isReturnStatement(statement) && index === nodes.length - 1;
     }
     return statement.declarationList.declarations.every(({name, initializer}) => {
       if (!ts.isIdentifier(name) || !initializer || declared.has(name.text)) return false;

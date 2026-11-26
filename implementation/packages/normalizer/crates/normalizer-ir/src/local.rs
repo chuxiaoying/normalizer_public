@@ -18,7 +18,7 @@ pub enum LocalIr {
     FoldIndexRange {
         binding: String,
         lower: num_bigint::BigInt,
-        upper: IntegerOperand,
+        upper: String,
         skip_before: num_bigint::BigInt,
         stop_after: num_bigint::BigInt,
     },
@@ -62,7 +62,7 @@ pub enum ScalarOperand {
     Integer(num_bigint::BigInt),
 }
 
-/// The closed operands shared by integer ranges and indexed folds.
+/// The closed endpoints of an integer range.
 #[derive(Clone, Debug, PartialEq)]
 pub enum IntegerOperand {
     Local(String),
@@ -271,11 +271,11 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         tokens.expect("[")?;
         let lower = integer(&mut tokens)?;
         tokens.expect(",")?;
-        let upper = IntegerOperand::parse(tokens.value()?, "expected integer upper bound")?;
+        let upper = tokens.name()?;
         tokens.expect(")")?;
         tokens.expect("as")?;
         let index = tokens.name()?;
-        if index == binding || matches!(&upper, IntegerOperand::Local(n) if n == &index || n == &binding) {
+        if index == binding || upper == index || upper == binding {
             return Err("indexed fold needs separate bound, accumulator and index".into());
         }
         let counter = |t: &mut Tokens<'_>| {

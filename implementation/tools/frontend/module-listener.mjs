@@ -112,7 +112,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
         && (node.operator === ts.SyntaxKind.PlusToken || node.operator === ts.SyntaxKind.MinusToken)) {
       return numericTruth(node.operand); // the sign does not change whether the exact value is zero
     }
-    if (!ts.isNumericLiteral(node)) return undefined;
+    if (!ts.isNumericLiteral(node)) fail('listener dispatch condition must be a closed Boolean');
     const spelling = node.getText().replaceAll('_', '');
     if (/^0[xob]/i.test(spelling)) return /[1-9a-f]/i.test(spelling.slice(2));
     // No Number conversion: exponent digits do not make a zero significand nonzero.
@@ -126,9 +126,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
       const operand = gate(node.operand);
       return operand.op === 'const' ? value('bool', !operand.value) : {op: 'not', value: operand};
     }
-    const numeric = numericTruth(node);
-    if (numeric !== undefined) return value('bool', numeric);
-    fail('listener dispatch condition must be a closed Boolean');
+    return value('bool', numericTruth(node));
   }
   for (const st of dispatches) {
     if (!ts.isIfStatement(st) || st.elseStatement)

@@ -83,18 +83,18 @@ export function compileTypedTuple(physicalPath, sf, fn) {
       return {kind: 'literal', items: expression.elements.map(slot)};
     }
   }
-  function plan(statements, fallthrough) {
+  function plan(statements) {
     const [head, ...tail] = statements;
-    if (!head) return fallthrough?.();
+    if (!head) return;
     if (ts.isIfStatement(head)) {
       const cond = head.elseStatement ? lowerBool(head.expression, scope) : simpleBool(head.expression, scope);
       const known = exactBool(cond);
-      const next = () => plan(tail, fallthrough);
+      const next = () => plan(tail);
       if (known !== undefined) {
         // The closed TypeScript source was checked before picking a reachable arm.
         const picked = known ? head.thenStatement : head.elseStatement;
         if (!picked) return next();
-        return plan(ts.isBlock(picked) ? [...picked.statements] : [picked], next);
+        return plan(ts.isBlock(picked) ? [...picked.statements] : [picked]);
       }
       if (!head.elseStatement) {
         return {kind: 'branch', cond, yes: tupleReturn(head.thenStatement), no: next()};
@@ -125,8 +125,6 @@ export function compileTypedTuple(physicalPath, sf, fn) {
   };
   function truth(expr) {
     expr = unwrap(expr);
-    const simple = lowerBool(expr, inputScope);
-    if (simple) return simple;
     if (ts.isBinaryExpression(expr)) {
       if (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
         return choose(truth(expr.left), truth(expr.right), literal('bool', false));

@@ -1271,15 +1271,7 @@ impl Engine<'_> {
                 &(context + "\nresult=not-produced"),
             )
         })?;
-        let expected = &self.methods[id].returns;
-        let actual = value.ty();
-        if actual != *expected {
-            return Err(fail(format!(
-                "semantic result type mismatch: expected={} actual={}",
-                expected.describe(),
-                actual.describe()
-            )));
-        }
+        need(value.ty() == self.methods[id].returns, "semantic result type mismatch")?;
         self.active.remove(&format!("semantic:{name}"));
         Ok(value)
     }

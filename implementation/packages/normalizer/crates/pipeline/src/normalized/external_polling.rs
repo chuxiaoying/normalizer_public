@@ -68,8 +68,7 @@ fn poll_operand(expr: &JavaExpr) -> Option<&JavaExpr> {
             left,
             right,
         } => match (left.as_ref(), right.as_ref()) {
-            (operand, JavaExpr::Lit(JavaLit::Bool(_)))
-            | (JavaExpr::Lit(JavaLit::Bool(_)), operand) => poll_operand(operand),
+            (operand, JavaExpr::Lit(JavaLit::Bool(_))) => poll_operand(operand),
             _ => None,
         },
         _ => Some(expr),

@@ -139,9 +139,7 @@ pub(crate) fn bound_implies(existing: ConstraintBound, target: ConstraintBound) 
     match (existing, target) {
         (Eq(point), required) => point_satisfies(required, point),
         (Ne(_), _) => false,
-        (known, Ne(point)) => !point_satisfies(known, point),
         (Gt(a), Gt(b) | Ge(b)) | (Ge(a), Ge(b)) => a >= b,
-        (Ge(a), Gt(b)) => a > b,
         (Lt(a), Lt(b)) | (Le(a), Le(b)) => a <= b,
         (Lt(a), Le(b)) => i128::from(a) <= i128::from(b) + 1,
         (Le(a), Lt(b)) => a < b,

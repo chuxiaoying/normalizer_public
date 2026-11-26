@@ -109,20 +109,15 @@ impl Engine<'_> {
     }
 
     pub(super) fn execute_index_fold(
-        &self, binding: &str, lower: &math::Integer, upper: &IntegerOperand,
+        &self, binding: &str, lower: &math::Integer, upper: &str,
         skip_before: &math::Integer, stop_after: &math::Integer, env: &mut Env,
     ) -> Result<()> {
         let current = env.get(binding).ok_or_else(|| fail("indexed fold needs an initialized accumulator"))?;
         need(current.ty() == Ty::Integer, "indexed fold needs a numeric accumulator")?;
         let mut total = current.scalar()?;
-        let end = match upper {
-            IntegerOperand::Integer(n) => b::lit_integer(n.clone()),
-            IntegerOperand::Local(name) => {
-                let value = env.get(name).ok_or_else(|| fail("unbound indexed fold upper bound"))?;
-                need(value.ty() == Ty::Integer, "indexed fold upper bound must be numeric")?;
-                value.scalar()?
-            }
-        };
+        let bound = env.get(upper).ok_or_else(|| fail("unbound indexed fold upper bound"))?;
+        need(bound.ty() == Ty::Integer, "indexed fold upper bound must be numeric")?;
+        let end = bound.scalar()?;
         let first = std::cmp::max(lower, skip_before);
         if stop_after < first { return Ok(()); }
         let span: math::Integer = stop_after - first + 1;

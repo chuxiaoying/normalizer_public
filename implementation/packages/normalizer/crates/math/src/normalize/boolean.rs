@@ -133,7 +133,7 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
 fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     if context.iter().any(|c| {
         !profile_pair_can_skip_proof_check(c, expr)
-            && (is_complement(c, expr) || relation_cardinality_contradicts(c, expr))
+            && is_complement(c, expr)
     }) {
         return true;
     }
@@ -231,10 +231,6 @@ fn factor_common_or_disjunct_under_and(conjuncts: &[Expr]) -> Option<Expr> {
                 .filter(|right| !common.iter().any(|common| common == *right))
                 .cloned()
                 .collect();
-            if right_rest.is_empty() {
-                continue;
-            }
-
             // Guard against blind distribution.  This rewrite is most useful
             // when the remainders can immediately simplify, e.g.
             // `(C || X || Y) && (C || !Y) -> C || ((X || Y) && !Y) -> C || (X && !Y)`.
@@ -302,9 +298,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
                     if other_subject != subject { return true; }
                     op == BinOpKind::Eq || atom == other
                 });
-                if matches!(domain, EqualityAtomDomain::Allocated) {
-                    discard_null_guard(&mut out, BinOpKind::Ne, &subject);
-                }
             } else {
                 for existing in &out {
                     let Some((existing_op, existing_subject, other)) = equality_atom(existing, domain) else { continue; };
