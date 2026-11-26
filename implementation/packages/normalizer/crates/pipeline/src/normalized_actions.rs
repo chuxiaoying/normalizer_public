@@ -277,16 +277,16 @@ impl Engine<'_> {
         let mut values = Vec::new();
         for (index, (arg, expected)) in args.iter().zip(arg_types).enumerate() {
             let v = self.action_value(arg, env)?;
-            need(
-                v.ty() == expected,
-                &format!(
+            let actual = v.ty();
+            if actual != expected {
+                return Err(fail(format!(
                     "port argument type mismatch at {}[{}]: expected={} actual={}",
                     port,
                     index,
                     expected.describe(),
-                    v.ty().describe()
-                ),
-            )?;
+                    actual.describe()
+                )));
+            }
             values.push(v.scalar()?);
         }
         Ok((values, ty))

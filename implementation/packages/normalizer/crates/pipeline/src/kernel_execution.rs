@@ -1219,14 +1219,14 @@ impl Engine<'_> {
             )
         })?;
         let expected = Ty::parse(&f.returns)?;
-        need(
-            value.ty() == expected,
-            &format!(
+        let actual = value.ty();
+        if actual != expected {
+            return Err(fail(format!(
                 "semantic result type mismatch: expected={} actual={}",
                 expected.describe(),
-                value.ty().describe()
-            ),
-        )?;
+                actual.describe()
+            )));
+        }
         self.active.remove(&format!("semantic:{name}"));
         Ok(value)
     }

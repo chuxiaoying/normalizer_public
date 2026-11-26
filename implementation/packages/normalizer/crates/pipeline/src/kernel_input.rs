@@ -863,20 +863,21 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
 type Env = BTreeMap<String, Value>;
 
 fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
-    need(
-        yes.ty() == no.ty(),
-        &format!(
+    let then_ty = yes.ty();
+    let else_ty = no.ty();
+    if then_ty != else_ty {
+        return Err(fail(format!(
             "branch result type mismatch: then={} else={}",
-            yes.ty().describe(),
-            no.ty().describe()
-        ),
-    )?;
+            then_ty.describe(),
+            else_ty.describe()
+        )));
+    }
     let (yes, no) = match (yes, no) {
         (Value::LocalTextMap(yes), Value::LocalTextMap(no)) =>
             return Ok(Value::LocalTextMap(yes.join(c, no))),
         other => other,
     };
-    let ty = yes.ty();
+    let ty = then_ty;
     if ty == Ty::Integer {
         if let Some(extremum) = math::case_orientation::ordered_number_selection(
             &c, &yes.scalar()?, &no.scalar()?, &math::DefaultSortContext,
