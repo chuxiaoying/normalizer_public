@@ -116,7 +116,10 @@ impl<'a> RectangularCounter<'a> {
         let mut counters = std::collections::BTreeSet::<&str>::new();
         while let S::For { init, cond, update, body } = statement {
             let (name, ty, start) = declares_counter(init.as_deref()?)?;
-            if !super::integral(ty) || literal(start)? != 0 || !counters.insert(name) { return None; }
+            if !super::integral(ty) || literal(start)? != 0 { return None; }
+            // Lexical binding uniqueness is checked once by source
+            // admission. This set is only for proving independence.
+            counters.insert(name);
             let (E::Ident(end), 1, inclusive) =
                 induction(name, cond.as_ref(), update.as_ref())?
             else { return None; };
@@ -176,5 +179,23 @@ mod rectangular_proof_contract {
         ] {
             with_loop(body, |statement| assert!(RectangularCounter::from_for(statement).is_none()));
         }
+    }
+
+    #[test]
+    fn repeated_local_names_are_rejected_by_source_binding_admission() {
+        let program = parse(
+            "class Grid { static int count(int rows, int columns) {
+                int total = 0;
+                for (int i = 0; i < rows; i++) {
+                    for (int i = 0; i < columns; i++) { total = total + 1; }
+                }
+                return total;
+            } }",
+            "Grid.java",
+            &ParseOptions::default(),
+        ).unwrap();
+        let error = super::super::validate(&program, "Grid.count").err()
+            .expect("overlapping local declarations are illegal Java");
+        assert!(error.contains("[NORM-SOURCE-NAME]") && error.contains("duplicate local declaration i"));
     }
 }
