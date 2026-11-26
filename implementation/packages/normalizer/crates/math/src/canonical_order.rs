@@ -70,31 +70,11 @@ pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     // avoids recomputing the same DisplayIR key in high-frequency AND/OR sorts.
     if !expr.has_heap_ref() && ctx.temporal_aliases().is_none() && ctx.external_names().is_none() {
         if let Some(cached) = CANONICAL_ORDER_CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
-            if crate::profile::cache_observation_enabled() {
-                crate::profile::cache_lookup(
-                    "ordering",
-                    "ordering_axiom",
-                    true,
-                    expr.structural_hash(),
-                    expr.size(),
-                    "ordering_axiom_key",
-                );
-            }
             return cached;
-        }
-        if crate::profile::cache_observation_enabled() {
-            crate::profile::cache_lookup(
-                "ordering",
-                "ordering_axiom",
-                false,
-                expr.structural_hash(),
-                expr.size(),
-                "ordering_axiom_key",
-            );
         }
         let out = canonical_order_key_uncached(expr, ctx);
         let cache_weight = expr.size();
-        crate::cache::with_entry_budget("ordering_axiom", cache_weight, || {
+        crate::cache::with_entry_budget(cache_weight, || {
             CANONICAL_ORDER_CACHE.with(|cache| {
                 let mut cache = cache.borrow_mut();
                 // Preserve the ordering table's historical one-key offset.

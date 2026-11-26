@@ -18,36 +18,28 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
         return value;
     }
     let start = (branches.len() > 1 && crate::profile::enabled()).then(std::time::Instant::now);
-    let (flatten_size, flatten_depth) = branches.iter().fold(
+    let cost_gate = || branches.iter().fold(
         (0usize, 0usize), |(size, depth), (condition, value)| {
             (size.saturating_add(condition.size()).saturating_add(value.size()),
              depth.max(value.depth()))
         },
     );
-    let gate_skipped = flatten_size > 32_768 || flatten_depth > 16;
     let output = simplify_impl(expr, branches, ctx);
     if let Some(start) = start {
-        let skip_reason = if gate_skipped {
+        let (flatten_size, flatten_depth) = cost_gate();
+        let skip_reason = if flatten_size > 32_768 || flatten_depth > 16 {
             Some("flatten_cost_gate")
         } else if output == *expr {
             Some("no_rewrite")
         } else {
             None
         };
-        let nested_values = branches.iter().filter(|(_, value)| value.as_case_when().is_some()).count();
         crate::profile::rule_event(
             "math.casewhen.group",
             expr.size(),
             output.size(),
             start.elapsed().as_micros(),
             skip_reason,
-            &[
-                ("branch_count", branches.len().to_string()),
-                ("flatten_size", flatten_size.to_string()),
-                ("flatten_depth", flatten_depth.to_string()),
-                ("nested_values", nested_values.to_string()),
-                ("flatten_gate", (!gate_skipped).to_string()),
-            ],
         );
     }
     output

@@ -52,72 +52,6 @@ static PATH_IMPLIES_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 // rather than treating an unproved coverage claim as true.
 const MAX_TRUTH_TABLE_INPUT_SIZE: usize = 32_768;
 
-fn emit_proof_rule_event(
-    category: &str,
-    input_size: usize,
-    output_size: usize,
-    start: Option<Instant>,
-    cache_hit: bool,
-    cache_miss: bool,
-    budget_skip: bool,
-    result: bool,
-    skip_reason: Option<&str>,
-    extra: &[(&str, String)],
-) {
-    let elapsed_us = start.map_or(0, |started| started.elapsed().as_micros());
-    let mut fields = vec![
-        ("proof_input_size", input_size.to_string()),
-        ("cache_hit", usize::from(cache_hit).to_string()),
-        ("cache_miss", usize::from(cache_miss).to_string()),
-        ("budget_skip", usize::from(budget_skip).to_string()),
-        ("proof_result", result.to_string()),
-    ];
-    fields.extend(extra.iter().map(|(key, value)| (*key, value.clone())));
-    crate::profile::rule_event(
-        category,
-        input_size,
-        output_size,
-        elapsed_us,
-        skip_reason,
-        &fields,
-    );
-}
-
-fn emit_path_implies_event(
-    active: &Expr,
-    expr: &Expr,
-    output_size: usize,
-    start: Option<Instant>,
-    cache_hit: bool,
-    cache_miss: bool,
-    budget_skip: bool,
-    result: bool,
-    skip_reason: Option<&str>,
-) {
-    let extra = [
-        ("active_hash", active.structural_hash().to_string()),
-        ("expr_hash", expr.structural_hash().to_string()),
-        ("active_size", active.size().to_string()),
-        ("expr_size", expr.size().to_string()),
-        ("active_depth", active.depth().to_string()),
-        ("expr_depth", expr.depth().to_string()),
-        ("active_case_when", active.has_case_when().to_string()),
-        ("expr_case_when", expr.has_case_when().to_string()),
-    ];
-    emit_proof_rule_event(
-        "math.proof.path_implies",
-        active.size().saturating_add(expr.size()),
-        output_size,
-        start,
-        cache_hit,
-        cache_miss,
-        budget_skip,
-        result,
-        skip_reason,
-        &extra,
-    );
-}
-
 thread_local! {
     static CONDITIONS_COVER_CACHE: RefCell<HashMap<Vec<Expr>, bool>> = RefCell::new(HashMap::new());
     static CONDITIONS_COVER_DISJUNCTION_CACHE: RefCell<HashMap<Vec<Expr>, Expr>> = RefCell::new(HashMap::new());
@@ -386,17 +320,12 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
                 format!("conds={} size_budget={}", relevant.len(), MAX_TRUTH_TABLE_INPUT_SIZE)
             },
         );
-        emit_proof_rule_event(
+        crate::profile::rule_event(
             "math.proof.conditions_cover_all",
             proof_input_size,
             0,
-            profile_start,
-            false,
-            cache_miss,
-            true,
-            false,
+            profile_start.map_or(0, |start| start.elapsed().as_micros()),
             Some(reason),
-            &[("condition_count", relevant.len().to_string())],
         );
         false
     };
@@ -412,17 +341,12 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
             "math.proof.conditions_cover_all.cache_hit",
             |_| format!("conds={}", relevant.len()),
         );
-        emit_proof_rule_event(
+        crate::profile::rule_event(
             "math.proof.conditions_cover_all",
             proof_input_size,
             usize::from(cached),
-            profile_start,
-            true,
-            false,
-            false,
-            cached,
+            profile_start.map_or(0, |start| start.elapsed().as_micros()),
             None,
-            &[("condition_count", relevant.len().to_string())],
         );
         return cached;
     }
@@ -444,17 +368,12 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
             );
         }
         conditions_cover_cache_insert(&relevant, true);
-        emit_proof_rule_event(
+        crate::profile::rule_event(
             "math.proof.conditions_cover_all",
             proof_input_size,
             1,
-            profile_start,
-            false,
-            true,
-            false,
-            true,
+            profile_start.map_or(0, |start| start.elapsed().as_micros()),
             None,
-            &[("condition_count", relevant.len().to_string())],
         );
         true
     };
@@ -520,39 +439,23 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
             start,
         );
     }
-    emit_proof_rule_event(
+    crate::profile::rule_event(
         "math.proof.conditions_cover_all",
         proof_input_size,
         usize::from(result),
-        profile_start,
-        false,
-        true,
-        false,
-        result,
+        profile_start.map_or(0, |start| start.elapsed().as_micros()),
         None,
-        &[("condition_count", relevant.len().to_string())],
     );
     result
 }
 
 fn conditions_cover_cache_get(conds: &[Expr]) -> Option<bool> {
-    let cached = CONDITIONS_COVER_CACHE.with(|cache| cache.borrow().get(conds).copied());
-    if crate::profile::cache_observation_enabled() {
-        crate::profile::cache_lookup(
-            "proof",
-            "conditions_cover",
-            cached.is_some(),
-            proof_key_hash(conds),
-            conds.iter().map(Expr::size).sum(),
-            "conditions_cover_all",
-        );
-    }
-    cached
+    CONDITIONS_COVER_CACHE.with(|cache| cache.borrow().get(conds).copied())
 }
 
 fn conditions_cover_cache_insert(conds: &[Expr], value: bool) {
     let cache_weight: usize = conds.iter().map(Expr::size).sum();
-    crate::cache::with_entry_budget("conditions_cover", cache_weight, || {
+    crate::cache::with_entry_budget(cache_weight, || {
         CONDITIONS_COVER_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover");
@@ -666,7 +569,7 @@ fn conditions_cover_disjunction_cache_insert(conds: &[Expr], value: Expr) {
         .map(Expr::size)
         .sum::<usize>()
         .saturating_add(value.size());
-    crate::cache::with_entry_budget("conditions_cover_disjunction", cache_weight, || {
+    crate::cache::with_entry_budget(cache_weight, || {
         CONDITIONS_COVER_DISJUNCTION_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover_disjunction");
@@ -678,31 +581,8 @@ fn path_proof_cache_get(
     cache_cell: &'static std::thread::LocalKey<RefCell<HashMap<(Expr, Expr), bool>>>,
     active: &Expr,
     expr: &Expr,
-    cache_kind: &str,
 ) -> Option<bool> {
-    let cached =
-        cache_cell.with(|cache| cache.borrow().get(&(active.clone(), expr.clone())).copied());
-    if crate::profile::cache_observation_enabled() {
-        crate::profile::cache_lookup(
-            "proof",
-            cache_kind,
-            cached.is_some(),
-            proof_pair_hash(active, expr),
-            active.size().saturating_add(expr.size()),
-            cache_kind,
-        );
-    }
-    cached
-}
-
-fn proof_key_hash(exprs: &[Expr]) -> u64 {
-    exprs.iter().fold(0x9e37_79b9_7f4a_7c15, |hash, expr| {
-        hash.rotate_left(7) ^ expr.structural_hash()
-    })
-}
-
-fn proof_pair_hash(active: &Expr, expr: &Expr) -> u64 {
-    active.structural_hash().rotate_left(17) ^ expr.structural_hash()
+    cache_cell.with(|cache| cache.borrow().get(&(active.clone(), expr.clone())).copied())
 }
 
 fn path_proof_cache_insert(
@@ -712,7 +592,7 @@ fn path_proof_cache_insert(
     value: bool,
 ) {
     let cache_weight = active.size().saturating_add(expr.size());
-    crate::cache::with_entry_budget("path_proof", cache_weight, || {
+    crate::cache::with_entry_budget(cache_weight, || {
         cache_cell.with(|cache| {
             let mut cache = cache.borrow_mut();
             crate::cache::insert_bounded(&mut cache, (active.clone(), expr.clone()), value, crate::cache::DEFAULT_KEY_LIMIT, "path_proof");
@@ -861,39 +741,31 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     }
     let profile_start = crate::profile::enabled().then(Instant::now);
     let proof_input_size = active.size().saturating_add(expr.size());
-    if let Some(cached) = path_proof_cache_get(&PATH_IMPLIES_CACHE, active, expr, "path_implies") {
+    if let Some(cached) = path_proof_cache_get(&PATH_IMPLIES_CACHE, active, expr) {
         crate::profile::count(
             &PATH_IMPLIES_CACHE_HITS,
             "math.proof.path_implies.cache_hit",
             |_| format!("active_size={} expr_size={}", active.size(), expr.size()),
         );
-        emit_path_implies_event(
-            active,
-            expr,
+        crate::profile::rule_event(
+            "math.proof.path_implies",
+            proof_input_size,
             usize::from(cached),
-            profile_start,
-            true,
-            false,
-            false,
-            cached,
+            profile_start.map_or(0, |start| start.elapsed().as_micros()),
             None,
         );
         return cached;
     }
-    let finish = |result: bool, skip_reason: Option<&str>, budget_skipped: bool| {
+    let finish = |result: bool, skip_reason: Option<&str>| {
         // A depleted run cannot supply a durable proof result.
         if skip_reason != Some("run_proof_budget") {
             path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, result);
         }
-        emit_path_implies_event(
-            active,
-            expr,
+        crate::profile::rule_event(
+            "math.proof.path_implies",
+            proof_input_size,
             usize::from(result),
-            profile_start,
-            false,
-            true,
-            budget_skipped,
-            result,
+            profile_start.map_or(0, |start| start.elapsed().as_micros()),
             skip_reason,
         );
         result
@@ -901,7 +773,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     let mut exact_facts = HashMap::new();
     if exact_active_facts(active, &mut exact_facts) {
         if let Some(result) = evaluate_with_exact_facts(expr, &exact_facts) {
-            return finish(result, Some("exact_active_facts"), false);
+            return finish(result, Some("exact_active_facts"));
         }
     }
     crate::profile::count(
@@ -927,7 +799,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
                 format!("active_size={} expr_size={} {context}", active.size(), expr.size())
             },
         );
-        return finish(false, Some(reason), true);
+        return finish(false, Some(reason));
     }
     // Only an exact negative table result replaces the downstream proof.
     // The synthetic NOT adds one node to the measured input.
@@ -936,7 +808,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
         if boolean_truth_table_within_size_limit(&conditions)
             == TruthTableCoverage::DoesNotCoverAllExact
         {
-            return finish(false, None, false);
+            return finish(false, None);
         }
     }
     if proof_can_skip_as_unrelated(active, expr) {
@@ -945,7 +817,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
             "math.proof.path_implies.unrelated_skip",
             |_| format!("active_size={} expr_size={}", active.size(), expr.size()),
         );
-        return finish(false, Some("unrelated_atoms"), false);
+        return finish(false, Some("unrelated_atoms"));
     }
     let counterexample_conditions = [active.clone(), not(expr.clone())];
     if boolean_conditions_have_independent_model(&counterexample_conditions) {
@@ -954,7 +826,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
             "math.proof.path_implies.independent_counterexample",
             |_| format!("active_size={} expr_size={}", active.size(), expr.size()),
         );
-        return finish(false, Some("independent_counterexample"), false);
+        return finish(false, Some("independent_counterexample"));
     }
     crate::profile::count(
         &PATH_IMPLIES_NORMALIZE_FALLBACKS,
@@ -965,7 +837,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     // conjunction intact lets the interval/contradiction solver use its facts
     // without distributing the negation of a large path into a disjunction.
     let result = crate::normalize(and(active.clone(), not(expr.clone()))).as_bool() == Some(false);
-    finish(result, None, false)
+    finish(result, None)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -92,10 +92,6 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
             output.size(),
             start.elapsed().as_micros(),
             skip_reason,
-            &[
-                ("candidate_nodes", expr.size().to_string()),
-                ("rewrite", (output != *expr).to_string()),
-            ],
         );
     }
     output

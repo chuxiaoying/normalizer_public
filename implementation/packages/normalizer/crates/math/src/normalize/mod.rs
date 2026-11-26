@@ -33,7 +33,6 @@ use std::time::Instant;
 thread_local! {
     static DEFAULT_NORMALIZE_CACHE: RefCell<HashMap<Expr, Expr>> = RefCell::new(HashMap::new());
     static DEFAULT_SIMPLIFY_ONCE_CACHE: RefCell<HashMap<Expr, Expr>> = RefCell::new(HashMap::new());
-    static NORMALIZE_RUN_CACHE_COUNTS: RefCell<(u64, u64)> = RefCell::new((0, 0));
     static ACTIVE_BUDGET_ABORT: RefCell<Option<NormalizationLimit>> = RefCell::new(None);
 }
 
@@ -74,12 +73,9 @@ struct NormalizeBudget {
     pub max_candidate_nodes: usize,
     pub max_proof_nodes: usize,
     pub steps: usize,
-    pub rewrites: usize,
     pub candidate_nodes: usize,
     pub proof_nodes: usize,
     pub peak_nodes: usize,
-    pub budget_skips: usize,
-    pub last_skip: Option<BudgetKind>,
     pub exhausted: Option<BudgetKind>,
 }
 
@@ -90,12 +86,9 @@ impl Default for NormalizeBudget {
             max_candidate_nodes: env_budget("NORMALIZER_MATH_MAX_CANDIDATE_NODES", 4_000_000),
             max_proof_nodes: env_budget("NORMALIZER_MATH_MAX_PROOF_NODES", DEFAULT_MAX_PROOF_NODES),
             steps: 0,
-            rewrites: 0,
             candidate_nodes: 0,
             proof_nodes: 0,
             peak_nodes: 0,
-            budget_skips: 0,
-            last_skip: None,
             exhausted: None,
         }
     }
@@ -110,8 +103,6 @@ impl NormalizeBudget {
             BudgetKind::ProofNodes => (&mut self.proof_nodes, self.max_proof_nodes),
         };
         if amount > limit.saturating_sub(*used) {
-            self.budget_skips = self.budget_skips.saturating_add(1);
-            self.last_skip = Some(kind);
             if kind == BudgetKind::Steps {
                 self.exhausted = Some(kind);
             }
@@ -169,15 +160,9 @@ fn budget_snapshot() -> Option<NormalizeBudget> {
     ACTIVE_BUDGET.with(|budget| budget.borrow().clone())
 }
 
-pub(crate) fn budget_remaining() -> (usize, usize, usize) {
-    budget_snapshot().map_or((0, 0, 0), |budget| {
-        (
-            budget.max_steps.saturating_sub(budget.steps),
-            budget
-                .max_candidate_nodes
-                .saturating_sub(budget.candidate_nodes),
-            budget.max_proof_nodes.saturating_sub(budget.proof_nodes),
-        )
+pub(crate) fn remaining_steps() -> usize {
+    ACTIVE_BUDGET.with(|budget| {
+        budget.borrow().as_ref().map_or(0, |budget| budget.max_steps.saturating_sub(budget.steps))
     })
 }
 
@@ -189,14 +174,11 @@ where
         if slot.borrow().is_some() {
             return run();
         }
-        // This outer budget owns the profile run. Nested calls reuse both.
-        let run_scope = crate::profile::begin_run();
         let scope = BudgetScope::install(NormalizeBudget::default());
         let result = run();
         let budget = budget_snapshot().expect("normalization budget scope missing");
         let deferred_error = ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow_mut().take());
         drop(scope);
-        drop(run_scope);
         if let Some(error) = deferred_error {
             return Err(error);
         }
@@ -213,18 +195,6 @@ where
         }
         result
     })
-}
-
-fn normalize_run_cache_counts() -> (u64, u64) {
-    NORMALIZE_RUN_CACHE_COUNTS.with(|counts| *counts.borrow())
-}
-
-fn record_normalize_cache_hit() {
-    NORMALIZE_RUN_CACHE_COUNTS.with(|counts| counts.borrow_mut().0 += 1);
-}
-
-fn record_normalize_cache_miss() {
-    NORMALIZE_RUN_CACHE_COUNTS.with(|counts| counts.borrow_mut().1 += 1);
 }
 
 /// Resource exhaustion is not a normal form or a proof of false.
@@ -276,8 +246,6 @@ fn normalize_with_impl(
     let profile_start = profile_enabled.then(Instant::now);
     let input_size = profile_enabled.then(|| expr.size());
     let input_depth = profile_enabled.then(|| expr.depth());
-    let cache_counts_before = normalize_run_cache_counts();
-    let evictions_before = crate::profile::cache_evictions();
 
     // Expr is immutable and simplify_once is pure for a fixed SortContext.
     // Reuse one memo across the whole fixed-point run so stable subtrees seen in
@@ -300,11 +268,6 @@ fn normalize_with_impl(
             converged = Some(iteration + 1);
             break;
         }
-        ACTIVE_BUDGET.with(|budget| {
-            if let Some(budget) = budget.borrow_mut().as_mut() {
-                budget.rewrites = budget.rewrites.saturating_add(1);
-            }
-        });
         current = next;
     }
     if let Some(start) = profile_start {
@@ -321,15 +284,6 @@ fn normalize_with_impl(
             start,
         );
     }
-    emit_summary(
-        input_size.unwrap_or(0),
-        input_depth.unwrap_or(0),
-        &current,
-        converged.unwrap_or(iteration_limit),
-        profile_start.map(|start| start.elapsed().as_micros()),
-        cache_counts_before,
-        evictions_before,
-    );
     if converged.is_some() {
         return Ok(current);
     }
@@ -340,92 +294,6 @@ fn normalize_with_impl(
         peak_intermediate_size: budget_snapshot()
             .map_or(current.size(), |budget| budget.peak_nodes),
     })
-}
-
-fn emit_summary(
-    input_size: usize,
-    input_depth: usize,
-    output: &Expr,
-    iterations: usize,
-    elapsed_us: Option<u128>,
-    cache_counts_before: (u64, u64),
-    evictions_before: u64,
-) {
-    let Some(budget) = budget_snapshot() else {
-        return;
-    };
-    crate::profile::json_event(
-        "math.normalize.root",
-        &[
-            ("phase", crate::profile::json_string("normalize")),
-            ("rule", crate::profile::json_string("fixed_point")),
-            ("input_size", input_size.to_string()),
-            ("input_depth", input_depth.to_string()),
-            ("output_size", output.size().to_string()),
-            ("output_depth", output.depth().to_string()),
-            ("iteration", iterations.to_string()),
-            ("rewrite_count", budget.rewrites.to_string()),
-            ("elapsed_us", elapsed_us.unwrap_or(0).to_string()),
-            ("steps", budget.steps.to_string()),
-            ("candidate_nodes", budget.candidate_nodes.to_string()),
-            ("proof_nodes", budget.proof_nodes.to_string()),
-            (
-                "budget_remaining",
-                budget.max_steps.saturating_sub(budget.steps).to_string(),
-            ),
-            (
-                "candidate_budget_remaining",
-                budget
-                    .max_candidate_nodes
-                    .saturating_sub(budget.candidate_nodes)
-                    .to_string(),
-            ),
-            (
-                "proof_budget_remaining",
-                budget
-                    .max_proof_nodes
-                    .saturating_sub(budget.proof_nodes)
-                    .to_string(),
-            ),
-            (
-                "cache_hit",
-                normalize_run_cache_counts()
-                    .0
-                    .saturating_sub(cache_counts_before.0)
-                    .to_string(),
-            ),
-            (
-                "cache_miss",
-                normalize_run_cache_counts()
-                    .1
-                    .saturating_sub(cache_counts_before.1)
-                    .to_string(),
-            ),
-            (
-                "cache_eviction",
-                crate::profile::cache_evictions()
-                    .saturating_sub(evictions_before)
-                    .to_string(),
-            ),
-            ("budget_skip", budget.budget_skips.to_string()),
-            (
-                "budget_kind",
-                budget
-                    .last_skip
-                    .or(budget.exhausted)
-                    .map_or_else(|| "null".to_string(), |kind| crate::profile::json_string(&kind.to_string())),
-            ),
-            (
-                "skip_reason",
-                if budget.budget_skips == 0 {
-                    "null".to_string()
-                } else {
-                    crate::profile::json_string("budget_exhausted")
-                },
-            ),
-            ("peak_intermediate_size", budget.peak_nodes.to_string()),
-        ],
-    );
 }
 
 /// 归一化 / 化简（便捷版，使用 DefaultSortContext）。
@@ -439,36 +307,14 @@ pub fn normalize(expr: Expr) -> Expr {
 
     let key = expr.clone();
     if let Some(cached) = DEFAULT_NORMALIZE_CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
-        if crate::profile::cache_observation_enabled() {
-            crate::profile::cache_lookup(
-                "normalize",
-                "normalize",
-                true,
-                expr.structural_hash(),
-                expr.size(),
-                "fixed_point",
-            );
-        }
         crate::profile::count(&NORMALIZE_CACHE_HITS, "math.normalize.cache_hit", |_| {
             format!("size={} depth={}", expr.size(), expr.depth())
         });
-        record_normalize_cache_hit();
         return cached;
-    }
-    if crate::profile::cache_observation_enabled() {
-        crate::profile::cache_lookup(
-            "normalize",
-            "normalize",
-            false,
-            expr.structural_hash(),
-            expr.size(),
-            "fixed_point",
-        );
     }
     crate::profile::count(&NORMALIZE_CACHE_MISSES, "math.normalize.cache_miss", |_| {
         format!("size={} depth={}", expr.size(), expr.depth())
     });
-    record_normalize_cache_miss();
 
     let out = match run_with_budget(|| {
         normalize_with_impl(
@@ -508,44 +354,14 @@ fn simplify_once_memo(
 
     let key = expr.clone();
     if let Some(cached) = memo.borrow().get(&key).cloned() {
-        if crate::profile::cache_observation_enabled() {
-            crate::profile::cache_lookup(
-                "normalize",
-                "memo",
-                true,
-                expr.structural_hash(),
-                expr.size(),
-                "simplify_once",
-            );
-        }
         crate::profile::count(&NORMALIZE_MEMO_HITS, "math.normalize.memo_hit", |_| {
             format!("size={} depth={}", expr.size(), expr.depth())
         });
         return cached;
     }
-    if crate::profile::cache_observation_enabled() {
-        crate::profile::cache_lookup(
-            "normalize",
-            "memo",
-            false,
-            expr.structural_hash(),
-            expr.size(),
-            "simplify_once",
-        );
-    }
 
     if use_default_simplify_once_cache {
         if let Some(cached) = default_simplify_once_cache_get(&key) {
-            if crate::profile::cache_observation_enabled() {
-                crate::profile::cache_lookup(
-                    "normalize",
-                    "simplify_once",
-                    true,
-                    expr.structural_hash(),
-                    expr.size(),
-                    "simplify_once",
-                );
-            }
             crate::profile::count(
                 &NORMALIZE_SIMPLIFY_ONCE_CACHE_HITS,
                 "math.normalize.simplify_once_cache_hit",
@@ -553,16 +369,6 @@ fn simplify_once_memo(
             );
             memo.borrow_mut().insert(key, cached.clone());
             return cached;
-        }
-        if crate::profile::cache_observation_enabled() {
-            crate::profile::cache_lookup(
-                "normalize",
-                "simplify_once",
-                false,
-                expr.structural_hash(),
-                expr.size(),
-                "simplify_once",
-            );
         }
         crate::profile::count(
             &NORMALIZE_SIMPLIFY_ONCE_CACHE_MISSES,
@@ -600,7 +406,6 @@ fn admit_cache(
 ) {
     let weight = key.size().saturating_add(output.size());
     if weight > crate::profile::cache_entry_limit() {
-        crate::profile::cache_admission_skip(kind, weight);
         return;
     }
     cache.with(|slot| {

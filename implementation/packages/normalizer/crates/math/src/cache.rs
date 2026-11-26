@@ -4,11 +4,9 @@ use std::{collections::HashMap, hash::Hash};
 pub(crate) const DEFAULT_KEY_LIMIT: usize = 100_000;
 
 /// Apply the shared per-entry weight limit without preparing rejected entries.
-pub(crate) fn with_entry_budget(category: &str, weight: usize, insert: impl FnOnce()) {
+pub(crate) fn with_entry_budget(weight: usize, insert: impl FnOnce()) {
     if weight <= crate::profile::cache_entry_limit() {
         insert();
-    } else {
-        crate::profile::cache_admission_skip(category, weight);
     }
 }
 

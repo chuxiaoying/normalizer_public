@@ -6,7 +6,7 @@
 
 use crate::builder;
 use crate::domains::relation::RelationExpr;
-use crate::expr::{Expr, ExprKind, RelationAggregateKind};
+use crate::expr::{Expr, RelationAggregateKind};
 use std::time::Instant;
 
 /// Admit only a bare Count with a compact integer bound. Both source
@@ -80,9 +80,8 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
 /// language.
 pub(crate) fn simplify(expr: &Expr) -> Expr {
     let profile = if crate::profile::enabled() {
-        expr.as_relation_aggregate().map(|(kind, relation, select_expr, _)| {
-            let shape = relation_profile_shape(relation);
-            (kind, relation, select_expr, shape, Instant::now())
+        expr.as_relation_aggregate().map(|(_, relation, _, _)| {
+            (relation_profile_size(relation), Instant::now())
         })
     } else {
         None
@@ -91,15 +90,9 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
         .or_else(|| rewrite_empty_aggregate(expr))
         .or_else(|| rewrite_index_zero_as_first(expr))
         .unwrap_or_else(|| expr.clone());
-    if let Some((kind, relation, select_expr, (input_size, input_depth), start)) = profile {
-        let output_relation =
-            output.as_relation_aggregate().map(|(_, relation, _, _)| relation);
-        let (output_size, output_depth) = output_relation
-            .map(relation_profile_shape)
-            .unwrap_or((0, 0));
-        let input_node_kind = relation_node_kind(relation);
-        let output_node_kind = output_relation.map(relation_node_kind).unwrap_or("scalar");
-        let projection = projection_kind(select_expr);
+    if let Some((input_size, start)) = profile {
+        let output_size = output.as_relation_aggregate()
+            .map_or(0, |(_, relation, _, _)| relation_profile_size(relation));
         let skip_reason = (output == *expr).then_some("no_rewrite");
         crate::profile::rule_event(
             "math.relation.scope",
@@ -107,81 +100,18 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
             output_size,
             start.elapsed().as_micros(),
             skip_reason,
-            &[
-                (
-                    "relation_kind",
-                    crate::profile::json_string(relation_kind(kind)),
-                ),
-                ("relation_input_size", input_size.to_string()),
-                ("relation_input_depth", input_depth.to_string()),
-                ("relation_output_size", output_size.to_string()),
-                ("relation_output_depth", output_depth.to_string()),
-                (
-                    "relation_node_kind",
-                    crate::profile::json_string(input_node_kind),
-                ),
-                (
-                    "relation_output_node_kind",
-                    crate::profile::json_string(output_node_kind),
-                ),
-                ("projection", crate::profile::json_string(projection)),
-                ("rewritten", (output != *expr).to_string()),
-            ],
         );
     }
     output
 }
 
-fn relation_profile_shape(relation: &RelationExpr) -> (usize, usize) {
+fn relation_profile_size(relation: &RelationExpr) -> usize {
     match relation {
-        RelationExpr::Empty | RelationExpr::Base { .. } => (1, 1),
-        RelationExpr::Vector { value, .. } => (1 + value.size(), 1 + value.depth()),
+        RelationExpr::Empty | RelationExpr::Base { .. } => 1,
+        RelationExpr::Vector { value, .. } => 1 + value.size(),
         RelationExpr::Select { predicate: value, input }
-        | RelationExpr::Project { value, input, .. } => {
-            let (size, depth) = relation_profile_shape(input);
-            (1 + value.size() + size, 1 + depth)
-        }
-        RelationExpr::Distinct(input) => {
-            let (size, depth) = relation_profile_shape(input);
-            (1 + size, 1 + depth)
-        }
-        RelationExpr::Union(branches) => branches.iter().fold((1, 1), |(size, depth), branch| {
-            let (s, d) = relation_profile_shape(branch);
-            (size + s, depth.max(1 + d))
-        }),
-    }
-}
-
-fn relation_node_kind(relation: &RelationExpr) -> &'static str {
-    match relation {
-        RelationExpr::Empty => "empty",
-        RelationExpr::Base { .. } => "base",
-        RelationExpr::Vector { .. } => "vector",
-        RelationExpr::Select { .. } => "select",
-        RelationExpr::Project { .. } => "project",
-        RelationExpr::Distinct(_) => "distinct",
-        RelationExpr::Union(_) => "union",
-    }
-}
-
-fn relation_kind(kind: RelationAggregateKind) -> &'static str {
-    match kind {
-        RelationAggregateKind::Count => "count",
-        RelationAggregateKind::Sum => "sum",
-        RelationAggregateKind::FirstValue => "first_value",
-        RelationAggregateKind::NthValue => "nth_value",
-        RelationAggregateKind::Exists => "exists",
-    }
-}
-
-fn projection_kind(select_expr: Option<&Expr>) -> &'static str {
-    let Some(select_expr) = select_expr else {
-        return "none";
-    };
-    match select_expr.kind() {
-        ExprKind::RowValue { .. } => "row_value",
-        ExprKind::SymVar { .. } => "parameter",
-        ExprKind::Lit(_) => "literal",
-        _ => "expression",
+        | RelationExpr::Project { value, input, .. } => 1 + value.size() + relation_profile_size(input),
+        RelationExpr::Distinct(input) => 1 + relation_profile_size(input),
+        RelationExpr::Union(branches) => 1 + branches.iter().map(relation_profile_size).sum::<usize>(),
     }
 }
