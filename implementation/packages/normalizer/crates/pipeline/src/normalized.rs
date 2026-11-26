@@ -240,6 +240,13 @@ fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
     Ok(())
 }
 
+fn official_marker(class: &simulator_parser::JavaClass, annotations: &[AnnotationRef], qualified: &str) -> bool {
+    let [annotation] = annotations else { return false; };
+    !annotation.has_arguments() && official_member(qualified).is_some_and(|(short, full)| {
+        annotation.name() == full || (annotation.name() == short && imports_official_n(class))
+    })
+}
+
 fn source_marker(
     class: &simulator_parser::JavaClass,
     annotations: &[AnnotationRef],
@@ -249,9 +256,7 @@ fn source_marker(
     if annotation.has_arguments() {
         return false;
     }
-    if official_member(qualified).is_some_and(|(short, full)| {
-        annotation.name() == full || (annotation.name() == short && imports_official_n(class))
-    }) {
+    if official_marker(class, annotations, qualified) {
         return true;
     }
     // Continue decoding explicitly bound legacy annotations in existing
@@ -348,11 +353,11 @@ pub(crate) fn source_payload_domain(class: &simulator_parser::JavaClass) -> Opti
     if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
     let [field] = class.fields() else { return None; };
     let field = Some(field).filter(|field| field.name() == "payload" && !field.is_static()
-        && !field.is_final() && !field.has_initializer()
-        && field.annotations().is_empty())?;
+        && !field.is_final() && !field.has_initializer())?;
     match field.java_type() {
-        JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String") => Some("text?"),
-        ty if integral(ty) => Some("number"),
+        JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String")
+            && official_marker(class, field.annotations(), NULLABLE) => Some("text?"),
+        ty if integral(ty) && field.annotations().is_empty() => Some("number"),
         _ => None,
     }
 }
@@ -1160,15 +1165,20 @@ mod source_declaration_contracts {
 
     #[test]
     fn declared_external_payloads_do_not_infer_a_value_from_unrelated_fields() {
-        for (field, expected) in [
-            ("int payload;", Some("number")),
-            ("java.lang.String payload;", Some("text?")),
-            ("int other;", None),
-            ("static int payload;", None),
-            ("final int payload = 1;", None),
-            ("int payload = 1;", None),
+        for (imports, field, expected) in [
+            ("", "int payload;", Some("number")),
+            ("import normalizer.intrinsics.N;", "@N.Nullable java.lang.String payload;", Some("text?")),
+            ("", "@normalizer.intrinsics.N.Nullable String payload;", Some("text?")),
+            ("", "String payload;", None),
+            ("", "@N.Nullable String payload;", None),
+            ("import normalizer.intrinsics.N;", "@N.Nullable int payload;", None),
+            ("import normalizer.intrinsics.N;", "@N.Nullable(1) String payload;", None),
+            ("", "int other;", None),
+            ("", "static int payload;", None),
+            ("", "final int payload = 1;", None),
+            ("", "int payload = 1;", None),
         ] {
-            let source = format!("class RemoteFailure extends RuntimeException {{ {field} }}");
+            let source = format!("{imports} class RemoteFailure extends RuntimeException {{ {field} }}");
             let program = parse(&source, "RemoteFailure.java", &ParseOptions::default()).unwrap();
             assert_eq!(source_payload_domain(program.find_class("RemoteFailure").unwrap()), expected);
             if expected.is_none() {
