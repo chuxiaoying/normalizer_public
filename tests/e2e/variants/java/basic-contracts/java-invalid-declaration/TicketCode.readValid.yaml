@@ -441,3 +441,12 @@
   edits:
     - { from: 'class TicketCode {', to: 'class TransientCarrier { transient int spare; } final class TicketCode {' }
     - { from: 'static int readValid', to: 'protected static strictfp int readValid' }
+
+- name: closed-object-type-test-does-not-inherit-another-declared-owner
+  edits:
+    - {from: 'class TicketCode {', to: 'class OtherCode {} class TicketCode {'}
+    - {from: 'return value;', to: 'Object code = new OtherCode(); return code instanceof TicketCode ? 0 : value;'}
+- name: an-allocated-instance-satisfies-the-declared-root-object-type
+  edits:
+    - from: 'return value;'
+      to: 'TicketCode code = new TicketCode(); return code instanceof java.lang.Object ? value : 0;'
