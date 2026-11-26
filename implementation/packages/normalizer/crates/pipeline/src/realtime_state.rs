@@ -174,9 +174,6 @@ impl Completion {
                 Some(alternative)
             })
             .collect::<Vec<_>>();
-        if alternatives.is_empty() {
-            return Self::Continue;
-        }
         if alternatives.len() == 1 && alternatives[0].guard.as_bool() == Some(true) {
             return outcome_to_completion(alternatives.into_iter().next().unwrap().outcome);
         }
@@ -200,9 +197,6 @@ impl Completion {
             if let Some(value) = collapse_return_values(returns) {
                 return Self::Return(value);
             }
-        }
-        if covered && alternatives.iter().all(|alternative| alternative.outcome == alternatives[0].outcome) {
-            return outcome_to_completion(alternatives[0].outcome.clone());
         }
         Self::Guarded(alternatives)
     }
@@ -514,20 +508,7 @@ impl SymbolicStore {
             }
             branches.push((guard, entry.value.clone()));
         }
-        let fallback = match fallback {
-            Some(value) => value,
-            None => {
-                // Without an initial or unconditional write, the oldest
-                // reachable value can be a fallback only if coverage is proven.
-                let coverage = branches.iter().fold(b::lit_bool(false), |coverage, (guard, _)| {
-                    b::or(coverage, guard.clone())
-                });
-                if !b::path_implies(path, &math::normalize(coverage)) {
-                    return None;
-                }
-                branches.pop()?.1
-            }
-        };
+        let fallback = fallback?;
         Some(branches.into_iter().rev().fold(fallback, |old, (guard, value)| {
             join_value(guard, value, old)
         }))
