@@ -24,7 +24,7 @@ impl Engine<'_> {
         need(self.selected_entry == Some(method), "local stack requires typed entry arrays")?;
         need(exception == "IllegalArgumentException", "local stack uses the same supported type-only exception for both guards")?;
         let root_of = |local: &str| -> Result<(String, &str)> {
-            let Some(Value::Sequence { item: Ty::Ref, relation: RelationExpr::Base { name, .. }, .. }) = env.get(local)
+            let Some(Value::Sequence { item: Ty::Ref, name, .. }) = env.get(local)
                 else { return Err(fail("local stack requires bound record arrays")); };
             let owner = self.source_relations.record_inputs.get(name)
                 .ok_or_else(|| fail("local stack array needs a declared entry origin"))?;

@@ -60,7 +60,7 @@ impl Engine<'_> {
                     Choice::Independent(Candidates::Literal(support))
                 }
             },
-            Some(Value::Sequence {item: Ty::Integer, relation: RelationExpr::Base {name, ..}, ..}) => {
+            Some(Value::Sequence {item: Ty::Integer, name, ..}) => {
                 need(self.methods[method].params().iter().any(|(ty, param)|
                     param == name && crate::normalized::numeric_array(ty)),
                     "member choice requires an acquired entry array")?;
@@ -86,7 +86,7 @@ impl Engine<'_> {
         &mut self, binding: &str, members: &str, empty: &MemberChoiceFallback,
         owner: &str, method: &str, env: &mut Env, path: Expr,
     ) -> Result<()> {
-        let Some(Value::Sequence {item: Ty::Ref, relation: RelationExpr::Base {name, ..}, ..}) =
+        let Some(Value::Sequence {item: Ty::Ref, name, ..}) =
             env.get(members) else { return Err(fail("record choice requires a declared record array parameter")); };
         need(self.methods[method].params().iter().any(|(ty, param)|
             param == name && matches!(ty, JavaType::Array(item) if self.project.source_owner(item) == Some(owner))),

@@ -309,7 +309,7 @@ impl Engine<'_> {
         env: &mut Env,
         guard: &Expr,
     ) -> Result<()> {
-        if let Some(Value::Sequence { relation: RelationExpr::Base { name, .. }, .. }) = env.get(&query.source) {
+        if let Some(Value::Sequence { name, .. }) = env.get(&query.source) {
             need(!self.source_array_writes.contains_key(name),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
@@ -320,7 +320,7 @@ impl Engine<'_> {
                 };
                 need(alias == &query.alias && query.clauses.is_empty() && !query.accumulate,
                     "eager record projection requires an unfiltered source-order path")?;
-                let Some(Value::Sequence { item: Ty::Ref, relation: RelationExpr::Base { name, .. }, .. }) =
+                let Some(Value::Sequence { item: Ty::Ref, name, .. }) =
                     env.get(&query.source) else { return Err(fail("eager projection requires a directly bound record array")); };
                 let root = name.clone();
                 let row = self.source_relations.record_inputs.get(&root).and_then(|owner| self.program.find_class(owner))
@@ -345,7 +345,7 @@ impl Engine<'_> {
             }
         }
         if let Kind::FirstScalar(offset) = &query.kind {
-            let Some(Value::Sequence { item: Ty::Integer, relation: RelationExpr::Base { name, .. }, .. }) =
+            let Some(Value::Sequence { item: Ty::Integer, name, .. }) =
                 env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };
             let relation = RelationExpr::base(name, "value");
             let Projection::Value(default) = &query.projection else { return Err(fail("scalar first requires a fallback value")); };
@@ -361,7 +361,7 @@ impl Engine<'_> {
             return Ok(());
         }
         if let Projection::NestedSum { alias, clauses, value } = &query.projection {
-            let Some(Value::Sequence { item: Ty::Seq(element), relation: RelationExpr::Base { name, .. }, .. }) = env.get(&query.source) else {
+            let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
                 return Err(fail("nested sum requires a directly bound two-dimensional array"));
             };
             need(**element == Ty::Integer && query.kind == Kind::Sum,
@@ -452,17 +452,14 @@ impl Engine<'_> {
         let mut locals = env.clone();
         let mut rows = match env.get(&query.source) {
             Some(Value::Rows(rows)) => (**rows).clone(),
-            Some(Value::Sequence { item: Ty::Integer, relation, .. }) => {
-                let RelationExpr::Base { name, .. } = relation else {
-                    return Err(fail("expected a directly bound numeric sequence"));
-                };
+            Some(Value::Sequence { item: Ty::Integer, name, .. }) => {
                 Rows {
                     input: RelationExpr::base(name, "value"),
                     fields: BTreeMap::from([(String::new(), Value::Term(Ty::Integer, b::acquired_integer_row("value")))]),
                     ordering: vec![],
                 }
             }
-            Some(Value::Sequence { item: Ty::Ref, relation: RelationExpr::Base { name, .. }, .. }) => {
+            Some(Value::Sequence { item: Ty::Ref, name, .. }) => {
                 let owner = self.source_relations.record_inputs.get(name)
                     .ok_or_else(|| fail("collection requires a declared record element"))?;
                 let row = self.program.find_class(owner).ok_or_else(|| fail("missing collection row declaration"))?;

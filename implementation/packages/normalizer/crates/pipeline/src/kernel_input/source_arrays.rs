@@ -41,7 +41,7 @@ fn exact_java_int(value: Value) -> Result<i32> {
 }
 
 fn array_root(value: Value) -> Result<String> {
-    let Value::Sequence { item: Ty::Integer, relation: RelationExpr::Base { name, .. }, .. } = value else {
+    let Value::Sequence { item: Ty::Integer, name, .. } = value else {
         return Err(fail("operation requires a directly bound exact integer array"));
     };
     Ok(name)

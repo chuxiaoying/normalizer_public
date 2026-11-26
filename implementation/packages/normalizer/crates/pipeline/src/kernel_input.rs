@@ -98,8 +98,8 @@ enum Value {
     Sequence {
         item: Ty,
         java_component: Option<String>,
-        relation: RelationExpr,
-        value: Expr,
+        /// Identity of the acquired array, unchanged by lexical aliasing.
+        name: String,
         null: Expr,
     },
 }
@@ -817,8 +817,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
         Ty::Seq(item) => Value::Sequence {
             item: *item.clone(),
             java_component: declared.and_then(primitive_array_component).map(str::to_owned),
-            relation: RelationExpr::base(name, format!("{name}.item")),
-            value: b::row_value(format!("{name}.item")),
+            name: name.into(),
             null: b::eq(
                 b::heap_ref(heap.new_path_object().id()),
                 b::lit_null(),
