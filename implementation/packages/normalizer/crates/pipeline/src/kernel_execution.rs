@@ -1106,16 +1106,62 @@ impl Engine<'_> {
         }
     }
     fn acquired_integer_receipt(&self, value: &Expr, path: &Expr) -> bool {
-        let Some(SymVarOrigin::External { binding_id, path: fields, primitive_type }) = value.as_sym_var() else {
+        enum Observation<'a> {
+            Scalar(u64),
+            Field(u64, &'a str),
+            ProjectedField(&'a Expr, &'a str),
+        }
+
+        let observation = if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
+            if primitive_type != "integer" {
+                return false;
+            }
+            match path.as_slice() {
+                [] => Observation::Scalar(*binding_id),
+                [field] => Observation::Field(*binding_id, field),
+                _ => return false,
+            }
+        } else if let Some((key, [record, field])) = value.as_call() {
+            if math::domains::composite::field_intrinsic_result(key) != Some(math::Primitive::Number) {
+                return false;
+            }
+            let Some(math::Lit::Str(field)) = field.as_lit() else {
+                return false;
+            };
+            Observation::ProjectedField(record, field)
+        } else {
             return false;
         };
-        if primitive_type != "integer" || !fields.is_empty() { return false; }
+
+        let path = self.normal_path(path.clone());
         self.realtime_effects.events().iter().any(|event| {
-            let realtime_state::EffectOperation::Port { receipt, .. } = &event.operation else { return false; };
-            // A source Port produces a bare integer symbol only on its
-            // nonthrowing return route. SQL counts have their own event kind.
-            receipt.binding_id() == *binding_id
-                && b::path_implies(&self.normal_path(path.clone()), &event.guard)
+            let realtime_state::EffectOperation::Port { id, receipt } = &event.operation else { return false; };
+            // A bare integer is only minted for a nonthrowing source port.
+            // For fields, prove the declared integer and the exact response
+            // before attributing that observation to this occurrence.
+            let field = match observation {
+                Observation::Scalar(binding) =>
+                    return receipt.binding_id() == binding && b::path_implies(&path, &event.guard),
+                Observation::Field(binding, field) if receipt.binding_id() == binding => field,
+                Observation::ProjectedField(_, field) => field,
+                _ => return false,
+            };
+            let Some(port) = self.checked_ports.get(id) else { return false; };
+            let spec = &port.completion;
+            let Ty::Record(fields) = &spec.returns else { return false; };
+            if fields.get(field) != Some(&Ty::Integer) {
+                return false;
+            }
+            let response = receipt.response();
+            match observation {
+                Observation::Field(..) if !spec.throwing() =>
+                    b::path_implies(&path, &event.guard),
+                Observation::ProjectedField(record, _) if record == &spec.normal_value(response) => {
+                    let acquired = b::and(event.guard.clone(), spec.normal_condition(response));
+                    b::path_implies(&path, &acquired)
+                }
+                _ => false,
+            }
         })
     }
 
