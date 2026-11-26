@@ -19,8 +19,8 @@ fn literal(expr: &E) -> Option<i128> {
     }
 }
 
-pub(super) fn assignment_init(init: Option<&S>) -> Option<(&str, &E, &E)> {
-    let S::ExprStmt(E::Assign { target, value, is_compound: false }) = init? else {
+pub(super) fn assignment_init(init: &S) -> Option<(&str, &E, &E)> {
+    let S::ExprStmt(E::Assign { target, value, is_compound: false }) = init else {
         return None;
     };
     let E::Ident(name) = target.as_ref() else { return None; };
@@ -69,7 +69,7 @@ impl<'a> FixedFor<'a> {
         {
             (name, value, false)
         } else {
-            let (name, _, value) = assignment_init(Some(init))?;
+            let (name, _, value) = assignment_init(init)?;
             (name, value, true)
         };
         let (bound, step, inclusive) = induction(name, cond, update)?;

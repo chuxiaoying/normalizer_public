@@ -9,7 +9,10 @@ use simulator_parser::{
     AnnotationRef, JavaBinOp as B, JavaExpr as E, JavaLit, JavaProgram, JavaStatement as S, JavaType,
     JavaUnaryOp as U,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 fn error(code: &str, at: &str) -> String {
     let action = match code {
@@ -422,8 +425,8 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
         static_types::validate(program, owner, m, id, body)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
-            let target = match call {
-                SourceCall::Method(id) => id,
+            let (target_owner, target_member) = match call {
+                SourceCall::Method { owner, member } => (owner, member),
                 SourceCall::Constructor(owner) => {
                     let class = program
                         .find_class(&owner)
@@ -431,25 +434,30 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
                     if !class.methods().iter().any(|m| m.is_constructor()) && arity == 0 {
                         continue;
                     }
-                    format!("{owner}.{owner}")
+                    (owner.clone(), owner)
                 }
             };
+            let target = format!("{target_owner}.{target_member}");
             if ports.get(&format!("{}.{target}", owner.full_name())).is_some_and(|port| port.params.len() == arity) {
                 continue;
             }
             if crate::normalized_text::source_intrinsic(owner, &target, arity).is_some() {
                 continue;
             }
-            if let Some((local, member)) = target.split_once('.') {
-                if let Some(interface) = local_interface_receiver(program, m, local) {
-                    if interface.methods().iter().filter(|method| method.name() == member && method.arity() == arity).count() != 1 {
-                        return Err(error("NORM-UNBOUND-CALL", &format!("{id} -> {target}/{arity}")));
-                    }
-                    // Dynamic edges are not the set of all implementations
-                    // present in this source. Runtime checks the selected
-                    // allocation, and the active stack still rejects cycles.
-                    continue;
+            // Calls already have their declaring name and member. Preserve
+            // the historical first-dot lookup for flattened nested owners.
+            let (local, member): (&str, Cow<'_, str>) = match target_owner.split_once('.') {
+                Some((local, nested)) => (local, Cow::Owned(format!("{nested}.{target_member}"))),
+                None => (target_owner.as_str(), Cow::Borrowed(target_member.as_str())),
+            };
+            if let Some(interface) = local_interface_receiver(program, m, local) {
+                if interface.methods().iter().filter(|method| method.name() == member.as_ref() && method.arity() == arity).count() != 1 {
+                    return Err(error("NORM-UNBOUND-CALL", &format!("{id} -> {target}/{arity}")));
                 }
+                // Dynamic edges are not the set of all implementations
+                // present in this source. Runtime checks the selected
+                // allocation, and the active stack still rejects cycles.
+                continue;
             }
             if methods
                 .get(&target)
@@ -491,7 +499,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
 }
 
 enum SourceCall {
-    Method(String),
+    Method { owner: String, member: String },
     Constructor(String),
 }
 
@@ -753,7 +761,7 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
                 None => at.rsplit_once('.').unwrap().0,
                 Some(t) => source_ports::receiver(t).ok_or_else(|| error("NORM-CALL-TARGET", at))?,
             };
-            calls.push((SourceCall::Method(format!("{owner}.{method}")), args.len()));
+            calls.push((SourceCall::Method { owner: owner.into(), member: method.clone() }, args.len()));
             for a in args {
                 expr(a, at, calls)?;
             }
