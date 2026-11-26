@@ -158,3 +158,8 @@
   expect:
     - { path: [P, parameters, left, type], value: 'Box?' }
     - { path: [R], value: 'left != null' }
+- name: null-stored-in-a-local-is-still-distinct-from-a-nonnull-input
+  edits:
+    - { from: 'return left == right;', to: 'Object missing = null; return left != missing;' }
+  expect:
+    - { path: [R], value: 'true' }

@@ -18,3 +18,16 @@
   edits:
     - from: 'String label;'
       to: 'java.lang.String label;'
+- name: a-fresh-object-has-a-null-label-without-an-extra-input
+  edits:
+    - from: 'return profile.label == null ? 0 : 1;'
+      to: 'Profile fresh = new Profile(); return fresh.label == null ? 0 : 1;'
+  expect:
+    - { path: [R], value: '0' }
+- name: an-ordinary-static-field-needs-an-explicit-source-boundary
+  edits:
+    - from: 'class OptionalField {'
+      to: |-
+        class OptionalField {
+            static int unsupportedSharedCount;
+  reject: ['[NORM-FIELD-DECLARATION]', 'kind=PREPROCESS_REQUIRED', 'OptionalField']

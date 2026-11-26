@@ -42,3 +42,14 @@
     to: 'class RateFee implements Fee { public int preview(int value) { return 8; }'
   - from: 'class ScaledFee implements Fee {'
     to: 'class ScaledFee implements Fee { public int preview(int value) { return 9; }'
+- name: a-second-nominal-interface-is-not-the-selected-call
+  edits:
+    - from: 'class FixedFee implements Fee {'
+      to: |-
+        interface AuditedFee { int code(); }
+        class FixedFee implements Fee, AuditedFee { public int code() { return 9; }
+- name: a-closed-interface-default-body-requires-preprocessing
+  edits:
+    - from: 'interface Fee { int apply(int value); }'
+      to: 'interface Fee { default int apply(int value) { return value + 10; } }'
+  reject: ['[NORM-CLASS-SHAPE]', 'kind=PREPROCESS_REQUIRED', 'Fee']

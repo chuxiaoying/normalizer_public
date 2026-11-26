@@ -68,3 +68,15 @@
     - from: "return \"zone-\" + \"42\";"
       to: "// comment\\u000a        return @;"
   reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "CanonicalLabel.java:3:", "expected expression"]
+
+- name: a-text-right-operand-keeps-concrete-null-as-left-text
+  edits:
+    - { from: 'return "zone-" + "42";', to: 'return null + "s";' }
+  expect:
+    - { path: [R], value: '"nulls"' }
+- name: unused-type-correct-object-method-does-not-change-selected-text
+  edits:
+    - from: 'class CanonicalLabel {'
+      to: |-
+        class CanonicalLabel {
+            static Object unused(boolean choose) { return choose ? true : 1; }
