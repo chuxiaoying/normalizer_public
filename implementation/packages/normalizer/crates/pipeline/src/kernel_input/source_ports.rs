@@ -3,12 +3,21 @@
 use super::*;
 use crate::normalized::source_ports::SourcePort;
 
+fn scalar_domain(ty: &JavaType) -> Option<Ty> {
+    match ty {
+        t if crate::normalized::integral(t) => Some(Ty::Integer),
+        JavaType::Primitive(n) if n == "boolean" => Some(Ty::Bool),
+        JavaType::Class(n) if matches!(n.as_str(), "String" | "java.lang.String") => Some(Ty::Text),
+        _ => None,
+    }
+}
+
 fn domain(ty: &JavaType, program: &JavaProgram) -> Result<Ty> {
+    if let Some(ty) = scalar_domain(ty) {
+        return Ok(ty);
+    }
     match ty {
         JavaType::Void => Ok(Ty::Unit),
-        t if crate::normalized::integral(t) => Ok(Ty::Integer),
-        JavaType::Primitive(n) if n == "boolean" => Ok(Ty::Bool),
-        JavaType::Class(n) if matches!(n.as_str(), "String" | "java.lang.String") => Ok(Ty::Text),
         JavaType::Class(name) => {
             let class = program
                 .find_class(name)
@@ -21,14 +30,9 @@ fn domain(ty: &JavaType, program: &JavaProgram) -> Result<Ty> {
                 .fields()
                 .iter()
                 .map(|field| {
-                    let t = field.java_type();
-                    need(
-                        crate::normalized::integral(t)
-                            || matches!(t,JavaType::Primitive(n) if n=="boolean")
-                            || matches!(t,JavaType::Class(n) if n=="String"||n=="java.lang.String"),
-                        "port record field requires a supported scalar",
-                    )?;
-                    Ok((field.name().to_owned(), domain(t, program)?))
+                    let ty = scalar_domain(field.java_type())
+                        .ok_or_else(|| fail("port record field requires a supported scalar"))?;
+                    Ok((field.name().to_owned(), ty))
                 })
                 .collect::<Result<_>>()?;
             Ok(Ty::Record(fields))
