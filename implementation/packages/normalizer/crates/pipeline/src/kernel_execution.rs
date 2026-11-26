@@ -663,7 +663,7 @@ impl<'a> Engine<'a> {
         };
         if let Some(name) = state_name {
             let owner = id.rsplit_once('.').unwrap().0;
-            if self.project.direct_source && !self.methods[id].syntax.is_static() && !env.contains_key("this")
+            if !self.methods[id].syntax.is_static() && !env.contains_key("this")
                 && self.program.find_class(owner).is_some_and(|class| class.fields().iter().any(|field|
                     field.name() == name && crate::normalized::entry_state(class, field)
                         && crate::normalized::numeric_array(field.java_type())))
@@ -681,18 +681,16 @@ impl<'a> Engine<'a> {
                     self.budget()?;
                     return Ok(Some(b::lit_int(array.length())));
                 }
-                if let Some(Value::Sequence { item: Ty::Integer, name: root, java_component, .. }) = env.get(name) {
-                    // The direct source contract admits all checked integer
-                    // array carriers. Length does not read or convert an
-                    // element. Retain the adapter's exact int carrier rule.
+                if let Some(Value::Sequence { item: Ty::Integer, name: root, .. }) = env.get(name) {
+                    // This Java expression path has no adapter-signature
+                    // body. Length does not read or convert any element.
                     // Keep the actual P or E root of a local alias.
-                    let state_root = self.project.direct_source && self.source_objects.state_bindings
+                    let state_root = self.source_objects.state_bindings
                         .values().any(|name| source_state_symbol(name) == *root);
-                    let admitted = (self.project.direct_source || java_component.as_deref() == Some("int"))
-                        && (state_root || self.selected_entry
+                    let admitted = state_root || self.selected_entry
                             .is_some_and(|entry| entry.syntax.params().iter().any(|(_, parameter)| {
                                 parameter == root
-                            })));
+                            }));
                     if admitted {
                         self.budget()?;
                         return Ok(Some(super::source_arrays::borrowed_array_length(root)));
