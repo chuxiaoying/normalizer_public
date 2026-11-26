@@ -113,3 +113,29 @@
           ),
           0
         )
+
+- name: lowercase-sql-not-null-keeps-the-same-predicate
+  edits:
+    - {from: 'row.memo IS NULL', to: 'row.memo is not null'}
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NOT NULL
+          ),
+          0
+        )
+- name: acquired-count-is-strictly-greater-than-minus-one
+  edits:
+    - {from: 'return count;', to: 'return count > -1 ? 7 : 11;'}
+  expect:
+    - {path: [R], value: '7'}
+- name: one-plus-the-acquired-count-cannot-equal-zero
+  edits:
+    - {from: 'return count;', to: 'return 1 + count == 0 ? 7 : 11;'}
+  expect:
+    - {path: [R], value: '11'}
