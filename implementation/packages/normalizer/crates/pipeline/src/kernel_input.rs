@@ -229,6 +229,42 @@ struct OrderedMapEntry {
     input: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireConstant {
+    #[serde(rename = "type")]
+    typ: String,
+    value: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(try_from = "WireConstant")]
+struct AdmittedConstant {
+    ty: Ty,
+    value: Expr,
+}
+
+impl TryFrom<WireConstant> for AdmittedConstant {
+    type Error = String;
+
+    fn try_from(raw: WireConstant) -> Result<Self> {
+        let ty = Ty::parse(&raw.typ)?;
+        let value = match (&ty, raw.value) {
+            (Ty::Unit, serde_json::Value::Null) => b::lit_null(),
+            (Ty::Bool, serde_json::Value::Bool(value)) => b::lit_bool(value),
+            (Ty::Integer, serde_json::Value::Number(value)) =>
+                b::lit_int(value.as_i64().ok_or("integer range")?),
+            (Ty::Text, serde_json::Value::String(value)) => b::lit_str(value),
+            _ => return Err("invalid constant".into()),
+        };
+        Ok(Self { ty, value })
+    }
+}
+
+fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::result::Result<Ty, D::Error> {
+    Ty::parse(&String::deserialize(reader)?).map_err(serde::de::Error::custom)
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
@@ -250,11 +286,13 @@ enum Node {
     /// Completes when the selected async entry settles. Nested regular
     /// functions and detached tasks retain their own completion boundaries.
     Settled {
-        returns: String,
+        #[serde(deserialize_with = "read_action_return")]
+        returns: Ty,
         steps: Vec<actions::Action>,
     },
     Action {
-        returns: String,
+        #[serde(deserialize_with = "read_action_return")]
+        returns: Ty,
         steps: Vec<actions::Action>,
     },
     Add {
@@ -268,11 +306,7 @@ enum Node {
     Var {
         name: String,
     },
-    Const {
-        #[serde(rename = "type")]
-        typ: String,
-        value: serde_json::Value,
-    },
+    Const(AdmittedConstant),
     If {
         cond: Box<Node>,
         then: Box<Node>,

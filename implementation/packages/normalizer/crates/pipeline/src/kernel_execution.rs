@@ -159,20 +159,8 @@ impl Engine<'_> {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| fail(format!("unknown variable {name}"))),
-            Node::Const { typ, value } => {
-                let t = Ty::parse(typ)?;
-                let e = match (&t, value) {
-                    (Ty::Unit, serde_json::Value::Null) => b::lit_null(),
-                    (Ty::Bool, serde_json::Value::Bool(v)) => b::lit_bool(*v),
-                    (Ty::Integer, serde_json::Value::Number(v)) => {
-                        let x = v.as_i64().ok_or_else(|| fail("integer range"))?;
-                        b::lit_int(x)
-                    }
-                    (Ty::Text, serde_json::Value::String(v)) => b::lit_str(v),
-                    _ => return Err(fail("invalid constant")),
-                };
-                Ok(Value::Term(t, e))
-            }
+            Node::Const(constant) =>
+                Ok(Value::Term(constant.ty.clone(), constant.value.clone())),
             Node::If {
                 cond,
                 then,

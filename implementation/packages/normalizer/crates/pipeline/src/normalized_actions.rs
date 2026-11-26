@@ -248,13 +248,12 @@ impl Engine<'_> {
     }
     pub(super) fn action_scope(
         &mut self,
-        returns: &str,
+        returns: &Ty,
         steps: &[Action],
         env: &mut Env,
         path: Expr,
         settled: bool,
     ) -> Result<Value> {
-        let ty = Ty::parse(returns)?;
         let parent_completion = std::mem::replace(
             &mut self.realtime_completion, realtime_state::Completion::Continue,
         );
@@ -262,7 +261,7 @@ impl Engine<'_> {
         // caller is async. A settled entry observes its own async completion.
         let caller_can_await = std::mem::replace(&mut self.action_can_await, settled);
         let caller_action_path = std::mem::replace(&mut self.action_path, path);
-        let executed = self.action_steps(steps, &mut env.clone(), &ty);
+        let executed = self.action_steps(steps, &mut env.clone(), returns);
         self.action_can_await = caller_can_await;
         self.action_path = caller_action_path;
         executed?;
@@ -279,9 +278,9 @@ impl Engine<'_> {
             completion
         };
         match returned {
-            Some(value) => Ok(Value::Term(ty, value)),
+            Some(value) => Ok(Value::Term(returns.clone(), value)),
             // The caller has no live normal path on which to observe a value.
-            None => Ok(Value::Term(ty, b::lit_null())),
+            None => Ok(Value::Term(returns.clone(), b::lit_null())),
         }
     }
 
