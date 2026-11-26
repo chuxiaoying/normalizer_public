@@ -329,9 +329,9 @@ impl EntryContext {
 
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
         let events = result.realtime_effects.events();
-        let typed = project.result_type(method.return_type())?;
-        let certified_composite_return = (typed == super::Ty::Vector(Box::new(super::Ty::Integer))
-            && self.returns == "number[]") || (typed == super::Ty::OrderedTextMap
+        let typed = &result.entry_return_type;
+        let certified_composite_return = (*typed == super::Ty::Vector(Box::new(super::Ty::Integer))
+            && self.returns == "number[]") || (*typed == super::Ty::OrderedTextMap
             && self.returns == "map<text,text>");
         let has_temporals = !result.temporal_definitions.is_empty();
         let total_return = if events.is_empty() || has_temporals {

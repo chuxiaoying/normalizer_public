@@ -30,7 +30,8 @@ pub(super) struct Engine<'a> {
     pub(super) max_node_depth: usize,
     pub(super) project: &'a Project,
     pub(super) methods: BTreeMap<String, &'a JavaMethod>,
-    pub(super) bindings: BTreeMap<String, String>,
+    pub(super) method_types: BTreeMap<String, MethodTypes>,
+    pub(super) bindings: BTreeMap<String, CheckedBinding>,
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
     pub(super) async_depth: usize,
@@ -318,13 +319,13 @@ impl Engine<'_> {
         self.source_steps(body, id, env, path)?;
         let terminal = self.realtime_completion.terminal_alternatives();
         if let Some(result) = terminal.as_ref().and_then(|exits| exits.normal_return_value()) {
-            return Ok(Value::Term(self.project.result_type(self.methods[id].return_type())?,result));
+            return Ok(Value::Term(self.method_types[id].returns.clone(),result));
         }
         if self.methods[id].is_constructor() { return Ok(Value::Term(Ty::Unit,b::lit_null())); }
         if terminal.as_ref().is_some_and(|exits| exits.is_always_throwing()) {
             // No expression can observe this carrier; the completion records
             // the actual exit and enclosing catches consume that completion.
-            return Ok(Value::Term(self.project.result_type(self.methods[id].return_type())?, b::lit_null()));
+            return Ok(Value::Term(self.method_types[id].returns.clone(), b::lit_null()));
         }
         Err(fail("missing return"))
     }
@@ -1257,6 +1258,21 @@ impl Engine<'_> {
         self.java_call_with_receiver(id, args, path, receiver, false)
     }
 
+    pub(super) fn method_parameter_type(&self, id: &str, index: usize, name: &str) -> Result<Ty> {
+        if let Some(binding) = self.bindings.get(id) {
+            let semantic = &self.project.functions[&binding.function].params[index];
+            if semantic.name == name {
+                return Ok(binding.parameters[index].clone());
+            }
+            // A manually prepared carrier can bind a different semantic name.
+            // Resolve that rare Java-side override at the original call site.
+            if let Some(ty) = self.project.parameter_override(id.rsplit('.').next().unwrap_or(id), name)? {
+                return Ok(ty);
+            }
+        }
+        Ok(self.method_types[id].defaults[index].clone())
+    }
+
     fn java_call_with_receiver(
         &mut self, id: &str, mut args: Vec<Value>, path: Expr,
         receiver: Option<Value>, implicit_receiver: bool,
@@ -1274,9 +1290,8 @@ impl Engine<'_> {
             .get(id)
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
         need(m.params().len() == args.len(), "Java arity mismatch")?;
-        let method_name = id.rsplit('.').next().unwrap_or(id);
-        for ((t, name), v) in m.params().iter().zip(&mut args) {
-            let expected = self.project.semantic_parameter_type(method_name, name, t)?;
+        for (index, ((t, name), v)) in m.params().iter().zip(&mut args).enumerate() {
+            let expected = self.method_parameter_type(id, index, name)?;
             if crate::normalized::native_decimal_type(t) {
                 if v.ty() == Ty::Integer {
                     *v = Self::promote_native_decimal(v.clone());
@@ -1289,8 +1304,8 @@ impl Engine<'_> {
             }
             need(expected == v.ty(), "Java argument type mismatch")?;
         }
-        let value = if let Some(name) = self.bindings.get(id).cloned() {
-            self.call(&name, args, path)?
+        let value = if self.bindings.contains_key(id) {
+            self.call(id, args, path)?
         } else {
             need(
                 m.is_static()
@@ -1312,7 +1327,7 @@ impl Engine<'_> {
             self.block(body, id, &mut env, path)?
         };
         need(
-            value.ty() == self.project.result_type(m.return_type())?,
+            value.ty() == self.method_types[id].returns,
             "Java return type mismatch",
         )?;
         let callee_completion = self.realtime_completion.clone();
@@ -1324,24 +1339,19 @@ impl Engine<'_> {
         self.active.remove(&format!("java:{id}"));
         Ok(value)
     }
-    fn call(&mut self, name: &str, args: Vec<Value>, path: Expr) -> Result<Value> {
+    fn call(&mut self, id: &str, args: Vec<Value>, path: Expr) -> Result<Value> {
         self.budget()?;
         self.semantic_calls += 1;
+        let binding = &self.bindings[id];
+        let name = binding.function.clone();
         need(
             self.active.insert(format!("semantic:{name}")),
             "recursive semantic call",
         )?;
-        let f = self
-            .project
-            .functions
-            .get(name)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("semantic execution"), name));
+        let f = &self.project.functions[&name];
         need(f.params.len() == args.len(), "semantic arity mismatch")?;
-        for (p, v) in f.params.iter().zip(&args) {
-            need(
-                Ty::parse(&p.typ)? == v.ty(),
-                "semantic argument type mismatch",
-            )?;
+        for (ty, v) in binding.parameters.iter().zip(&args) {
+            need(*ty == v.ty(), "semantic argument type mismatch")?;
         }
         let mut env = f
             .params
@@ -1362,9 +1372,9 @@ impl Engine<'_> {
                 &(context + "\nresult=not-produced"),
             )
         })?;
-        let expected = Ty::parse(&f.returns)?;
+        let expected = &self.method_types[id].returns;
         let actual = value.ty();
-        if actual != expected {
+        if actual != *expected {
             return Err(fail(format!(
                 "semantic result type mismatch: expected={} actual={}",
                 expected.describe(),

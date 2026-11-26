@@ -183,6 +183,16 @@ pub struct Project {
     parameter_value_types: BTreeMap<String, BTreeMap<String, String>>,
 
 }
+struct MethodTypes {
+    defaults: Vec<Ty>,
+    returns: Ty,
+}
+
+struct CheckedBinding {
+    function: String,
+    parameters: Vec<Ty>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Function {
@@ -367,15 +377,9 @@ impl Project {
         }
         self.java_type(t)
     }
-    fn semantic_parameter_type(&self, method: &str, name: &str, t: &JavaType) -> Result<Ty> {
-        if let Some(ty) = self
-            .parameter_value_types
-            .get(method)
-            .and_then(|params| params.get(name))
-        {
-            return Ty::parse(ty);
-        }
-        self.parameter_type(t)
+    fn parameter_override(&self, method: &str, name: &str) -> Result<Option<Ty>> {
+        self.parameter_value_types.get(method).and_then(|params| params.get(name))
+            .map(|ty| Ty::parse(ty)).transpose()
     }
     fn result_type(&self, t: &JavaType) -> Result<Ty> {
         if self.source_owner(t).is_some() {
@@ -520,6 +524,7 @@ impl Loaded {
             source_array_writes: Default::default(),
             project: &self.project,
             methods: BTreeMap::new(),
+            method_types: BTreeMap::new(),
             bindings: BTreeMap::new(),
             active: BTreeSet::new(),
             steps: 0,
@@ -591,10 +596,10 @@ impl Loaded {
                     need(m.annotations().is_empty(), "unsupported method shape")?;
                     need(!e.methods.contains_key(&id), "duplicate/overloaded method")?;
                 }
-                self.project.result_type(m.return_type())?;
-                for (t, _) in m.params() {
-                    self.project.parameter_type(t)?;
-                }
+                let returns = self.project.result_type(m.return_type())?;
+                let defaults = m.params().iter().map(|(ty, _)| self.project.parameter_type(ty))
+                    .collect::<Result<Vec<_>>>()?;
+                e.method_types.insert(id.clone(), MethodTypes { defaults, returns });
                 e.methods.insert(id, m);
             }
         }
@@ -628,29 +633,26 @@ impl Loaded {
                 signature == format!("{})", java_types.join(",")),
                 "Java parameter signature mismatch",
             )?;
+            let declared = &e.method_types[id];
             need(
                 f.params.len() == m.params().len()
-                    && Ty::parse(&f.returns)? == self.project.result_type(m.return_type())?,
+                    && Ty::parse(&f.returns)? == declared.returns,
                 "semantic return/arity mismatch",
             )?;
             let mut names = BTreeSet::new();
-            for (p, (t, _)) in f.params.iter().zip(m.params()) {
+            let mut parameters = Vec::with_capacity(f.params.len());
+            for (p, fallback) in f.params.iter().zip(&declared.defaults) {
                 need(
                     names.insert(&p.name) && identifier(&p.name),
                     "duplicate/invalid parameter",
                 )?;
-                need(
-                    Ty::parse(&p.typ)?
-                        == self.project.semantic_parameter_type(
-                            id.rsplit('.').next().unwrap_or(id),
-                            &p.name,
-                            t,
-                        )?,
-                    "semantic parameter type mismatch",
-                )?;
+                let ty = Ty::parse(&p.typ)?;
+                let override_type = self.project.parameter_override(id.rsplit('.').next().unwrap_or(id), &p.name)?;
+                need(ty == *override_type.as_ref().unwrap_or(fallback), "semantic parameter type mismatch")?;
+                parameters.push(ty);
             }
             need(
-                e.bindings.insert(id.to_string(), name.clone()).is_none(),
+                e.bindings.insert(id.to_string(), CheckedBinding { function: name.clone(), parameters }).is_none(),
                 "duplicate binding",
             )?;
         }
@@ -678,14 +680,11 @@ impl Loaded {
         let args = m
             .params()
             .iter()
-            .map(|(t, n)| {
+            .enumerate()
+            .map(|(index, (t, n))| {
+                let expected = e.method_parameter_type(entry, index, n)?;
                 e.entry_argument(
-                    n, t,
-                    &self.project.semantic_parameter_type(
-                        entry.rsplit('.').next().unwrap_or(entry),
-                        n,
-                        t,
-                    )?,
+                    n, t, &expected,
                     crate::normalized::source_nullable_parameter(m, n, t)?,
                 )
             })
@@ -713,6 +712,7 @@ impl Loaded {
             source_identity_parameters: e.source_objects.compared_parameters,
             source_identity_states: e.source_objects.compared_states,
             source_record_return,
+            entry_return_type: e.method_types[entry].returns.clone(),
             host_state_roots: e.state_roots.into_values().collect(),
             source_tables: e.source_relations.tables,
             realtime_store: e.realtime_store,
