@@ -321,8 +321,19 @@ impl EntryContext {
 
     pub(super) fn source_identity_names(&self, result: &ExecutionResult) -> BTreeMap<i64, String> {
         result.source_identity_parameters.iter().filter_map(|(id, root)| {
-            let ty = self.parameter_type(root)?.trim_end_matches('?');
-            (self.types.contains_key(ty) || ty == "number[]").then(|| (*id, self.qualified("P", root)))
+            let (parameter, fields) = root.split_once('.').map_or((root.as_str(), None), |(name, fields)| (name, Some(fields)));
+            let ty = self.parameter_type(parameter)?;
+            let ty = match fields {
+                Some(fields) => self.declared_field_type(ty, fields.split('.'))?,
+                None => ty,
+            };
+            let ty = ty.trim_end_matches('?');
+            // Keep root integer-array aliases as well as declared nested
+            // record paths. Nested array identity is a separate contract.
+            if !self.types.contains_key(ty) && !(fields.is_none() && ty == "number[]") { return None; }
+            let public_root = self.qualified("P", parameter);
+            let display = fields.map_or_else(|| public_root.clone(), |tail| format!("{public_root}.{tail}"));
+            Some((*id, display))
         }).chain(result.source_identity_states.iter().filter_map(|(id, binding)| {
             let root = result.source_state_bindings.get(binding)?;
             let state = self.environment.get(root)?;
@@ -346,8 +357,7 @@ impl EntryContext {
 
     pub(super) fn has_record_array_integer_field(&self, name: &str, field: &str) -> bool {
         self.parameter_type(name).and_then(|domain| domain.strip_suffix("[]"))
-            .and_then(|record| self.types.get(record))
-            .and_then(|record| record.fields.get(field))
+            .and_then(|record| self.declared_field_type(record, field.split('.')))
             .is_some_and(|domain| domain == "number")
     }
 

@@ -22,6 +22,13 @@ fn symbol_origins(expr: &Expr) -> (bool, bool) {
 
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
     let (kind, relation, value, default) = expr.as_relation_aggregate()?;
+    if kind == math::RelationAggregateKind::NthValue {
+        let (name, alias, column) = crate::kernel_input::business_relation::ordered_record_projection(relation)?;
+        if !ctx.record_arrays.contains(name) { return None; }
+        let column = crate::format_expr_with_ctx(column, ctx);
+        let index = crate::format_expr_with_ctx(value?, ctx);
+        return Some(format!("(SELECT {column} FROM {name} AS {alias})[{index}]"));
+    }
     if kind == math::RelationAggregateKind::Count && value.is_none() {
         if let Some(branches) = crate::kernel_input::business_relation::projected_union_columns(relation) {
             let distinct = if branches.len() == 1 { "DISTINCT " } else { "" };

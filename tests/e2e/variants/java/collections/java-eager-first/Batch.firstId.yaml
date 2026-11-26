@@ -27,7 +27,7 @@
   - path: [R]
     value: "(SELECT r.ticket.id FROM rows AS r)[1]"
   - path: [throws, 0, when]
-    value: 'LENGTH(rows) <= 1 AND NOT (EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL))'
+    value: 'LENGTH(rows) <= 1 and NOT (EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL))'
 - name: missing-nullability-contract-is-not-treated-as-eager-null-check
   edits:
   - from: '@N.Nullable Ticket ticket;'
@@ -49,7 +49,7 @@
   - path: [throws]
     value:
     - type: java.lang.NullPointerException
-      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL) OR extra.ticket == null
+      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL) or extra.ticket == null
 - name: a-typed-row-array-alias-preserves-source-and-eager-checks
   edits:
     - {from: 'int[] ids;', to: 'Row[] same = rows; int[] ids;'}

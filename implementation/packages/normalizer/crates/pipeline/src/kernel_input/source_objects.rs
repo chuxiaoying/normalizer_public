@@ -262,16 +262,15 @@ impl Engine<'_> {
             .and_then(|class| class.fields().iter().find(|field| field.name() == name)
                 .and_then(|field| self.project.source_owner(field.java_type()).map(|child| (class, field, child))))
         else { return self.read_guarded_source_scalar(reference, name, path); };
-        need(!crate::normalized::source_nullable_field(class, field),
-            "ordinary object field read has no nullable member acquisition proof")?;
+        let nullable = crate::normalized::source_nullable_field(class, field);
+        need(!nullable || matches!(origin, Origin::Parameter { .. }),
+            "nullable object member requires a borrowed parameter path")?;
         let child = match origin {
             Origin::Allocation => return self.read_source_field_on_path(reference, name, path),
             Origin::EntryReceiver => unreachable!("live receiver dispatched to entry state"),
             Origin::Parameter { path: root, .. } => Origin::Parameter {
                 path: format!("{root}.{name}"),
-                // A nullable child declaration was rejected above; root
-                // nullability applies at the root selection, not the child.
-                nullable: false,
+                nullable,
             },
             Origin::State { binding, path } => {
                 let mut path = path.clone();
@@ -280,6 +279,9 @@ impl Engine<'_> {
             }
         };
         let key = (id, name.to_owned());
+        if let Some(&child_ref) = self.source_objects.borrowed_fields.get(&key) {
+            return Ok(Value::Term(Ty::Ref, b::heap_ref(child_ref)));
+        }
         let child_ref = self.heap.new_path_object().id();
         self.source_objects.objects.insert(child_ref, (child_owner.to_owned(), child));
         self.source_objects.borrowed_fields.insert(key, child_ref);

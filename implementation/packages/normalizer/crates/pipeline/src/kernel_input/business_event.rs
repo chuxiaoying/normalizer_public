@@ -108,6 +108,12 @@ pub(super) fn observations(
             if let Some((source, _, field)) = math::domains::relation::positional::field_projection(node) {
                 closed &= entry.has_record_array_integer_field(source, field);
             }
+            if let Some((math::RelationAggregateKind::NthValue, relation, _, _)) = node.as_relation_aggregate() {
+                if let Some((source, _, path)) = super::business_relation::ordered_record_projection(relation) {
+                    closed &= path.as_row_value().and_then(|path| path.split_once('.'))
+                        .is_some_and(|(_, field)| entry.has_record_array_integer_field(source, field));
+                }
+            }
             if let Some(id) = node.as_heap_ref() {
                 closed &= identities.contains_key(&id);
                 heap_operands.entry(id).or_default().0 += 1;

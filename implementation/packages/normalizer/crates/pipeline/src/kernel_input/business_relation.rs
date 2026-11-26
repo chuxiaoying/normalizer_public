@@ -49,6 +49,13 @@ fn add_closed_integer_sum(initial: Expr, sum: Expr) -> Expr {
     addends.into_iter().reduce(b::add).expect("closed sum is present")
 }
 
+pub(crate) fn ordered_record_projection(relation: &RelationExpr) -> Option<(&str, &str, &Expr)> {
+    let RelationExpr::Project {value, alias, input} = relation else { return None; };
+    let RelationExpr::Base {name, alias: row_alias} = input.as_ref() else { return None; };
+    if alias != "value" || value.as_row_value()?.split_once('.')?.0 != row_alias { return None; }
+    Some((name, row_alias, value))
+}
+
 pub(super) fn scalar_binary(op: Op) -> fn(Expr, Expr) -> Expr {
     match op {
         Op::Add => b::add,
@@ -1017,8 +1024,10 @@ pub(super) fn is_table_expression(
             Count => (value.is_none() && projected_union_columns(relation).is_some_and(|branches|
                 branches.iter().all(|(name, column)| tables.get(*name)
                     .and_then(|columns| columns.get(*column)).is_some_and(|ty| ty == "number"))))
-                || is_scalar_array_relation(relation, arrays),
-            NthValue => is_scalar_array_relation(relation, arrays),
+                || is_scalar_array_relation(relation, arrays)
+                || matches!(relation, RelationExpr::Base { name, .. } if record_inputs.contains_key(name)),
+            NthValue => is_scalar_array_relation(relation, arrays)
+                || ordered_record_projection(relation).is_some_and(|(name, _, _)| record_inputs.contains_key(name)),
         };
     }
     if let Some(relation) = expr.as_relation() {

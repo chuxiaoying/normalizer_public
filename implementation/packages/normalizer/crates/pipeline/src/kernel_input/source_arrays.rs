@@ -188,9 +188,19 @@ impl Engine<'_> {
     pub(super) fn source_array_read(&mut self, array: Value, index: Value, path: Expr) -> Result<Value> {
         need(self.project.direct_source, "source array index requires direct source")?;
         if let Value::EagerIntProjection { base, selected } = array {
-            need(index_value(index)? == 0, "eager record projection currently supports only its first element")?;
-            self.throw_source_on_path(b::and(path, b::not(r::relation_exists(base.clone()))), OUT_OF_BOUNDS);
-            return Ok(Value::Term(Ty::Integer, r::relation_first_value(base, selected, b::lit_null())));
+            let index = index_value(index)?;
+            let RelationExpr::Base { name, .. } = &base else { return Err(fail("unbound record projection")); };
+            // Projection has already evaluated, including null failures on any
+            // input row. Only its normal path may reach this bounds check.
+            let missing = if index == 0 { b::not(r::relation_exists(base.clone())) }
+                else { bounds_failure(name, index) };
+            self.throw_source_on_path(b::and(path, missing), OUT_OF_BOUNDS);
+            let result = if index == 0 {
+                r::relation_first_value(base, selected, b::lit_null())
+            } else {
+                r::relation_nth_value(RelationExpr::project(selected, "value", base), b::lit_int(index))
+            };
+            return Ok(Value::Term(Ty::Integer, result));
         }
         if let Value::LocalIntArray(local) = array {
             let index = exact_java_int(index)?;
