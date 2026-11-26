@@ -211,7 +211,10 @@ impl EntryContext {
         if state.kind != "state" || state.source.is_empty() { return Err("invalid state source".into()); }
         if state.fields.is_empty() {
             let domain = state.ty.as_deref().ok_or("undeclared state field")?;
-            return Ok(domain);
+            let leaf = self.declared_field_type(domain, fields.iter().map(String::as_str))
+                .ok_or("undeclared state field")?;
+            if self.types.contains_key(leaf) { return Err("expected a scalar state field".into()); }
+            return Ok(leaf);
         }
         let mut field = state.fields.get(&fields[0]).ok_or("undeclared state field")?;
         for name in &fields[1..] {
@@ -231,12 +234,15 @@ impl EntryContext {
         Ok((format!("{}.{}", self.qualified("E", &path.root), path.fields.join(".")), ty))
     }
 
-    fn has_field<'a>(&'a self, mut ty: &'a str, path: impl Iterator<Item=&'a str>) -> bool where Self: 'a {
+    fn declared_field_type<'a>(&'a self, mut ty: &'a str, path: impl Iterator<Item=&'a str>) -> Option<&'a str> {
         for name in path {
-            let Some(next) = self.types.get(ty).and_then(|record| record.fields.get(name)) else { return false; };
-            ty = next;
+            ty = self.types.get(ty)?.fields.get(name)?;
         }
-        true
+        Some(ty)
+    }
+
+    fn has_field<'a>(&'a self, ty: &'a str, path: impl Iterator<Item=&'a str>) -> bool {
+        self.declared_field_type(ty, path).is_some()
     }
 
     pub(super) fn qualified(&self, kind: &str, name: &str) -> String {
@@ -564,7 +570,8 @@ mod public_entry_admission {
                         "title": "text"
                     }
                 },
-                "counter": { "kind": "state", "source": "src/page.vue#counter", "type": "number" }
+                "counter": { "kind": "state", "source": "src/page.vue#counter", "type": "number" },
+                "summary": { "kind": "state", "source": "src/page.vue#summary", "type": "Reply" }
             },
             "types": { "Reply": { "fields": { "amount": "number", "scores": "number[]" } } },
             "external_results": { "lookup": "Reply" }
@@ -587,7 +594,8 @@ mod public_entry_admission {
         let mut entry = supplied_entry();
         let parts = |fields: &[&str]| fields.iter().map(|field| (*field).to_owned()).collect::<Vec<_>>();
         assert_eq!(entry.state_field("state", &parts(&["summary", "amount"])).unwrap(), "number");
-        assert_eq!(entry.state_field("counter", &parts(&["value"])).unwrap(), "number");
+        assert_eq!(entry.state_field("summary", &parts(&["amount"])).unwrap(), "number");
+        assert_eq!(entry.state_field("counter", &parts(&["value"])).unwrap_err(), "undeclared state field");
         assert_eq!(entry.state_field("state", &parts(&["title", "amount"])).unwrap_err(), "scalar field has no members");
         assert_eq!(entry.state_field("state", &parts(&["summary"])).unwrap_err(), "expected a scalar state field");
         assert!(entry.has_field("Reply", ["scores"].into_iter()));
