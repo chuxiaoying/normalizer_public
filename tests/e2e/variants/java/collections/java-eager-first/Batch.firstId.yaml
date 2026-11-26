@@ -42,3 +42,7 @@
   reject:
   - '[NORM-PROJECT]'
   - ordinary object field read has no nullable member acquisition proof
+- name: a-typed-row-array-alias-preserves-source-and-eager-checks
+  edits:
+    - {from: 'int[] ids;', to: 'Row[] same = rows; int[] ids;'}
+    - {from: 'ids = from rows as row yield row.ticket.id', to: 'ids = from same as row yield row.ticket.id'}
