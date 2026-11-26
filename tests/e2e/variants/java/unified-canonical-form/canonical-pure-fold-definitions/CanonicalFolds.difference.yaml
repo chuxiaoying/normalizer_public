@@ -125,3 +125,18 @@
   edits:
   - from: int[] left, int[] right
     to: int left[], int[] right
+
+- name: a-noncommutative-step-keeps-the-current-item-on-the-right
+  edits:
+    - {from: 'leftAcc * 2 + leftItem', to: 'leftAcc * 2 - leftItem'}
+  expect:
+    - {path: [T, 0, body], value: 'acc * 2 - item'}
+
+- name: pure-definition-closure-keeps-only-the-observed-left-recurrence
+  edits:
+    - {from: 'return leftValue - rightValue;', to: 'return leftValue;'}
+  expect:
+    - path: [T]
+      value:
+        - {id: '$t_0', op: fold, type: number, source: left, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item'}
+    - {path: [R], value: '$t_0'}

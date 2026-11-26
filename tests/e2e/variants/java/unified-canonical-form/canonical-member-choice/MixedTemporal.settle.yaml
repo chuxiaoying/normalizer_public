@@ -80,3 +80,38 @@
       value:
         - { id: $t_0, op: fold, type: number, source: values, initial: backup, accumulator: acc, element: item, body: 'acc * 2 + item' }
         - { id: $t_1, op: member_choice, when: 'true', members: values, empty: backup }
+
+- name: a-third-definition-transitively-depends-on-choice-and-fold
+  edits:
+    - from: 'return total + picked;'
+      to: |-
+        int chosenAfterFold;
+        /* @normalizer-ir chosenAfterFold = choose from values else total */
+        return chosenAfterFold;
+  expect:
+    - path: [T]
+      value:
+        - {id: '$t_0', op: member_choice, when: 'true', members: values, empty: backup}
+        - {id: '$t_1', op: fold, type: number, source: values, initial: '$t_0', accumulator: acc, element: item, body: 'acc * 2 + item'}
+        - {id: '$t_2', op: member_choice, when: 'true', members: values, empty: '$t_1'}
+    - {path: [R], value: '$t_2'}
+
+- name: selecting-an-already-computed-fold-result-does-not-move-its-acquisition
+  edits:
+    - {from: 'return total + picked;', to: 'if (backup == 0) return total; return backup;'}
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN backup == 0 THEN $t_1
+          ELSE backup
+        END
+
+- name: an-unobserved-pure-fold-can-drop-but-the-earlier-choice-stays
+  edits:
+    - {from: 'return total + picked;', to: 'return picked;'}
+  expect:
+    - path: [T]
+      value:
+        - {id: '$t_0', op: member_choice, when: 'true', members: values, empty: backup}
+    - {path: [R], value: '$t_0'}

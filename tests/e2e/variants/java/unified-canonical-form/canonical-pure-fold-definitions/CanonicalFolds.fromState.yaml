@@ -21,3 +21,11 @@
         seed: { position: 1, type: number }
     - path: [T, 0, initial]
       value: E.seed.value
+
+- name: the-selected-state-member-rather-than-sibling-initializes-the-fold
+  edits:
+    - {from: 'class Base { int value; }', to: 'class Base { int value; int offset; }'}
+    - {from: 'int initial = seed.value;', to: 'int initial = seed.offset;'}
+  expect:
+    - {path: [types, Base, fields, offset], add: number}
+    - {path: [T, 0, initial], value: seed.offset}
