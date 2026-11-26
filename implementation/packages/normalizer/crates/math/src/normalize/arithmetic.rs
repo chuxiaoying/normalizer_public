@@ -211,14 +211,7 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
     if base_l != base_r {
         return None;
     }
-    let result = match op {
-        BinOpKind::Lt => off_l < off_r,
-        BinOpKind::Gt => off_l > off_r,
-        BinOpKind::Le => off_l <= off_r,
-        BinOpKind::Ge => off_l >= off_r,
-        _ => return None,
-    };
-    Some(crate::builder::lit_bool(result))
+    Some(crate::builder::lit_bool(op.comparison_test()?(&off_l, &off_r)))
 }
 
 /// `(x - y) op 0 → x op y`。
@@ -226,17 +219,10 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
 /// 支持比较运算符：`> / < / >= / <= / == / !=`。
 /// 对称形式先规范化方向：`0 < (x - y)` → `(x - y) > 0`。
 fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    let swapped = op.swapped_comparison()?;
-    let (cmp_op, lhs) = if is_lit_int_zero(right) {
-        (*op, left)
-    } else if is_lit_int_zero(left) {
-        (swapped, right)
-    } else {
-        return None;
-    };
+    let (cmp_op, lhs, ()) = super::constraint::comparison_literal_rhs(
+        expr.as_binop()?,
+        |term| is_lit_int_zero(term).then_some(()),
+    )?;
     let ExprKind::BinOp {
         op: BinOpKind::Sub,
         left: x,

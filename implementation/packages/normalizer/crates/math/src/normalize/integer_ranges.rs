@@ -81,7 +81,7 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
     if let Some((crate::UnaryOpKind::Not, v)) = e.as_unary_op() {
         return Some(Guard::Not(Box::new(guard(v, subject, cuts)?)));
     }
-    let (mut op, a, z) = e.as_binop()?;
+    let (op, a, z) = e.as_binop()?;
     if matches!(op, B::And | B::Or) {
         let a = Box::new(guard(a, subject, cuts)?);
         let z = Box::new(guard(z, subject, cuts)?);
@@ -91,23 +91,11 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
             Guard::Or(a, z)
         });
     }
-    let (s, n) = if let Some(n) = z.as_lit().and_then(Lit::as_integer) {
-        (a, n)
-    } else if let Some(n) = a.as_lit().and_then(Lit::as_integer) {
-        op = op.swapped_comparison()?;
-        (z, n)
-    } else {
-        return None;
-    };
-    let test: fn(&BigInt, &BigInt) -> bool = match op {
-        B::Eq => BigInt::eq,
-        B::Ne => BigInt::ne,
-        B::Lt => BigInt::lt,
-        B::Le => BigInt::le,
-        B::Gt => BigInt::gt,
-        B::Ge => BigInt::ge,
-        _ => return None,
-    };
+    let (op, s, n) = super::constraint::comparison_literal_rhs(
+        (op, a, z),
+        |expr| expr.as_lit().and_then(Lit::as_integer),
+    )?;
+    let test = op.comparison_test::<BigInt>()?;
     subject_domain(s)?;
     if let Some(old) = subject {
         if old != s {

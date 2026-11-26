@@ -1192,14 +1192,10 @@ struct Interval {
 }
 
 fn ordered_comparison_interval(expr: &Expr) -> Option<(Expr, Interval)> {
-    let (op, left, right) = expr.as_binop()?;
-    let (op, subject, value) = if let Some(Lit::Int(n)) = right.as_lit() {
-        (op, left, *n)
-    } else if let Some(Lit::Int(n)) = left.as_lit() {
-        (op.swapped_comparison()?, right, *n)
-    } else {
-        return None;
-    };
+    let (op, subject, value) = super::constraint::comparison_literal_rhs(
+        expr.as_binop()?,
+        super::constraint::compact_integer,
+    )?;
     let bound = |inclusive| Some(Bound { value, inclusive });
     use BinOpKind::*;
     let (lower, upper) = match op {

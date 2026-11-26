@@ -44,6 +44,26 @@ pub(crate) struct LinearConstraint {
     pub bound: ConstraintBound,
 }
 
+/// Align a recognized literal on the right without widening any caller's policy.
+pub(super) fn comparison_literal_rhs<'a, T>(
+    (op, left, right): (BinOpKind, &'a Expr, &'a Expr),
+    literal: impl Fn(&Expr) -> Option<T>,
+) -> Option<(BinOpKind, &'a Expr, T)> {
+    let swapped = op.swapped_comparison()?;
+    if let Some(value) = literal(right) {
+        Some((op, left, value))
+    } else {
+        literal(left).map(|value| (swapped, right, value))
+    }
+}
+
+pub(super) fn compact_integer(expr: &Expr) -> Option<i64> {
+    match expr.as_lit()? {
+        Lit::Int(value) => Some(*value),
+        _ => None,
+    }
+}
+
 /// 从比较表达式中提取线性约束。
 ///
 /// 支持的形式：
@@ -52,13 +72,11 @@ pub(crate) struct LinearConstraint {
 ///
 /// 返回 None 如果表达式不是上述形式。
 pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
-    let (op, left, right) = expr.as_binop()?;
-    let (op, subject, value) = match (left.as_lit(), right.as_lit()) {
-        (None, Some(Lit::Int(n))) => (op, left, *n),
-        (Some(Lit::Int(n)), None) => (op.swapped_comparison()?, right, *n),
-        // Both literals are folded separately.
-        _ => return None,
-    };
+    let (op, subject, value) = comparison_literal_rhs(expr.as_binop()?, compact_integer)?;
+    // A local context bound requires a nonliteral subject.
+    if subject.as_lit().is_some() {
+        return None;
+    }
     use BinOpKind::*;
     let bound = match op {
         Lt => ConstraintBound::Lt(value),

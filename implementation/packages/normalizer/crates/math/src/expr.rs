@@ -88,6 +88,19 @@ impl BinOpKind {
         })
     }
 
+    pub(crate) fn comparison_test<T: Ord>(self) -> Option<fn(&T, &T) -> bool> {
+        use BinOpKind::*;
+        Some(match self {
+            Eq => T::eq,
+            Ne => T::ne,
+            Lt => T::lt,
+            Le => T::le,
+            Gt => T::gt,
+            Ge => T::ge,
+            _ => return None,
+        })
+    }
+
     /// Equivalent comparison after exchanging the already evaluated operands.
     /// This does not negate the predicate or apply to arithmetic or logic.
     pub(crate) fn swapped_comparison(self) -> Option<Self> {
