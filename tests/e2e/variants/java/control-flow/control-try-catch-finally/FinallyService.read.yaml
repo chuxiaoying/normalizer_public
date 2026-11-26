@@ -95,3 +95,41 @@
           WHEN completion.is_throw($e_0, RemoteError) THEN 0
           ELSE $e_0
         END
+
+- name: fully-qualified-catch-base-matches-the-same-exception
+  edits:
+  - from: catch (RemoteError ignored)
+    to: catch (java.lang.RuntimeException ignored)
+
+- name: final-catch-binding-does-not-change-the-matching-domain
+  edits:
+  - from: catch (RemoteError ignored)
+    to: catch (final RemoteError ignored)
+
+- name: reject-primitive-catch-type-rather-than-treating-it-as-unmatched
+  edits:
+  - from: catch (RemoteError ignored)
+    to: catch (int ignored)
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'invalid catch type']
+
+- name: reject-array-catch-type-rather-than-using-its-component
+  edits:
+  - from: catch (RemoteError ignored)
+    to: catch (RemoteError[] ignored)
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'invalid catch type']
+
+- name: reject-missing-catch-type-rather-than-ignoring-the-handler
+  edits:
+  - from: catch (RemoteError ignored)
+    to: catch (MissingError ignored)
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'undeclared catch class MissingError']
+
+- name: reject-declared-class-outside-the-exception-hierarchy
+  edits:
+  - from: class RemoteError extends RuntimeException {}
+    to: |-
+      class RemoteError extends RuntimeException {}
+      class Ordinary {}
+  - from: catch (RemoteError ignored)
+    to: catch (Ordinary ignored)
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'undeclared catch class Ordinary']
