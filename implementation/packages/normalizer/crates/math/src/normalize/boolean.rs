@@ -849,29 +849,15 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
             return Some(builder::binop_public(inv, left.clone(), right.clone()));
         }
     }
-    // 德摩根律 NOT(X && Y && ...) → NOT X || NOT Y || ...
-    if let ExprKind::BinOp {
-        op: BinOpKind::And, ..
-    } = operand.kind()
-    {
-        let conjuncts = flatten_and(operand);
-        if conjuncts.len() >= 2 {
-            let negated: Vec<Expr> = conjuncts.iter().map(|c| builder::not(c.clone())).collect();
-            return Some(rebuild_or(&negated));
-        }
-    }
-    // 德摩根律 NOT(X || Y || ...) → NOT X && NOT Y && ...
-    if let ExprKind::BinOp {
-        op: BinOpKind::Or, ..
-    } = operand.kind()
-    {
-        let disjuncts = flatten_or(operand);
-        if disjuncts.len() >= 2 {
-            let negated: Vec<Expr> = disjuncts.iter().map(|d| builder::not(d.clone())).collect();
-            return Some(rebuild_and(&negated));
-        }
-    }
-    None
+    // A matching binary root always flattens to at least two terms.
+    let (op, _, _) = operand.as_binop()?;
+    let (terms, rebuild): (_, fn(&[Expr]) -> Expr) = match op {
+        BinOpKind::And => (flatten_and(operand), rebuild_or),
+        BinOpKind::Or => (flatten_or(operand), rebuild_and),
+        _ => return None,
+    };
+    let negated: Vec<_> = terms.into_iter().map(builder::not).collect();
+    Some(rebuild(&negated))
 }
 
 // =============================================================================
@@ -1054,10 +1040,9 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
             continue;
         }
 
-        if interval_is_empty(interval) {
-            return Some(vec![builder::lit_bool(false)]);
-        }
-
+        // The insertion loop already refuted every contradictory pair.
+        // For these intervals, an empty intersection requires a conflicting
+        // pair of endpoints (the maximum lower and minimum upper bounds).
         for idx in &group {
             consumed[*idx] = true;
         }
@@ -1084,14 +1069,6 @@ fn intersect_intervals(left: Interval, right: Interval) -> Interval {
         lower: max_lower(left.lower, right.lower),
         upper: min_upper(left.upper, right.upper),
     }
-}
-
-fn interval_is_empty(interval: Interval) -> bool {
-    let (Some(lower), Some(upper)) = (interval.lower, interval.upper) else {
-        return false;
-    };
-    lower.value > upper.value
-        || (lower.value == upper.value && (!lower.inclusive || !upper.inclusive))
 }
 
 fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {

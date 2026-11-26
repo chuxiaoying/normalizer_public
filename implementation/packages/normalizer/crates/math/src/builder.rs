@@ -1191,7 +1191,7 @@ fn boolean_truth_table_covers_all_precheck(conds: &[Expr]) -> TruthTableCoverage
     }
     let mut atoms: Vec<String> = Vec::new();
     for cond in conds {
-        collect_boolean_atoms(cond, &mut atoms);
+        visit_boolean_atoms(cond, &mut |atom| atoms.push(boolean_atom_key(atom)));
     }
     atoms.sort();
     atoms.dedup();
@@ -1283,7 +1283,7 @@ fn compile_boolean_truth_table_expr(
         }
     }
 
-    let key = format!("{:?}", expr);
+    let key = boolean_atom_key(expr);
     let idx = *atom_index
         .get(key.as_str())
         .expect("boolean atom must have been collected");
@@ -1405,29 +1405,26 @@ fn find_boolean_model(
     false
 }
 
-fn collect_boolean_atom_exprs(expr: &Expr, atoms: &mut Vec<Expr>) {
+fn visit_boolean_atoms(expr: &Expr, visit: &mut impl FnMut(&Expr)) {
     if expr.as_bool().is_some() {
         return;
     }
     if let Some((UnaryOpKind::Not, operand)) = expr.as_unary_op() {
-        collect_boolean_atom_exprs(operand, atoms);
-        return;
+        visit_boolean_atoms(operand, visit);
+    } else if let Some((BinOpKind::And | BinOpKind::Or, left, right)) = expr.as_binop() {
+        visit_boolean_atoms(left, visit);
+        visit_boolean_atoms(right, visit);
+    } else {
+        visit(expr);
     }
-    if let Some((op, left, right)) = expr.as_binop() {
-        match op {
-            BinOpKind::And | BinOpKind::Or => {
-                collect_boolean_atom_exprs(left, atoms);
-                collect_boolean_atom_exprs(right, atoms);
-                return;
-            }
-            BinOpKind::Eq | BinOpKind::Ne => {
-                atoms.push(expr.clone());
-                return;
-            }
-            _ => {}
-        }
+}
+
+fn boolean_atom_key(expr: &Expr) -> String {
+    if let Some((BinOpKind::Eq | BinOpKind::Ne, left, right)) = expr.as_binop() {
+        comparison_atom_key(left, right)
+    } else {
+        format!("{:?}", expr)
     }
-    atoms.push(expr.clone());
 }
 
 /// Find a concrete propositional counterexample for a conjunction of formulas
@@ -1439,16 +1436,12 @@ fn collect_boolean_atom_exprs(expr: &Expr, atoms: &mut Vec<Expr>) {
 fn boolean_conditions_have_independent_model(conditions: &[Expr; 2]) -> bool {
     let mut atom_exprs = Vec::new();
     for condition in conditions {
-        collect_boolean_atom_exprs(condition, &mut atom_exprs);
+        visit_boolean_atoms(condition, &mut |atom| atom_exprs.push(atom.clone()));
     }
     let mut atoms = Vec::new();
     let mut atom_values = HashMap::<String, Expr>::new();
     for atom in atom_exprs {
-        let key = if let Some((BinOpKind::Eq | BinOpKind::Ne, left, right)) = atom.as_binop() {
-            comparison_atom_key(left, right)
-        } else {
-            format!("{:?}", atom)
-        };
+        let key = boolean_atom_key(&atom);
         if !atom_values.contains_key(&key) {
             atom_values.insert(key, atom.clone());
             atoms.push(atom);
@@ -1495,33 +1488,6 @@ fn is_pure_boolean_propositional_expr(expr: &Expr) -> bool {
                 | SymVarOrigin::Temporal { primitive_type, .. },
         } if primitive_type == "boolean"
     )
-}
-
-fn collect_boolean_atoms(expr: &Expr, atoms: &mut Vec<String>) {
-    if expr.as_bool().is_some() {
-        return;
-    }
-    if let Some((op, operand)) = expr.as_unary_op() {
-        if op == UnaryOpKind::Not {
-            collect_boolean_atoms(operand, atoms);
-            return;
-        }
-    }
-    if let Some((op, left, right)) = expr.as_binop() {
-        match op {
-            BinOpKind::And | BinOpKind::Or => {
-                collect_boolean_atoms(left, atoms);
-                collect_boolean_atoms(right, atoms);
-                return;
-            }
-            BinOpKind::Eq | BinOpKind::Ne => {
-                atoms.push(comparison_atom_key(left, right));
-                return;
-            }
-            _ => {}
-        }
-    }
-    atoms.push(format!("{:?}", expr));
 }
 
 fn comparison_atom_key(left: &Expr, right: &Expr) -> String {
