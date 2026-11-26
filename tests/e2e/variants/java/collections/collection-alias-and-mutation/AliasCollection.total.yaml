@@ -17,3 +17,111 @@
     - {from: 'int total(int[] values, int next)', to: 'int total(int[] values, int next, int[] other)'}
     - {from: 'int[] alias = values;', to: 'int[] alias = other;'}
   reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'distinct source arrays may alias']
+
+- name: caught-store-continues-with-the-same-alias
+  edits:
+    - from: 'values[0] = next;'
+      to: |-
+        try {
+                    values[1] = next;
+                } catch (ArrayIndexOutOfBoundsException ignored) {}
+  expect:
+    - { path: [S, 0, write, target], value: 'values[1]' }
+    - { path: [S, 0, write, when], value: 'LENGTH(values) >= 2' }
+    - { path: [throws], absent: true }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN LENGTH(values) <= 1 THEN COALESCE(SUM(SELECT value FROM values), 0)
+          ELSE COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next
+        END
+
+- name: ordinary-helper-catch-has-the-same-store-and-return
+  edits:
+    - from: 'class AliasCollection {'
+      to: |-
+        class AliasCollection {
+            static int changedTotal(int[] values, int next) {
+                values[1] = next;
+                return unchangedTotal(values);
+            }
+
+            static int unchangedTotal(int[] values) {
+                int total = 0;
+                for (int value : values) total += value;
+                return total;
+            }
+    - from: |-
+        int[] alias = values;
+                values[0] = next;
+                int total = 0;
+                for (int value : alias) total += value;
+                return total;
+      to: |-
+        try {
+                    return changedTotal(values, next);
+                } catch (ArrayIndexOutOfBoundsException ignored) {
+                    return unchangedTotal(values);
+                }
+  expect:
+    - { path: [S, 0, write, target], value: 'values[1]' }
+    - { path: [S, 0, write, when], value: 'LENGTH(values) >= 2' }
+    - { path: [throws], absent: true }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN LENGTH(values) <= 1 THEN COALESCE(SUM(SELECT value FROM values), 0)
+          ELSE COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next
+        END
+
+- name: committed-write-survives-a-later-caught-explicit-throw
+  edits:
+    - from: 'values[0] = next;'
+      to: |-
+        try {
+                    values[0] = next;
+                    throw new RuntimeException("checkpoint");
+                } catch (RuntimeException ignored) {}
+  expect:
+    - { path: [throws], absent: true }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN LENGTH(values) > 0 THEN COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values) + next
+          ELSE COALESCE(SUM(SELECT value FROM values), 0)
+        END
+
+- name: guarded-caught-store-does-not-write-on-the-disabled-path
+  edits:
+    - {from: 'int total(int[] values, int next)', to: 'int total(int[] values, int next, boolean enabled)'}
+    - from: 'values[0] = next;'
+      to: |-
+        try {
+                    if (enabled) { values[1] = next; }
+                } catch (ArrayIndexOutOfBoundsException ignored) {}
+  expect:
+    - { path: [P, parameters, enabled], add: {position: 2, type: bool} }
+    - { path: [S, 0, write, target], value: 'values[1]' }
+    - { path: [S, 0, write, when], value: 'enabled and LENGTH(values) >= 2' }
+    - { path: [throws], absent: true }
+    # Under the short-array arm no prior index-1 value exists. Only in the
+    # long-array arm replace its contribution with the last guarded slot.
+    - path: [R]
+      value: |-
+        CASE
+          WHEN LENGTH(values) <= 1 THEN COALESCE(SUM(SELECT value FROM values), 0)
+          ELSE COALESCE(SUM(SELECT value FROM values), 0) - values[1] + CASE WHEN enabled AND LENGTH(values) >= 2 THEN next ELSE values[1] END
+        END
+
+- name: unmatched-catch-does-not-convert-bounds-failure-to-a-sum
+  edits:
+    - from: 'values[0] = next;'
+      to: |-
+        try {
+                    values[1] = next;
+                } catch (ArithmeticException ignored) {}
+  expect:
+    - { path: [S, 0, write, target], value: 'values[1]' }
+    - { path: [S, 0, write, when], value: 'LENGTH(values) >= 2' }
+    - { path: [throws, 0, when], value: 'LENGTH(values) <= 1' }
+    - { path: [R], value: 'COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next' }

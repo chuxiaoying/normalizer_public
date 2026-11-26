@@ -173,7 +173,16 @@ impl Engine<'_> {
                 // it cancels between the old and new contributions.
                 if b::path_implies(&path, &bound) {
                     total = b::add(b::sub(total, original), updated);
+                } else if indices.len() == 1 {
+                    // One conditional overwrite selects between two complete
+                    // aggregate observations of the same root. Reuse the
+                    // shared CASE join used when a source return is already
+                    // split. No slot read moves outside its bounds domain.
+                    let adjusted = b::add(b::sub(total.clone(), original), updated);
+                    total = realtime_state::join_value(bound, adjusted, total);
                 } else {
+                    // Keep multiple guarded corrections linear in the number
+                    // of written indices rather than duplicating the sum tree.
                     let correction = b::case_when(vec![(bound, b::sub(updated, original)), (b::lit_bool(true), b::lit_int(0))]);
                     total = b::add(total, correction);
                 }

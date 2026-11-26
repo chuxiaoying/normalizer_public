@@ -313,11 +313,23 @@ pub(crate) fn finally_throw<'a>(statement: &'a S) -> Option<&'a str> {
     }
 }
 
-fn validate_protected_try(body: &[S], id: &str) -> Result<(), String> {
-    let [S::Try { body, catches, finally_block }] = body else { return Ok(()); };
-    if protected_return(body) && (finally_block.is_none()
-        || (!catches.is_empty() && catches.iter().all(|handler| protected_return(handler.body()))))
-    {
+// A continuing protected block may change heap cells, but never rebind an
+// outer local: guarded stores are shared across normal and caught paths.
+fn continuing_try_body(body: &[S]) -> bool {
+    body.iter().all(|statement| match statement {
+        S::Assign { target: E::ArrayAccess { .. }, .. } | S::Throw(_) => true,
+        S::Block(inner) => continuing_try_body(inner),
+        S::If { then_block, else_block, .. } => continuing_try_body(then_block)
+            && else_block.as_deref().is_none_or(continuing_try_body),
+        _ => false,
+    })
+}
+fn validate_protected_try(body: &[S], catches: &[simulator_parser::ast::CatchClause], finally: Option<&[S]>, id: &str) -> Result<(), String> {
+    let closed_handlers = catches.iter().all(|handler|
+        protected_return(handler.body()) || finally.is_none() && handler.body().is_empty());
+    let terminal = protected_return(body);
+    let continuing = catches.len() == 1 && finally.is_none() && continuing_try_body(body);
+    if closed_handlers && !catches.is_empty() && (terminal || continuing) {
         return Ok(());
     }
     Err(error("NORM-CATCH-BODY", id))
@@ -407,7 +419,6 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             graph.insert(id.clone(), Vec::new());
             continue;
         };
-        validate_protected_try(body, id)?;
         let mut catches = CatchAdmission {
             parents: &exceptions,
             resolved: catch_types.entry(id.clone()).or_default(),
@@ -545,7 +556,8 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {
                 statements(body, at, calls, catch_admission)?;
             }
-            S::Try { body, catches, finally_block } if !catches.is_empty() => {
+            S::Try { body, catches, finally_block } => {
+                validate_protected_try(body, catches, finally_block.as_deref(), at)?;
                 statements(body, at, calls, catch_admission)?;
                 let mut prior_types: Vec<String> = Vec::new();
                 for handler in catches {

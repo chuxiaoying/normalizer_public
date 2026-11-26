@@ -231,10 +231,12 @@ impl Engine<'_> {
         env: &mut Env,
         path: Expr,
     ) -> Result<()> {
-        need(
-            crate::normalized::protected_return(body) && !catches.is_empty(),
-            "source try requires a terminal protected expression",
-        )?;
+        if !self.project.direct_source {
+            need(
+                crate::normalized::protected_return(body) && !catches.is_empty(),
+                "source try requires a terminal protected expression",
+            )?;
+        }
         let parent = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
 
         let prior_realtime_throws = self.realtime_throws.len();
@@ -264,10 +266,12 @@ impl Engine<'_> {
             if guard.as_bool() == Some(false) {
                 continue;
             }
-            need(
-                catch.body().is_empty() || crate::normalized::protected_return(catch.body()),
-                "catch handler must fall through or return its value",
-            )?;
+            if !self.project.direct_source {
+                need(
+                    catch.body().is_empty() || crate::normalized::protected_return(catch.body()),
+                    "catch handler must fall through or return its value",
+                )?;
+            }
             self.realtime_completion = Completion::Continue;
             let mut handler_env = env.clone();
             // The exception object is type-only in this source profile. An
@@ -285,8 +289,10 @@ impl Engine<'_> {
             }
         }
         if let Some(finally) = finally {
-            need(catches.iter().all(|handler| crate::normalized::protected_return(handler.body())),
-                "source finally requires terminal catch handlers")?;
+            if !self.project.direct_source {
+                need(catches.iter().all(|handler| crate::normalized::protected_return(handler.body())),
+                    "source finally requires terminal catch handlers")?;
+            }
             pending.extend(handled);
             let saved = Completion::from_alternatives(pending);
             // A pending return or throw is not a closed execution path until
