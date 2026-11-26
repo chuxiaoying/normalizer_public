@@ -86,6 +86,7 @@ pub(crate) struct Parser<'a> {
     /// 显式 import 的 FQN 列表（`import x.y.Z;`）——parser 只收集，不做 FQN 化
     pub(crate) imports: Vec<String>,
     pub(crate) has_unbound_imports: bool,
+    pub(crate) has_unknown_import_origins: bool,
     pub(crate) static_context: bool,
     pub(crate) official_n: bool,
 }
@@ -100,6 +101,7 @@ impl<'a> Parser<'a> {
             file: file_hint.to_string(),
             imports: Vec::new(),
             has_unbound_imports: false,
+            has_unknown_import_origins: false,
             static_context: false,
             official_n: false,
         }
@@ -426,6 +428,16 @@ impl<'a> Parser<'a> {
             self.require_delimiter(b';', "[JAVA-IMPORT] expected semicolon")?;
             if is_static || wildcard {
                 self.has_unbound_imports = true;
+                // The JDK origin is known for these imports, but none of
+                // their members are resolved by spelling into executable IR.
+                let inert_jdk = match (is_static, wildcard) {
+                    (false, true) => name == "java.util",
+                    (true, true) => name == "java.lang.Math",
+                    (true, false) => name.strip_prefix("java.lang.Math.")
+                        .is_some_and(|member| !member.contains('.')),
+                    _ => false,
+                };
+                self.has_unknown_import_origins |= !inert_jdk;
             } else {
                 self.imports.push(name);
             }
@@ -481,6 +493,7 @@ impl<'a> Parser<'a> {
             source_file: Some(self.file.clone()),
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
+            has_unknown_import_origins: self.has_unknown_import_origins,
             simple_name,
             type_parameters,
             annotations,
@@ -616,6 +629,7 @@ fn parse_class_body(
                 source_file: Some(file.to_owned()),
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
+                has_unknown_import_origins: class.has_unknown_import_origins,
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
                 type_parameters,
                 annotations: annotations.clone(),

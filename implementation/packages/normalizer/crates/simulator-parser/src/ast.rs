@@ -47,6 +47,7 @@ pub struct JavaClass {
     /// Static and wildcard imports are syntactically valid, but unresolved
     /// bindings cannot be admitted to the closed source contract.
     pub(crate) has_unbound_imports: bool,
+    pub(crate) has_unknown_import_origins: bool,
     pub(crate) simple_name: String,
     pub(crate) type_parameters: Vec<String>,
     pub(crate) annotations: Vec<AnnotationRef>,
@@ -70,6 +71,8 @@ impl JavaClass {
     pub fn imports(&self) -> &[String] {
         &self.imports
     }
+    pub fn has_unknown_import_origins(&self) -> bool { self.has_unknown_import_origins }
+
     pub fn has_unbound_imports(&self) -> bool {
         self.has_unbound_imports
     }

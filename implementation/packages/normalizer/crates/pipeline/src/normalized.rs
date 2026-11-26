@@ -591,7 +591,7 @@ pub(crate) fn validate_with_receiver(
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || !c.annotations().is_empty()
             || !supported_source_imports(c)
-            || c.has_unbound_imports()
+            || c.has_unknown_import_origins()
         {
             return Err(error("NORM-CLASS-SHAPE", &name));
         }
