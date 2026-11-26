@@ -85,12 +85,13 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
         // completion root. Preserve the declared integer field in math's
         // typed receipt path rather than erase it into a generic Number call.
         // Throwing ports retain their partial completion.value projection.
-        if let Some(math::SymVarOrigin::External { binding_id, path, primitive_type }) =
-            value.as_sym_var()
-        {
-            if path.is_empty() && primitive_type == "normalized.completion" {
-                return Ok(Value::Term(ty, b::sym_e_path(*binding_id, vec![name.into()], ScalarSymbolType::Integer)));
-            }
+        // The tagged completion is the only External symbol that carries a
+        // checked Record. Scalar receipt paths cannot acquire that type.
+        if let Some(math::SymVarOrigin::External { binding_id, .. }) = value.as_sym_var() {
+            return Ok(Value::Term(
+                ty,
+                b::sym_e_path(*binding_id, vec![name.into()], ScalarSymbolType::Integer),
+            ));
         }
     }
     let result_type = ty.primitive_value()?;
