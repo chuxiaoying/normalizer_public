@@ -1,20 +1,18 @@
 // The typed standalone syntactic and type-checking gate shared by .ts shapes.
 import ts from 'typescript';
+import {definedModuleExport, parseSourceModule} from './ir.mjs';
 import {localDirectives} from './local-directives.mjs';
 
 export const failTypedModule = message => { throw new Error('[NORM-TS-MODULE] ' + message); };
 export const typedIdentifier = x => typeof x === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(x) && x !== 'undefined';
 
 export function typedModuleAst(source, physicalPath, entry) {
-  const sf = ts.createSourceFile(physicalPath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  if (sf.parseDiagnostics.length) failTypedModule(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
-  const exports = sf.statements.filter(dec => ts.isFunctionDeclaration(dec)
-    && dec.name?.text === entry && dec.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  if (exports.length !== 1 || !exports[0].body) failTypedModule('expected one defined exported function: ' + entry);
+  const sf = parseSourceModule(physicalPath, source, failTypedModule, ts.ScriptKind.TS);
+  const fn = definedModuleExport(sf, entry, failTypedModule);
   for (const declaration of sf.statements) {
     if (ts.isFunctionDeclaration(declaration) && declaration.body) localDirectives(sf, declaration.body).requireConsumed();
   }
-  return {sf, fn: exports[0]};
+  return {sf, fn};
 }
 
 export function typedBooleanParameters(fn) {

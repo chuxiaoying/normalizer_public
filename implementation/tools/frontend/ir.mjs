@@ -3,10 +3,17 @@
 // framework/template semantics.
 import ts from 'typescript';
 
-export function parsePlainModule(file, text, fail) {
-  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+export function parseSourceModule(file, text, fail, kind = ts.ScriptKind.JS) {
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
   if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
   return sf;
+}
+
+export function definedModuleExport(sf, entry, fail) {
+  const declarations = sf.statements.filter(node => ts.isFunctionDeclaration(node)
+    && node.name?.text === entry && node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
+  if (declarations.length !== 1 || !declarations[0].body) fail('expected one defined exported function: ' + entry);
+  return declarations[0];
 }
 
 const BINARY = new Map([

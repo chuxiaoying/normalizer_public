@@ -3,7 +3,7 @@
 import ts from 'typescript';
 import { basename, extname } from 'node:path';
 import { singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
-import { parsePlainModule, unwrapParens } from './ir.mjs';
+import { parseSourceModule, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 function fail(message) {
@@ -17,7 +17,7 @@ function hostType(type) {
 }
 
 export function readModuleEvent(modulePath, text, entryName, originPath) {
-  const sf = parsePlainModule(modulePath, text, fail);
+  const sf = parseSourceModule(modulePath, text, fail);
   const types = Object.create(null),
     states = Object.create(null),
     parameters = Object.create(null);

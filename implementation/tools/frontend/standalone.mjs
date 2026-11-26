@@ -5,7 +5,7 @@ import { invokeKernel } from './invoke-kernel.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { lowerExpression, parsePlainModule, unwrapParens as unwrap } from './ir.mjs';
+import { definedModuleExport, lowerExpression, parseSourceModule, unwrapParens as unwrap } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { typedModuleAst } from './typed-module.mjs';
@@ -138,11 +138,8 @@ function compile(source, file, entry, physicalPath) {
     const returns = isListener ? 'void' : 'number';
     return projectInput(file, entry, params, returns, false, returns, typed.result, typed.excerpt, typed);
   }
-  const sf = parsePlainModule(file, source, fail);
-  const exported = sf.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === entry
-    && node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  if (exported.length !== 1 || !exported[0].body) fail('expected one defined exported function: ' + entry);
-  const fn = exported[0];
+  const sf = parseSourceModule(file, source, fail);
+  const fn = definedModuleExport(sf, entry, fail);
   // Imports, executable top-level initialization and other module state
   // cannot be ignored by a closed standalone scalar adapter.
   if (sf.statements.some(node => !ts.isFunctionDeclaration(node))) fail('standalone scalar modules require closed function declarations');

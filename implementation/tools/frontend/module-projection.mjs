@@ -2,7 +2,7 @@
 // and the types of its instance state. Initial values describe field types only.
 import { basename, extname } from 'node:path';
 import ts from 'typescript';
-import { lowerExpression, parsePlainModule } from './ir.mjs';
+import { lowerExpression, parseSourceModule } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 function fail(detail) {
@@ -37,7 +37,7 @@ function literalShape(node) {
 }
 
 export function readModuleProjection(modulePath, source, entryName, originPath) {
-  const sf = parsePlainModule(modulePath, source, fail);
+  const sf = parseSourceModule(modulePath, source, fail);
   const states = new Map();
   const page = basename(originPath, extname(originPath));
   for (const statement of sf.statements) {
