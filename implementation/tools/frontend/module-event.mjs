@@ -83,7 +83,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         if (flags.has('entryInputs')) {
           if (Object.hasOwn(parameters, name)) fail(`duplicate host parameter ${name}`);
           parameters[name] = {
-            position: Object.keys(parameters).length,
+            position: inputs.size,
             type: hostType(item.type.getText()),
           };
           inputs.set(path, name);
@@ -111,9 +111,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     const name = local();
     steps.push({ op: 'read_input', name, input });
     return name;
-  }
-  function lower(n, steps) {
-    return lowerValue(n, (input) => variable(readInput(input, steps)));
   }
   // The only callback available in a value expression reads invariant P.
   // State, port and task effects are emitted by sequence at their own site.
@@ -147,8 +144,9 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     fail(`unsupported expression ${n.getText()}`);
   }
   const directives = localDirectives(sf, fn.body);
-  function sequence(block, caught, caughtTypes = []) {
+  function sequence(block, caught, caughtTypes) {
     const steps = [];
+    const readP = (input) => variable(readInput(input, steps));
     const locals = new Map();
     let before = block.getFirstToken(sf).end;
     let uninitialized;
@@ -192,7 +190,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
             external = call.expression.getText(),
             port = ports.get(external);
           if (!port) fail(`await needs a declared external callback: ${external}`);
-          const args = call.arguments.map((arg) => lower(arg, steps));
+          const args = call.arguments.map((arg) => lowerValue(arg, readP));
           if (args.length !== port.params.length) fail(`incorrect arity for ${external}`);
           const task = local();
           steps.push(
@@ -202,7 +200,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
           for (const error of port.throws) outstanding.add(error);
           continue;
         }
-        steps.push({ op: 'let', name, value: lower(init, steps) });
+        steps.push({ op: 'let', name, value: lowerValue(init, readP) });
         continue;
       }
       if (
@@ -214,7 +212,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         const target = st.expression.left.getText().split('.');
         if (!Object.hasOwn(states, target[0]))
           fail(`assignment to undeclared state ${target.join('.')}`);
-        const value = lower(st.expression.right, steps);
+        const value = lowerValue(st.expression.right, readP);
         steps.push({ op: 'write_state', target, value });
         continue;
       }
