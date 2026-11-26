@@ -2,7 +2,7 @@
 use super::{
     b, fail, need,
     realtime_state::{Completion, CompletionAlternative, CompletionOutcome},
-    Engine, Env, Expr, JavaType, Result, Ty, Value, S,
+    Engine, Env, Expr, Result, Ty, Value, S,
 };
 use normalizer_ir::local::ScalarOperand;
 use simulator_parser::ast::CatchClause;
@@ -246,22 +246,14 @@ impl Engine<'_> {
         self.realtime_throws.truncate(prior_realtime_throws);
         let mut handled = Vec::new();
         for catch in catches {
-            let JavaType::Class(caught) = catch.exception_type() else {
-                return Err(fail("invalid catch type"));
-            };
-            let owner = id.rsplit_once('.').map(|(owner, _)| owner).unwrap_or("");
-            let caught = crate::normalized::exception_name(
-                caught,
-                owner,
-                &self.project.source_exception_parents,
-            )
-            .ok_or_else(|| fail(format!("undeclared catch class {caught}")))?;
+            // from_parsed_source has bound every handler, independent of its reachability.
+            let caught = &self.project.source_catch_types[id][catch.exception_class()];
             let mut guard = b::lit_bool(false);
             pending.retain(|alternative| {
                 if let CompletionOutcome::Throw { class, .. } = &alternative.outcome {
                     if crate::normalized::subtype(
                         class,
-                        &caught,
+                        caught,
                         &self.project.source_exception_parents,
                     ) {
                         guard = b::or(guard.clone(), alternative.guard.clone());

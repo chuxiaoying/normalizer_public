@@ -180,6 +180,8 @@ pub struct Project {
     source_ports: BTreeMap<String, crate::normalized::source_ports::SourcePort>,
     #[serde(skip)]
     source_exception_parents: BTreeMap<String, String>,
+    #[serde(skip)]
+    source_catch_types: crate::normalized::CatchTypes,
     schema: String,
     source: String,
     source_text: String,
@@ -409,6 +411,7 @@ impl Loaded {
         let crate::normalized::SourceEvidence {
             layouts: source_layouts,
             exception_parents: source_exception_parents,
+            catch_types: source_catch_types,
             ports: source_ports,
         } = crate::normalized::validate(&program, entry)?;
         let ports = source_ports::contracts(&program, &source_ports)?;
@@ -433,6 +436,7 @@ impl Loaded {
             source_layouts,
             source_ports,
             source_exception_parents,
+            source_catch_types,
             schema: KERNEL_INPUT_SCHEMA.into(),
             source: "<parsed-java-source>".into(),
             source_text: String::new(),

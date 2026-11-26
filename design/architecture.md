@@ -14,6 +14,12 @@ Java 入口用 Apache 的 `StringUtils.trim(raw)` 裁剪文本。若工程为每
 
 多语言也沿用这条分工。Java 可以用注解标明某次调用的外部端口，TypeScript 可以在端口声明上加标记注释。各自的解析器理解本语言的语法，把它们交付成统一 IR 中同一种外部调用。内核只需知道哪个端口、哪些参数、在什么条件下被调用。例如 TypeScript 的 `handle(false)` 只登记回调，`handle(true)` 才会在登记之后发送通知。登记和实际调用的区别必须一路保留到 PERS。[Java 端口与重试](examples/topics/loops-and-termination/java-loop-bounded-retry.md) · [TypeScript 登记与派发](examples/topics/external-boundaries/frontend-deferred-listener.md)
 
+## 入口先验证，内核再执行
+
+归一化只接收能够通过编译的程序。入口负责拒绝语法错误、无法绑定的名称和非法的静态类型等编译错误；源码合法但超出当前归一化合同，也在入口明确拒绝。预处理不得通过删掉源码行为来换取通过。两类拒绝都不进入模拟执行，也不生成 PERS。
+
+模拟内核消费已验证的源码及其绑定证据，不在执行分支里分散做编译容错。程序本来就允许发生的运行时异常不同：例如合法的数组访问遇到越界时，内核按实际可达域记录异常，保留此前已经发生的业务效果。
+
 ## 符号化执行为什么需要多个“宇宙”？
 
 看 `Decision.choose(value, limit, fallback)`。三个参数都是这次执行给定的输入。它们的具体数值可以未知；每次引用同一个参数，都取同一个符号值。内核按源码执行到 `adjusted = value + 1`，后续读到 `adjusted` 时就能使用这个表达式。遇到 `adjusted > limit`，已知条件还不足以判定真假，于是**分裂**：在条件为真和为假的两个宇宙里，分别沿可达代码继续走。为真的一边已经返回；只有为假的一边还需检查是否相等。[完整案例](examples/topics/control-flow/java-static-case-when.md)

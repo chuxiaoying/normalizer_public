@@ -322,6 +322,7 @@ fn validate_protected_try(body: &[S], id: &str) -> Result<(), String> {
 pub(crate) struct SourceEvidence {
     pub(crate) layouts: BTreeMap<String, BTreeMap<String, String>>,
     pub(crate) exception_parents: BTreeMap<String, String>,
+    pub(crate) catch_types: CatchTypes,
     pub(crate) ports: BTreeMap<String, source_ports::SourcePort>,
 }
 
@@ -393,6 +394,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
         return Err(error("NORM-ENTRY", entry));
     }
     let mut graph = BTreeMap::new();
+    let mut catch_types = CatchTypes::new();
     for (id, m) in &methods {
         let mut calls = Vec::new();
         let Some(body) = m.body() else {
@@ -402,7 +404,11 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             continue;
         };
         validate_protected_try(body, id)?;
-        statements(body, id, &mut calls)?;
+        let mut catches = CatchAdmission {
+            parents: &exceptions,
+            resolved: catch_types.entry(id.clone()).or_default(),
+        };
+        statements(body, id, &mut calls, &mut catches)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
             let target = match call {
@@ -471,7 +477,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
     for id in graph.keys() {
         visit(id, &graph, &mut BTreeSet::new(), &mut done)?;
     }
-    Ok(SourceEvidence { layouts, exception_parents: exceptions, ports })
+    Ok(SourceEvidence { layouts, exception_parents: exceptions, catch_types, ports })
 }
 
 enum SourceCall {
@@ -500,7 +506,28 @@ pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
     }
 }
 
-fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
+/// Per-method lexical catch bindings, proved once before simulation.
+pub(crate) type CatchTypes = BTreeMap<String, BTreeMap<String, String>>;
+
+struct CatchAdmission<'a> {
+    parents: &'a BTreeMap<String, String>,
+    resolved: &'a mut BTreeMap<String, String>,
+}
+impl CatchAdmission<'_> {
+    fn bind(&mut self, at: &str, raw: &str) -> Result<String, String> {
+        let owner = at.rsplit_once('.').expect("source method has a declaring class").0;
+        let name = exception_name(raw, owner, self.parents).ok_or_else(|| {
+            crate::preprocess::required(
+                "NORM-CATCH-TYPE", at, &format!("undeclared catch class {raw}"),
+                "请在源码入口声明可解析的异常类；不要把非法 catch 当成不匹配。",
+            )
+        })?;
+        self.resolved.insert(raw.into(), name.clone());
+        Ok(name)
+    }
+}
+
+fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>) -> Result<(), String> {
     for stmt in body {
         match stmt {
             S::LocalIr(normalizer_ir::local::LocalIr::CountRange { .. }
@@ -510,17 +537,30 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
             S::For {init,cond,update,body}
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {
-                statements(body, at, calls)?;
+                statements(body, at, calls, catch_admission)?;
             }
             S::Try { body, catches, finally_block } if !catches.is_empty() => {
-                statements(body, at, calls)?;
-                for handler in catches { statements(handler.body(), at, calls)?; }
+                statements(body, at, calls, catch_admission)?;
+                let mut prior_types: Vec<String> = Vec::new();
+                for handler in catches {
+                    let class = catch_admission.bind(at, handler.exception_class())?;
+                    if let Some(prior) = prior_types.iter().find(|prior|
+                        subtype(&class, prior, catch_admission.parents))
+                    {
+                        return Err(crate::preprocess::required(
+                            "NORM-CATCH-ORDER", at, &format!("catch class {class} is already caught by {prior}"),
+                            "把更具体的异常处理器放在父类之前，不要删除处理分支。",
+                        ));
+                    }
+                    prior_types.push(class);
+                    statements(handler.body(), at, calls, catch_admission)?;
+                }
                 if let Some(finally) = finally_block {
                     let body = match finally.split_last() {
                         Some((last, prefix)) if finally_throw(last).is_some() => prefix,
                         _ => finally,
                     };
-                    statements(body, at, calls)?;
+                    statements(body, at, calls, catch_admission)?;
                 }
             }
             S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { .. }
@@ -558,16 +598,16 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Res
             } => expr(value, at, calls)?,
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
-            S::Block(b) => statements(b, at, calls)?,
+            S::Block(b) => statements(b, at, calls, catch_admission)?,
             S::If {
                 cond,
                 then_block,
                 else_block,
             } => {
                 expr(cond, at, calls)?;
-                statements(then_block, at, calls)?;
+                statements(then_block, at, calls, catch_admission)?;
                 if let Some(b) = else_block {
-                    statements(b, at, calls)?;
+                    statements(b, at, calls, catch_admission)?;
                 }
             }
             S::ForEach { var_type, var_name, iterable, body }

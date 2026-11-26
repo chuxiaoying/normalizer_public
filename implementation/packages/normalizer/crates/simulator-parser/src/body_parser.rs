@@ -342,8 +342,10 @@ impl<'a> Parser<'a> {
             }
             self.skip_ws();
             self.eat_keyword("final");
-            let exception_type =
-                parse_type(self).ok_or_else(|| self.err("expected exception type"))?;
+            let exception_class = match parse_type(self) {
+                Some(JavaType::Class(name)) => name,
+                _ => return Err(self.err("catch requires an exception class name")),
+            };
             self.skip_ws();
             if self.peek() == Some(b'|') {
                 return Err(self.err("multi-catch is not supported in normalized Java"));
@@ -357,7 +359,7 @@ impl<'a> Parser<'a> {
             }
             let body = self.parse_braced_statements()?;
             catches.push(CatchClause {
-                exception_type,
+                exception_class,
                 var_name,
                 body,
             });

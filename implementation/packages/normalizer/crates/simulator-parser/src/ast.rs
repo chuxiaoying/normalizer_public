@@ -286,14 +286,14 @@ pub enum JavaStatement {
 /// catch 子句。
 #[derive(Debug, Clone)]
 pub struct CatchClause {
-    pub(crate) exception_type: JavaType,
+    pub(crate) exception_class: String,
     pub(crate) var_name: String,
     pub(crate) body: Vec<JavaStatement>,
 }
 
 impl CatchClause {
-    pub fn exception_type(&self) -> &JavaType {
-        &self.exception_type
+    pub fn exception_class(&self) -> &str {
+        &self.exception_class
     }
     pub fn var_name(&self) -> &str {
         &self.var_name
