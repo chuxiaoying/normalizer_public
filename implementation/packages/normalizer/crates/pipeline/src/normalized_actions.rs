@@ -624,6 +624,35 @@ mod adapter_contract_tests {
     }
 
     #[test]
+    fn nonmatching_catch_neither_consumes_the_original_exception_nor_runs_handler() {
+        let mut doc = project(vec![
+            json!({
+                "op": "catch", "classes": ["java.lang.NullPointerException"],
+                "body": [
+                    { "op": "task_invoke", "name": "task1", "port": "notice", "site": "task_site", "args": [] },
+                    { "op": "task_wait", "name": "done", "task": { "op": "var", "name": "task1" } }
+                ],
+                "handler": [
+                    { "op": "call_sync", "port": "unexpected", "target": "unexpected.send", "site": "handler_site" }
+                ]
+            }),
+            unit_return(),
+        ]);
+        doc["ports"]["notice"]["effect"] = json!("async-barrier");
+        doc["ports"]["notice"]["throws"] = json!(["java.lang.IllegalArgumentException"]);
+
+        let pers = at_project_boundary(&doc).expect("nonmatching catch preserves original terminal alternatives");
+        let pers: serde_yaml::Value = serde_yaml::from_str(&pers).unwrap();
+        let events = pers["S"].as_sequence().expect("the one real task call");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["call"]["external"].as_str(), Some("notices.send"));
+        let throws = pers["throws"].as_sequence().expect("the one uncaught class");
+        assert_eq!(throws.len(), 1);
+        assert_eq!(throws[0]["type"].as_str(), Some("java.lang.IllegalArgumentException"));
+        assert_eq!(throws[0]["when"].as_str(), Some("completion.is_throw($e_0, java.lang.IllegalArgumentException)"));
+    }
+
+    #[test]
     fn invalid_lexical_local_fails_without_pers() {
         let doc = project(vec![
             json!({ "op": "let", "name": "bad-local", "value": { "op": "const", "type": "number", "value": 7 } }),
