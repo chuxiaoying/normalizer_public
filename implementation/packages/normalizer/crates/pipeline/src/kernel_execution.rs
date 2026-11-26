@@ -656,7 +656,7 @@ impl Engine<'_> {
             J::Lit(JavaLit::Str(v)) => Ok(Value::Term(Ty::Text, b::lit_str(v))),
             // A char constant contributes its unsigned UTF-16 code unit to
             // a numeric expression, not a text value or reference identity.
-            J::Lit(JavaLit::Char(v)) => Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(u32::from(*v))))),
+            J::Lit(JavaLit::Char(v)) => Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(*v)))),
             J::Lit(JavaLit::Null) => Ok(Value::Term(Ty::Ref, b::lit_null())),
             J::Lit(JavaLit::Bool(v)) => Ok(Value::Term(Ty::Bool, b::lit_bool(*v))),
             J::Lit(JavaLit::Decimal { digits, radix, power, .. }) => {

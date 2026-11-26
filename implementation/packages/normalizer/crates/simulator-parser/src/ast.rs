@@ -404,7 +404,7 @@ pub enum JavaLit {
     Decimal { digits: String, radix: u32, power: i32, single: bool },
     Bool(bool),
     Str(String),
-    Char(char),
+    Char(u16),
     Null,
 }
 

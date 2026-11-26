@@ -5,6 +5,7 @@
 //! - 手写递归下降 parser，零外部依赖
 
 use crate::ast::*;
+use crate::java_unicode::{self, Surrogates};
 /// 解析选项。
 ///
 /// Parser 只负责 Java 语言语法；代码生成必须由引擎外的预处理完成。
@@ -45,34 +46,20 @@ pub fn parse(
     file_hint: &str,
     _opts: &ParseOptions,
 ) -> Result<JavaProgram, ParseError> {
-    let mut p = Parser::new(source, file_hint);
-    if let Some(offset) = first_raw_unicode_escape(source) {
-        return Err(p.err_at(offset, "[JAVA-UNICODE-ESCAPE] expand raw Java Unicode escapes before parsing"));
-    }
+    let translated = java_unicode::translate(source)
+        .map_err(|(offset, msg)| Parser::new(source, file_hint).err_at(offset, msg))?;
+    let input = translated.as_ref().map_or(source, |t| t.text.as_str());
+    let surrogates = translated.as_ref().map_or_else(Surrogates::default, |t| t.surrogates());
+    let mut p = Parser::new(input, file_hint).with_surrogates(surrogates);
     let parsed = p.parse_program();
-    if let Some(error) = p.lexical_error.take() { return Err(error); }
-    let mut prog = parsed?;
+    let mut prog = p.lexical_error.take().map_or(parsed, Err).map_err(|error| {
+        let Some(t) = &translated else { return error };
+        let ParseError::Syntax { file, line, col, msg } = error;
+        if file != file_hint { return ParseError::Syntax { file, line, col, msg } }
+        Parser::new(source, file_hint).err_at(t.raw_offset(line, col), &msg)
+    })?;
     flatten_inner_classes(&mut prog);
-
     Ok(prog)
-}
-
-// We reject the first eligible escape, so no earlier translated backslash
-// can influence eligibility. An even run of preceding raw backslashes is
-// sufficient, unlike a substring search which would reject literal "\u".
-fn first_raw_unicode_escape(source: &str) -> Option<usize> {
-    if !source.contains("\\u") { return None; }
-    let bytes = source.as_bytes();
-    let mut odd_slashes = false;
-    for (offset, byte) in bytes.iter().copied().enumerate() {
-        if byte == b'\\' {
-            if !odd_slashes && bytes.get(offset + 1) == Some(&b'u') { return Some(offset); }
-            odd_slashes = !odd_slashes;
-        } else {
-            odd_slashes = false;
-        }
-    }
-    None
 }
 
 fn flatten_inner_classes(program: &mut JavaProgram) {
@@ -93,6 +80,7 @@ fn collect_inner_classes(class: &mut JavaClass, out: &mut Vec<JavaClass>) {
 
 pub(crate) struct Parser<'a> {
     pub(crate) source: &'a str,
+    pub(crate) surrogates: Surrogates<'a>,
     pub(crate) pos: usize,
     lexical_error: Option<ParseError>,
     pub(crate) file: String,
@@ -105,12 +93,18 @@ impl<'a> Parser<'a> {
     pub(crate) fn new(source: &'a str, file_hint: &str) -> Self {
         Self {
             source,
+            surrogates: Surrogates::default(),
             pos: 0,
             lexical_error: None,
             file: file_hint.to_string(),
             imports: Vec::new(),
             has_unbound_imports: false,
         }
+    }
+
+    pub(crate) fn with_surrogates(mut self, surrogates: Surrogates<'a>) -> Self {
+        self.surrogates = surrogates;
+        self
     }
 
     fn location(&self, offset: usize) -> (usize, usize) {
@@ -587,7 +581,7 @@ impl<'a> Parser<'a> {
             is_interface,
         };
 
-        parse_class_body(body_text, &mut class, &self.file).map_err(|error| self.rebase_slice(body_at, error))?;
+        parse_class_body(body_text, &mut class, &self.file, self.surrogates.subspan(body_at)).map_err(|error| self.rebase_slice(body_at, error))?;
 
         Ok(class)
     }
@@ -626,8 +620,9 @@ fn parse_class_body(
     body: &str,
     class: &mut JavaClass,
     file: &str,
+    surrogates: Surrogates<'_>,
 ) -> Result<(), ParseError> {
-    let mut p = Parser::new(body, file);
+    let mut p = Parser::new(body, file).with_surrogates(surrogates);
 
     loop {
         p.skip_ws();
@@ -730,6 +725,7 @@ fn parse_class_body(
                 nested_body,
                 &mut nested_class,
                 file,
+                p.surrogates.subspan(nested_at),
             ).map_err(|error| p.rebase_slice(nested_at, error))?;
             class.inner_classes.push(nested_class);
             continue;
@@ -765,7 +761,7 @@ fn parse_class_body(
                     Some(crate::body_parser::parse_method_body_text(
                         text,
                         file,
-
+                        p.surrogates.subspan(body_at),
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
                     return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
@@ -836,7 +832,7 @@ fn parse_class_body(
                 Some(crate::body_parser::parse_method_body_text(
                     text,
                     file,
-
+                    p.surrogates.subspan(body_at),
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {
                 p.require_semicolon("bodyless method declaration")?;

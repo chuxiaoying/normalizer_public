@@ -115,15 +115,14 @@
   edits:
   - from: class TicketCode {
     to: import java.util /* explicit type */ . List; class TicketCode {
-- name: an-escaped-line-terminator-is-not-silently-ignored-by-comment-lexing
+- name: an-escaped-line-terminator-ends-the-comment-and-executes-the-next-line
   edits:
   - from: return value;
     to: 'int result = value; // \u000a result = result + 1;
 
       return result;'
-  reject:
-  - '[SOURCE-PARSE-FAILED]'
-  - '[JAVA-UNICODE-ESCAPE]'
+  expect:
+  - { path: [R], value: 'value + 1' }
 - name: doubled-backslash-remains-literal-and-is-not-a-java-source-escape
   edits:
   - from: return value;

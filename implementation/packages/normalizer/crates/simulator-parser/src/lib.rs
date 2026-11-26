@@ -23,7 +23,8 @@
 //! - 不读文件（由 pipeline 读取后送入字符串）
 
 pub mod ast;
-pub mod parser;
+pub mod java_unicode;
+mod parser;
 
 pub use ast::{
     AnnotationRef, CatchClause, JavaBinOp, JavaClass, JavaExpr, JavaField, JavaLit, JavaMethod,

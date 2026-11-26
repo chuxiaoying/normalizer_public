@@ -6,13 +6,15 @@
 //! - 复用 parser.rs 的 Parser struct 和 helper（通过 pub(crate)）
 
 use crate::ast::*;
+use crate::java_unicode::Surrogates;
 use crate::parser::{parse_array_type_suffix, parse_creation_type, parse_type, ParseError, Parser};
 
 pub(crate) fn parse_method_body_text(
     body_text: &str,
     file: &str,
+    surrogates: Surrogates<'_>,
 ) -> Result<Vec<JavaStatement>, ParseError> {
-    let mut p = Parser::new(body_text, file);
+    let mut p = Parser::new(body_text, file).with_surrogates(surrogates);
     p.parse_statements_until_end()
 }
 
@@ -35,7 +37,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let body_at = self.pos + 1;
         let text = self.skip_balanced_braces()?;
-        parse_method_body_text(text, &self.file).map_err(|error| self.rebase_slice(body_at, error))
+        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at)).map_err(|error| self.rebase_slice(body_at, error))
     }
 
     /// Return the last statement from this source position. A local declaration
@@ -1071,6 +1073,9 @@ impl<'a> Parser<'a> {
     }
 
     fn read_literal_unit(&mut self) -> Result<char, ParseError> {
+        if self.surrogates.at(self.pos).is_some() {
+            return Err(self.err("[JAVA-UNICODE-REPRESENTATION] isolated UTF-16 code unit has no current scalar text representation"));
+        }
         let first = self.peek().ok_or_else(|| self.err("unexpected end in Java literal"))?;
         match first {
             b'\n' | b'\r' => Err(self.err("line terminator in Java literal")),
@@ -1105,13 +1110,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn read_char_literal(&mut self) -> Result<char, ParseError> {
+    fn read_char_literal(&mut self) -> Result<u16, ParseError> {
         self.pos += 1; // try_parse_literal has already matched the opening quote.
         if self.peek() == Some(b'\'') {
             return Err(self.err("expected one Java character"));
         }
-        let value = self.read_literal_unit()?;
-        if value.len_utf16() != 1 || self.peek() != Some(b'\'') {
+        let value = if let Some(unit) = self.surrogates.at(self.pos) {
+            self.pos += char::REPLACEMENT_CHARACTER.len_utf8();
+            unit
+        } else {
+            let c = self.read_literal_unit()?;
+            u16::try_from(u32::from(c))
+                .map_err(|_| self.err("Java character literal must contain one UTF-16 code unit"))?
+        };
+        if self.peek() != Some(b'\'') {
             return Err(self.err("Java character literal must contain one UTF-16 code unit"));
         }
         self.pos += 1;

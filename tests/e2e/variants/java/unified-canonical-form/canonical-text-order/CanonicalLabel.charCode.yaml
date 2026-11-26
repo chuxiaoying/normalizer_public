@@ -103,3 +103,23 @@
     - from: "'\\141'"
       to: "'\\477'"
   reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "Java character literal must contain one UTF-16 code unit"]
+
+- name: unicode-escape-is-decoded-before-character-parsing
+  edits:
+    - from: "'\\141'"
+      to: "'\\u0041'"
+  expect:
+    - { path: [R], value: "75" }
+
+- name: unicode-escaped-newline-cannot-be-a-character-literal
+  edits:
+    - from: "'\\141'"
+      to: "'\\u000a'"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "line terminator in Java literal"]
+
+- name: isolated-utf16-unit-is-a-number-not-a-text-scalar
+  edits:
+    - from: "'\\141'"
+      to: "'\\uD800'"
+  expect:
+    - { path: [R], value: '55306' }
