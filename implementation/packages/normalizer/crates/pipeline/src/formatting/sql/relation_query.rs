@@ -5,6 +5,18 @@ use math::{
     BinOpKind, Expr, SymVarOrigin,
 };
 
+// The SQL predicate owners share one comparison classification and reversal.
+fn reversed_comparison(op: BinOpKind) -> Option<BinOpKind> {
+    Some(match op {
+        BinOpKind::Eq | BinOpKind::Ne => op,
+        BinOpKind::Lt => BinOpKind::Gt,
+        BinOpKind::Le => BinOpKind::Ge,
+        BinOpKind::Gt => BinOpKind::Lt,
+        BinOpKind::Ge => BinOpKind::Le,
+        _ => return None,
+    })
+}
+
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
     let (kind, relation, value, default) = expr.as_relation_aggregate()?;
     if kind == math::RelationAggregateKind::Count && value.is_none() && default.is_none() {
@@ -42,20 +54,18 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
                 if left { 0 } else if right { 1 } else { 2 }
             };
             let fmt_predicate = |expr: &Expr, ctx: &mut crate::FormatCtx| {
-                if let Some((op, l, r)) = expr.as_binop() {
-                    let flip = rank(r) < rank(l);
-                    let op = match (op, flip) {
-                        (BinOpKind::Eq, _) => "==", (BinOpKind::Ne, _) => "!=",
-                        (BinOpKind::Gt, false) | (BinOpKind::Lt, true) => ">",
-                        (BinOpKind::Ge, false) | (BinOpKind::Le, true) => ">=",
-                        (BinOpKind::Lt, false) | (BinOpKind::Gt, true) => "<",
-                        (BinOpKind::Le, false) | (BinOpKind::Ge, true) => "<=",
-                        _ => return crate::format_expr_with_ctx(expr, ctx),
-                    };
-                    let (l,r) = if flip { (r,l) } else { (l,r) };
-                    return format!("{} {op} {}", crate::format_expr_with_ctx(l,ctx), crate::format_expr_with_ctx(r,ctx));
-                }
-                crate::format_expr_with_ctx(expr,ctx)
+                let comparison = expr.as_binop().and_then(|(op, left, right)|
+                    reversed_comparison(op).map(|reverse| (op, reverse, left, right)));
+                let Some((op, reverse, left, right)) = comparison else {
+                    return crate::format_expr_with_ctx(expr, ctx);
+                };
+                let (op, left, right) = if rank(right) < rank(left) {
+                    (reverse, right, left)
+                } else {
+                    (op, left, right)
+                };
+                let token = super::binop_display_token(op);
+                format!("{} {token} {}", crate::format_expr_with_ctx(left, ctx), crate::format_expr_with_ctx(right, ctx))
             };
             let ((left, left_alias), (right, right_alias)) = (join.left, join.right);
             let on = fmt_predicate(join.on, ctx);
@@ -162,56 +172,42 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         format!("FROM {from}"),
     ];
     let predicate_text = |e: &Expr, ctx: &mut crate::FormatCtx| {
-        if let Some((op, l, r)) = e.as_binop() {
-            if matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-                let column = if r.is_null() && l.as_row_value().is_some() { Some(l) }
-                    else if l.is_null() && r.as_row_value().is_some() { Some(r) } else { None };
-                if let Some(column) = column {
-                    let predicate = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
-                    return format!("{} {predicate}", fmt(column, ctx));
-                }
-            }
-            // Keep table columns on the left against simple input/literal operands.
-            // A lower external threshold is naturally displayed as threshold <= column.
-            let has_external = |value: &Expr| {
-                let mut found = false;
-                value.walk(&mut |part| {
-                    found |= matches!(part.as_sym_var(), Some(SymVarOrigin::External { .. }));
-                });
-                found
-            };
-            let flip = l.as_row_value().is_none() && r.as_row_value().is_some() && !has_external(l);
-            let reverse = |o| match o {
-                BinOpKind::Gt => BinOpKind::Lt,
-                BinOpKind::Lt => BinOpKind::Gt,
-                BinOpKind::Ge => BinOpKind::Le,
-                BinOpKind::Le => BinOpKind::Ge,
-                k => k,
-            };
-            let (a, mut op, z) = if flip {
-                (r, reverse(op), l)
-            } else {
-                (l, op, r)
-            };
-            let (a, z) = if matches!(op, BinOpKind::Ge | BinOpKind::Gt) && has_external(z) {
-                op = reverse(op);
-                (z, a)
-            } else {
-                (a, z)
-            };
-            if let Some(text) = match op {
-                BinOpKind::Eq => Some("=="),
-                BinOpKind::Ne => Some("!="),
-                BinOpKind::Gt => Some(">"),
-                BinOpKind::Ge => Some(">="),
-                BinOpKind::Lt => Some("<"),
-                BinOpKind::Le => Some("<="),
-                _ => None,
-            } {
-                return format!("{} {text} {}", fmt(a, ctx), fmt(z, ctx));
+        let comparison = e.as_binop().and_then(|(op, left, right)|
+            reversed_comparison(op).map(|reverse| (op, reverse, left, right)));
+        let Some((op, reverse, left, right)) = comparison else {
+            return fmt(e, ctx);
+        };
+        if matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
+            let column = if right.is_null() && left.as_row_value().is_some() { Some(left) }
+                else if left.is_null() && right.as_row_value().is_some() { Some(right) } else { None };
+            if let Some(column) = column {
+                let predicate = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
+                return format!("{} {predicate}", fmt(column, ctx));
             }
         }
-        fmt(e, ctx)
+        // Keep physical table columns on the left unless the other operand
+        // is a lower external threshold with its own acquisition identity.
+        let has_external = |value: &Expr| {
+            let mut found = false;
+            value.walk(&mut |part| {
+                found |= matches!(part.as_sym_var(), Some(SymVarOrigin::External { .. }));
+            });
+            found
+        };
+        let (mut op, reverse, a, z) =
+            if left.as_row_value().is_none() && right.as_row_value().is_some() && !has_external(left) {
+                (reverse, op, right, left)
+            } else {
+                (op, reverse, left, right)
+            };
+        let (a, z) = if matches!(op, BinOpKind::Ge | BinOpKind::Gt) && has_external(z) {
+            op = reverse;
+            (z, a)
+        } else {
+            (a, z)
+        };
+        let token = super::binop_display_token(op);
+        format!("{} {token} {}", fmt(a, ctx), fmt(z, ctx))
     };
     for (i, p) in predicates.iter().enumerate() {
         select.push(format!(

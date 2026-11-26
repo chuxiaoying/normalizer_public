@@ -8,13 +8,13 @@
 //! - UnaryOp(Not, e) → "NOT (e)" / UnaryOp(Neg, e) → "-(e)"
 //! - CaseWhen(branches) → "CASE WHEN c1 THEN v1 WHEN c2 THEN v2 END"
 //! - Call(key, args) → "funcName(arg1, arg2)"（用 math::func_name 反查）
-//! - HeapRef(id) → "heap#N"（按首次出现顺序归一化编号）
+//! - HeapRef(id) → verified business identity, or internal debug representation
 
 mod relation_query;
 pub(crate) mod business_value;
 
 use crate::canonical_names::CanonicalNames;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKind};
 
@@ -31,8 +31,6 @@ pub struct FormatCtx {
     business_states: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
-    heap_renumber: HashMap<i64, usize>,
-    next: usize,
     /// PERST: External binding_id → 0-based 编号
     e_renumber: HashMap<u64, usize>,
 
@@ -52,8 +50,6 @@ impl Default for FormatCtx {
             business_states: Default::default(),
             business_receipt_guards: Default::default(),
             business_evaluation_guard: None,
-            heap_renumber: HashMap::new(),
-            next: 1,
             e_renumber: HashMap::new(),
         }
     }
@@ -121,14 +117,6 @@ impl FormatCtx {
     }
     pub fn new() -> Self {
         Self::default()
-    }
-
-    fn heap_slot(&mut self, id: i64) -> usize {
-        *self.heap_renumber.entry(id).or_insert_with(|| {
-            let n = self.next;
-            self.next += 1;
-            n
-        })
     }
 
     /// 查 External 的 renumber 结果；PERST 主格式中若 bindings 存在但未命中，说明 R 引用了未登记的 $e。
@@ -208,10 +196,8 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return alias.to_owned();
     }
     if let Some(id) = expr.as_heap_ref() {
-        if let Some(root) = ctx.business_identities.get(&id) {
-            return root.clone();
-        }
-        return format!("heap#{}", ctx.heap_slot(id));
+        // Business projection verifies named identities before rendering.
+        return ctx.business_identities.get(&id).cloned().unwrap_or_else(|| format!("{expr:?}"));
     }
     if let Some((op, operand)) = expr.as_unary_op() {
         match op {
@@ -432,47 +418,33 @@ fn format_binop_child_with_precedence(
 }
 
 fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
-    if ctx.business_inputs.is_some() {
+    let business = ctx.business_inputs.is_some();
+    if business {
         if let Some(selection) = business_value::format_selection(branches, ctx) {
             return selection;
         }
-        let mut parts = vec!["CASE".to_string()];
-        for (guard, value) in branches {
-            let v = format_expr_with_ctx(value, ctx);
-            if guard.as_bool() == Some(true) { parts.push(format!("ELSE {v}")); break; }
-            let g = format_expr_with_ctx(guard, ctx);
-            parts.push(format!("WHEN {g} THEN {v}"));
-        }
-        let array_index_arm = branches.len() == 2
-            && branches[1].1.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
-                kind == RelationAggregateKind::NthValue
-                    && matches!(relation, math::domains::relation::RelationExpr::Base { name, .. }
-                        if ctx.scalar_arrays.contains(name))
-            });
-        if branches.len() == 2 && (branches[0].0.as_sym_var().is_some() || array_index_arm) {
-            parts.push("END".into());
-            return parts.join(" ");
-        }
-        return format!("{}\nEND", parts.join("\n  "));
     }
     let mut parts = vec!["CASE".to_string()];
-    for (cond, value) in branches {
-        if cond.as_bool() == Some(false) {
-            continue;
-        }
-        let v = format_expr_with_ctx(value, ctx);
-        if cond.as_bool() == Some(true) {
-            if !value.is_null() || parts.len() == 1 {
-                parts.push(format!("  ELSE {}", v));
-            }
+    for (guard, value) in branches {
+        let value = format_expr_with_ctx(value, ctx);
+        if guard.as_bool() == Some(true) {
+            parts.push(format!("ELSE {value}"));
             break;
         }
-
-        let c = format_expr_with_ctx(cond, ctx);
-        parts.push(format!("  WHEN {} THEN {}", c, v));
+        let guard = format_expr_with_ctx(guard, ctx);
+        parts.push(format!("WHEN {guard} THEN {value}"));
     }
-    parts.push("END".to_string());
-    parts.join("\n")
+    let array_index_arm = business && branches.len() == 2
+        && branches[1].1.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
+            kind == RelationAggregateKind::NthValue
+                && matches!(relation, math::domains::relation::RelationExpr::Base { name, .. }
+                    if ctx.scalar_arrays.contains(name))
+        });
+    if business && branches.len() == 2 && (branches[0].0.as_sym_var().is_some() || array_index_arm) {
+        parts.push("END".into());
+        return parts.join(" ");
+    }
+    format!("{}\nEND", parts.join("\n  "))
 }
 
 fn format_lit(lit: &Lit) -> String {
