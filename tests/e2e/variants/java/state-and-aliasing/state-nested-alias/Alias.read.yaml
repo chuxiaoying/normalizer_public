@@ -32,8 +32,8 @@
   edits:
     - {from: 'return alias.value;', to: 'alias.value = alias.value + 2; alias.value = alias.value - 1; return this.box.value;'}
   expect:
-    - {path: [R], value: 'box.value + 1'}
+    - {path: [R], value: 'box.value + 2 - 1'}
     - path: [S]
       add:
         - write: {target: box.value, value: 'box.value + 2'}
-        - write: {target: box.value, value: 'box.value + 1'}
+        - write: {target: box.value, value: 'box.value + 2 - 1'}
