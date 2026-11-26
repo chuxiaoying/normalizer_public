@@ -19,9 +19,6 @@ function blockStatements(node) {
 
 export function compileTypedListener(physicalPath, sf, fn) {
   const checker = checkedTypeScript(physicalPath, sf, node => node === fn || ts.isVariableStatement(node));
-  if (!fn.body || fn.asteriskToken || fn.modifiers?.some(m => is(m, ts.SyntaxKind.AsyncKeyword))) {
-    fail('listener entry requires a synchronous source definition');
-  }
   const params = typedBooleanParameters(fn);
   const contracts = new Map(), ports = {}, externalResults = {};
   for (const host of sf.statements) {
@@ -52,33 +49,30 @@ export function compileTypedListener(physicalPath, sf, fn) {
   }
 
   const [slot, register, call, ...dispatches] = fn.body.statements;
-  const pending = slot && ts.isVariableStatement(slot) && slot.declarationList.flags & ts.NodeFlags.Let
-    && slot.declarationList.declarations.length === 1 ? slot.declarationList.declarations[0] : null;
-  if (!pending || pending.initializer || !ts.isIdentifier(pending.name) || !pending.type
-      || !ts.isUnionTypeNode(pending.type) || pending.type.types.length !== 2
-      || !pending.type.types.some(callbackType) || !pending.type.types.some(t => is(t, ts.SyntaxKind.UndefinedKeyword))) {
-    fail('listener needs an uninitialized typed local callback slot');
-  }
-  if (!register || !ts.isFunctionDeclaration(register) || !register.name || !register.body
-      || register.asteriskToken || register.modifiers?.length || register.parameters.length !== 1) {
-    fail('listener needs a closed local registration function');
-  }
-  const [parameter] = register.parameters;
-  if (!ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
-      || parameter.dotDotDotToken || parameter.questionToken) fail('listener registration needs an exact callback parameter');
-
+  const declarations = slot && ts.isVariableStatement(slot) && slot.declarationList.flags & ts.NodeFlags.Let
+    && slot.declarationList.declarations;
+  const pending = declarations?.[0], slotType = pending?.type;
+  const registrar = register && ts.isFunctionDeclaration(register) && register;
+  const parameter = registrar?.parameters?.[0];
   const registration = call && statementCall(call);
   const arrow = registration?.arguments[0];
-  if (!registration || registration.questionDotToken || registration.arguments.length !== 1
-      || !named(registration.expression, register.name.text) || !arrow || !ts.isArrowFunction(arrow)
-      || arrow.modifiers?.length || arrow.parameters.length || !ts.isBlock(arrow.body)) {
-    fail('listener needs a nonescaping source callback at registration');
+  const body = arrow && ts.isArrowFunction(arrow) && ts.isBlock(arrow.body) && arrow.body.statements;
+  const returns = body?.at?.(-1);
+  if (fn.asteriskToken || fn.modifiers?.some((m) => is(m, ts.SyntaxKind.AsyncKeyword))
+      || declarations?.length !== 1 || pending.initializer || !ts.isIdentifier(pending.name)
+      || !slotType || !ts.isUnionTypeNode(slotType) || slotType.types.length !== 2
+      || !slotType.types.some(callbackType) || !slotType.types.some((item) => is(item, ts.SyntaxKind.UndefinedKeyword))
+      || !registrar?.name || !registrar.body || registrar.asteriskToken
+      || registrar.modifiers?.length || registrar.parameters.length !== 1
+      || !ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
+      || parameter.dotDotDotToken || parameter.questionToken
+      || !registration || registration.questionDotToken || registration.arguments.length !== 1
+      || !named(registration.expression, registrar.name.text) || !body || arrow.modifiers?.length
+      || arrow.parameters.length || !returns || !ts.isReturnStatement(returns)
+      || !returns.expression || !ts.isStringLiteral(returns.expression)) {
+    fail('listener needs a closed synchronous entry, callback slot and registration');
   }
-  const callback = [...arrow.body.statements];
-  const returns = callback.pop();
-  if (!returns || !ts.isReturnStatement(returns) || !returns.expression || !ts.isStringLiteral(returns.expression)) {
-    fail('listener callback needs a closed local string return');
-  }
+  const callback = body.slice(0, -1);
 
   const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   let serial = 0;
@@ -143,9 +137,8 @@ export function compileTypedListener(physicalPath, sf, fn) {
     if (ts.isIdentifier(node) && params.includes(node.text)) return {op: 'var', name: node.text};
     if (is(node, ts.SyntaxKind.TrueKeyword) || is(node, ts.SyntaxKind.FalseKeyword)) return value('bool', is(node, ts.SyntaxKind.TrueKeyword));
     if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
-      const numeric = numericTruth(node.operand);
-      if (numeric !== undefined) return value('bool', !numeric);
-      return {op: 'not', value: gate(node.operand)};
+      const operand = gate(node.operand);
+      return operand.op === 'const' ? value('bool', !operand.value) : {op: 'not', value: operand};
     }
     const numeric = numericTruth(node);
     if (numeric !== undefined) return value('bool', numeric);
@@ -159,12 +152,9 @@ export function compileTypedListener(physicalPath, sf, fn) {
     executeCallback(condition);
   }
   for (const st of dispatches) {
-    if (ts.isIfStatement(st) && !st.elseStatement) {
-      const condition = gate(st.expression);
-      for (const body of blockStatements(st.thenStatement)) dispatch(body, condition);
-    } else {
-      dispatch(st, null);
-    }
+    const guarded = ts.isIfStatement(st) && !st.elseStatement;
+    const condition = guarded ? gate(st.expression) : null;
+    for (const body of guarded ? blockStatements(st.thenStatement) : [st]) dispatch(body, condition);
   }
   steps.push({op: 'return', value: value('unit', null)});
   return {params, excerpt: fn.getText(sf), ports, externalResults,

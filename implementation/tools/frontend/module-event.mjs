@@ -30,8 +30,11 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       for (const tag of doc.tags ?? []) yield [doc, tag];
   }
 
+  const hostDeclarations = [];
   for (const statement of sf.statements) {
+    const flags = new Set();
     for (const [doc, tag] of docTags(statement)) {
+      if (['entryState', 'entryInputs', 'external'].includes(tag.tagName.text)) flags.add(tag.tagName.text);
       if (ts.isJSDocTypedefTag(tag)) {
         const fields = tag.typeExpression?.jsDocPropertyTags;
         if (!fields?.length || !tag.name) fail('record typedef requires named fields');
@@ -46,21 +49,12 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       }
       if (ts.isJSDocCallbackTag(tag)) {
         const result = tag.typeExpression?.type?.typeExpression?.type;
-        if (
-          !result ||
-          !ts.isTypeReferenceNode(result) ||
-          result.typeName.getText() !== 'Promise' ||
-          result.typeArguments?.length !== 1
-        ) {
-          fail('awaited external callback must declare Promise<Element>');
+        const rejects = doc.tags.filter((t) => t.tagName.text === 'rejects')
+          .map((t) => typeof t.comment === 'string' && /^\{([\w.]+)\}$/.exec(t.comment)?.[1]);
+        if (!result || !ts.isTypeReferenceNode(result) || result.typeName.getText() !== 'Promise'
+            || result.typeArguments?.length !== 1 || !rejects.every(Boolean)) {
+          fail('awaited external callback requires a closed Promise<Element> and named rejection types');
         }
-        const rejects = [...doc.tags]
-          .filter((t) => t.tagName.text === 'rejects')
-          .map((t) => {
-            const name = typeof t.comment === 'string' && /^\{([\w.]+)\}$/.exec(t.comment)?.[1];
-            if (!name) fail('@rejects needs an exception type');
-            return name;
-          });
         callbacks.set(tag.name.text, {
           params: tag.typeExpression.parameters.map((p) => ({
             name: p.name.text,
@@ -71,11 +65,9 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         });
       }
     }
+    if (flags.size && ts.isVariableStatement(statement)) hostDeclarations.push([statement, flags]);
   }
-  for (const st of sf.statements) {
-    if (!ts.isVariableStatement(st)) continue;
-    const flags = new Set(Array.from(docTags(st), ([, tag]) => tag.tagName.text));
-    if (![...flags].some((flag) => ['entryState', 'entryInputs', 'external'].includes(flag))) continue;
+  for (const [st, flags] of hostDeclarations) {
     if (
       st.declarationList.declarations.length !== 1 ||
       !ts.isIdentifier(st.declarationList.declarations[0].name)
