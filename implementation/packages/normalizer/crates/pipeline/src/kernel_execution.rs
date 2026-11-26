@@ -470,7 +470,7 @@ impl Engine<'_> {
                     v.check_java_array_component(primitive_array_component(java_type))?;
                     need(v.ty() != Ty::LocalRelation, "local relation requires a typed query, not a Java scalar binding")?;
                     need(
-                        v.ty() == self.project.result_type(java_type)?
+                        v.ty() == self.project.declared_result_type(java_type)?
                             || (matches!(v.ty(), Ty::Record(_)) && self.project.source_owner(java_type).is_some()
                                 && self.source_declared_type(expr, id)? == *java_type),
                         "local type mismatch",

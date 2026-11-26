@@ -385,19 +385,12 @@ impl Project {
         self.parameter_value_types.get(method).and_then(|params| params.get(name))
             .map(|ty| Ty::parse(ty)).transpose()
     }
-    fn result_type(&self, t: &JavaType) -> Result<Ty> {
+    fn declared_result_type(&self, t: &JavaType) -> Result<Ty> {
         if self.source_owner(t).is_some() {
-            return Ok(Ty::Ref);
+            Ok(Ty::Ref)
+        } else {
+            self.java_type(t)
         }
-        if let JavaType::Class(name) = t {
-            if let Some(value) = self
-                .result_value_types
-                .get(name)
-            {
-                return Ty::parse(value);
-            }
-        }
-        self.java_type(t)
     }
 }
 impl Loaded {
@@ -558,6 +551,20 @@ impl Loaded {
     fn prepare(&self) -> Result<Engine<'_>> {
         let mut e = self.engine(self.project.validate_state_metadata()?);
         let mut classes = BTreeSet::new();
+        let mut aliases = BTreeMap::<&str, Ty>::new();
+        // Resolve on first use rather than before walking declarations:
+        // a method may refer to a carrier declared later in the project.
+        let mut adapter_alias = |name: &str| -> Result<Option<Ty>> {
+            let Some((key, declared)) = self.project.result_value_types.get_key_value(name) else {
+                return Ok(None);
+            };
+            if let Some(value) = aliases.get(key.as_str()) {
+                return Ok(Some(value.clone()));
+            }
+            let value = Ty::parse(declared)?;
+            aliases.insert(key.as_str(), value.clone());
+            Ok(Some(value))
+        };
         for c in self.program.classes() {
             need(
                 !simulator_parser::is_reserved_identifier(c.simple_name()),
@@ -576,17 +583,12 @@ impl Loaded {
                         && !c.has_unbound_imports(),
                     "unsupported class shape",
                 )?;
-            }
-            if let Some(value) = self
-                .project
-                .result_value_types
-                .get(&c.full_name())
-            {
-                let ty = Ty::parse(value)?;
-                need(!matches!(c.full_name().as_str(), "Object" | "String")
-                    && identifier(&c.full_name()) && c.methods().is_empty()
-                    && matches!(ty, Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap),
-                    "result value alias requires a declared empty carrier class and composite state type")?;
+                if let Some(ty) = adapter_alias(&c.full_name())? {
+                    need(!matches!(c.full_name().as_str(), "Object" | "String")
+                        && identifier(&c.full_name()) && c.methods().is_empty()
+                        && matches!(ty, Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap),
+                        "result value alias requires a declared empty carrier class and composite state type")?;
+                }
             }
             if c.is_interface() {
                 continue;
@@ -598,7 +600,12 @@ impl Loaded {
                     need(m.annotations().is_empty(), "unsupported method shape")?;
                     need(!e.methods.contains_key(&id), "duplicate/overloaded method")?;
                 }
-                let returns = self.project.result_type(m.return_type())?;
+                let return_type = m.return_type();
+                let alias = match return_type {
+                    JavaType::Class(name) if !self.project.direct_source => adapter_alias(name)?,
+                    _ => None,
+                };
+                let returns = alias.map_or_else(|| self.project.declared_result_type(return_type), Ok)?;
                 let defaults = m.params().iter().map(|(ty, _)| self.project.parameter_type(ty))
                     .collect::<Result<Vec<_>>>()?;
                 e.methods.insert(id, AdmittedMethod { syntax: m, defaults, returns, binding: None });

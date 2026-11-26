@@ -18,7 +18,7 @@ impl Engine<'_> {
         need(
             stack == popped && stack == tested && name == binding
                 && !env.contains_key(stack) && !env.contains_key(binding)
-                && self.project.result_type(java_type)? == Ty::Bool,
+                && self.project.declared_result_type(java_type)? == Ty::Bool,
             "local stack or its output is not a fresh closed binding",
         )?;
         need(self.selected_entry == Some(method), "local stack requires typed entry arrays")?;
