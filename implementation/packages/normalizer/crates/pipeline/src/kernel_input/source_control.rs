@@ -197,11 +197,14 @@ impl Engine<'_> {
         }
         let mut locals = env.clone();
         for index in 0..header.count {
-            self.budget()?;
             let active = math::normalize(b::and(
                 path.clone(),
                 self.realtime_completion.continuing_guard(),
             ));
+            if active.as_bool() == Some(false) {
+                break;
+            }
+            self.budget()?;
             let counter = b::lit_integer(header.start + index * header.step);
             locals.insert(
                 header.counter.into(),

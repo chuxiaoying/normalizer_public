@@ -27,11 +27,19 @@ pub(super) fn assignment_init(init: &S) -> Option<(&str, &E, &E)> {
     Some((name, target, value))
 }
 
-// The assignment-initialized profile proves only a flat body of ordinary
-// assignments to other locals. More complex bodies are not certified.
+// Assignment-initialized loops may assign other locals or return early.
+// Every conditional arm must preserve the counter; other body shapes need
+// their own proof rather than inheriting this one.
 pub(super) fn preserves_assignment_counter(body: &[S], counter: &str) -> bool {
-    body.iter().all(|statement| matches!(statement,
-        S::Assign { target: E::Ident(name), .. } if name != counter))
+    body.iter().all(|statement| match statement {
+        S::Assign { target: E::Ident(name), .. } => name != counter,
+        S::Return(_) => true,
+        S::Block(body) => preserves_assignment_counter(body, counter),
+        S::If { then_block, else_block, .. } =>
+            preserves_assignment_counter(then_block, counter)
+                && else_block.as_deref().is_none_or(|body| preserves_assignment_counter(body, counter)),
+        _ => false,
+    })
 }
 
 fn declares_counter(statement: &S) -> Option<(&str, &JavaType, &E)> {
@@ -48,9 +56,19 @@ fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<
     let (E::BinOp { op, left, right }, E::UnaryOp { op: change, operand }) = (cond?, update?) else {
         return None;
     };
-    if !is_counter(left, name) || !is_counter(operand, name) {
+    if !is_counter(operand, name) {
         return None;
     }
+    let (bound, op) = if is_counter(left, name) {
+        (right.as_ref(), *op)
+    } else if is_counter(right, name) {
+        (left.as_ref(), match op {
+            B::Lt => B::Gt, B::Le => B::Ge, B::Gt => B::Lt, B::Ge => B::Le,
+            _ => return None,
+        })
+    } else {
+        return None;
+    };
     let (step, inclusive) = match (op, change) {
         (B::Lt, U::PostInc | U::PreInc) => (1, false),
         (B::Le, U::PostInc | U::PreInc) => (1, true),
@@ -58,7 +76,7 @@ fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<
         (B::Ge, U::PostDec | U::PreDec) => (-1, true),
         _ => return None,
     };
-    Some((right, step, inclusive))
+    Some((bound, step, inclusive))
 }
 
 impl<'a> FixedFor<'a> {
