@@ -937,7 +937,13 @@ fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
             return Ok(Value::Term(ty, math::normalize(extremum)));
         }
     }
-    let value = realtime_state::join_value(c, yes.scalar()?, no.scalar()?);
+    let (yes, no) = (yes.scalar()?, no.scalar()?);
+    if matches!(&ty, Ty::Vector(item) if **item == Ty::Integer) {
+        if let Some(vector) = math::domains::composite::number_vector_choice(&c, &yes, &no) {
+            return Ok(Value::Term(ty, vector));
+        }
+    }
+    let value = realtime_state::join_value(c, yes, no);
     Ok(Value::Term(ty, value))
 }
 

@@ -1,7 +1,7 @@
 //! Opaque immutable inputs and their typed projections.
 //! The caller must supply a checked structural type.
 use super::primitive::registry::FuncSemantics;
-use crate::{builder as b, Expr, Primitive};
+use crate::{builder as b, BinOpKind, Expr, Primitive, SymVarOrigin, UnaryOpKind};
 
 pub fn output_name(name: &str) -> &str {
     match name {
@@ -107,25 +107,137 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
     })
 }
 
-/// Closed numeric vector construction. These are immutable values, not
-/// JavaScript allocations whose identity or mutation can be observed.
-pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
-    fn lift(items: Vec<Expr>, budget: &mut usize) -> Result<Expr, &'static str> {
-        *budget = budget.checked_sub(1).ok_or("readonly Vector CASE lift exceeds its expansion budget")?;
-        let Some((index, (arms, fallback))) = items.iter().enumerate()
-            .find_map(|(index, item)| item.as_total_case_when().map(|parts| (index, parts)))
-        else { return Ok(b::array_lit(items)); };
-        let mut lift_choice = |choice: &Expr| {
-            let mut arm = items.clone();
-            arm[index] = choice.clone();
-            lift(arm, budget)
-        };
-        let out = arms.iter().map(|(guard, choice)| {
-            Ok((guard.clone(), lift_choice(choice)?))
-        }).collect::<Result<Vec<_>, &'static str>>()?;
-        Ok(b::case_when(out, lift_choice(fallback)?))
+// Only acquired, total values are eligible for changing a Vector's CASE
+// geometry. A numeric type alone does not make an E/T, call, or heap
+// observation total. This deliberately small proof covers literal and input
+// expressions without assigning new meaning to field or receipt reads.
+fn total_integer(expr: &Expr) -> bool {
+    if expr.as_lit().and_then(crate::Lit::as_integer).is_some() {
+        return true;
     }
-    lift(items, &mut 256).map(crate::normalize)
+    if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
+        return primitive_type == "integer" && direct_parameter(name);
+    }
+    if let Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right)) = expr.as_binop() {
+        return total_integer(left) && total_integer(right);
+    }
+    expr.as_total_case_when().is_some_and(|(arms, fallback)| {
+        total_integer(fallback)
+            && arms.iter().all(|(guard, value)| total_guard(guard) && total_integer(value))
+    })
+}
+
+// The host also uses Parameter storage for synthetic observations and field
+// paths. Do not mistake those private names for acquired input declarations.
+fn direct_parameter(name: &str) -> bool {
+    !name.starts_with('$') && !name.contains(['.', '[', ']'])
+}
+
+fn total_guard(expr: &Expr) -> bool {
+    if expr.as_bool().is_some() {
+        return true;
+    }
+    if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
+        return primitive_type == "boolean" && direct_parameter(name);
+    }
+    if let Some((UnaryOpKind::Not, operand)) = expr.as_unary_op() {
+        return total_guard(operand);
+    }
+    match expr.as_binop() {
+        Some((BinOpKind::And | BinOpKind::Or, left, right)) => {
+            total_guard(left) && total_guard(right)
+        }
+        Some((op, left, right)) if op.swapped_comparison().is_some() => {
+            total_integer(left) && total_integer(right)
+        }
+        _ => false,
+    }
+}
+
+fn binary_slot(item: &Expr) -> Option<(&Expr, &Expr, &Expr)> {
+    let ([(guard, yes)], no) = item.as_total_case_when()? else {
+        return None;
+    };
+    Some((guard, yes, no))
+}
+
+/// Construct a certified immutable numeric Vector in slot order. Independent
+/// slot guards stay nested, rather than making a Cartesian product. If the
+/// entire decision is shared by multiple slots, one outer CASE instead strictly
+/// reduces the primary complexity measure (number of conditional arms).
+pub fn number_vector(items: Vec<Expr>) -> Expr {
+    if let Some(shared) = shared_vector_choice(&items) {
+        return shared;
+    }
+    b::array_lit(items)
+}
+
+fn shared_vector_choice(items: &[Expr]) -> Option<Expr> {
+    let mut guard = None;
+    let mut varying = 0;
+    let mut yes = Vec::with_capacity(items.len());
+    let mut no = Vec::with_capacity(items.len());
+    for item in items {
+        if let Some((candidate, then_value, else_value)) = binary_slot(item) {
+            if !total_guard(candidate)
+                || ![then_value, else_value].into_iter().all(|value| {
+                    !value.has_case_when() && total_integer(value)
+                })
+            {
+                return None;
+            }
+            let base = *guard.get_or_insert(candidate);
+            let (then_value, else_value) = if base == candidate {
+                (then_value, else_value)
+            } else if crate::normalize(b::not(candidate.clone())) == *base {
+                (else_value, then_value)
+            } else {
+                return None;
+            };
+            varying += 1;
+            yes.push(then_value.clone());
+            no.push(else_value.clone());
+        } else {
+            // A nested conditional decision would be replicated across arms.
+            if item.has_case_when() || !total_integer(item) {
+                return None;
+            }
+            yes.push(item.clone());
+            no.push(item.clone());
+        }
+    }
+    let guard = guard.filter(|_| varying > 1)?;
+    Some(crate::normalize(b::case_when(
+        vec![(guard.clone(), b::array_lit(yes))],
+        b::array_lit(no),
+    )))
+}
+
+/// Factor a selection between two actual Vector literals at their only
+/// differing slot. The typed caller promises immutable content (not reference
+/// identity); this proof additionally rules out partial or effectful operands.
+/// Multiple varying slots retain the one shared selector.
+pub fn number_vector_choice(guard: &Expr, yes: &Expr, no: &Expr) -> Option<Expr> {
+    let (yes, no) = (yes.as_array_lit()?, no.as_array_lit()?);
+    if yes.len() != no.len()
+        || !total_guard(guard)
+        || !yes.iter().chain(no).all(total_integer)
+    {
+        return None;
+    }
+    let mut differences = yes.iter().zip(no).enumerate().filter(|(_, (a, b))| a != b);
+    let (index, (then_value, else_value)) = differences.next()?;
+    // Moving an already nested difference could feed CASE flattening and
+    // increase the number of arms. Leave that broader equivalence unclaimed.
+    if differences.next().is_some() || then_value.has_case_when() || else_value.has_case_when() {
+        return None;
+    }
+    let mut items = yes.to_vec();
+    items[index] = crate::normalize(b::case_when(
+        vec![(guard.clone(), then_value.clone())],
+        else_value.clone(),
+    ));
+    Some(b::array_lit(items))
 }
 
 // The constructor is a typed content value, not a JS reference allocation.
@@ -151,19 +263,76 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
     for (key, _) in entries {
         if !keys.insert(key) { return Err("readonly Map requires unique literal keys"); }
     }
-    // After seven independent decisions the next level would need 511
-    // expansion nodes. Reject before expanding rather than print a fallback.
-    if entries.len() > 7 { return Err("readonly Map CASE lift exceeds its expansion budget"); }
-
-    fn lift(entries: &[(String, Expr)], suffix: &mut Vec<Expr>) -> Expr {
-        let Some(((key, value), prefix)) = entries.split_last() else {
-            return ordered_text_map(suffix.iter().rev().cloned().collect());
-        };
-        let without = lift(prefix, suffix);
-        suffix.push(b::array_lit(vec![b::lit_str(key.as_str()), value.clone()]));
-        let with = lift(prefix, suffix);
-        suffix.pop();
-        b::case_when(vec![(b::eq(value.clone(), b::lit_null()), without)], with)
+    // Explore the last distinct null decision first, as for source-order
+    // insertion. A repeated null test is one decision, not another product
+    // axis. A constant null check consumes no decision at all.
+    let mut decisions = Vec::<Expr>::new();
+    let mut selectors = Vec::with_capacity(entries.len());
+    for (_, value) in entries.iter().rev() {
+        let guard = crate::normalize(b::eq(value.clone(), b::lit_null()));
+        selectors.push(if let Some(absent) = guard.as_bool() {
+            Presence::Known(!absent)
+        } else if let Some(index) = decisions.iter().position(|known| *known == guard) {
+            Presence::Decision(index)
+        } else {
+            if decisions.len() == 7 {
+                return Err("readonly Map CASE lift exceeds its expansion budget");
+            }
+            let index = decisions.len();
+            decisions.push(guard);
+            Presence::Decision(index)
+        });
     }
-    Ok(crate::normalize(lift(entries, &mut Vec::new())))
+    selectors.reverse();
+
+    #[derive(Clone, Copy)]
+    enum Presence {
+        Known(bool),
+        Decision(usize),
+    }
+
+    fn lift(
+        entries: &[(String, Expr)],
+        selectors: &[Presence],
+        decisions: &[Expr],
+        depth: usize,
+        present: u8,
+    ) -> Expr {
+        let Some(guard) = decisions.get(depth) else {
+            let rows = entries.iter().zip(selectors).filter_map(|((key, value), selector)| {
+                let include = match selector {
+                    Presence::Known(include) => *include,
+                    Presence::Decision(index) => present & (1 << index) != 0,
+                };
+                include.then(|| b::array_lit(vec![b::lit_str(key.as_str()), value.clone()]))
+            });
+            return ordered_text_map(rows.collect());
+        };
+        let without = lift(entries, selectors, decisions, depth + 1, present);
+        let with = lift(entries, selectors, decisions, depth + 1, present | (1 << depth));
+        b::case_when(vec![(guard.clone(), without)], with)
+    }
+    Ok(crate::normalize(lift(entries, &selectors, &decisions, 0, 0)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ScalarSymbolType;
+
+    #[test]
+    fn typed_receipts_do_not_certify_vector_choice_factoring() {
+        let guard = b::param("ready", ScalarSymbolType::Boolean);
+        let receipt = b::sym_e(0, ScalarSymbolType::Integer);
+        let fixed = b::lit_int(6);
+        let absent = b::lit_int(0);
+        let yes = b::array_lit(vec![receipt.clone(), fixed.clone()]);
+        let no = b::array_lit(vec![absent.clone(), fixed.clone()]);
+        assert!(number_vector_choice(&guard, &yes, &no).is_none());
+
+        let slot = b::case_when(vec![(guard.clone(), receipt)], absent);
+        let pure = b::case_when(vec![(guard, fixed.clone())], b::lit_int(7));
+        let items = vec![slot, pure, fixed];
+        assert_eq!(number_vector(items.clone()).as_array_lit(), Some(items.as_slice()));
+    }
 }

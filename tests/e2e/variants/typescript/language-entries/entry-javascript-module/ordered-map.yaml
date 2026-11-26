@@ -103,3 +103,20 @@
   reject:
   - '[NORM-TS-MODULE]'
   - readonly Map requires each null guard to protect the inserted value
+- name: repeated-null-decision-keeps-interleaved-key-order
+  edits:
+  - from: '...(c === null ? [] : [[''c'', c] as const]),'
+    to: '...(c === null ? [] : [[''c'', c] as const]), ...(a === null ? [] : [[''tail'', a] as const]),'
+  expect:
+  - path: [R]
+    value: |-
+      CASE
+        WHEN a == null AND b == null AND c == null THEN MAP([])
+        WHEN a == null AND c == null THEN MAP([["b", b]])
+        WHEN a == null AND b == null THEN MAP([["c", c]])
+        WHEN a == null THEN MAP([["b", b], ["c", c]])
+        WHEN b == null AND c == null THEN MAP([["a", a], ["tail", a]])
+        WHEN c == null THEN MAP([["a", a], ["b", b], ["tail", a]])
+        WHEN b == null THEN MAP([["a", a], ["c", c], ["tail", a]])
+        ELSE MAP([["a", a], ["b", b], ["c", c], ["tail", a]])
+      END

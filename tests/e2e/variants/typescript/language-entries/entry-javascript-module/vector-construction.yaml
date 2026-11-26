@@ -104,3 +104,10 @@
       gate2 THEN 1 ELSE 0 END), (CASE WHEN gate3 THEN 1 ELSE 0 END), (CASE WHEN gate4 THEN 1 ELSE
       0 END), (CASE WHEN gate5 THEN 1 ELSE 0 END), (CASE WHEN gate6 THEN 1 ELSE 0 END), (CASE WHEN
       gate7 THEN 1 ELSE 0 END)]'
+- name: different-branch-lengths-keep-the-whole-vector-selection
+  edits:
+  - from: '[enabled ? left : right, fixed]'
+    to: 'enabled ? [left, fixed] : [right]'
+  expect:
+  - path: [R]
+    value: CASE WHEN enabled THEN [left, fixed] ELSE [right] END

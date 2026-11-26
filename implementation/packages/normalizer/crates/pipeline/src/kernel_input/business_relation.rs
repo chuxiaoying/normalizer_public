@@ -108,7 +108,7 @@ mod physical_column_contract {
         assert_eq!(name, "bill");
         assert_eq!(predicates, vec![&predicate]);
 
-        let vector = math::domains::composite::lifted_number_vector(vec![b::lit_int(4)]).unwrap();
+        let vector = math::domains::composite::number_vector(vec![b::lit_int(4)]);
         let rows = RelationExpr::vector(vector, "value");
         assert!(closed_count_table(&rows, &tables).is_none());
         assert!(closed_count_table(&RelationExpr::base("bill", "other"), &tables).is_none());

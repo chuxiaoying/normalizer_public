@@ -101,6 +101,6 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
 
 
 pub(super) fn number_vector(items: Vec<Expr>) -> Result<Value> {
-    let value = math::domains::composite::lifted_number_vector(items).map_err(fail)?;
+    let value = data::number_vector(items);
     Ok(Value::Term(Ty::Vector(Box::new(Ty::Integer)), value))
 }

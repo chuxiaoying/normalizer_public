@@ -175,7 +175,14 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
             "[{}]",
             items
                 .iter()
-                .map(|item| format_expr_with_ctx(item, ctx))
+                .map(|item| {
+                    let rendered = format_expr_with_ctx(item, ctx);
+                    if ctx.business_inputs.is_some() && item.as_case_when().is_some() {
+                        format!("({rendered})")
+                    } else {
+                        rendered
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         );
