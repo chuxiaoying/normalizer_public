@@ -43,6 +43,9 @@
 - **数组首项的分支条件**：当 `a[0] > x` 时返回该首项，否则返回 `x`。空数组仍有越界完成；不能把带异常的首项读取当成带默认值的纯取首项。入口应断言完整正常和异常 PERS。
 - **关系连接和 LET 输出**：在[内连接计数](../../design/examples/topics/relational-data/java-join.md)中给两表匹配追加独立布尔开关；为假时结果为零，为真时保留原连接和重复行计数。按[CASE LET 种子](../../design/examples/topics/expression-simplification/java-case-let-extraction.md)区分入参数组、E 状态数组、借用记录字段和 CASE 内取反；检查完整 PERS 中重复子式究竟提取为 LET 还是保持内联，不能把未确认的读取条件冒充已取得的值。
 - **已初始化 long 的有限循环**：[静态边界循环种子](../../design/examples/topics/loops-and-termination/java-constant-bound.md)规定赋值式循环可复用已初始化的 `int` 或 `long` 局部计数器。保持循环体和边界相同，独立预期应一致。现有入口拒绝 `long` 版本，这是合同缺口，不归入已签字的不支持输入。
+- **状态写入、独立字段与可空内容**：在[多次写后读](../../design/examples/topics/state-and-aliasing/java-multi-write-read-order.md)中分别验证同一对象的相邻字段、不同声明对象的同名字段。写入进 S，读取不得混到另一字段或对象；空值声明则沿[可选字段](../../design/examples/topics/objects-and-types/java-optional-field.md)断言完整 R 中保留 `null`，不省字段。
+- **合法接收者与身份**：按[多态分派](../../design/examples/topics/objects-and-types/java-polymorphic-dispatch.md)验证显式 `this.field` 读实际分派到的对象；按[内容与身份](../../design/examples/topics/objects-and-types/java-structural-vs-identity.md)验证非空入参与已绑定为 null 的局部变量不相同。比较不创造外部身份或改变 P。
+- **已取得值相消但不抹掉效果**：纯参数、不可变外部回执字段、第二次采集的完整回执分别计算同值减自身，R 都应归零。参数版不新增 S；两次采集均保留；[原子写入](../../design/examples/topics/relational-data/java-batch-write.md)后取时钟只发生于成功路径，仍保留 SQL、时钟及异常完成。当前参数和回执字段版本还有未化简结果，不能把它们当作预期。
 
 ## 好找、好改、好验证
 
