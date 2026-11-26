@@ -137,15 +137,6 @@ pub(super) fn parse(
     accumulate: bool,
     t: &mut Tokens<'_>,
 ) -> Result<Option<Query>, String> {
-    parse_query(binding, accumulate, t, true)
-}
-
-fn parse_query(
-    binding: String,
-    accumulate: bool,
-    t: &mut Tokens<'_>,
-    allow_nested_sum: bool,
-) -> Result<Option<Query>, String> {
     if t.take("reduce") {
         if accumulate { return Err("reduce has its own initial value; cannot use +=".into()); }
         let source = t.name()?;
@@ -184,6 +175,17 @@ fn parse_query(
     if accumulate && kind != Kind::Sum {
         return Err("only sum supports +=".into());
     }
+    parse_query_tail(binding, accumulate, t, kind, true).map(Some)
+}
+
+// Callers have already consumed the aggregate marker and the from keyword.
+fn parse_query_tail(
+    binding: String,
+    accumulate: bool,
+    t: &mut Tokens<'_>,
+    kind: Kind,
+    allow_nested_sum: bool,
+) -> Result<Query, String> {
     let source = t.name()?;
     if kind == Kind::First {
         let offset = if t.take("[") {
@@ -201,10 +203,10 @@ fn parse_query(
             t.expect("else")?;
             let default = scalar(t)?;
             if !t.rest().is_empty() { return Err("trailing scalar first input".into()); }
-            return Ok(Some(Query {
+            return Ok(Query {
                 binding, accumulate, kind: Kind::FirstScalar(offset.unwrap_or_default()), source,
                 alias: String::new(), clauses: vec![], projection: Projection::Value(default),
-            }));
+            });
         }
     }
     t.expect("as")?;
@@ -216,8 +218,8 @@ fn parse_query(
             keys.push(scalar(t)?);
         }
         if !t.rest().is_empty() { return Err("trailing group key clauses".into()); }
-        return Ok(Some(Query { binding, accumulate, kind, source, alias,
-            clauses: vec![], projection: Projection::GroupKeys(keys) }));
+        return Ok(Query { binding, accumulate, kind, source, alias,
+            clauses: vec![], projection: Projection::GroupKeys(keys) });
     }
     if kind == Kind::Count && t.take("join") {
         let right = t.name()?;
@@ -232,10 +234,10 @@ fn parse_query(
             while t.take("and") { filters.push(scalar(t)?); }
         }
         if !t.rest().is_empty() { return Err("trailing join count input".into()); }
-        return Ok(Some(Query {
+        return Ok(Query {
             binding, accumulate, kind, source, alias, clauses: vec![],
             projection: Projection::JoinCount { source: right, alias: right_alias, on, filters },
-        }));
+        });
     }
     let mut clauses = vec![];
     loop {
@@ -263,16 +265,14 @@ fn parse_query(
         return Err("OR is not supported in local relation predicates; SQL UNKNOWN must be preserved".into());
     }
     if matches!(kind, Kind::Count | Kind::CountDistinct) && t.rest().is_empty() {
-        return Ok(Some(Query {
+        return Ok(Query {
             binding, accumulate, kind, source, alias: alias.clone(), clauses,
             projection: Projection::Value(Scalar::Path(vec![alias])),
-        }));
+        });
     }
     t.expect("yield")?;
-    let has_nested_sum = {
-        let mut lookahead = Tokens { source: t.rest() };
-        lookahead.take("sum") && lookahead.take("from")
-    };
+    let mut nested = Tokens { source: t.rest() };
+    let has_nested_sum = kind == Kind::Sum && nested.take("sum") && nested.take("from");
     let mut projection = if t.take("{") {
         let mut fields = vec![];
         let mut names = BTreeSet::new();
@@ -289,11 +289,12 @@ fn parse_query(
             t.expect(",")?;
         }
         Projection::Fields(fields)
-    } else if kind == Kind::Sum && has_nested_sum {
+    } else if has_nested_sum {
         if !allow_nested_sum {
             return Err("nested sum is limited to two dimensions".into());
         }
-        let inner = parse_query(String::new(), false, t, false)?.ok_or("expected an inner sum")?;
+        *t = nested;
+        let inner = parse_query_tail(String::new(), false, t, Kind::Sum, false)?;
         let Projection::Value(value) = inner.projection else {
             return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
         };
@@ -316,7 +317,7 @@ fn parse_query(
     if !t.rest().is_empty() {
         return Err(format!("trailing relation input: {}", t.rest()));
     }
-    Ok(Some(Query {
+    Ok(Query {
         binding,
         accumulate,
         kind,
@@ -324,5 +325,5 @@ fn parse_query(
         alias,
         clauses,
         projection,
-    }))
+    })
 }
