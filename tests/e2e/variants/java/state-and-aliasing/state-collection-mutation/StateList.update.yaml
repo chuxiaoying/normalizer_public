@@ -88,3 +88,7 @@
     - { path: [R], value: 'LENGTH(values)' }
     - { path: [S], absent: true }
     - { path: [throws], absent: true }
+
+- name: an-unmarked-ordinary-field-does-not-become-an-acquired-array
+  edits:
+    - {from: 'class StateList {', to: 'class StateList { int audit;'}

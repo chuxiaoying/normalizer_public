@@ -488,6 +488,26 @@ mod resource_gate_tests {
     }
 
     #[test]
+    fn a_budget_declined_proof_can_be_retried_with_the_same_operands() {
+        let x = b::param("proofRetryThresholdInput", crate::ScalarSymbolType::Integer);
+        let active = b::and(b::gt(x.clone(), b::lit_int(4)), b::gt(x.clone(), b::lit_int(2)));
+        let conclusion = b::gt(x, b::lit_int(3));
+
+        let limited = BudgetScope::install(NormalizeBudget {
+            max_proof_nodes: 0, ..NormalizeBudget::default()
+        });
+        assert!(!b::path_implies(&active, &conclusion));
+        assert_eq!(budget_snapshot().unwrap().exhausted, None);
+        drop(limited);
+
+        let fresh = BudgetScope::install(NormalizeBudget {
+            max_proof_nodes: DEFAULT_MAX_PROOF_NODES, ..NormalizeBudget::default()
+        });
+        assert!(b::path_implies(&active, &conclusion));
+        drop(fresh);
+    }
+
+    #[test]
     fn fixed_point_iteration_limit_is_distinct_from_work_budget_exhaustion() {
         let x = b::param("limitedInput", crate::ScalarSymbolType::Integer);
         let expression = b::add(x.clone(), b::lit_int(0));

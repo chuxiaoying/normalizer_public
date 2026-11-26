@@ -173,3 +173,5 @@ T:
   - { id: $t_1, op: fold, type: number, source: values, initial: '$t_0', accumulator: acc, element: item, body: 'acc * 2 + item' }
 R: '$t_0 + $t_1'
 ```
+
+若新增已取得的布尔参数 `enabled` 并仅在 `!enabled` 时选择，则 T 中只记录一条 `when: NOT (enabled)` 的选择。enabled 为真时直接返回备用值，不执行该选择；enabled 为假时返回该选择，空数组也仍取原备用值。

@@ -193,3 +193,20 @@
   - path:
     - R
     value: "CASE\n  WHEN backup == 0 THEN $t_0\n  ELSE backup\nEND"
+
+- name: a-choice-can-be-guarded-by-negation-of-an-acquired-boolean
+  edits:
+    - {from: 'int[] values, int backup', to: 'int[] values, int backup, boolean enabled'}
+    - from: "int first;\n        /* @normalizer-ir first = choose from values else backup */\n        int second;\n        /* @normalizer-ir second = choose from values else backup */\n        return first + second;"
+      to: "if (!enabled) {\n  int first;\n  /* @normalizer-ir first = choose from values else backup */\n  return first;\n}\nreturn backup;"
+  expect:
+    - {path: [P, parameters, enabled], add: {position: 2, type: bool}}
+    - path: [T]
+      value:
+        - {id: '$t_0', op: member_choice, when: 'NOT (enabled)', members: values, empty: backup}
+    - path: [R]
+      value: |-
+        CASE
+          WHEN NOT (enabled) THEN $t_0
+          ELSE backup
+        END

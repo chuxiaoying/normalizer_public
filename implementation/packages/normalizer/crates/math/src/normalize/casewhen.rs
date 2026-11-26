@@ -721,6 +721,32 @@ mod first_match_domain_tests {
     }
 
     #[test]
+    fn a_failed_complement_only_removes_the_matching_later_conjunct() {
+        let p = flag("p");
+        let q = flag("q");
+        let r = flag("r");
+        let second_guard = b::and(p.clone(), q.clone());
+        let input = |first| [
+            (first, b::lit_int(10)),
+            (second_guard.clone(), b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ];
+        let first = b::not(p);
+        let (rewritten, changed) = simplify_branch_conditions_under_prior_failures(&input(first.clone()));
+        assert!(changed);
+        assert_eq!(rewritten, vec![
+            (first, b::lit_int(10)),
+            (q, b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ]);
+
+        let independent = input(r);
+        let (unchanged, changed) = simplify_branch_conditions_under_prior_failures(&independent);
+        assert!(!changed);
+        assert_eq!(unchanged, independent.to_vec());
+    }
+
+    #[test]
     fn merging_reachable_payloads_keeps_total_fallback_even_when_masked() {
         let p = flag("p");
         let q = flag("q");

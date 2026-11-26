@@ -42,3 +42,9 @@
                     total = total + i;
                 }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-LOOP-CONTROL]', 'raw continue requires explicit loop preprocessing']
+
+- name: first-unskipped-candidate-is-already-beyond-the-stop-bound
+  edits:
+    - {from: 'when i > 4 break', to: 'when i > 1 break'}
+  expect:
+    - {path: [R], value: '0'}
