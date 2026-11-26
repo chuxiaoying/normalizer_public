@@ -206,6 +206,50 @@ test('module CLI execution / exhausted normalization leaves no misleading PERS',
   assert.match(constrained.stderr, /no canonical result was produced/);
 });
 
+test('source CLI execution / proof and cache admission limits preserve the nested CASE', t => {
+  const project = mkdtempSync(join(tmpdir(), 'normalizer-source-proof-budget-'));
+  t.after(() => rmSync(project, { recursive: true, force: true }));
+  writePreparedSource(project, 'src/ProofBudget.java', `
+class ProofBudget {
+    static int nested(int x, int y, boolean p) {
+        if (x < 0) return p ? 10 : 20;
+        if (y > 1) return 20;
+        return 30;
+    }
+}
+`);
+  const expected = {
+    schema: 'normalizer.pers/1',
+    entry: { function: 'src/ProofBudget.java#ProofBudget.nested', returns: 'number' },
+    P: { parameters: {
+      x: { position: 0, type: 'number' },
+      y: { position: 1, type: 'number' },
+      p: { position: 2, type: 'bool' },
+    } },
+    // x < 0 is first: p yields 10, otherwise 20; only the other region
+    // can choose 20 via y > 1 or fall through to 30.
+    R: 'CASE\n  WHEN p AND x < 0 THEN 10\n  WHEN x < 0 OR y > 1 THEN 20\n  ELSE 30\nEND',
+  };
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => !name.startsWith('NORMALIZER_MATH_')));
+  const command = join(root, 'implementation/tools/normalizer');
+  const args = ['source', project, 'ProofBudget.nested'];
+  const profile = join(project, 'proof-budget.log');
+  for (const options of [
+    {},
+    { NORMALIZER_MATH_MAX_PROOF_NODES: '1', NORMALIZER_MATH_PROFILE_LOG: profile },
+    { NORMALIZER_MATH_MAX_CACHE_ENTRY_NODES: '1' },
+  ]) {
+    const result = invoke(command, args, root, undefined, { ...env, ...options });
+    assert.equal(result.status, 0, result.stderr);
+    const actual = YAML.parse(result.stdout);
+    assertPers(actual, 'nested CASE with constrained math resources');
+    assert.deepEqual(actual, expected);
+  }
+  assert.match(readFileSync(profile, 'utf8'),
+    /math\.proof\.path_implies\.budget_skip .*reason=run_proof_budget/);
+});
+
 test('source CLI execution / bounded cache eviction does not change normalization', t => {
   const project = mkdtempSync(join(tmpdir(), 'normalizer-source-cache-'));
   t.after(() => rmSync(project, {recursive: true, force: true}));

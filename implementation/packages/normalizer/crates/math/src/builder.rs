@@ -1194,6 +1194,30 @@ mod coverage_proof_tests {
     }
 
     #[test]
+    fn exact_fact_shortcut_declines_opaque_left_conjuncts() {
+        use crate::domains::relation::{relation_exists, RelationExpr};
+
+        let available = param("available", ScalarSymbolType::Boolean);
+        let selected = param("selected", ScalarSymbolType::Boolean);
+        let unrelated = param("unrelated", ScalarSymbolType::Boolean);
+        let existence = relation_exists(RelationExpr::base("offers", "offer"));
+        // A Boolean value only on the normal-return path selected by available.
+        let partial = normal_return_case_when(vec![], (available.clone(), selected.clone()));
+
+        for opaque in [existence, partial] {
+            let active = and(opaque, selected.clone());
+            let mut facts = HashMap::new();
+            assert!(!exact_active_facts(&active, &mut facts));
+            assert!(!facts.contains_key(&selected));
+            assert!(!path_implies(&active, &unrelated));
+        }
+
+        let mut facts = HashMap::new();
+        assert!(exact_active_facts(&and(available, selected.clone()), &mut facts));
+        assert_eq!(evaluate_with_exact_facts(&selected, &facts), Some(true));
+    }
+
+    #[test]
     fn direct_complement_pair_is_recognized_in_both_orders() {
         let p = param("p", ScalarSymbolType::Boolean);
         let q = param("q", ScalarSymbolType::Boolean);
