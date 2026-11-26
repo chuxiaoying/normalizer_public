@@ -35,7 +35,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let body_at = self.pos + 1;
         let text = self.skip_balanced_braces()?;
-        parse_method_body_text(&text, &self.file).map_err(|error| self.rebase_slice(body_at, error))
+        parse_method_body_text(text, &self.file).map_err(|error| self.rebase_slice(body_at, error))
     }
 
     /// Return the last statement from this source position. A local declaration
@@ -44,9 +44,9 @@ impl<'a> Parser<'a> {
         self.skip_ws();
 
         if let Some(start) = self.local_ir_start() {
-            let end = self.src[start..].windows(2).position(|part| part == b"*/")
+            let end = self.source.as_bytes()[start..].windows(2).position(|part| part == b"*/")
                 .map(|offset| start + offset).ok_or_else(|| self.err("unterminated @normalizer-ir comment"))?;
-            let source = std::str::from_utf8(&self.src[start..end]).map_err(|_| self.err("invalid UTF-8 in @normalizer-ir"))?;
+            let source = &self.source[start..end];
             let directive = normalizer_ir::local::parse(source).map_err(|error| self.err(&format!("invalid @normalizer-ir: {error}")))?;
             self.pos = end + 2;
             return Ok(JavaStatement::LocalIr(directive));
@@ -704,7 +704,7 @@ impl<'a> Parser<'a> {
             while self.peek().is_some_and(|c| c.is_ascii_digit() || c == b'_') {
                 self.pos += 1;
             }
-            let digits = &self.src[start..self.pos];
+            let digits = &self.source.as_bytes()[start..self.pos];
             if digits.last().is_some_and(u8::is_ascii_digit) {
                 let long = matches!(self.peek(), Some(b'L' | b'l'));
                 let next = if long { self.peek_at(1) } else { self.peek() };
@@ -743,7 +743,7 @@ impl<'a> Parser<'a> {
             if !self.starts_with(kw) {
                 return false;
             }
-            let after = self.src.get(self.pos + kw.len()).copied();
+            let after = self.source.as_bytes().get(self.pos + kw.len()).copied();
             !matches!(after, Some(c) if c.is_ascii_alphanumeric() || c == b'_' || c == b'$')
         });
         if is_primitive {
@@ -1082,8 +1082,7 @@ impl<'a> Parser<'a> {
             }
             utf8 => {
                 let end = self.pos + utf8.leading_ones() as usize;
-                let value = self.src.get(self.pos..end)
-                    .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                let value = self.source.get(self.pos..end)
                     .and_then(|text| text.chars().next())
                     .ok_or_else(|| self.err("invalid UTF-8 in Java literal"))?;
                 self.pos = end;
@@ -1135,7 +1134,7 @@ impl<'a> Parser<'a> {
             }) {
                 self.pos += 1;
             }
-            if self.pos == start_digits || self.src[start_digits] == b'_' {
+            if self.pos == start_digits || self.source.as_bytes()[start_digits] == b'_' {
                 return Err(self.err("expected digit after integer radix prefix"));
             }
         } else {
@@ -1175,18 +1174,13 @@ impl<'a> Parser<'a> {
             }
             _ => {}
         }
-        if self.src.get(end - 1) == Some(&b'_')
+        if self.source.as_bytes().get(end - 1) == Some(&b'_')
             || self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$')
         {
             return Err(self.err("invalid numeric literal suffix"));
         }
 
-        let text = std::str::from_utf8(&self.src[start..end]).unwrap_or_else(|e| {
-            panic!(
-                "[BODY-PARSER-TEXT-UTF8-FAIL] text utf8 decode failed at {}..{}: {:?}",
-                start, end, e
-            )
-        });
+        let text = &self.source[start..end];
         let cleaned: String = text.chars().filter(|&c| c != '_').collect();
 
         if radix != 10 || (cleaned.starts_with('0') && cleaned.len() > 1) {

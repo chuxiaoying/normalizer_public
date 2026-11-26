@@ -92,7 +92,7 @@ fn collect_inner_classes(class: &mut JavaClass, out: &mut Vec<JavaClass>) {
 }
 
 pub(crate) struct Parser<'a> {
-    pub(crate) src: &'a [u8],
+    pub(crate) source: &'a str,
     pub(crate) pos: usize,
     lexical_error: Option<ParseError>,
     pub(crate) file: String,
@@ -104,7 +104,7 @@ pub(crate) struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub(crate) fn new(source: &'a str, file_hint: &str) -> Self {
         Self {
-            src: source.as_bytes(),
+            source,
             pos: 0,
             lexical_error: None,
             file: file_hint.to_string(),
@@ -116,7 +116,7 @@ impl<'a> Parser<'a> {
     fn location(&self, offset: usize) -> (usize, usize) {
         let (mut line, mut col) = (1usize, 1usize);
         let mut previous_cr = false;
-        for &b in &self.src[..offset.min(self.src.len())] {
+        for &b in &self.source.as_bytes()[..offset.min(self.source.len())] {
             match b {
                 b'\r' => { line += 1; col = 1; }
                 b'\n' => { if !previous_cr { line += 1; } col = 1; }
@@ -151,24 +151,24 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn peek(&self) -> Option<u8> {
-        self.src.get(self.pos).copied()
+        self.source.as_bytes().get(self.pos).copied()
     }
     pub(crate) fn peek_at(&self, o: usize) -> Option<u8> {
-        self.src.get(self.pos + o).copied()
+        self.source.as_bytes().get(self.pos + o).copied()
     }
     pub(crate) fn starts_with(&self, s: &str) -> bool {
-        self.src[self.pos..].starts_with(s.as_bytes())
+        self.source.as_bytes()[self.pos..].starts_with(s.as_bytes())
     }
 
     /// Leave semantic comments for the statement parser, even when malformed.
     pub(crate) fn local_ir_start(&self) -> Option<usize> {
-        let comment = self.src.get(self.pos..)?.strip_prefix(b"/*")?;
+        let comment = self.source.as_bytes().get(self.pos..)?.strip_prefix(b"/*")?;
         let offset = comment.iter().position(|byte| !byte.is_ascii_whitespace())?;
         let rest = comment[offset..].strip_prefix(b"@normalizer-ir")?;
         if rest.first().is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_') {
             return None;
         }
-        Some(self.src.len() - rest.len())
+        Some(self.source.len() - rest.len())
     }
 
     fn skip_line_comment(&mut self) {
@@ -181,14 +181,14 @@ impl<'a> Parser<'a> {
     fn skip_block_comment(&mut self) -> Result<(), ParseError> {
         let start = self.pos;
         self.pos += 2;
-        while self.pos + 1 < self.src.len() {
-            if self.src[self.pos] == b'*' && self.src[self.pos + 1] == b'/' {
+        while self.pos + 1 < self.source.len() {
+            if self.source.as_bytes()[self.pos] == b'*' && self.source.as_bytes()[self.pos + 1] == b'/' {
                 self.pos += 2;
                 return Ok(());
             }
             self.pos += 1;
         }
-        self.pos = self.src.len();
+        self.pos = self.source.len();
         Err(self.err_at(start, "[JAVA-COMMENT] unclosed block comment"))
     }
 
@@ -231,11 +231,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        Some(
-            std::str::from_utf8(&self.src[start..self.pos])
-                .ok()?
-                .to_string(),
-        )
+        Some(self.source[start..self.pos].to_owned())
     }
 
     pub(crate) fn read_qualified_ident(&mut self) -> Option<String> {
@@ -290,7 +286,7 @@ impl<'a> Parser<'a> {
             return false;
         }
         let next_pos = self.pos + kw.len();
-        let after = self.src.get(next_pos).copied();
+        let after = self.source.as_bytes().get(next_pos).copied();
         match after {
             Some(c) if c.is_ascii_alphanumeric() || c == b'_' || c == b'$' => {
                 self.pos = save;
@@ -331,7 +327,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(crate) fn skip_balanced_braces(&mut self) -> Result<String, ParseError> {
+    pub(crate) fn skip_balanced_braces(&mut self) -> Result<&'a str, ParseError> {
         self.skip_ws();
         if !self.eat_char(b'{') {
             return Err(self.err("expected '{'"));
@@ -347,14 +343,8 @@ impl<'a> Parser<'a> {
                 b'}' => {
                     depth -= 1;
                     if depth == 0 {
-                        let body = std::str::from_utf8(&self.src[start..self.pos])
-                            .unwrap_or_else(|e| {
-                                panic!(
-                                    "[PARSER-BODY-UTF8-FAIL] class body utf8 decode failed: {:?}",
-                                    e
-                                )
-                            })
-                            .to_string();
+                        // ASCII braces delimit a slice of the already decoded source.
+                        let body = &self.source[start..self.pos];
                         self.pos += 1;
                         return Ok(body);
                     }
@@ -398,8 +388,7 @@ impl<'a> Parser<'a> {
                 b')' => {
                     depth -= 1;
                     if depth == 0 {
-                        let body = std::str::from_utf8(&self.src[start..self.pos])
-                            .map_err(|_| self.err("invalid UTF-8 in parentheses"))?;
+                        let body = &self.source[start..self.pos];
                         self.pos += 1;
                         return Ok(body);
                     }
@@ -601,7 +590,7 @@ impl<'a> Parser<'a> {
             is_interface,
         };
 
-        parse_class_body(&body_text, &mut class, &self.file).map_err(|error| self.rebase_slice(body_at, error))?;
+        parse_class_body(body_text, &mut class, &self.file).map_err(|error| self.rebase_slice(body_at, error))?;
 
         Ok(class)
     }
@@ -741,7 +730,7 @@ fn parse_class_body(
                 is_interface: nested_is_interface,
             };
             parse_class_body(
-                &nested_body,
+                nested_body,
                 &mut nested_class,
                 file,
             ).map_err(|error| p.rebase_slice(nested_at, error))?;
@@ -777,7 +766,7 @@ fn parse_class_body(
                     let body_at = p.pos + 1;
                     let text = p.skip_balanced_braces()?;
                     Some(crate::body_parser::parse_method_body_text(
-                        &text,
+                        text,
                         file,
 
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
@@ -848,7 +837,7 @@ fn parse_class_body(
                 let body_at = p.pos + 1;
                 let text = p.skip_balanced_braces()?;
                 Some(crate::body_parser::parse_method_body_text(
-                    &text,
+                    text,
                     file,
 
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
