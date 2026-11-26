@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::domains::relation::RelationExpr;
+use crate::normalize::relation::relation_count_bound;
 
 pub(super) fn conjunction_implies(conjs_left: &[Expr], conjs_right: &[Expr]) -> bool {
     conjs_right.iter().all(|right| expr_is_true_under_and_context(right, conjs_left))
@@ -49,11 +50,19 @@ pub(super) fn relation_exists_or_not_exists_same_relation(
 }
 
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {
-    let Some(left_relation) =
-        relation_count_nonzero_relation(left).or_else(|| relation_count_positive_lower_bound(left))
-    else {
+    let Some((op, left_relation, bound)) = relation_count_bound(left) else {
         return false;
     };
+    // Stronger bounds imply Exists, not the reverse. The zero complement
+    // uses only the exact equivalences below.
+    if !match op {
+        BinOpKind::Ne => bound == 0,
+        BinOpKind::Gt => bound >= 0,
+        BinOpKind::Ge | BinOpKind::Eq => bound >= 1,
+        _ => false,
+    } {
+        return false;
+    }
     let Some(right_relation) = relation_exists_true_relation(right) else {
         return false;
     };
@@ -74,21 +83,6 @@ pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> 
         candidate = input;
     }
     false
-}
-
-/// A positive exact cardinality bound implies existence, but existence does
-/// NOT imply that stronger bound. Keep this separate from the bidirectional
-/// nonzero matcher used by the reverse implication and zero contradictions.
-pub(super) fn relation_count_positive_lower_bound(
-    expr: &Expr,
-) -> Option<&RelationExpr> {
-    let (op, relation, n) = relation_count_bound(expr)?;
-    let proves_positive = match op {
-        BinOpKind::Gt => n >= 0,
-        BinOpKind::Ge | BinOpKind::Eq => n >= 1,
-        _ => false,
-    };
-    proves_positive.then_some(relation)
 }
 
 pub(super) fn relation_cardinality_input_matches(
@@ -128,31 +122,12 @@ fn relation_not_exists_true_relation(expr: &Expr) -> Option<&RelationExpr> {
     relation_exists_true_relation(exists)
 }
 
-pub(super) fn relation_count_nonzero_relation(expr: &Expr) -> Option<&RelationExpr> {
-    let (op, relation, bound) = relation_count_bound(expr)?;
-    (bound == 0 && matches!(op, BinOpKind::Ne | BinOpKind::Gt)).then_some(relation)
-}
-
 pub(super) fn relation_count_zero_relation(expr: &Expr) -> Option<&RelationExpr> {
-    if let Some((UnaryOpKind::Not, operand)) = expr.as_unary_op() {
-        return relation_count_nonzero_relation(operand);
-    }
-    let (op, relation, bound) = relation_count_bound(expr)?;
-    (bound == 0 && op == BinOpKind::Eq).then_some(relation)
-}
-
-/// View an integer bound with Count on the left, regardless of source spelling.
-/// Only a bare Count of the same input (no select/default) owns these rules.
-fn relation_count_bound(expr: &Expr) -> Option<(BinOpKind, &RelationExpr, i64)> {
-    let (op, left, right) = expr.as_binop()?;
-    let (op, count, bound) = match (left.as_lit(), right.as_lit()) {
-        (_, Some(Lit::Int(n))) => (op, left, *n),
-        (Some(Lit::Int(n)), _) => (op.swapped_comparison()?, right, *n),
-        _ => return None,
+    let (expr, negated) = match expr.as_unary_op() {
+        Some((UnaryOpKind::Not, operand)) => (operand, true),
+        _ => (expr, false),
     };
-    let (RelationAggregateKind::Count, relation, None, None) = count.as_relation_aggregate()?
-    else {
-        return None;
-    };
-    Some((op, relation, bound))
+    let (op, relation, 0) = relation_count_bound(expr)? else { return None; };
+    matches!((op, negated), (BinOpKind::Eq, false) | (BinOpKind::Ne | BinOpKind::Gt, true))
+        .then_some(relation)
 }

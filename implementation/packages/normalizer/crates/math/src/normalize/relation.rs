@@ -9,28 +9,28 @@ use crate::domains::relation::RelationExpr;
 use crate::expr::{Expr, ExprKind, RelationAggregateKind};
 use std::time::Instant;
 
-/// Exact cardinality is nonnegative and is zero exactly for an empty relation.
-/// This does not inspect signed_word/count-distinct/sum wrappers: overflow and
-/// projection semantics cannot be inferred from their printed shape.
-fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
-    use crate::BinOpKind::*;
-    let (mut op, left, right) = expr.as_binop()?;
-    let query = if right.as_lit() == Some(&crate::Lit::Int(0)) {
-        left
-    } else if left.as_lit() == Some(&crate::Lit::Int(0)) {
-        op = op.swapped_comparison()?;
-        right
-    } else {
-        return None;
-    };
-    let (RelationAggregateKind::Count, relation, None, None) = query.as_relation_aggregate()?
+/// Admit only a bare Count with a compact integer bound. Both source
+/// orientations share the comparison owner and cannot certify projections.
+pub(super) fn relation_count_bound(expr: &Expr) -> Option<(crate::BinOpKind, &RelationExpr, i64)> {
+    let (op, count, bound) =
+        super::constraint::comparison_literal_rhs(expr.as_binop()?, super::constraint::compact_integer)?;
+    let (RelationAggregateKind::Count, relation, None, None) = count.as_relation_aggregate()?
     else {
         return None;
     };
-    let exists = crate::domains::relation::relation_exists(relation.clone());
+    Some((op, relation, bound))
+}
+
+/// Exact cardinality is nonnegative and is zero exactly for an empty relation.
+fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
+    use crate::BinOpKind::*;
+    let (op, relation, 0) = relation_count_bound(expr)? else {
+        return None;
+    };
+    let exists = || crate::domains::relation::relation_exists(relation.clone());
     Some(match op {
-        Eq | Le => builder::not(exists),
-        Ne | Gt => exists,
+        Eq | Le => builder::not(exists()),
+        Ne | Gt => exists(),
         Lt => builder::lit_bool(false),
         Ge => builder::lit_bool(true),
         _ => return None,
