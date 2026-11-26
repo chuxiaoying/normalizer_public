@@ -1,5 +1,7 @@
 # 定形规则与验收细则
 
+本页为具体规则参考。一级设计以[第八章《统一定形规范》](chapters/第八章%20·%20统一定形规范.md)为准；与之冲突的表示选择不作为测试预期。完整二分值的选向见[二级专题](secondary/完整二分%20CASE%20怎么选方向.md)。
+
 **等价的写法，在已发布规则的适用范围内，只能归到一种结构。** 例如精确整数的 `a + b` 与 `b + a` 不只是结果相等；它们经过内核后必须得到同一个 PERS 结构。排序是核心，但只有先证明可交换，才有资格排序。定形不是通用程序等价判定。
 
 | 输入 | 唯一代表或必须保留的区别 |
@@ -69,7 +71,7 @@ c AND (b AND a)
 
 二分的两个结果均不是嵌套 CASE 时，先建立两个完整候选：`(p, yes, no)` 与 `(NOT(p), no, yes)`；只有在条件已经证明互补、两臂可交换且不会改变取得域、异常域、调用次数或惰性时，才允许比较这两个候选。候选方向由下文的 `case_orientation` 规则及其语义域专用策略决定，不能再由某个局部调用按 null、表达式大小或源码分支顺序自行决定。嵌套 CASE 不由这条局部规则交换。宿主保护 CASE 只能同时交换两臂来取向，不能因此把依赖取得域的 Boolean 结果展开为无保护的 AND／OR，也不能重新 normalize 整个保护 CASE 来消掉惰性边界。例如 nullable source 的空集判断采用 `CASE WHEN source == null THEN false ELSE empty(source) END`，而非在 null 域观察 source。
 
-对于业务 `number` 的二元取小值或取大值，两个返回臂必须恰好是参与比较的两个值，且已知它们可全序比较。相等时两者可互换，因此统一用严格比较。字面量默认值保留在 ELSE；其余优先将较短的表达式放在 THEN，同等大小时按共享结构排序选边。业务 PERS 将选中的值写在比较左侧，例如 `WHEN quota < total THEN quota ELSE total`。这条规则只整理已经取得的业务值，调用次数、顺序和条件均保持原有语义。
+对于业务 `number` 的二元取小值或取大值，两个返回臂必须恰好是参与比较的两个值，且已知它们可全序比较。相等时两者可互换，因此统一用严格比较。在证明是相同的极值运算后，使用共享比较键确定操作数方向，再按完整 CASE 规则定形。例如在 quota 的键在前时，较小值写成 `WHEN quota < total THEN quota ELSE total`，不另按结果臂长短或常量位置选向。这条规则只整理已经取得的业务值，调用次数、顺序和条件均保持原有语义。
 
 相邻同值分支可按原顺序合并 guard：
 
@@ -104,7 +106,7 @@ case_key = (domain_policy, guard_key, then_value_key, else_value_key)
 
 `guard_key` 先使用当前 `SortContext` 统一比较两端，再使用语义域公布的关系顺序；`then_value_key` 与 `else_value_key` 只在 guard 平局时打破平局。语义域策略可以不同，但每个策略必须显式发布、可证明、幂等，并对所有语言入口相同。现有 typed Vector 长度合同的“空长度代表先行”策略继续有效；它不能被普通整数计数合同的策略悄悄覆盖。
 
-完整二分值 CASE 的语义域优先级依次是已认证的数值指示器／正域计数、`ELSE null`、普通结构键。某一结果为 null 时，只能通过取反并同时交换两臂将 null 放在 ELSE，不能把存在的 null 当作缺失或空域。
+能够证明更简单的先化简；同复杂度的普通完整二分值统一按基准守卫选向。不存在单凭某臂为 null 或数值为 0/1 就换向的优先级。存在的 null 仍不是缺失或空域。
 
 实现收口在 `math::case_orientation`。普通完整二分 CASE 通过共享候选入口取向；宿主为 nullable 观察建立的 `CASE WHEN subject != null THEN value ELSE false END` 保护形态，通过同一模块的 nullable false-default 入口改成 `CASE WHEN subject == null THEN false ELSE value END`。pipeline、fold 和观察域只能调用这些共享入口，不能各自按 expected、入口名称或局部表达式形状重写 CASE。该 nullable 入口允许非 null 臂保留嵌套 normal-return CASE，并把外层 CASE 作为惰性保护边界。
 
@@ -120,7 +122,7 @@ normalize(normalize(x)) == normalize(x)
 
 ### 数值指示器
 
-只有取值恰为 0 和 1、条件可安全取反且两臂可互换的完整 CASE，才按“条件为真时得到 1，否则得到 0”规范化。比如存在性指示器用 `WHEN label != null THEN 1 ELSE 0`。若非空分支改为 2，已不是二值指示器，回到普通 CASE 的取向规则。此规范只改写值表达式，不移动字段读取。
+取值恰为 0 和 1 表达指示器的数值语义，不因此得到第二套选向规则。例如总比较 `label != null` 的基准为 `label == null`，所以定义为“非空取 1”的指示器定形为 `CASE WHEN label == null THEN 0 ELSE 1 END`。只改写已取得的值表达式，不移动字段读取。
 
 ### 普通整数计数的非正／正二分策略
 
