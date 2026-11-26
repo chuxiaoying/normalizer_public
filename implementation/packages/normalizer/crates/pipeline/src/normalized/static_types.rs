@@ -6,13 +6,16 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    Number, Bool, Text, Null, Sequence, Ref, Unresolved,
+    Number, Float, Double, DecimalCarrier, Bool, Text, Null, Sequence, Ref, Unresolved,
 }
 impl Kind {
     fn declared(ty: &JavaType) -> Self {
         match ty {
             JavaType::Primitive(name) if name == "boolean" => Self::Bool,
+            JavaType::Primitive(name) if name == "float" => Self::Float,
+            JavaType::Primitive(name) if name == "double" => Self::Double,
             JavaType::Primitive(_) => Self::Number,
+            t if super::exact_decimal_type(t) => Self::DecimalCarrier,
             JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String") => Self::Text,
             JavaType::Array(_) => Self::Sequence,
             JavaType::Class(_) | JavaType::Generic(..) => Self::Ref,
@@ -23,6 +26,9 @@ impl Kind {
     fn label(self) -> &'static str {
         match self {
             Self::Number => "number",
+            Self::Float => "float",
+            Self::Double => "double",
+            Self::DecimalCarrier => "java.math.BigDecimal",
             Self::Bool => "bool",
             Self::Text => "text",
             Self::Null => "null",
@@ -32,19 +38,55 @@ impl Kind {
         }
     }
 
+    fn is_native_decimal(self) -> bool {
+        matches!(self, Self::Float | Self::Double)
+    }
+
+    fn numeric_union(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Double, Self::Number | Self::Float | Self::Double)
+            | (Self::Number | Self::Float, Self::Double) => Some(Self::Double),
+            (Self::Float, Self::Number | Self::Float) | (Self::Number, Self::Float) => Some(Self::Float),
+            (Self::Number, Self::Number) => Some(Self::Number),
+            _ => None,
+        }
+    }
+
     // Ref may have an implicit Java boxing conversion; do not guess a
     // concrete nominal type for it. Other known primitive families are disjoint.
     fn conflicts_with(self, other: Self) -> bool {
-        if self == other || matches!(self, Self::Ref | Self::Unresolved)
+        if self == other || self.numeric_union(other).is_some()
+            || matches!(self, Self::Ref | Self::Unresolved)
             || matches!(other, Self::Ref | Self::Unresolved)
         {
             return false;
         }
         if self == Self::Null || other == Self::Null {
-            return matches!(self, Self::Bool | Self::Number) || matches!(other, Self::Bool | Self::Number);
+            return matches!(self, Self::Bool | Self::Number | Self::Float | Self::Double)
+                || matches!(other, Self::Bool | Self::Number | Self::Float | Self::Double);
         }
         true
     }
+}
+
+// This is only Java compile-time admission. Business execution never
+// transforms a literal through either IEEE representation.
+fn native_literal_compiles(digits: &str, radix: u32, power: i32, single: bool) -> bool {
+    use math::Integer;
+    let value = Integer::parse_bytes(digits.as_bytes(), radix)
+        .expect("source parser has checked the numeric token");
+    let zero = Integer::from(0);
+    if value == zero {
+        return true;
+    }
+    let one = Integer::from(1);
+    let factor = Integer::from(if radix == 16 { 2 } else { 10 }).pow(power.unsigned_abs());
+    let (num, den) = if power < 0 { (value, factor) } else { (value * factor, one.clone()) };
+    let (max, precision, tiny): (usize, usize, usize) =
+        if single { (128, 24, 150) } else { (1024, 53, 1075) };
+    // At the exact midpoints, ties-to-even chooses infinity or zero.
+    let overflow_midpoint = (&one << max) - (&one << (max - precision - 1));
+    (&num << tiny) > den && num < overflow_midpoint * den
 }
 
 type Scope = BTreeMap<String, JavaType>;
@@ -72,6 +114,17 @@ impl Admission<'_> {
         })
     }
 
+    fn method<'a>(&'a self, target: Option<&E>, method: &str, arity: usize, scope: &Scope) -> Option<&'a JavaMethod> {
+        let owner = match target {
+            None => self.class,
+            Some(target) => {
+                let JavaType::Class(owner) = self.declared_type(target, scope)? else { return None };
+                self.program.find_class(&owner)?
+            }
+        };
+        owner.methods().iter().find(|m| m.name() == method && m.arity() == arity)
+    }
+
     fn declared_type(&self, expr: &E, scope: &Scope) -> Option<JavaType> {
         match expr {
             E::Ident(name) if name == "this" && !self.method.is_static() =>
@@ -90,17 +143,9 @@ impl Admission<'_> {
                 let JavaType::Array(element) = self.declared_type(target, scope)? else { return None };
                 Some(*element)
             }
-            E::MethodCall { target, method, args } => {
-                let owner = match target {
-                    None => self.class,
-                    Some(target) => {
-                        let JavaType::Class(owner) = self.declared_type(target, scope)? else { return None };
-                        self.program.find_class(&owner)?
-                    }
-                };
-                owner.methods().iter().find(|m| m.name() == method && m.arity() == args.len())
-                    .map(|m| m.return_type().clone())
-            }
+            E::MethodCall { target, method, args } => self
+                .method(target.as_deref(), method, args.len(), scope)
+                .map(|m| m.return_type().clone()),
             _ => None,
         }
     }
@@ -118,12 +163,30 @@ impl Admission<'_> {
             }
             E::Lit(JavaLit::Bool(_)) => Kind::Bool,
             E::Lit(JavaLit::Int(_) | JavaLit::Long(_) | JavaLit::Char(_)) => Kind::Number,
+            E::Lit(JavaLit::Decimal { digits, radix, power, single }) => {
+                if !native_literal_compiles(digits, *radix, *power, *single) {
+                    return Err(self.diagnostic("NORM-NUMBER-LITERAL",
+                        "nonzero Java floating literal would round to infinity or zero"));
+                }
+                if *single { Kind::Float } else { Kind::Double }
+            }
             E::Lit(JavaLit::Str(_)) => Kind::Text,
             E::Lit(JavaLit::Null) => Kind::Null,
             E::FieldAccess { target, .. } => { self.expression(target, scope)?; declared() }
-            E::MethodCall { args, .. } | E::New { args, .. } => {
-                // Structural admission binds call targets, including external
-                // receiver names; a syntactic qualifier is not a value read.
+            E::MethodCall { target, method, args } => {
+                let callee = self.method(target.as_deref(), method, args.len(), scope);
+                for (i, arg) in args.iter().enumerate() {
+                    let actual = self.expression(arg, scope)?;
+                    if let Some(callee) = callee {
+                        let expected = Kind::declared(&callee.params()[i].0);
+                        if expected.is_native_decimal() || actual.is_native_decimal() {
+                            self.compatible(expected, actual, &format!("argument {} of {method}", i+1))?;
+                        }
+                    }
+                }
+                declared()
+            }
+            E::New { args, .. } => {
                 for arg in args { self.expression(arg, scope)?; }
                 declared()
             }
@@ -138,6 +201,25 @@ impl Admission<'_> {
             E::BinOp { op, left, right } => {
                 let left = self.expression(left, scope)?;
                 let right = self.expression(right, scope)?;
+                let carrier = left == Kind::DecimalCarrier || right == Kind::DecimalCarrier;
+                let text_concat = *op == B::Add && (left == Kind::Text || right == Kind::Text);
+                if carrier && !text_concat
+                    && matches!(op, B::Add | B::Sub | B::Mul | B::Div | B::Mod | B::Lt | B::Le | B::Gt | B::Ge)
+                {
+                    return Err(self.diagnostic("NORM-DECIMAL-OP",
+                        "Java operators do not perform BigDecimal arithmetic; use an explicit decimal operation"));
+                }
+                if left.is_native_decimal() || right.is_native_decimal() {
+                    let numeric = left.numeric_union(right).ok_or_else(|| self.diagnostic(
+                        "NORM-SOURCE-TYPE", "native decimal operations require numeric operands",
+                    ))?;
+                    return match op {
+                        B::Add | B::Sub | B::Mul => Ok(numeric),
+                        B::Eq | B::Ne | B::Lt | B::Le | B::Gt | B::Ge => Ok(Kind::Bool),
+                        _ => Err(self.diagnostic("NORM-DECIMAL-OP",
+                            "当前精确业务数值入口支持加、减、乘和比较，尚无该小数运算合同")),
+                    };
+                }
                 match op {
                     B::And | B::Or => {
                         self.condition(left, "left logical operand")?;
@@ -154,6 +236,9 @@ impl Admission<'_> {
             E::Assign { .. } => Kind::Unresolved,
             E::UnaryOp { op, operand } => {
                 let kind = self.expression(operand, scope)?;
+                if kind == Kind::DecimalCarrier {
+                    return Err(self.diagnostic("NORM-DECIMAL-OP", "Java unary operators do not perform BigDecimal arithmetic"));
+                }
                 if *op == U::Not {
                     self.condition(kind, "not operand")?;
                     Kind::Bool
@@ -169,9 +254,14 @@ impl Admission<'_> {
                     return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
                         "branch result type mismatch: then={} else={}", yes.label(), no.label())));
                 }
-                if yes == no { yes } else { Kind::Unresolved }
+                if yes == no { yes } else { yes.numeric_union(no).unwrap_or(Kind::Unresolved) }
             }
-            E::Cast { operand, .. } => { self.expression(operand, scope)?; declared() }
+            E::Cast { operand, .. } => {
+                if self.expression(operand, scope)?.is_native_decimal() {
+                    return Err(self.diagnostic("NORM-DECIMAL-OP", "尚无原生小数转整数的取整合同"));
+                }
+                declared()
+            }
             E::ArrayAccess { target, index } => {
                 self.expression(target, scope)?;
                 self.expression(index, scope)?;
@@ -188,7 +278,9 @@ impl Admission<'_> {
     }
 
     fn compatible(&self, expected: Kind, actual: Kind, label: &str) -> Result<(), String> {
-        if expected.conflicts_with(actual) {
+        let narrows_native = matches!((expected, actual),
+            (Kind::Number, Kind::Float | Kind::Double) | (Kind::Float, Kind::Double));
+        if narrows_native || expected.conflicts_with(actual) {
             return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
                 "{label} requires {}, got {}", expected.label(), actual.label())));
         }

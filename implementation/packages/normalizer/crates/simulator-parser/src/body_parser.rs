@@ -1126,39 +1126,39 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn digit_sequence(&self, start: usize) -> &[u8] {
-        &self.source.as_bytes()[start..self.pos]
-    }
-
     // Only admit digit separators between digits, not against a prefix,
     // radix point, exponent sign or type suffix. An empty part is optional.
     fn checked_ieee_digits(&self, from: usize, part: &'static str) -> Result<bool, ParseError> {
-        let digits = self.digit_sequence(from);
+        let digits = &self.source.as_bytes()[from..self.pos];
         if digits.first() == Some(&b'_') || digits.last() == Some(&b'_') {
             return Err(self.err(part));
         }
         Ok(!digits.is_empty())
     }
 
-    fn reject_ieee_literal(
+    fn read_decimal_literal(
         &mut self, start: usize, digits_start: usize, hex: bool,
     ) -> Result<JavaLit, ParseError> {
         let has_whole = self.checked_ieee_digits(digits_start, "invalid numeric literal significand")?;
-        let mut has_fraction = false;
+        let whole_end = self.pos;
+        let mut fraction = whole_end..whole_end;
         if self.peek() == Some(b'.') {
             self.pos += 1;
             let fraction_start = self.pos;
             self.scan_numeric_digits(hex);
-            has_fraction = self.checked_ieee_digits(fraction_start, "invalid numeric literal significand")?;
+            self.checked_ieee_digits(fraction_start, "invalid numeric literal significand")?;
+            fraction = fraction_start..self.pos;
         }
-        if !has_whole && !has_fraction {
+        if !has_whole && fraction.is_empty() {
             return Err(self.err("invalid numeric literal significand"));
         }
 
         let exponent = if hex { matches!(self.peek(), Some(b'p' | b'P')) }
             else { matches!(self.peek(), Some(b'e' | b'E')) };
+        let mut power = 0;
         if exponent {
             self.pos += 1;
+            let power_start = self.pos;
             if matches!(self.peek(), Some(b'+' | b'-')) {
                 self.pos += 1;
             }
@@ -1167,18 +1167,31 @@ impl<'a> Parser<'a> {
             if !self.checked_ieee_digits(from, "invalid numeric literal exponent")? {
                 return Err(self.err("invalid numeric literal exponent"));
             }
+            power = self.source[power_start..self.pos].replace('_', "").parse::<i32>()
+                .map_err(|_| self.err_at(start, "exact decimal exponent exceeds source resource limits"))?;
         } else if hex {
             return Err(self.err("hexadecimal floating literal is missing binary exponent"));
         }
 
-        if matches!(self.peek(), Some(b'f' | b'F' | b'd' | b'D')) {
+        let single = matches!(self.peek(), Some(b'f' | b'F'));
+        if single || matches!(self.peek(), Some(b'd' | b'D')) {
             self.pos += 1;
         }
         if self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
             return Err(self.err("invalid numeric literal suffix"));
         }
-
-        Err(self.err_at(start, "[JAVA-IEEE-LITERAL] raw IEEE literal requires explicit preprocessing"))
+        // Same bound as the explicit decimal IR spelling. Never allocate an
+        // arbitrarily expanded value just from an exponent written in source.
+        if self.pos - start > 4096 {
+            return Err(self.err_at(start, "exact decimal literal exceeds 4096 characters"));
+        }
+        let fraction = self.source[fraction].replace('_', "");
+        let scale = fraction.len() as i32 * if hex { 4 } else { 1 };
+        let Some(power) = power.checked_sub(scale).filter(|p| (-4096..=4096).contains(p)) else {
+            return Err(self.err_at(start, "exact decimal exponent exceeds source resource limits"));
+        };
+        let digits = self.source[digits_start..whole_end].replace('_', "") + &fraction;
+        Ok(JavaLit::Decimal { digits, radix: if hex { 16 } else { 10 }, power, single })
     }
 
     fn read_number_literal(&mut self) -> Result<JavaLit, ParseError> {
@@ -1202,7 +1215,7 @@ impl<'a> Parser<'a> {
         };
         let suffix = radix == 10 && matches!(self.peek(), Some(b'f' | b'F' | b'd' | b'D'));
         if exponent_marker || suffix || (radix != 2 && self.peek() == Some(b'.')) {
-            return self.reject_ieee_literal(start, digits_start, radix == 16);
+            return self.read_decimal_literal(start, digits_start, radix == 16);
         }
 
         if radix != 10

@@ -400,6 +400,8 @@ pub enum JavaExpr {
 pub enum JavaLit {
     Int(i32),
     Long(i64),
+    // Digits are in radix 10 or 16; the power is of 10 or 2 respectively.
+    Decimal { digits: String, radix: u32, power: i32, single: bool },
     Bool(bool),
     Str(String),
     Char(char),

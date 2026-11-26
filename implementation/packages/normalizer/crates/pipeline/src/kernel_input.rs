@@ -339,7 +339,7 @@ impl Project {
         if crate::normalized::integral(t) {
             return Ok(Ty::Integer);
         }
-        if self.direct_source && crate::normalized::exact_decimal_type(t) {
+        if self.direct_source && (crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t)) {
             return Ok(Ty::Decimal);
         }
         if let JavaType::Array(item) = t {

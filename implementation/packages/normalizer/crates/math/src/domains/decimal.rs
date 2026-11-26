@@ -58,6 +58,61 @@ pub fn literal(value: BigInt, scale: u32) -> Expr {
         vec![Primitive::Number, Primitive::Number])
 }
 
+// Native Java spellings supply exact digits rather than a machine float.
+pub fn from_radix_digits(digits: &str, radix: u32, power: i32) -> Option<Expr> {
+    let coefficient = BigInt::parse_bytes(digits.as_bytes(), radix)?;
+    let scale = power.unsigned_abs();
+    Some(if power >= 0 {
+        let base = if radix == 16 { 2 } else { 10 };
+        literal(coefficient * BigInt::from(base).pow(scale), 0)
+    } else if radix == 16 {
+        // 2^-n = 5^n / 10^n; no intermediate rounding.
+        literal(coefficient * BigInt::from(5).pow(scale), scale)
+    } else {
+        literal(coefficient, scale)
+    })
+}
+
+fn coefficient(expr: &Expr) -> Option<(BigInt, u32)> {
+    if let Some(View::Literal(value, scale)) = view(expr) {
+        Some((value, scale))
+    } else {
+        Some((expr.as_lit()?.as_integer()?, 0))
+    }
+}
+
+pub fn negate(value: Expr) -> Expr {
+    if let Some((value, scale)) = coefficient(&value) {
+        literal(-value, scale)
+    } else {
+        b::neg(value)
+    }
+}
+
+pub fn binary(op: crate::BinOpKind, left: Expr, right: Expr) -> Expr {
+    use crate::BinOpKind::*;
+    if let (Some((a, s)), Some((b, t))) = (coefficient(&left), coefficient(&right)) {
+        if op == Mul {
+            return literal(a * b, s.checked_add(t).expect("decimal scale overflow"));
+        }
+        let scale = s.max(t);
+        let a = a * BigInt::from(10).pow(scale - s);
+        let b = b * BigInt::from(10).pow(scale - t);
+        return match op {
+            Add => literal(a + b, scale),
+            Sub => literal(a - b, scale),
+            Eq => crate::builder::lit_bool(a == b),
+            Ne => crate::builder::lit_bool(a != b),
+            Lt => crate::builder::lit_bool(a < b),
+            Le => crate::builder::lit_bool(a <= b),
+            Gt => crate::builder::lit_bool(a > b),
+            Ge => crate::builder::lit_bool(a >= b),
+            _ => b::binop_public(op, left, right),
+        };
+    }
+    b::binop_public(op, left, right)
+}
+
 pub fn multiply(a: Expr, b: Expr) -> Expr {
     if let (Some(View::Literal(x, s)), Some(View::Literal(y, t))) = (view(&a), view(&b)) {
         return literal(x*y, s.checked_add(t).expect("decimal scale overflow"));

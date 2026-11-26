@@ -23,6 +23,9 @@ fn error(code: &str, at: &str) -> String {
 pub(crate) fn integral(t: &JavaType) -> bool {
     matches!(t, JavaType::Primitive(n) if matches!(n.as_str(), "byte" | "short" | "int" | "long"))
 }
+pub(crate) fn native_decimal_type(ty: &JavaType) -> bool {
+    matches!(ty, JavaType::Primitive(name) if matches!(name.as_str(), "float" | "double"))
+}
 pub(crate) fn exact_decimal_type(ty: &JavaType) -> bool {
     // Fully qualified reserved carrier, with exact decimal value semantics
     // only for this profile. java.lang.Double / native double stay separate.
@@ -335,7 +338,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
     let ports = source_ports::declarations(program, &exceptions)?;
     let is_port_interface = |name: &str| ports.values().any(|port| port.interface == name);
     let supported = |ty: &JavaType| {
-        scalar(ty) || exact_decimal_type(ty) || matches!(ty, JavaType::Array(item) if integral(item) || declared_reference(item, &layouts) || matches!(item.as_ref(), JavaType::Array(scalar) if integral(scalar))) || declared_reference(ty, &layouts)
+        scalar(ty) || native_decimal_type(ty) || exact_decimal_type(ty) || matches!(ty, JavaType::Array(item) if integral(item) || declared_reference(item, &layouts) || matches!(item.as_ref(), JavaType::Array(scalar) if integral(scalar))) || declared_reference(ty, &layouts)
             || matches!(ty, JavaType::Class(name) if is_port_interface(name))
     };
     let mut methods = BTreeMap::new();
@@ -579,7 +582,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 java_type,
                 initializer: Some(e),
                 ..
-            } if scalar(java_type) || matches!(java_type, JavaType::Class(_)) || numeric_array(java_type) => {
+            } if scalar(java_type) || native_decimal_type(java_type) || matches!(java_type, JavaType::Class(_)) || numeric_array(java_type) => {
                 expr(e, at, calls)?
             }
             S::Assign { target: E::ArrayAccess { target, index }, value }
@@ -678,7 +681,7 @@ fn signed_literal_index(e: &E) -> bool {
 fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
     match e {
         E::Ident(_) | E::Lit(JavaLit::Bool(_) | JavaLit::Str(_) | JavaLit::Null) => (),
-        E::Lit(JavaLit::Int(_) | JavaLit::Long(_) | JavaLit::Char(_)) => (),
+        E::Lit(JavaLit::Int(_) | JavaLit::Long(_) | JavaLit::Char(_) | JavaLit::Decimal { .. }) => (),
         E::Cast {
             target_type,
             operand,

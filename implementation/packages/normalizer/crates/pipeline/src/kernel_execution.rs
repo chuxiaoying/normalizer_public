@@ -348,6 +348,9 @@ impl Engine<'_> {
                     )?;
                     self.source_reference_assignment(self.methods[id].return_type(), expr, id)?;
                     let value = self.java_expr(expr, id, env, path)?;
+                    let value = if crate::normalized::native_decimal_type(self.methods[id].return_type()) {
+                        Self::promote_native_decimal(value)
+                    } else { value };
                     let realtime_value = value.scalar()?;
                     self.realtime_completion = self
                         .realtime_completion
@@ -464,6 +467,9 @@ impl Engine<'_> {
                     need(!env.contains_key(name), "duplicate local")?;
                     self.source_reference_assignment(java_type, expr, id)?;
                     let v = self.java_expr(expr, id, env, path.clone())?;
+                    let v = if crate::normalized::native_decimal_type(java_type) {
+                        Self::promote_native_decimal(v)
+                    } else { v };
                     v.check_java_array_component(primitive_array_component(java_type))?;
                     need(v.ty() != Ty::LocalRelation, "local relation requires a typed query, not a Java scalar binding")?;
                     need(
@@ -487,6 +493,7 @@ impl Engine<'_> {
                         need(ty != Ty::LocalTextMap, "local map binding cannot be reassigned as a Java alias")?;
                         let java_component = local.java_array_component().map(str::to_owned);
                         let value = self.java_expr(value,id,env,path)?;
+                        let value = if ty == Ty::Decimal { Self::promote_native_decimal(value) } else { value };
                         value.check_java_array_component(java_component.as_deref())?;
                         need(value.ty() == ty,"local assignment type mismatch")?;
                         env.insert(name.clone(),value);
@@ -574,6 +581,13 @@ impl Engine<'_> {
         }
         Ok(None)
     }
+    fn promote_native_decimal(value: Value) -> Value {
+        match value {
+            Value::Term(Ty::Integer, expr) => Value::Term(Ty::Decimal, expr),
+            value => value,
+        }
+    }
+
     fn java_arithmetic(
         &mut self,
         op: JavaArithmetic,
@@ -596,6 +610,17 @@ impl Engine<'_> {
                 return Ok(Value::Term(Ty::Text, math::normalize(b::add(left, right))));
             }
             return Err(fail("text concatenation requires concrete text or null operands"));
+        }
+        if left.ty() == Ty::Decimal || right.ty() == Ty::Decimal {
+            need(matches!(left.ty(), Ty::Integer | Ty::Decimal)
+                && matches!(right.ty(), Ty::Integer | Ty::Decimal), "numeric operands required")?;
+            let binary = match op {
+                JavaArithmetic::Add => BinOpKind::Add,
+                JavaArithmetic::Sub => BinOpKind::Sub,
+                JavaArithmetic::Mul => BinOpKind::Mul,
+            };
+            return Ok(Value::Term(Ty::Decimal,
+                math::domains::decimal::binary(binary, left.scalar()?, right.scalar()?)));
         }
         need(
             left.ty() == Ty::Integer && right.ty() == Ty::Integer,
@@ -634,6 +659,11 @@ impl Engine<'_> {
             J::Lit(JavaLit::Char(v)) => Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(u32::from(*v))))),
             J::Lit(JavaLit::Null) => Ok(Value::Term(Ty::Ref, b::lit_null())),
             J::Lit(JavaLit::Bool(v)) => Ok(Value::Term(Ty::Bool, b::lit_bool(*v))),
+            J::Lit(JavaLit::Decimal { digits, radix, power, .. }) => {
+                let value = math::domains::decimal::from_radix_digits(digits, *radix, *power)
+                    .expect("bounded numeric token is certified at source admission");
+                Ok(Value::Term(Ty::Decimal, value))
+            }
             J::Lit(JavaLit::Long(v)) => {
                 Ok(Value::Term(Ty::Integer, b::lit_int(*v)))
             }
@@ -811,6 +841,9 @@ impl Engine<'_> {
                 operand,
             } => {
                 let value = self.java_expr(operand, id, env, path)?;
+                if value.ty() == Ty::Decimal {
+                    return Ok(Value::Term(Ty::Decimal, math::domains::decimal::negate(value.scalar()?)));
+                }
                 need(value.ty() == Ty::Integer, "negation requires an integer")?;
                 Ok(Value::Term(
                     Ty::Integer,
@@ -898,6 +931,9 @@ impl Engine<'_> {
                     self.java_expr(then_expr, id, env, b::and(path.clone(), condition.clone()))?;
                 let no =
                     self.java_expr(else_expr, id, env, b::and(path, b::not(condition.clone())))?;
+                let (yes, no) = if matches!((yes.ty(), no.ty()), (Ty::Integer, Ty::Decimal) | (Ty::Decimal, Ty::Integer)) {
+                    (Self::promote_native_decimal(yes), Self::promote_native_decimal(no))
+                } else { (yes, no) };
                 self.choose(condition, yes, no)
             }
             J::BinOp { op, left, right }
@@ -933,6 +969,17 @@ impl Engine<'_> {
                     "Java text identity comparison requires explicit identity representation",
                 )?;
                 let r = self.java_expr(right, id, env, path)?;
+                if matches!((l.ty(), r.ty()), (Ty::Decimal, Ty::Decimal) | (Ty::Decimal, Ty::Integer) | (Ty::Integer, Ty::Decimal)) {
+                    let op = match op {
+                        B::Eq => BinOpKind::Eq,
+                        B::Ne => BinOpKind::Ne,
+                        B::Lt => BinOpKind::Lt,
+                        B::Le => BinOpKind::Le,
+                        B::Gt => BinOpKind::Gt,
+                        _ => BinOpKind::Ge,
+                    };
+                    return Ok(Value::Term(Ty::Bool, math::domains::decimal::binary(op, l.scalar()?, r.scalar()?)));
+                }
                 need(l.ty() == r.ty(), "Java comparison type mismatch")?;
                 let ty = l.ty();
                 need(
@@ -1150,6 +1197,11 @@ impl Engine<'_> {
         let method_name = id.rsplit('.').next().unwrap_or(id);
         for ((t, name), v) in m.params().iter().zip(&mut args) {
             let expected = self.project.semantic_parameter_type(method_name, name, t)?;
+            if crate::normalized::native_decimal_type(t) {
+                if let Value::Term(ty @ Ty::Integer, _) = v {
+                    *ty = Ty::Decimal;
+                }
+            }
             if expected == Ty::Text
                 && matches!(v, Value::Term(Ty::Ref, e) if e.as_lit() == Some(&math::Lit::Null))
             {

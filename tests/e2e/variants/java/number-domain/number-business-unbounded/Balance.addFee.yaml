@@ -22,65 +22,95 @@
     - path: [R]
       value: '784637716923335095224261902710254454442933591094742482943'
 
-- name: native-ieee-decimal-fraction-needs-preprocessing
+- name: native-number-decimal-fraction-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 1.25; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 1.25;"
+  expect:
+    - { path: [R], value: '1.25' }
 
-- name: native-ieee-leading-point-needs-preprocessing
+- name: native-number-leading-point-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return .25; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return .25;"
+  expect:
+    - { path: [R], value: '0.25' }
 
-- name: native-ieee-trailing-point-needs-preprocessing
+- name: native-number-trailing-point-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 1.; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 1.;"
+  expect:
+    - { path: [R], value: '1' }
 
-- name: native-ieee-unsigned-exponent-needs-preprocessing
+- name: native-number-unsigned-exponent-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 1e2; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 1e2;"
+  expect:
+    - { path: [R], value: '100' }
 
-- name: native-ieee-signed-exponent-needs-preprocessing
+- name: native-number-signed-exponent-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 1.2_5E-2_0; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 1.2_5E-2_0;"
+  expect:
+    - { path: [R], value: '0.0000000000000000000125' }
 
-- name: native-ieee-double-suffix-needs-preprocessing
+- name: native-number-double-suffix-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 1d; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 1d;"
+  expect:
+    - { path: [R], value: '1' }
 
-- name: native-ieee-float-suffix-needs-preprocessing
+- name: native-number-float-suffix-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 1F; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 1F;"
+  expect:
+    - { path: [R], value: '1' }
 
-- name: native-ieee-hex-point-needs-preprocessing
+- name: native-number-hex-point-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 0x1.fp2; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 0x1.fp2;"
+  expect:
+    - { path: [R], value: '7.75' }
 
-- name: native-ieee-hex-no-point-needs-preprocessing
+- name: native-number-hex-no-point-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 0x1p3; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 0x1p3;"
+  expect:
+    - { path: [R], value: '8' }
 
-- name: native-ieee-hex-leading-point-needs-preprocessing
+- name: native-number-hex-leading-point-is-exact
   edits:
     - from: "static int addFee"
-      to: "static double raw() { return 0x.8P+3f; } static int addFee"
-  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 0x.8P+3f;"
+  expect:
+    - { path: [R], value: '4' }
 
 - name: reject-missing-signed-exponent-digits
   edits:
@@ -125,3 +155,136 @@
       to: "return 0x1fd;"
   expect:
     - { path: [R], value: '509' }
+
+- name: native-number-adds-decimals-exactly
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 0.1 + 0.2;"
+  expect:
+    - { path: [R], value: '0.3' }
+
+- name: native-float-suffix-is-typed-but-not-rounded
+  edits:
+    - from: "static int addFee"
+      to: "static float addFee"
+    - from: "return balance + fee;"
+      to: "return 0.1f + 0.2f;"
+  expect:
+    - { path: [R], value: '0.3' }
+
+- name: native-number-mixed-integer-and-decimal-is-exact
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 2 + 0.125;"
+  expect:
+    - { path: [R], value: '2.125' }
+
+- name: native-number-negation-subtraction-and-product
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return -(0.25 * 3) - 0.05;"
+  expect:
+    - { path: [R], value: '-0.8' }
+
+- name: native-number-decimal-value-in-local-assignment
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "double amount = 2; amount = amount - 0.125; return amount;"
+  expect:
+    - { path: [R], value: '1.875' }
+
+- name: native-number-decimal-comparison-is-exact
+  edits:
+    - from: "return balance + fee;"
+      to: "return 0.1 + 0.2 == 0.3 ? 1 : 0;"
+  expect:
+    - { path: [R], value: '1' }
+
+- name: native-number-widens-integer-return-without-conversion
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 3;"
+  expect:
+    - { path: [R], value: '3' }
+
+- name: native-number-argument-widens-exactly
+  edits:
+    - from: "static int addFee"
+      to: "static double withFee(double x) { return x + .25; } static double addFee"
+    - from: "return balance + fee;"
+      to: "return withFee(3);"
+  expect:
+    - { path: [R], value: '3.25' }
+
+- name: native-number-symbolic-input-keeps-business-number
+  edits:
+    - from: "static int addFee(int balance"
+      to: "static double addFee(double balance"
+    - from: "return balance + fee;"
+      to: "return balance + 0.2;"
+  expect:
+    - { path: [R], value: 'balance + 0.2' }
+
+- name: reject-floating-hex-without-significand
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 0x.p3; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "invalid numeric literal significand"]
+
+- name: reject-implicit-double-to-float-narrowing-at-entry
+  edits:
+    - from: "static int addFee"
+      to: "static float addFee"
+    - from: "return balance + fee;"
+      to: "return 0.1;"
+  reject: ["[NORM-SOURCE-TYPE]", "kind=PREPROCESS_REQUIRED", "return requires float, got double"]
+
+- name: reject-implicit-decimal-to-integer-narrowing-at-entry
+  edits:
+    - from: "return balance + fee;"
+      to: "return 0.1;"
+  reject: ["[NORM-SOURCE-TYPE]", "kind=PREPROCESS_REQUIRED", "return requires number, got double"]
+
+- name: reject-java-double-literal-that-overflows-at-compile-time
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1e400; } static int addFee"
+  reject: ["[NORM-NUMBER-LITERAL]", "kind=PREPROCESS_REQUIRED", "would round to infinity or zero"]
+
+- name: reject-java-float-literal-at-zero-rounding-midpoint
+  edits:
+    - from: "static int addFee"
+      to: "static float raw() { return 0x1p-150f; } static int addFee"
+  reject: ["[NORM-NUMBER-LITERAL]", "kind=PREPROCESS_REQUIRED", "would round to infinity or zero"]
+
+- name: reject-raw-java-operator-on-explicit-decimal-carrier
+  edits:
+    - from: "static int addFee"
+      to: "static java.math.BigDecimal raw(java.math.BigDecimal x) { return x + x; } static int addFee"
+  reject: ["[NORM-DECIMAL-OP]", "kind=PREPROCESS_REQUIRED", "Java operators do not perform BigDecimal arithmetic"]
+
+- name: legal-double-subnormal-literal-keeps-exact-nonzero-value
+  edits:
+    - from: "return balance + fee;"
+      to: "return 0x1p-1074 > 0 ? 1 : 0;"
+  expect:
+    - { path: [R], value: '1' }
+
+- name: zero-literal-is-legal-even-with-large-positive-exponent
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return 0e400;"
+  expect:
+    - { path: [R], value: '0' }
