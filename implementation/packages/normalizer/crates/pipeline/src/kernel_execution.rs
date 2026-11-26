@@ -26,6 +26,32 @@ fn preceding_uninitialized<'a>(body: &'a [S], index: usize, binding: &str) -> Op
     }
 }
 
+enum LocalIrInitializer {
+    TextMap,
+    NullableText,
+    MemberChoice,
+    Integer,
+    Relation,
+    Decimal,
+}
+
+impl LocalIrInitializer {
+    fn binding(stmt: &S) -> Option<(&str, Self)> {
+        use normalizer_ir::local::LocalIr;
+        let S::LocalIr(operation) = stmt else { return None; };
+        Some(match operation {
+            LocalIr::LocalMapEmpty { binding } => (binding.as_str(), Self::TextMap),
+            LocalIr::LocalMapGet { binding, .. } => (binding.as_str(), Self::NullableText),
+            LocalIr::MemberChoice { binding, .. } => (binding.as_str(), Self::MemberChoice),
+            LocalIr::ProjectedUnionCount { binding, .. } => (binding.as_str(), Self::Integer),
+            LocalIr::SqlWrite(write) => (write.binding.as_str(), Self::Integer),
+            LocalIr::Relation(query) if !query.accumulate => (query.binding.as_str(), Self::Relation),
+            LocalIr::Decimal(decimal) => (decimal.binding.as_str(), Self::Decimal),
+            _ => return None,
+        })
+    }
+}
+
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
     pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
@@ -348,21 +374,18 @@ impl Engine<'_> {
                     initializer: None,
                     ..
                 } => {
-                    let binds = match body.get(i+1) {
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding })) =>
-                            binding == name && super::source_map::declared_map(java_type),
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::LocalMapGet { binding, .. })) =>
-                            binding == name && super::source_map::declared_text(java_type),
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. })) =>
-                            binding == name && (self.project.parameter_type(java_type)? == Ty::Integer
-                                || self.project.source_owner(java_type).is_some()),
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, .. })) =>
-                            binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(w))) => &w.binding == name && self.project.parameter_type(java_type)?==Ty::Integer,
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::Relation(q))) => &q.binding==name && !q.accumulate,
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::Decimal(decimal))) =>
-                            &decimal.binding == name && crate::normalized::exact_decimal_type(java_type),
-                        _=>false,
+                    let initializes = body.get(i + 1).and_then(LocalIrInitializer::binding);
+                    let binds = match initializes {
+                        Some((binding, kind)) if binding == name.as_str() => match kind {
+                            LocalIrInitializer::TextMap => super::source_map::declared_map(java_type),
+                            LocalIrInitializer::NullableText => super::source_map::declared_text(java_type),
+                            LocalIrInitializer::MemberChoice => self.project.parameter_type(java_type)? == Ty::Integer
+                                || self.project.source_owner(java_type).is_some(),
+                            LocalIrInitializer::Integer => self.project.parameter_type(java_type)? == Ty::Integer,
+                            LocalIrInitializer::Relation => true,
+                            LocalIrInitializer::Decimal => crate::normalized::exact_decimal_type(java_type),
+                        },
+                        _ => false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
                 }
