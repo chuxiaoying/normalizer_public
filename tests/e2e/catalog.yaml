@@ -213,6 +213,8 @@ groups:
     canonical-binary-case:
     - CanonicalCount.clamp
     - CanonicalCount.present
+    - GuardedResult.pure
+    - GuardedResult.INSTANCE.state
     canonical-constant-array:
     - CanonicalArray.digits
     - CanonicalArray.sized

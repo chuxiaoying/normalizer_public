@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { assertPers } from './pers-schema.mjs';
-import { assertRejection } from './rejection.mjs';
-import { applyExpectedChanges, explicitVariantEntry } from './business_example_series.mjs';
+import { assertPers } from '../e2e/pers-schema.mjs';
+import { assertRejection } from '../e2e/rejection.mjs';
+import { applyExpectedChanges, explicitVariantEntry } from '../e2e/business_example_series.mjs';
 
 const base = {
   schema: 'normalizer.pers/1',

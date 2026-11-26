@@ -55,3 +55,32 @@
         type AccountAmount = number;
         interface AuditShape { amount: AccountAmount }
         export function total
+
+- name: explicit-any-in-an-unused-function-rejects-the-module
+  edits:
+    - from: 'export function total'
+      to: |-
+        function unused(input: any) { return input; }
+        export function total
+  reject: ['[NORM-TS-MODULE]', 'explicit any is not an admitted analysis type']
+- name: implicit-any-in-an-unused-function-rejects-the-module
+  edits:
+    - from: 'export function total'
+      to: |-
+        function unused(input) { return input; }
+        export function total
+  reject: ['[NORM-TS-MODULE]', "implicitly has an 'any' type"]
+- name: an-inferred-library-any-does-not-acquire-a-business-domain
+  edits:
+    - from: 'export function total'
+      to: |-
+        function unused() { return JSON.parse('{}'); }
+        export function total
+  reject: ['[NORM-TS-MODULE]', 'resolved any is not an admitted analysis type']
+- name: a-type-suppression-cannot-bypass-module-admission
+  edits:
+    - from: 'export function total'
+      to: |-
+        // @ts-nocheck
+        export function total
+  reject: ['[NORM-TS-MODULE]', 'cannot disable or suppress the strict preflight']

@@ -73,3 +73,55 @@ R: |-
 另用 `n > 0 ? other : 0`、`n > 0 ? n : null` 与不同阈值对照，确保选向只规范守卫，不用分支返回值的内容反推条件或消去相异的结果。
 
 若在已取得的精确值中按 `count > 0` 选择 7 或 11，`9 < 选中值` 恰在非正数域成立，而 `选中值 < 9` 恰在正数域成立。比较两侧不能只交换文本；两个常量对照都不新增 P、E 或 S。若另一侧是未知的复合式 `x + 1` 而不是一个叶值，不为了分配比较而把复合式复制到每条 CASE 臂。
+
+## 纯返回和实际写入应用同一完整二分规范
+
+在已取得的精确入参中，只有 (a, b) = (1, 2) 取 7，其余取 9。条件取反必须同时交换两臂；这既适用于纯返回的表达式，也适用于写入时已算出的值。后者仍然真实写一次状态，不读取入口已有值来补条件，不把写入合并进 R。预处理原样通过。
+
+```java
+import normalizer.intrinsics.N;
+class GuardedResult {
+    static final GuardedResult INSTANCE = new GuardedResult();
+    @N.EntryState int result;
+    static int pure(int a, int b) { return a == 1 && b == 2 ? 7 : 9; }
+    int state(int a, int b) { result = a == 1 && b == 2 ? 7 : 9; return result; }
+}
+```
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/GuardedResult.java#GuardedResult.pure, returns: number }
+P:
+  parameters:
+    a: { position: 0, type: number }
+    b: { position: 1, type: number }
+R: |-
+  CASE
+    WHEN a == 1 AND b == 2 THEN 7
+    ELSE 9
+  END
+```
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/GuardedResult.java#GuardedResult.INSTANCE.state, returns: number }
+P:
+  parameters:
+    a: { position: 0, type: number }
+    b: { position: 1, type: number }
+E:
+  result: { kind: state, source: src/GuardedResult.java#GuardedResult.INSTANCE.result, type: number }
+R: |-
+  CASE
+    WHEN a == 1 AND b == 2 THEN 7
+    ELSE 9
+  END
+S:
+  - write:
+      target: result
+      value: |-
+        CASE
+          WHEN a == 1 AND b == 2 THEN 7
+          ELSE 9
+        END
+```

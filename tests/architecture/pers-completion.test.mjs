@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { hasGuaranteedThrows } from './pers-completion.mjs';
+import { hasGuaranteedThrows } from '../e2e/pers-completion.mjs';
 
 function throwsCover(guards, { parameters = {}, E = {} } = {}) {
   return hasGuaranteedThrows({ P: { parameters }, E, throws: guards.map(when => ({ when })) });

@@ -68,7 +68,8 @@ export function* loadSeedEntries(root, seeds) {
     for (const registration of registrations) {
       const { entry, group, seriesFile } = registration;
       const language = group.split('/')[0];
-      const extension = { javascript: '.js', typescript: '.ts' }[language];
+      assert.ok(['java', 'typescript', 'vue'].includes(language), 'No formal CLI route for ' + language);
+      const extension = language === 'typescript' ? '.ts' : undefined;
       const exportName = extension ? entry.split('#')[1] : entry;
       const matches = fixtures.filter(({ expected, rejection }) => expected
         ? expected.entry.function.slice(expected.entry.function.indexOf('#') + 1) === exportName

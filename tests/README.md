@@ -6,7 +6,7 @@
 implementation/tools/normalizer test business-examples
 ```
 
-当前执行范围由[正式测试清单](e2e/catalog.yaml)的 `groups` 定义。每个入口先运行原例，再分别运行自己的派生变体。未派生的设计种子明确列在 `pending` 中，不是 CLI 跳过的用例。整套行为验收只以这里的测试 CLI 为准。
+当前执行范围由[正式测试清单](e2e/catalog.yaml)的 `groups` 定义。每个入口先运行原例，再分别运行自己的派生变体。未派生的设计种子明确列在 `pending` 中，不是 CLI 跳过的用例。整套行为回归只以这里的测试 CLI 为准。该命令只运行测试区中能追溯到设计种子的端到端用例；覆盖率仅采集这次命令执行的自有生产代码。
 
 ## 种子和测试的双重登记
 
@@ -37,14 +37,14 @@ topic 表示单个基础语义能力，basic 表示常规合同和防御边界�
 
 每条验收创建独立临时工程，回放已审阅的 AI 预处理 diff，再从正式 CLI 的 Java `source`、TypeScript `module` 或 Vue `scenario` 入口执行。原始文件可以是 JavaScript 或 Vue；补丁前后的路径分别记录原件与分析副本，正式执行只选分析副本中的唯一定位。成功路径比较完整 PERS 结构和表达式；拒绝路径检查非零退出、空 stdout 和具体诊断。这里覆盖的是已给定预处理交付物后的端到端工程链路，AI 实时生成预处理结果的质量需单独评估。
 
-独立 JavaScript 模块通过 `implementation/tools/normalizer module PROJECT_ROOT src/module.js exportedFunction` 运行。TypeScript 使用同一入口，指定相对 `.ts` 路径；可选槽、显式 undefined 和 rest 索引由有类型的源码与共享内核验收，不把类型声明剥离成 JS 来代替类型检查。当前入口接收带明确 JSDoc 类型的闭合同步标量函数，并从语言适配器交付共享有类型 IR；独立异步入口仍须补齐一般调用与完成语义；若入口明确直接调用普通对象入参上的无源码方法，独立负向例断言内核 Panic、具体调用目标及空 stdout。缺少能力时保留独立完整预期或精确拒绝合同，且不跳过。无源码的调用不是天然端口：不允许伪造端口让正向预期通过。
+独立模块只支持 `implementation/tools/normalizer module PROJECT_ROOT --entry 'src/module.ts#exportedFunction'`。原始 JavaScript 先由 AI 按设计准备成严格 TypeScript；不直接接收 `.js` 或 `.mjs`，也不使用 JSDoc 代替类型。整个模块先检查真实类型；显式、隐式或解析到的 `any` 与禁用检查的注释都拒绝。一般异步调用仍有能力边界；普通对象无源码调用不能因文件是 TypeScript 而成为外部端口。
 
 `implementation/tools/normalizer test pers-goldens` 离线检查所有正向预期（含变体）的 PERS schema、类型引用和回执绑定顺序，不启动内核。它不证明业务行为；完整 CLI 回归仍逐项比较实际 PERS 与独立预期，并在比较前检查两者结构。
 
 `implementation/tools/normalizer test seed-patches` 回放全部登记设计种子的预处理补丁（含待派生的种子），不启动内核。补丁回放通过不等于该种子已进入正式行为回归。
 
 
-`implementation/tools/normalizer test engineering` 运行架构工具测试、设计阅览器生命周期测试和文档链接检查；`implementation/tools/normalizer test kernel-units` 验证内核内部结构不变量。它们不是业务种子，不改变业务回归清单。
+`implementation/tools/normalizer test engineering` 运行架构检查、非种子 CLI/性能探针、测试自身的断言工具、设计阅览器生命周期和文档链接；`implementation/tools/normalizer test kernel-units` 验证内核内部结构不变量。这些都不属于业务回归，不计入回归覆盖率，也不改变种子清单。
 
 ## 一致性复核判据
 
@@ -56,4 +56,4 @@ topic 表示单个基础语义能力，basic 表示常规合同和防御边界�
 
 ### 源码入口的文件边界
 
-`normalizer test business-examples` 同时经过正式源码 CLI 验收文件入口错误。缺失来源、空目录、读取失败、非法 UTF-8 文件名或内容都不得生成 PERS；错误应区分阶段，并在有来源文件时包含其名字。 源码遍历不跟随目录软链接；文件软链接只能指向所选源码根内，仍使用提交的链接路径作为来源。此组测试的是 CLI 读取合同，不把文件系统错误伪造为业务种子或异常记录。
+`normalizer test engineering` 通过独立工程检查验收源码 CLI 的文件入口错误，不混入种子回归。缺失来源、空目录、读取失败、非法 UTF-8 文件名或内容都不得生成 PERS；错误应区分阶段，并在有来源文件时包含其名字。 源码遍历不跟随目录软链接；文件软链接只能指向所选源码根内，仍使用提交的链接路径作为来源。此组测试的是 CLI 读取合同，不把文件系统错误伪造为业务种子或异常记录。
