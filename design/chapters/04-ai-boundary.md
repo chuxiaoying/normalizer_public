@@ -1,24 +1,684 @@
-# 第四章 · AI 圈地：哪些地方要继续算，哪些地方该停
+# 第四章 · AI 救赎
 
-一个 Spring controller 在正常请求里能调用注入好的 service。但如果只拿 controller 的 Java 源码来执行，模拟器看不到 Spring 什么时候创建了 service，又把它装到了哪里。**预处理要补的，就是这些原程序依赖、却没写在可执行源码里的步骤。**
+**Normalizer 能分析的是纯净、有界的原生程序。** 原生，是计算仍用 Java 或严格的 TypeScript 表达。纯净，是从选定入口走进去，凡要执行的逻辑，都能在源码里找到，或有一份明确的标准定义，不靠运行环境偷偷补一步。有界，是循环、递归等计算有可证明的边界，或有可以整体求值的等价表达，不需要无限地逐步展开。输入值可以未知，程序也可以读写状态；不能不清楚的是这些动作怎么发生。
 
-交给模拟器的是一份**原语言的纯源码工程**。「纯」不是说程序不能改状态或调用外部服务，而是说：**从选定入口开始，凡是需要模拟器亲自执行的代码，都在原语言源码里看得见。** Java 仍用 Java 表达。已经符合源码和类型要求的程序直接交给工程，AI 不再改写一遍。
+生产代码通常不是这样写的。框架在源码之外创建对象、注入依赖；库里有看不见的方法体；同一个 JavaScript 参数可能从几处传来不同形状的值；一段循环可能要反复等某个条件，却没交代什么时候能结束。逐行执行眼前的源码，既可能算错，也可能根本算不下去。让内核逐一认识所有框架、依赖和运行约定，也不是一条路。
 
-**交付还必须是强类型的。** 前端原项目即使写的是 JavaScript，交给工程的分析源码也统一用 TypeScript，开启严格类型检查，并禁止显式和隐式的 `any`。类型能可靠推断就不用重复写；需要声明时，直接写在参数、返回值、字段或相关类型上，不另用注释声明类型。
+这就是 **AI 救赎**：靠 AI 预处理，从项目里找证据，把生产代码整理成一份纯净、有界的原生程序。把隐含的装配和类型写清，把能证明的运算交成明确表达；还有不能闭合的地方，就报告缺口。**AI 交的是可分析的程序，不是分析结果。** 程序走哪条路、怎样得出结果、怎样化简，仍由 Normalizer 负责。
 
-未知的是值，不是运算的含义。比如 `x + 0` 可以是数值加法，也可能把字符串 `"5"` 拼成 `"50"`。AI 只能根据源码、输入合同或已有的类型检查来确定是哪一种；原程序允许两种情况时，必须保留两种行为；只有能等价区分它们，才分别交付已定类型的运算。不能靠 `as number` 猜类型，也不能为了让 TypeScript 通过就丢掉原本允许的输入。没有足够依据时，明确指出缺的类型合同。
+## 交给 Normalizer 的是什么
 
-## 一、先把入口和运行环境写清楚
+从入口出发，先检查类型和调用。规范 Java 只允许下面三类类型：
 
-### Spring：在 Beans.java 装好对象，再调用入口
+> ⚠️ **不属于这三类的类型，一律 `Panic: not-support`。AI 预处理必须在交付前处理掉这些类型；Normalizer 不会兜底。**
 
-最简单的入口是一个 Java 静态方法，例如 `static int twice(int x) { return x * 2; }`。它不需要框架帮忙就能调用。
+| 可以留下什么 | 为什么可以留下 |
+| --- | --- |
+| 工程内类型 | 类或接口的定义随源码一起交付。从依赖里确认以后补写进工程的类型，也属于这一类。 |
+| Normalizer 内置类型 | 定义由 Normalizer 提供，如标准库入口 `N`，以及 `@N.EntryState` 这样的标记类型。 |
+| 约定的原生类型 | 表达数值、布尔、文本、日期等业务值。Java 可以用 `BigDecimal` 承载精确十进制，用 `LocalDate` 承载日历日。 |
 
-Spring 的实例方法要先有装配好的对象。比如 controller 调用 `price.quote(units)`；如果只 `new QuoteController()` 就执行，`price` 还没注入，会碰到一个正常 Spring 请求里不会发生的空指针。
+这里查的是**引用最终绑定到什么**，不限于 `import`。字段、形参、泛型、返回值和异常都要查；删去导入、改写成全限定名，并没有消除依赖。允许 `BigDecimal` 表示值，也不等于让内核亲自跑 JDK 的整套小数库。
 
-可以把原本分散在 Spring 配置和注解里的装配，集中写进一个 **`Beans.java`**。先创建相应的实例，再把依赖 `set` 进去，全部装好之后才调用入口。下面是一个装配方案，还不是现有种子验收过的 Spring 转换。这两个 Bean 都是单例，原来用字段注入，新源码就把这次注入写成一次显式的赋值：
+已经写清楚的原生代码原样交付。剩下的不能只看库名来处理。比如同一个 `Future`，只是让两个纯计算并行时可以去掉；如果超时决定该返回什么，这条业务规则就得留下。实在说不清原代码做了什么，就指出缺口，不猜一个结果。
+
+## 预处理场景
+
+### 换成原语言标准原生
+
+原语言已经能说明怎么算，就写回原语言。这里 `Integer.sum` 只是在做加法，规范源码留下 `x + y`，数值仍由内核来算。这个场景不依赖机器整数回卷；若回卷本来就是规则，就要明确保留。
 
 ```diff
+diff --git a/Sum.java b/Sum.java
+--- a/Sum.java
++++ b/Sum.java
+@@ -1,5 +1,5 @@
+ class Sum {
+     static int run(int x, int y) {
+-        return Integer.sum(x, y);
++        return x + y;
+     }
+ }
+```
+
+布尔值也是一样。`@N.Nullable` 说明入参可能为空，短路判断让 null 时不拆箱。只有 true 返回 true，不把数字或文本转成布尔值。[BooleanUtils 的空值约定](https://commons.apache.org/proper/commons-lang/apidocs/org/apache/commons/lang3/BooleanUtils.html#isTrue(java.lang.Boolean))。
+
+```diff
+diff --git a/Flag.java b/Flag.java
+--- a/Flag.java
++++ b/Flag.java
+@@ -1,7 +1,7 @@
+-import org.apache.commons.lang3.BooleanUtils;
++import normalizer.intrinsics.N;
+
+ class Flag {
+-    static boolean run(Boolean flag) {
+-        return BooleanUtils.isTrue(flag);
++    static boolean run(@N.Nullable Boolean flag) {
++        return flag != null && flag;
+     }
+ }
+```
+
+**取默认值。** `Optional` 只是包装一个允许为空的值，参数 `fallback` 在进方法前已经求值。把它写成原语言条件并标明可空性。如果原来写的是 `orElse(f())`，要保留 `f()` 先执行的事实，不能挪进空值分支。
+
+```diff
+diff --git a/Selection.java b/Selection.java
+--- a/Selection.java
++++ b/Selection.java
+@@ -1,7 +1,7 @@
+-import java.util.Optional;
++import normalizer.intrinsics.N;
+
+ class Selection {
+-    static String pick(String config, String fallback) {
+-        return Optional.ofNullable(config).orElse(fallback);
++    static String pick(@N.Nullable String config, String fallback) {
++        return config == null ? fallback : config;
+     }
+ }
+```
+
+**校验。** 已确认原重载在条件不成立时抛 `IllegalArgumentException`。把检查写回去，仍在 `x * 2` 之前执行。本例不观察异常栈；若原代码依赖错误信息或检查顺序，也要保留。
+
+```diff
+diff --git a/Checked.java b/Checked.java
+--- a/Checked.java
++++ b/Checked.java
+@@ -1,8 +1,6 @@
+-import com.google.common.base.Preconditions;
+-
+ class Checked {
+     static int run(int x) {
+-        Preconditions.checkArgument(x >= 0);
++        if (x < 0) throw new IllegalArgumentException();
+         return x * 2;
+     }
+ }
+```
+
+**`switch` 就是 Java 原生语法，应该原样交给模拟器，不需要预处理。** 下面把它改成 `if` 的做法是反例：即使结果一样，AI 也没必要多此一举。
+
+```diff
+diff --git a/src/SwitchMode.java b/src/SwitchMode.java
+--- a/src/SwitchMode.java
++++ b/src/SwitchMode.java
+@@ -1,12 +1,7 @@
+ class SwitchMode {
+     static int classify(int code) {
+-        switch (code) {
+-            case 1:
+-                return 10;
+-            case 2:
+-                return 20;
+-            default:
+-                return 0;
+-        }
++        if (code == 1) return 10;
++        if (code == 2) return 20;
++        return 0;
+     }
+ }
+```
+
+### 换成 Normalizer 标准库
+
+值运算不能用原语言运算符直接表达时，就交成 Normalizer 标准库里的普通函数。JDK 和第三方 API 可以帮助确认原代码在做什么，但不作为规范源码的第二套入口。Java 和 TypeScript 可以用不同的值载体，调用的运算合同必须相同。
+
+#### 标准库怎么设计，调用就怎么写
+
+调用应让人一眼看懂：对哪个值做什么、用什么规则、结果是什么类型。
+
+- **名字写动作，必要时写单位。** `plusDays` 比 `add(date, n)` 清楚，因为它说了加的是日历日，不是毫秒。不同含义不靠运行时类型或隐式转换区分。
+- **先写值，再写规则。** 先传被处理的值或左右操作数，再传天数、位数或范围，最后传模式或兜底。会改变结果的选项要显式传入，不偷用宿主的时区、语言环境或舍入习惯。模式用有类型的常量，例如 `N.HALF_UP`。
+- **签名和合同一起看。** 输入与结果类型、null、有效范围和失败方式都要写清。裁剪认哪些字符、日期用哪种历法、十进制在哪一步舍入，都属于运算本身，不随语言或版本暗中改变。
+- **值运算可以组合，不偷偷做别的事。** `N.multiply` 不舍入，`N.round` 只在写出来的地方舍入。内核有定义可以求值，也有明确的条件可以化简。值函数不暗读时钟、环境或随机源，不写状态，也不把合同里的失败变成默认值。标准库另有明确声明的环境读取操作，例如 `N.currentTimeMillis()`；它不是值函数，不按纯函数规则化简。
+
+| 代表签名 | 调用者可以据此知道什么 |
+| --- | --- |
+| `trim(value: text?) → text?` | 按固定的裁剪规则检查两端，null 仍是 null。 |
+| `defaultIfBlank(value: text?, fallback: text) → text` | null、空串或符合标准空白判定时才选兜底；其他值原样返回。 |
+| `multiply(left: decimal, right: decimal) → decimal` | 两个精确十进制数相乘，不设默认位数，不中途舍入。 |
+| `round(value: decimal, scale: integer, mode: RoundingMode) → decimal` | 位数和模式都是显式参数；两种模式可能给出不同结果。 |
+| `plusDays(value: date, days: integer) → date` | 在已取得的 ISO 日历日上加有符号天数；越界按合同失败，不读取今天。 |
+
+Java 用 `import normalizer.intrinsics.N;`，TypeScript 用 `import * as N from "@normalizer/stdlib";`。调用写成 `N.trim(x)`，不把 `trim` 裸导入应用作用域。应用可以有自己的 `trim`；就算也写成了 `N.trim`，只要 `N` 绑定的是应用对象，它就不是标准库。内核核对官方库和具体成员签名。如果应用的类型、变量或成员挡住了官方 `N`，只能在有依据保留原行为时改名，否则报冲突。
+
+**文本。** 先裁剪、再给空白值选兜底，顺序没变；可空标记不是一次转换，只说明 raw 本来就可以为空。
+
+```diff
+diff --git a/src/LabelService.java b/src/LabelService.java
+--- a/src/LabelService.java
++++ b/src/LabelService.java
+@@ -1,7 +1,7 @@
+-import org.apache.commons.lang3.StringUtils;
++import normalizer.intrinsics.N;
+
+ class LabelService {
+-    String normalizeLabel(String raw, String fallback) {
+-        return StringUtils.defaultIfBlank(StringUtils.trim(raw), fallback);
++    String normalizeLabel(@N.Nullable String raw, String fallback) {
++        return N.defaultIfBlank(N.trim(raw), fallback);
+     }
+ }
+```
+
+一旦两个纯调用都被证明是同一项标准运算，用的又是同一个值，内核就能认出结果相同。如果合同里 null 不可能是非空白文本，那么 `isNotBlank(x) AND x == null` 的真分支也可以消掉。前提是两边的空白字符、空值和失败规则相同，不能只凭方法名合并。
+
+**精确小数。** 原来的 `BigDecimal` 类型留下，一行写出先精确相乘、再按两位 HALF_UP 舍入。对 1.005，HALF_UP 和 HALF_EVEN 分别给出 1.01 和 1.00。小数位数如果还被比较或格式化观察，也不能丢。TypeScript 要交同样的精确值语义，不能改用普通浮点近似。
+
+```diff
+diff --git a/Scale.java b/Scale.java
+--- a/Scale.java
++++ b/Scale.java
+@@ -1,7 +1,8 @@
+-import java.math.RoundingMode;
++import java.math.BigDecimal;
++import normalizer.intrinsics.N;
+
+ class Scale {
+-    static java.math.BigDecimal run(java.math.BigDecimal x, java.math.BigDecimal y) {
+-        return x.multiply(y).setScale(2, RoundingMode.HALF_UP);
++    static BigDecimal run(BigDecimal x, BigDecimal y) {
++        return N.round(N.multiply(x, y), 2, N.HALF_UP);
+     }
+ }
+```
+
+**日期。** 这里 `Period` 只携带天数，直接换成 `N.plusDays`。2024-02-28 加一天是 2024-02-29。这不是给时间戳加固定毫秒数。日历日已经给出时可以算；向系统问「今天几号」才需要外部观察。[日历加日的参考合同](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/time/LocalDate.html#plusDays(long))。
+
+```diff
+diff --git a/NextDate.java b/NextDate.java
+--- a/NextDate.java
++++ b/NextDate.java
+@@ -1,8 +1,8 @@
+ import java.time.LocalDate;
+-import java.time.Period;
++import normalizer.intrinsics.N;
+
+ class NextDate {
+     static LocalDate run(LocalDate date, int days) {
+-        return date.plus(Period.ofDays(days));
++        return N.plusDays(date, days);
+     }
+ }
+```
+
+### 换成 Normalizer 关系代数
+
+数组、List、Set、Map 和 Stream 的实现各不相同，但对一批数据做的事常常能写成一套关系运算。把来源、筛选、投影、顺序和连接都交出来，内核才能化简。
+
+关系指令写在 `/* @normalizer-ir … */` 里，在原语句所在的位置执行。是否这么写，看的是有没有关系运算，不看原代码写的是 SQL、Stream 还是循环。需要保留上一轮更新的递推不是逐行独立聚合，不能硬套一个 `where` 和 `sum`。
+
+**筛选再求和。** 下面的 List 和元素都不为 null。程序只观察里面的有序整数，不改变容器，也不观察容器身份。数组承载同一批值，关系指令保留逐项筛选和累加。
+
+```diff
+diff --git a/Total.java b/Total.java
+--- a/Total.java
++++ b/Total.java
+@@ -1,7 +1,9 @@
+-import java.util.List;
+-
+ class Total {
+-    static int total(List<Integer> xs) {
+-        return xs.stream().filter(x -> x > 0).mapToInt(x -> x).sum();
++    static int total(int[] xs) {
++        int result;
++        /* @normalizer-ir
++           result = sum from xs as x where x > 0 yield x
++        */
++        return result;
+     }
+ }
+```
+
+相同的两项仍算两项。序列的先后、Map 中缺键还是值为 null、共享写入、回调的副作用，都要看原程序。即使 List 只有两项，也要把 `add`、`get` 对应的序列操作交给内核，由它求值。不能直接交 AI 推出来的答案。
+
+**按顺序取第一项。** `[7, 2]` 取到的是 7，不是最小的 2，也不是任选。只有没有那一项，才用 fallback。
+
+```diff
+diff --git a/FirstValue.java b/FirstValue.java
+--- a/FirstValue.java
++++ b/FirstValue.java
+@@ -1,7 +1,9 @@
+-import java.util.Arrays;
+-
+ class FirstValue {
+     static int run(int[] values, int fallback) {
+-        return Arrays.stream(values).findFirst().orElse(fallback);
++        int result;
++        /* @normalizer-ir
++           result = first from values else fallback
++        */
++        return result;
+     }
+ }
+```
+
+有些循环也能写回关系。普通的 `for`、`break` 和 `continue` 先按原语言理解。下面虽不知道循环次数，但已证明它仅在计算左闭右开整数区间的项数，因此可以交付区间上的计数。交的是区间和运算，不是 AI 提前算好的次数。
+
+```diff
+diff --git a/src/VariableLoop.java b/src/VariableLoop.java
+--- a/src/VariableLoop.java
++++ b/src/VariableLoop.java
+@@ -1,9 +1,9 @@
+ class VariableLoop {
+     static int count(int limit) {
+         int total = 0;
+-        for (int i = 0; i < limit; i++) {
+-            total = total + 1;
+-        }
++        /* @normalizer-ir
++           total = count from [0, limit) as i
++        */
+         return total;
+     }
+ }
+```
+
+`limit = 3` 时数 0、1、2；`limit <= 0` 时没有可数的项。若循环还要改状态、发请求或提前停下，用一个计数就不够。最多三次、成功就返回的重试，本来可以照着源码执行，没必要先换一种写法。
+
+#### 已知的 SQL 也交成关系
+
+一条 SQL 当然也在和数据库交互，但既然知道它读什么表、筛哪些行、改什么字段，就该把这些内容交给关系代数。不用把已知的关系计算塞进一个无名外部函数。
+
+**写入。** 这是一条单独的原子删除。原位置仍执行删除，成功取实际影响行数，失败按原合同抛 `DatabaseWriteError`。
+
+```diff
+diff --git a/Cleanup.java b/Cleanup.java
+--- a/Cleanup.java
++++ b/Cleanup.java
+@@ -1,20 +1,14 @@
+-import org.apache.ibatis.annotations.Delete;
+-
+ class Cleanup {
+-    private final BillMapper mapper;
+-
+-    Cleanup(BillMapper mapper) {
+-        this.mapper = mapper;
+-    }
+-
+     int removeClosed(int accountId) {
+-        return mapper.removeClosed(accountId);
++        int affected;
++        /* @normalizer-ir
++           affected = delete from bill as b
++               where b.account_id == accountId and b.status == "CLOSED"
++               returning affected_rows
++               atomic throws DatabaseWriteError
++        */
++        return affected;
+     }
+ }
+
+-interface BillMapper {
+-    @Delete("DELETE FROM bill WHERE account_id = #{accountId} AND status = 'CLOSED'")
+-    int removeClosed(@org.apache.ibatis.annotations.Param("accountId") int accountId) throws DatabaseWriteError;
+-}
+-
+ class DatabaseWriteError extends RuntimeException {}
+```
+
+返回 0 行和失败不是一回事。原事务有多步时，也不能让每条写入各自提交。
+
+**读取。** 第一条指令在 Mapper 原来被调用的地方读表和筛选，第二条数已经取得的行，没有再次读表。行数组是类型载体，不凭空补查询顺序，也不变成额外入口参数。原来若有分页、读取失败，或 ORM 懒加载触发另一次读，都要保留。
+
+```diff
+diff --git a/Count.java b/Count.java
+--- a/Count.java
++++ b/Count.java
+@@ -1,21 +1,17 @@
+-import java.util.List;
+-import org.apache.ibatis.annotations.Param;
+-import org.apache.ibatis.annotations.Select;
+-
+ class Count {
+-    private final RowsMapper mapper;
+-    Count(RowsMapper mapper) { this.mapper = mapper; }
+-
+     long run(int id) {
+-        return mapper.find(id).size();
++        Row[] rows;
++        /* @normalizer-ir
++           rows = from jobs as j where j.owner_id == id yield { ownerId: j.owner_id }
++        */
++        long result;
++        /* @normalizer-ir
++           result = count from rows as r
++        */
++        return result;
+     }
+-}
+-
+-interface RowsMapper {
+-    @Select("SELECT owner_id AS ownerId FROM jobs WHERE owner_id = #{id}")
+-    List<Row> find(@Param("id") int id);
+ }
+
+ class Row {
+     int ownerId;
+ }
+```
+
+### 直接删减业务无关代码
+
+不是见到线程类或日志类就删。先问：拿掉这一层，原来的计算、成功或失败，以及对外动作还在不在？
+
+**线程池。** 两个函数彼此独立，不改共享状态，也不向外发请求。分析场景不观察提交失败、等待中断或线程归属。那就不必再模拟线程池，按普通 Java 调用 `f` 和 `g`，仍把两份结果交给 `h`。AI 不会把三个函数提前算成一个公式。
+
+```diff
+diff --git a/Entry.java b/Entry.java
+--- a/Entry.java
++++ b/Entry.java
+@@ -1,14 +1,11 @@
+-import java.util.concurrent.ExecutorService;
+-import java.util.concurrent.Future;
+-
+ class Entry {
+-    static int run(ExecutorService pool, int x, int y) throws Exception {
+-        Future<Integer> a = pool.submit(() -> f(x));
+-        Future<Integer> b = pool.submit(() -> g(y));
+-        return h(a.get(), b.get());
++    static int run(int x, int y) {
++        int a = f(x);
++        int b = g(y);
++        return h(a, b);
+     }
+
+     static int f(int x) { return x + 1; }
+     static int g(int y) { return y * 2; }
+     static int h(int a, int b) { return a - b; }
+ }
+```
+
+**并行流水线。** 去掉 `parallel()` 的调度，筛选和求和仍然交给关系指令。回调若要发消息，不能用同样方式删掉线程和次序。
+
+```diff
+diff --git a/ParallelTotal.java b/ParallelTotal.java
+--- a/ParallelTotal.java
++++ b/ParallelTotal.java
+@@ -1,7 +1,9 @@
+-import java.util.Arrays;
+-
+ class ParallelTotal {
+     static int run(int[] values) {
+-        return Arrays.stream(values).parallel().filter(v -> v > 0).sum();
++        int total;
++        /* @normalizer-ir
++           total = sum from values as v where v > 0 yield v
++        */
++        return total;
+     }
+ }
+```
+
+**调试日志和 GC。** 本例的日志不供审计，GC 也不会通过弱引用、终结或清理动作改变结果。删除两条运行代码，`f(x)` 原样保留。
+
+```diff
+diff --git a/Debug.java b/Debug.java
+--- a/Debug.java
++++ b/Debug.java
+@@ -1,11 +1,7 @@
+-import java.util.logging.Logger;
+-
+ class Debug {
+     static int run(int x) {
+-        Logger.getLogger("debug").fine("started");
+-        System.gc();
+         return f(x);
+     }
+
+     static int f(int x) { return x + 1; }
+ }
+```
+
+日志能不能删，不只看输出去哪，还要看实参。即使 `debug` 可删，`debug(f(x))` 里的 `f(x)` 如果会写状态或抛出原程序观察的异常，也得执行。审计日志、决定分支的系统配置、释放租约的清理动作，同样不属于纯调试或维护。
+
+**性能计数。** 计数器只供性能监控，分析不观察这条遥测通道。它如果用来限流、算配额或决定返回值，就不能删。
+
+```diff
+diff --git a/Metrics.java b/Metrics.java
+--- a/Metrics.java
++++ b/Metrics.java
+@@ -1,10 +1,7 @@
+-import java.util.concurrent.atomic.LongAdder;
+-
+ class Metrics {
+-    static int run(LongAdder metric, int x) {
+-        metric.increment();
++    static int run(int x) {
+         return f(x);
+     }
+
+     static int f(int x) { return x * 2; }
+ }
+```
+
+缓存、池和缓冲也照此判断。缓存只为提速，可以去掉这层；命中若改变是否发请求或读到哪个版本，就必须保留查找和请求分支。
+
+**只剩外壳的资源。** 这里的 `LocalResource` 没有打开文件、连接或其他外部资源。构造没有业务副作用，`close()` 只把一个不会再被读取的字段设为 `true`，也不抛异常。可以删掉这层包装，把 `read` 的逻辑原样留下：负数仍抛 `Rejected`，其余仍返回 `x + 1`。
+
+```diff
+diff --git a/Finish.java b/Finish.java
+--- a/Finish.java
++++ b/Finish.java
+@@ -1,20 +1,8 @@
+ class Finish {
+     static int run(int x) {
+-        try (LocalResource r = new LocalResource()) {
+-            return r.read(x);
+-        }
++        if (x < 0) throw new Rejected();
++        return x + 1;
+     }
+ }
+
+-class LocalResource implements AutoCloseable {
+-    boolean closed;
+-
+-    int read(int x) {
+-        if (x < 0) throw new Rejected();
+-        return x + 1;
+-    }
+-
+-    public void close() { closed = true; }
+-}
+-
+ class Rejected extends RuntimeException {}
+```
+
+如果关闭会提交数据、释放后续执行依赖的资源，或抛出调用方需要处理的异常，就不能删。此时保留 `try-with-resources`，由模拟器按 Java 规则执行；没有必要把原生语法改成手写的 `finally`。
+
+### 入口函数重组
+
+**交给 Normalizer 的入口，必须能从 Java 类名或 TypeScript 模块导出直接找到并调用。** 要说清从哪里找到入口、调用哪个方法、传哪些参数。实例方法还要说清接收对象从哪里来；不能只给方法名，让模拟器去猜怎么创建 `this`。
+
+- **Java 从类名出发。** 可以调用 `Entry.run(x)` 这样的静态方法，也可以从静态字段取得已装配实例，再调用 `Beans.QUOTE_CONTROLLER.quote(units)`。后者的 `quote` 仍是实例方法。原程序若复用实例，就保留复用；若每次调用都创建实例，就在源码里写明，不由模拟器代选。
+- **严格 TypeScript 从模块导出出发。** 指定模块后，可以直接调用它导出的 `run(x)`，也可以从模块取出已装配的 `controller`，再调用 `controller.run(x)`。需要 `this` 时保留对象上的调用，不把方法单独取出来执行。
+
+原入口已经满足这条规则就不改。如果入口由框架注册，AI 把调用方式和缺失的装配写清楚。形参接收的是这次调用的输入，接收对象上原有的状态不挪进形参。
+
+**Servlet 的入口。** 这个例子从参数 `x` 已成功绑定为整数开始，所以把它写进入口签名。原处理方法仍是实例方法；这个无状态的例子用静态字段明确提供接收对象，新入口是 `Endpoint.INSTANCE.run(x)`。要是分析从收到 HTTP 请求开始，缺参、解析失败及对应的 HTTP 返回也要表达，不能直接跳到解析成功之后。
+
+```diff
+diff --git a/Endpoint.java b/Endpoint.java
+--- a/Endpoint.java
++++ b/Endpoint.java
+@@ -1,10 +1,8 @@
+-import jakarta.servlet.http.HttpServletRequest;
+-
+ class Endpoint {
++    static final Endpoint INSTANCE = new Endpoint();
+-    int run(HttpServletRequest request) {
+-        int x = Integer.parseInt(request.getParameter("x"));
++    int run(int x) {
+         return f(x);
+     }
+
+     int f(int x) { return x + 1; }
+ }
+```
+
+**宿主已经交来的入口值。** 这个场景分析点击处理器本身，从宿主已经提供账单结果和限额开始。处理器在等待前读限额，等待后用同一个值判断有没有超限。规范源码导出 `onLoad`，只把本次调用用到的两个值写进参数。若原程序在等待后重新读取可能变化的 `props.limit`，就不能把那次读取提前。
+
+```diff
+diff --git a/src/BillPage.vue b/src/BillPage.ts
+rename from src/BillPage.vue
+rename to src/BillPage.ts
+--- a/src/BillPage.vue
++++ b/src/BillPage.ts
+@@ -1,13 +1,5 @@
+-<template>
+-  <button @click="onLoad">刷新</button>
+-</template>
+-
+-<script setup lang="ts">
+-const props = defineProps<{ billsReady: Promise<number>; limit: number }>();
+-
+-async function onLoad(): Promise<boolean> {
+-    const limitAtEntry = props.limit;
+-    const total = await props.billsReady;
++export async function onLoad(billsReady: Promise<number>, limit: number): Promise<boolean> {
++    const limitAtEntry = limit;
++    const total = await billsReady;
+     return total > limitAtEntry;
+ }
+-</script>
+```
+
+**模板属性。** 若分析的是模板给卡片传了什么，就提取属性表达式本身。两个属性分别有自己的入口，`/** @N componentProp … */` 把它们绑回原来的组件实例和属性。它们仍读同一份已有状态，不多加状态参数，也不执行一次额外的渲染。
+
+```diff
+diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
+rename from src/ArrearsPage.vue
+rename to src/ArrearsPage.ts
+--- a/src/ArrearsPage.vue
++++ b/src/ArrearsPage.ts
+@@ -1,17 +1,17 @@
+-<template>
+-  <PayableCard
+-    id="balance"
+-    :amount="arrears.status.ready ? arrears.summary.payable : 0"
+-    :caption="arrears.status.loading ? '加载中' : '应付金额'"
+-  />
+-</template>
++import * as N from "@normalizer/stdlib";
+
+-<script setup>
+-import { reactive } from 'vue'
+-import PayableCard from './PayableCard.vue'
+-
+-const arrears = reactive({
++/** @N entryState */
++const arrears = {
+   status: { ready: false, loading: false },
+   summary: { payable: 0 }
+-})
+-</script>
++}
++
++/** @N componentProp PayableCard#balance.amount */
++export function amount(): number {
++  return arrears.status.ready ? arrears.summary.payable : 0
++}
++
++/** @N componentProp PayableCard#balance.caption */
++export function caption(): string {
++  return arrears.status.loading ? '加载中' : '应付金额'
++}
+```
+
+### 内存状态重组
+
+**点击。** Vue 的按钮点击调用 `onReset`。规范源码导出处理器，并用 `/** @N entryState */` 标明计数是本次点击之前就存在的组件状态。处理器不读事件参数，入口就不需要参数。初始化写的 0 是创建组件时的值，不代表每次点击都从 0 开始；点击前是 8，也要由处理器真正写回 0。
+
+```diff
+diff --git a/src/Counter.js b/src/Counter.ts
+rename from src/Counter.js
+rename to src/Counter.ts
+--- a/src/Counter.js
++++ b/src/Counter.ts
+@@ -1,11 +1,8 @@
+-import { defineComponent, h, ref } from "vue";
++import * as N from "@normalizer/stdlib";
+
+-export default defineComponent({
+-    setup() {
+-        const count = ref(0);
+-        async function onReset() {
+-            count.value = 0;
+-        }
+-        return () => h("button", { onClick: onReset }, String(count.value));
+-    }
+-});
++/** @N entryState */
++const counter = { count: 0 };
++
++export async function onReset(): Promise<void> {
++    counter.count = 0;
++}
+```
+
+Java 的状态和入参也按来源区分。下面用 `@N.EntryState` 标已有字段：`quota` 是这次传入的值，`this.quota` 才是对象原来的状态。同名不代表同一个值；若程序让两个引用真的指向同一对象，也不能把它们拆成两份。
+
+```diff
+diff --git a/src/QuotaService.java b/src/QuotaService.java
+--- a/src/QuotaService.java
++++ b/src/QuotaService.java
+@@ -1,11 +1,14 @@
++import normalizer.intrinsics.N;
++
+ class Quota {
+     short units;
+ }
+
+ class QuotaService {
++    @N.EntryState
+     Quota quota;
+
+     int difference(Quota quota, short adjustment) {
+         return quota.units - this.quota.units + adjustment;
+     }
+ }
+```
+
+**原子更新。** 下面的 `AtomicInteger` 每次在入口内新建，别的线程看不到，也不会逃逸。比较再写入可以还原为普通 Java。对共享槽就不能照搬：如果两个请求都读到旧值、都走成功分支，结果已经变了。
+
+```diff
+diff --git a/Slot.java b/Slot.java
+--- a/Slot.java
++++ b/Slot.java
+@@ -1,8 +1,17 @@
+-import java.util.concurrent.atomic.AtomicInteger;
+-
+ class Slot {
+     static boolean perform(int start, int next) {
+-        AtomicInteger x = new AtomicInteger(start);
++        Cell x = new Cell(start);
+         return x.compareAndSet(0, next);
+     }
+ }
++
++class Cell {
++    private int value;
++    Cell(int value) { this.value = value; }
++
++    boolean compareAndSet(int expected, int next) {
++        if (value != expected) return false;
++        value = next;
++        return true;
++    }
++}
+```
+
+### 把隐藏的执行过程写出来
+
+入口和初始状态都明确以后，还有一些动作光看源码看不出来：对象是怎么装配的，调用实际上落到哪个实现，依赖里的方法究竟做了什么。AI 要从源码、配置和部署里查清这些动作，再写成模拟器能执行的代码。
+
+**Spring 的装配。** 普通静态方法可以直接调用。控制器实例不同：拿一个刚 `new` 出来的 `QuoteController` 就跑，`price` 还没有注入，程序会碰到生产请求里没有的空指针。AI 先找实际生效的配置，把框架原来隐藏的装配写进 `Beans.java`，再让入口调用装配好的对象。
+
+```diff
+diff --git a/src/QuoteController.java b/src/QuoteController.java
 --- a/src/QuoteController.java
 +++ b/src/QuoteController.java
 @@ -1,19 +1,15 @@
@@ -46,6 +706,8 @@ Spring 的实例方法要先有装配好的对象。比如 controller 调用 `pr
          return price.quote(units);
      }
  }
+diff --git a/src/Beans.java b/src/Beans.java
+new file mode 100644
 --- /dev/null
 +++ b/src/Beans.java
 @@ -0,0 +1,10 @@
@@ -61,31 +723,242 @@ Spring 的实例方法要先有装配好的对象。比如 controller 调用 `pr
 +}
 ```
 
-装好之后，入口就是对现成对象的一次调用：
+实例装好以后，入口就是 `Beans.QUOTE_CONTROLLER.quote(units)`；如果分析的是服务本身，也可以走 `Beans.PRICE.quote(units)`。这里的单例属于所分析的一个容器，不跨容器共享。请求级对象仍按请求创建；如果校验、鉴权、事务代理或初始化动作会改变结果，也要写进分析范围。Bean 再多，也先从入口追依赖，不需要手抄全应用。
 
-```java
-Beans.QUOTE_CONTROLLER.quote(units)
+**把 JDK 服务发现改成直接构造。** `Op.class` 告诉 `ServiceLoader` 要查哪种服务。谁来实现 `Op`，由类路径上的注册文件决定：原工程的 `resources/` 会放进类路径，下面的 `META-INF/services/demo.Op` 把 `demo.AddOne` 注册为实现。
+
+在这次分析对应的部署中，运行线程的上下文类加载器只能发现这一个 `Op` 实现，且它的公共无参构造器会正常完成。AI 可以把查找和构造写成 `new AddOne()`，保留 `op.apply(x)` 让模拟器继续执行。示例工程没有别的地方读取这份注册，预处理后的分析工程可以把它删掉。
+
+```diff
+diff --git a/src/demo/Entry.java b/src/demo/Entry.java
+--- a/src/demo/Entry.java
++++ b/src/demo/Entry.java
+@@ -1,10 +1,8 @@
+ package demo;
+-
+-import java.util.ServiceLoader;
+
+ public class Entry {
+     public static int run(int x) {
+-        Op op = ServiceLoader.load(Op.class).findFirst().orElseThrow();
++        Op op = new AddOne();
+         return op.apply(x);
+     }
+ }
+diff --git a/resources/META-INF/services/demo.Op b/resources/META-INF/services/demo.Op
+deleted file mode 100644
+--- a/resources/META-INF/services/demo.Op
++++ /dev/null
+@@ -1 +0,0 @@
+-demo.AddOne
 ```
 
-如果选的是 service 方法做入口，同样可以直接用 `Beans.PRICE.quote(units)`。对 controller 而言，这里从 **HTTP 请求参数已成功绑定** 开始：`units` 来自请求，`price` 来自 `Beans.java`，两者不能混。若要分析整个 HTTP 请求，绑定失败和校验也要补出来。如果工具只接收具名静态方法作为入口，可以用一个只转发这次调用的静态方法；装配仍只在 `Beans.java`。
+`src/demo/Op.java` 和 `src/demo/AddOne.java` 在改写前后都不变，完整源码如下。
 
-项目里 Bean 多了，也用同一个结构：从选定入口出发，按实际生效的配置找出会影响它的 Bean，再把确认过的装配集中生成到 `Beans.java`，不用把全应用手抄一遍。这里的静态实例代表**当前分析的一个容器里的单例**；请求级对象仍按请求创建，原来要求构造器注入的也不用硬改成 setter。若鉴权、事务代理或初始化动作会改变结果，就要显式保留那一步，不能因为对象装上了就当它们不存在。
+`src/demo/Op.java`：
 
-### JavaScript → TypeScript：沿全仓的对象流还原类型
+```java
+package demo;
 
-单看 `checkout(fulfillment)`，里面只是把对象转交给另一个函数。单看消费方的 `fulfillment.address`，也不能知道它是必填、可空，还是有些对象根本没有。**要确定一个对象的类型，得回到整个工程里看它从哪里来、经过哪里、最后怎么用。**
+public interface Op {
+    int apply(int x);
+}
+```
 
-这个工程有门店自提和送货两条路径。为选定的 `checkout` 入口做分析时，AI 先解析跨文件的导入和调用，再核对所有能到达这个入口的构造、字段写入、转发和别名。下面这三处证据缺一不可：
+`src/demo/AddOne.java`：
 
-| 在哪里找到证据 | 它说明什么 |
-| --- | --- |
-| `checkout.js` 的请求处理 | 两个调用分支都经过原有的字符串检查。进入工厂的值确实是字符串，不是因为参数名叫 `address`。 |
-| `fulfillment.js` 的两个工厂 | 自提对象一定有 `kind: "pickup"` 和 `storeId`；送货对象一定有 `kind: "delivery"` 和 `address`。本例没有其他构造来源或后续写入改变对象形状。 |
-| `summary.js` 的字段读取 | 按 `kind` 分支，自提才读 `storeId`，送货才读 `address`。不能把两种对象糊成一个「所有字段都可选」的对象。 |
+```java
+package demo;
 
-因此定义一个共享的 `Fulfillment`：是两种明确形状中的一种，`kind` 决定本次是哪种。下面的三个 diff 是同一次重构。
+public final class AddOne implements Op {
+    public AddOne() {}
 
-**先在对象创建处声明两种形状。**
+    public int apply(int x) {
+        return x + 1;
+    }
+}
+```
+
+看到一份注册文件里只有一行，还不能断定整个部署只看得到一个实现。如果确认不了 `findFirst()` 会选谁，或者注册缺失、加载失败本身会影响执行，就不能用这个改法。
+
+**把反射调用还原成直接调用。** 这里接收者是 `new Fixed()`，查找的方法名和参数类型都是确定的，`Fixed.apply` 也保证正常返回，所以可以改为 `receiver.apply(x)`。如果查找可能失败，或调用方依赖反射如何包装异常，就必须保留这些行为，不能直接替换。
+
+```diff
+diff --git a/Dispatch.java b/Dispatch.java
+--- a/Dispatch.java
++++ b/Dispatch.java
+@@ -1,15 +1,12 @@
+-import java.lang.reflect.Method;
+-
+ class Dispatch {
+-    static int apply(int x) throws ReflectiveOperationException {
++    static int apply(int x) {
+         Fixed receiver = new Fixed();
+-        Method method = Fixed.class.getMethod("apply", int.class);
+-        return (Integer) method.invoke(receiver, x);
++        return receiver.apply(x);
+     }
+ }
+
+ class Fixed {
+     public int apply(int x) {
+         return x + 1;
+     }
+ }
+```
+
+**本地算法。** 有些 JAR 调用没有离开进程，只是还没把它的逻辑带进分析工程。已经从允许交付的依赖源码核实 `Limits.clamp`，就把方法体带进来；调用仍是原来的调用。
+
+```diff
+diff --git a/Entry.java b/Entry.java
+--- a/Entry.java
++++ b/Entry.java
+@@ -1,7 +1,5 @@
+-import vendor.policy.Limits;
+-
+ class Entry {
+     static int run(int x, int max) {
+         return Limits.clamp(x, max);
+     }
+ }
+diff --git a/Limits.java b/Limits.java
+new file mode 100644
+--- /dev/null
++++ b/Limits.java
+@@ -0,0 +1,7 @@
++class Limits {
++    static int clamp(int x, int max) {
++        if (x < 0) return 0;
++        if (x > max) return max;
++        return x;
++    }
++}
+```
+
+Jackson、校验器、压缩或摘要库也按这个原则判断。谁映射到哪个字段、缺字段补什么、哪些字节就是结果，都要有依据。只有签名，不能依据方法名补一段看起来像的逻辑。
+
+锁、重试、取消和事务也要还原它们对业务可见的行为。重要的是保住真实发生的次序、完成和效果；如果普通源码或正式扩展表达不了，就报告缺失，不能另起一个没定义的标记占位。
+
+#### 重组和标记外部调用
+
+**RPC。** 接口、请求 DTO、回执 DTO 和异常是同一份合同。AI 把这些声明一起写进工程，给实际调用的接收者标 `@N.External`；TypeScript 对应写法是 `/** @N external */`。标记本身不发请求。
+
+JAR 没有源码时，AI 可以用常识理解普通 DTO：如果接口签名、字段定义或序列化约定，以及工程各处的用法都指向一个只搬数据的对象，就可以把 `setId(id)` 还原成写入 `id`，把 `getValue()` 还原成读取 `value`。不必因为看不到 getter/setter 的源码就卡住，但也不能只凭方法名猜。发现有默认值、校验或转换，就要保留；无法判断这些行为、且它们会影响结果，就报告缺口。
+
+常识能帮 AI 读懂这份合同，不能替远端决定结果。下面恢复的是调用方能看到的接口和数据结构。远端怎样计算 `value`、这次会不会抛 `Unavailable`，都不由 AI 填答案。
+
+```diff
+diff --git a/Entry.java b/Entry.java
+--- a/Entry.java
++++ b/Entry.java
+@@ -1,23 +1,21 @@
+-import vendor.rpc.ValueService;
+-import vendor.rpc.Request;
+-import vendor.rpc.Reply;
+-import vendor.rpc.Unavailable;
++import normalizer.intrinsics.N;
+
+ class Entry {
++    @N.External
+     private final ValueService service;
+
+     Entry(ValueService service) {
+         this.service = service;
+     }
+
+     int read(int id) {
+         Request req = new Request();
+         req.setId(id);
+         try {
+             Reply reply = service.read(req);
+             return reply.getValue();
+         } catch (Unavailable ex) {
+             return 0;
+         }
+     }
+ }
+diff --git a/ValueContract.java b/ValueContract.java
+new file mode 100644
+--- /dev/null
++++ b/ValueContract.java
+@@ -0,0 +1,16 @@
++interface ValueService {
++    Reply read(Request request) throws Unavailable;
++}
++
++class Request {
++    private int id;
++    void setId(int id) { this.id = id; }
++    int getId() { return this.id; }
++}
++
++class Reply {
++    private int value;
++    int getValue() { return this.value; }
++}
++
++class Unavailable extends RuntimeException {}
+```
+
+模拟器走到原调用处，记录这次请求，用**这一回**的符号回执继续读字段，或在合同允许的失败路径进入 `catch`。它不实际发请求，不造固定回执，也不把回执挪到入口签名上。传输层的连接池和编码过程不必逐步模拟；实际重试、错误映射、签名或字节内容若会改变外部看到的行为，就要保留。
+
+**读时钟。** 当前时间是常见的外部输入，Normalizer 为它提供公开的内置操作 `N.currentTimeMillis()`。AI 把原调用显式换成这个操作，不用写时钟接口、装配对象或修改入口签名。`start` 仍是原来的参数。
+
+```diff
+diff --git a/Elapsed.java b/Elapsed.java
+--- a/Elapsed.java
++++ b/Elapsed.java
+@@ -1,5 +1,7 @@
++import normalizer.intrinsics.N;
++
+ class Elapsed {
+     static long elapsed(long start) {
+-        return System.currentTimeMillis() - start;
++        return N.currentTimeMillis() - start;
+     }
+ }
+```
+
+这个操作返回 Unix 纪元以来的毫秒数。模拟器执行到这里才取本次读取的符号值，不读真机时钟。这是环境读取（E），没有对外写入（S）。执行两次就读取两次，既不能把两次调用合并，也不要求两次读到的值不同。项目自己的外部服务仍要声明实际接口和调用边界。
+
+**读文件。** 已确认客户端读指定文件的标志，失败会抛 `ReadFailed`。只把读取声明成外部边界；是否继续执行 `f(x)` 仍由原来的分支决定。
+
+```diff
+diff --git a/ReadFlag.java b/ReadFlag.java
+--- a/ReadFlag.java
++++ b/ReadFlag.java
+@@ -1,14 +1,20 @@
+-import vendor.files.FileFlagClient;
+-import vendor.files.ReadFailed;
++import normalizer.intrinsics.N;
+
+ class ReadFlag {
++    @N.External
+     private final FileFlagClient files;
+     ReadFlag(FileFlagClient files) { this.files = files; }
+
+     int run(int x) throws ReadFailed {
+         if (!files.readFlag("/flags/enabled")) return 0;
+         return f(x);
+     }
+
+     static int f(int x) { return x + 1; }
+ }
++
++interface FileFlagClient {
++    boolean readFlag(String path) throws ReadFailed;
++}
++
++class ReadFailed extends RuntimeException {}
+```
+
+HTTP、Socket、消息、系统配置和外部熵源也这样处理。反过来，当种子、算法和状态都已知，随机数生成也可能是可还原的确定计算；不能只看到 `Random` 就认定与外部交互。
+
+## 只支持强类型
+
+前端交付严格 TypeScript，不允许显式或隐式的 `any`。类型要沿全工程的构造、写入、调用和读取确定。请求处理器已有的检查保证传给工厂的是字符串。两个工厂分别造出自提和送达对象，消费者先看 `kind` 才读对应字段。三处代码串起来，才能确定对象的两种形状，而不是把所有字段都写成可选。
+
+**先在产生对象的文件定义共同类型。**
 
 ```diff
 diff --git a/src/fulfillment.js b/src/fulfillment.ts
@@ -109,7 +982,7 @@ rename to src/fulfillment.ts
  }
 ```
 
-**再把共享类型沿着调用链传给入口。** 请求处理器的原始输入仍是 `unknown`，保留原来的检查和拒绝行为。只有验证过的值才能构造成 `Fulfillment`，进入 `checkout`。
+**再让入口和转发函数用这份类型。** 宿主给的数据还没校验前仍是 `unknown`；原来的检查和失败分支都保留。
 
 ```diff
 diff --git a/src/checkout.js b/src/checkout.ts
@@ -136,7 +1009,7 @@ rename to src/checkout.ts
  }
 ```
 
-**最后让消费方使用同一个类型。** 原有的 `kind` 判断就足以让 TypeScript 在各分支确认能读哪个字段，不用强制断言。示例使用会在构建后保留 `.js` 导入路径的 ESM 配置。
+**最后在消费处按原来的 `kind` 缩窄类型。** 这份源码按构建后使用 `.js` 导入的 ESM 形式组织，不靠断言让检查通过。
 
 ```diff
 diff --git a/src/summary.js b/src/summary.ts
@@ -154,373 +1027,88 @@ rename to src/summary.ts
  }
 ```
 
-类型要沿这条链闭合，不是让 AI 根据某一行读字段就猜接口，再把编译报错改到消失。实际排查时还要查工厂是否被别处调用、对象传给哪些回调、有没有通过别名改字段，以及请求、插件等仓库外来源有无可核实的合同。找到了不同形状，就让类型反映这些形状；找不到证据，不能用 `any` 或类型断言补洞。
+如果另一个插件也能给这个入口传对象，就得连它的构造、校验和合同一起看。实在确定不了可达值的类型或运算含义，就报缺失，不用 `as` 或 `any` 把不确定性盖掉。
 
-**只要弱类型让可达路径上的值类型或运算含义无法确定，Normalizer 就必须主动 Panic。** 比如某个可达的插件也能把对象交给 `checkout`，但既没有校验，也没有能核实的返回合同，那就指出该调用点及无法确定的字段，不假定全仓里看见的两个本地工厂就是全部来源。预处理先报告这类缺口，工程也要自行校验；拒绝时非零退出，不输出 PERS 或半份结果。这里的 Panic 是归一化拒绝，不是原业务程序抛出的错误。
+## 别越俎代庖
 
-### 前端入口：动作、入口输入和实例状态别混在一起
+**AI 交付的是能执行的程序，不是替 Normalizer 算出的结果。** 能按原生语义执行的代码，原样交付；需要换一种表示的，就把原来做的操作交代清楚。走分支、算表达式、化简关系运算，留给内核。下面三个 diff 都是反例。
 
-这次分析的是「点击重置按钮」，不是挂载页面或渲染按钮。原来由 Vue 在用户点击时调用 `onReset`，而这个函数修改的是**当前组件本来就有的计数**。预处理把处理器导出，并用 `@entryState` 标出组件状态：
+**反例一：把分支和算式提前化简。** 两条路径的结果虽然相同，但这段 Java 本来就能执行。AI 不用先认出 `x + y` 和 `y + x` 等价，再替内核消掉分支。保留原代码，由内核执行并化简。
 
 ```diff
-diff --git a/src/Counter.js b/src/Counter.ts
-rename from src/Counter.js
-rename to src/Counter.ts
---- a/src/Counter.js
-+++ b/src/Counter.ts
-@@ -1,11 +1,6 @@
--import { defineComponent, h, ref } from "vue";
-+/** @entryState */
-+const counter = { count: 0 };
-
--export default defineComponent({
--    setup() {
--        const count = ref(0);
--        async function onReset() {
--            count.value = 0;
--        }
--        return () => h("button", { onClick: onReset }, String(count.value));
--    }
--});
-+export async function onReset(): Promise<void> {
-+    counter.count = 0;
-+}
+diff --git a/Branch.java b/Branch.java
+--- a/Branch.java
++++ b/Branch.java
+@@ -1,6 +1,5 @@
+ class Branch {
+     static int run(boolean reverse, int x, int y) {
+-        if (reverse) return y + x;
+         return x + y;
+     }
+ }
 ```
 
-模拟器直接从 `onReset()` 开始。它**没有入口参数**：浏览器虽然传来一个事件，但处理器并没有读它。真正用到的事件数据才应该作为输入；`counter` 不是点按钮时传进来的值，所以不能改成 `onReset(counter)`。它是这次点击所属组件已有的状态，要写回的也是这份状态。
-
-声明里的 `{ count: 0 }` 给出状态的形状，沿用了组件创建时的初值；分析一次点击时，**不把已有计数假定为 0，也不会在入口开始时重置它**。如果点击前界面显示 8，是处理器里的 `counter.count = 0` 这一步把它清成 0。
-
-**真正属于 P 的输入，直接写在入口函数的参数列表里。** 比如页面启动一次加载时，宿主已经给这次动作选定了账户和计费日。截取这段业务入口，预处理把这两个值放进签名，不再让处理器从宿主对象里找它们：
+**反例二：把集合运算直接算成公式。** 下面的公式即使对这两个输入完全等价，也跳过了内核的关系运算。AI 应该交付的是：有两项的序列，从中筛选大于 0 的项，再计数。筛选和计数能化简成什么，由内核决定。
 
 ```diff
-diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
-rename from src/ArrearsPage.vue
-rename to src/ArrearsPage.ts
---- a/src/ArrearsPage.vue
-+++ b/src/ArrearsPage.ts
+diff --git a/CountPositive.java b/CountPositive.java
+--- a/CountPositive.java
++++ b/CountPositive.java
+@@ -1,8 +1,5 @@
+-import java.util.List;
+-
+ class CountPositive {
+     static long run(int a, int b) {
+-        List<Integer> values = List.of(a, b);
+-        return values.stream().filter(v -> v > 0).count();
++        return (a > 0 ? 1L : 0L) + (b > 0 ? 1L : 0L);
+     }
+ }
+```
+
+**反例三：替内核决定两次环境读取的结果。** 同一个时钟调用出现两次，不代表两次读到同一个值。AI 可以把两次 JDK 调用分别换成 `N.currentTimeMillis()`，但不能合并调用或直接交一个 0。这里预处理过头，已经改变了程序行为。
+
+```diff
+diff --git a/ReadTwice.java b/ReadTwice.java
+--- a/ReadTwice.java
++++ b/ReadTwice.java
 @@ -1,7 +1,5 @@
--const props = defineProps<{ accountId: number; today: number }>();
--
--async function onLoad() {
--    const todayAtEntry = props.today;
--    const bills = await loadBills(props.accountId);
-+export async function onLoad(accountId: number, today: number): Promise<void> {
-+    const todayAtEntry = today;
-+    const bills = await loadBills(accountId);
-     updateSummary(bills, todayAtEntry);
- }
-```
-
-**P 是本次调用的不可变输入。** 上例的 `accountId` 和 `today` 是进入时绑定的值，等完 `await` 也还是这两个值。下一次调用可以传新的值。对象型输入也一样：不能把仍会变化的宿主对象当成不可变入参。如果原程序在 `await` 之后会重新读取会变的 `props.today`，就必须保留那一步读取及它的时机，不能用入口参数把它冻结。本节的 TypeScript 是目标交付形态，不是在声明当前 Vue 适配器已经支持这些入口。
-
-入口也不一定是动作。分析模板给金额卡片传了什么，就把绑定表达式提成一个无参函数。实例状态仍然用 `@entryState`，用 `@componentProp` 指明这是哪个组件实例的哪个属性。例如同一个金额卡片有两个绑定，提取后各有自己的入口：
-
-```diff
-diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
-rename from src/ArrearsPage.vue
-rename to src/ArrearsPage.ts
---- a/src/ArrearsPage.vue
-+++ b/src/ArrearsPage.ts
-@@ -1,17 +1,15 @@
--<template>
--  <PayableCard
--    id="balance"
--    :amount="arrears.status.ready ? arrears.summary.payable : 0"
--    :caption="arrears.status.loading ? '加载中' : '应付金额'"
--  />
--</template>
--
--<script setup>
--import { reactive } from 'vue'
--import PayableCard from './PayableCard.vue'
--
--const arrears = reactive({
-+/** @entryState */
-+const arrears = {
-   status: { ready: false, loading: false },
-   summary: { payable: 0 }
--})
--</script>
-+}
-+
-+/** @componentProp PayableCard#balance.amount */
-+export function amount(): number {
-+  return arrears.status.ready ? arrears.summary.payable : 0
-+}
-+
-+/** @componentProp PayableCard#balance.caption */
-+export function caption(): string {
-+  return arrears.status.loading ? '加载中' : '应付金额'
-+}
-```
-
-两种入口用的是同一个原则：**提取入口不等于重新设计接口。** 点击是一次处理器调用，模板绑定是一次求值；都用原来那个实例的状态，不给函数凭空加一个状态参数。
-
-### Java 实例状态：标记来源，不改变读写
-
-下面的 `quota` 和 `this.quota` 同名、同类型，来源却不同：前者是调用者这次传来的新额度，后者是服务实例已有的额度。预处理只在实例字段的声明上加 `@EntryState`，其余照旧：
-
-```diff
---- a/src/QuotaService.java
-+++ b/src/QuotaService.java
-@@ -1,8 +1,11 @@
-+import normalizer.annotations.EntryState;
-+
- class Quota {
-     short units;
- }
-
- class QuotaService {
-+    @EntryState
-     Quota quota;
-
-     int difference(Quota quota, short adjustment) {
-```
-
-模拟器还是按 Java 的名字绑定规则读这两个值。也不需要把 `this.quota.units` 拆成参数，或把 `Quota q = this.quota` 产生的别名再登记成一份状态。如果读写真的用到了同一个对象，预处理得把这层关系保住。类似地，`@Nullable` 只在有依据时表达可空合同，不能为通过解析临时把值假定为非空。
-
-## 二、再判断调用该在哪一层停下
-
-入口和状态写清楚后，沿原程序往下走。遇到看不到实现的调用，先分清它是哪一种：有明确含义的操作可以直接交给模拟器；能用源码还原的可以补模型；只有真实的外部调用才标记为外部边界。
-
-### 认出原生操作，就停在这一层
-
-判断一段字符串是不是空白，可以有很多种写法。一个库逐个检查字符，另一个库先查字符类别。库可以有很多套，但如果两种写法判断的是同一件事，模拟器只需要一种操作：判断空白。
-
-这里说的**原生操作**，是模拟器知道怎么算的操作。一旦认出它在判断整段文本是否空白，就停在字符串这一层，不必进库里重放每次字符读取，更不用追到字节数组。但该保留的区别不能省：两个库对 `null` 或某个字符是否算空白的处理不同，就不能当成同一个操作。如果原程序观察的就是编码后的字节，那些字节也不能省掉。
-
-比如下面这段代码先裁剪字符串，结果空白时再用备用文本。改写只换两个调用的目标，并把原本允许 `null` 的参数明确标出来。
-
-```diff
---- a/src/LabelService.java
-+++ b/src/LabelService.java
-@@ -1,7 +1,7 @@
--import org.apache.commons.lang3.StringUtils;
-+import normalizer.intrinsics.NormalizedText;
-
- class LabelService {
--    String normalizeLabel(String raw, String fallback) {
--        return StringUtils.defaultIfBlank(StringUtils.trim(raw), fallback);
-+    String normalizeLabel(@normalizer.annotations.Nullable String raw, String fallback) {
-+        return NormalizedText.defaultIfBlank(NormalizedText.trim(raw), fallback);
+ class ReadTwice {
+     static long run() {
+-        long first = System.currentTimeMillis();
+-        long second = System.currentTimeMillis();
+-        return second - first;
++        return 0L;
      }
  }
 ```
 
-调用的顺序没变：先裁剪，再检查是否空白。归到原生操作之后，最大的好处是**数学可以接着算**。假设已经确认 `func1` 和 `func2` 都是在判断同一个字符串是否非空白，结果相同，也没有副作用或额外异常。那就不用知道 `x` 是什么：
+## 无法等价改写，就放弃治疗
 
-```text
-func1(x) == func2(x)
-  → isNotBlank(x) == isNotBlank(x)
-  → true
-```
+无法写出等价程序时，AI 就停在这里：保留原代码，指出卡在哪个调用、缺什么信息。只知道签名，不能编方法体，也不能因为看不见实现就标成 `External`。
 
-操作自己也带着可用的规律。比如按这里的定义，`isNotBlank(null)` 是假。所以在下面的判断里，只要右边是真的，左边就一定是假的：
-
-```text
-isNotBlank(x) AND x == null
-  → isNotBlank(null) AND x == null
-  → false
-```
-
-如果这是一个 `if`，真分支根本走不到。模拟器没打开字符数组，也没猜 `x` 的内容，只用了这个操作本身的性质。
-
-### 没源码的 DTO：用常识补出最小模型
-
-有时拿不到 JAR 里的 Java 源码，但看得出一个类只是用来传数据的 DTO。比如公开接口有成对的 `int getAmount()` 和 `void setAmount(int amount)`，调用处也把它当作金额字段来读写。如果类的用途、方法签名和已有用法都符合这个惯例，AI 可以先按普通 getter/setter 来建模：读就读字段，写就写字段。**不必因为缺了源码就连简单的对象读写都停下来。**
-
-下面是建议补入验收的写法。例如，原程序对已有的 `AmountDto` 调用 `setAmount(n)`，接着调用 `getAmount()`。调用处不改，AI 为模拟器补出这几行：
-
-```diff
---- /dev/null
-+++ b/src/vendor/billing/AmountDto.java
-@@ -0,0 +1,13 @@
-+package vendor.billing;
-+
-+public class AmountDto {
-+    private int amount;
-+
-+    public int getAmount() {
-+        return this.amount;
-+    }
-+
-+    public void setAmount(int amount) {
-+        this.amount = amount;
-+    }
-+}
-```
-
-模拟器照常执行：先在同一个对象上把 `amount` 写成 `n`，再读回 `n`。这是**只用于分析的模型**，不是去改原来的 JAR。它也没说传进来的已有对象的金额一开始是 0；如果没写过就读，读的是那个对象原有的值。
-
-这是一条**要写明的假设**，不能只凭 `get`、`set` 两个前缀就套用。有文档、测试或字节码时，可以拿来核对。只要发现 setter 会校验、舍入或写别的字段，或者 getter 会额外计算，就不能继续假设它只是字段读写；要按查到的行为建模，弄不清就停。
-
-### 外部调用：知道发给谁，不知道对方回什么
-
-**原生操作，模拟器知道怎么算；外部调用，模拟器知道调用发生了，但不知道对方会回什么。** `@External` 画的是这条线。
-
-例如，程序找外部服务取风险分数。AI 在客户端字段上加标记，不改方法里的调用和异常处理：
-
-```diff
---- a/src/RiskService.java
-+++ b/src/RiskService.java
-@@ -1,15 +1,18 @@
-+import normalizer.annotations.External;
-+
- class RiskService {
-+    @External
-     private final RiskClient riskClient;
-
-     RiskService(RiskClient riskClient) {
-         this.riskClient = riskClient;
-     }
-
-     int riskScore(int accountId) {
-         try {
-             return riskClient.fetchScore(accountId);
-         } catch (RiskUnavailable ignored) {
-             return 0;
-         }
-     }
- }
-```
-
-模拟器走到 `fetchScore(accountId)`，不会真的发请求，也不会编一个分数。它知道这次调用带了哪个账户号。成功时，用一个符号代表**这次调用返回的分数**；如果抛出 `RiskUnavailable`，就按原代码走进 `catch`，返回 0。这个 0 只属于失败那条路；成功的分数也不能改成让入口调用者提前传进来。
-
-只有确认这本来就是一次外部调用，才标 `@External`（JS/TS 的写法是 `/** @external */`）。没找到源码，不等于它是外部服务。调用两次，不代表拿到同一个结果；对一次回执读两遍，也不能变成两次请求。回调同理：**登记不等于执行**。什么时候真正调用回调，还是由原程序决定。
-
-## 三、什么时候才需要替换一段计算
-
-入口和调用边界都清楚了，通常就可以把原程序交给模拟器。还有一种情况：代码完全可见，但如果只按原样逐步执行，拿不到完整的符号结果。先看一个不该改的例子，再看真正需要补语义的情况。
-
-### 反例：不要把 `switch` 改写成 `if`
-
-下面这个方法只有普通 Java 分支。即便把它改成 `if` 能得到相同结果，这也不是 AI 该做的预处理：
-
-```diff
---- a/src/SwitchMode.java
-+++ b/src/SwitchMode.java
-@@ -1,12 +1,7 @@
- class SwitchMode {
-     static int classify(int code) {
--        switch (code) {
--            case 1:
--                return 10;
--            case 2:
--                return 20;
--            default:
--                return 0;
--        }
-+        if (code == 1) return 10;
-+        if (code == 2) return 20;
-+        return 0;
-     }
- }
-```
-
-**正确交付：保留原来的 `switch`。** 即使不知道 `code` 的值，模拟器也能分别考虑命中各个 `case` 和走 `default` 的情况；入口参数未知，不妨碍模拟器按 Java 规则执行。当前解析器如果不接受 `switch`，该补的是工程支持，不是让 AI 换一种写法绕过去。
-
-### 未知次数的循环：补的是等价计算，不是另一种写法
-
-和 `switch` 不同，循环即使每一步都能执行，也可能因为次数取决于未知输入、又没有可用的固定上限，没法逐轮走完。这时才需要考虑一条有依据的等价计算规则。
-
-例如，下面的循环从 0 开始，每次加一，直到到达 `limit`。模拟器还不知道 `limit`，但知道循环数的是从 0 到 `limit` 之前的整数。AI 只把循环体所在的那一段换成模拟器认识的计数操作：
-
-```diff
---- a/src/VariableLoop.java
-+++ b/src/VariableLoop.java
-@@ -1,9 +1,9 @@
- class VariableLoop {
-     static int count(int limit) {
-         int total = 0;
--        for (int i = 0; i < limit; i++) {
--            total = total + 1;
--        }
-+        /* @normalizer-ir
-+           total = count from [0, limit) as i
-+        */
-         return total;
-     }
- }
-```
-
-如果 `limit = 3`，就数 0、1、2，结果是 3；如果 `limit <= 0`，区间为空，结果还是 0。它交的是「从哪里数到哪里」，不是预先算好的次数。要是原循环除了计数还会发请求或改状态，就不能只留下计数。
-
-固定上限重试则不必照着这个例子改。原代码明确写了最多尝试三次，并且成功就返回，保留循环和异常捕获即可。`continue` 和 `break` 本身也是 Java 语法，应由模拟器理解。只有确实要把整个循环交成一条聚合或折叠规则时，才在这条规则里保留原来的跳过和停止时机；不能用一个筛选条件代替它们。
-
-### 把查询和循环接起来：SQL 与局部聚合
-
-Mapper 的 Java 方法可能没有方法体，但注解里有 SQL。这和看不见远端服务怎么处理请求不是一回事。以「汇总本账户未结账单的正金额」为例：查询按账户和状态取行，Java 循环再筛出正金额相加。预处理在**原查询位置**交出取行的含义，在原循环位置交出求和的含义，不把查询结果变成一个新入参。
-
-```diff
---- a/src/ArrearsService.java
-+++ b/src/ArrearsService.java
-@@ -1,36 +1,24 @@
- import java.util.List;
--import org.apache.ibatis.annotations.Select;
-
- class ArrearsService {
--    private final BillMapper billMapper;
--
--    ArrearsService(BillMapper billMapper) {
--        this.billMapper = billMapper;
--    }
--
-     int positiveTotal(int accountId) {
-         int total = 0;
-
--        for (BillRow row : billMapper.selectOpenBills(accountId)) {
--            if (row.amount > 0) {
--                total += row.amount;
--            }
--        }
-+        List<BillRow> rows;
-+        /* @normalizer-ir
-+           rows = from bill as b
-+               where b.account_id == accountId and b.status == "OPEN"
-+               yield { accountId: b.account_id, amount: b.amount, status: b.status }
-+        */
-+
-+        /* @normalizer-ir
-+           total += sum from rows as row
-+               where row.amount > 0
-+               yield row.amount
-+        */
-
-         return total;
-     }
--}
--
--interface BillMapper {
--    @Select("""
--        SELECT account_id AS accountId,
--               amount,
--               status
--        FROM bill
--        WHERE account_id = #{accountId}
--          AND status = 'OPEN'
--    """)
--    List<BillRow> selectOpenBills(int accountId);
- }
-
- class BillRow {
-```
-
-`@normalizer-ir` 是给模拟器读的局部语义，不是让 JVM 执行注释。这里故意保留两个步骤和原有的 `total = 0`、`return total`；把两处筛选合起来，是模拟器的工作。遇到首行选择，要保留决定「首行」的排序；遇到更新或删除，要交出目标表、条件以及原有的行数和失败合同。把写入只标成一个黑盒方法，会丢掉它实际改了什么。如果查询本来在另一次调用之后，也不能为了方便把它移到入口。
-
-## 四、证据不足，就指出哪里还不能算
-
-有些循环不能写成计数，也不能证明有限。例如：
+下面是两个**保持原样的输入**，没有改写后的版本。第一个只知道 JAR 里的 `OpaqueEngine.compute(int)` 的签名，不知道它实际做什么。
 
 ```java
-while (!client.isReady(accountId)) {
-    client.waitForChange(accountId);
+import vendor.plugin.OpaqueEngine;
+
+class Entry {
+    static int run(int x) {
+        return OpaqueEngine.compute(x);
+    }
 }
-return client.readScore(accountId);
 ```
 
-这个程序不知道何时会等到就绪，也没给最多等几次。就算模拟器知道这两个调用都发到哪里，也不能因此知道循环会在什么时候结束。AI 不能自作主张改成「试三次就算了」，也不能跳过等待直接读分数。源码和约定都给不出结束条件或等价做法时，就明确说：**这段还不能执行到结果，缺的是可确认的等待边界。**
+第二个类型是工程自己的，但 `native` 方法没有交付可执行实现，也没有已知的外部合同。
 
-同样，只看见接口却无法确定这次调用到哪个实现，或者模拟器没有足够的合同解释原操作，都应指出具体位置和缺的条件（`PREPROCESS_REQUIRED`），不造一个默认值，也不把一份部分结果当成完整结果。
+```java
+class NativeEntry {
+    static native int apply(int x);
 
-圈地的结果应该让人看得出来：**哪些地方模拟器自己算，哪些地方按说明补模型，哪些地方等外部给值，哪些地方证据不足必须停。**
+    static int run(int x) {
+        return apply(x);
+    }
+}
+```
+
+如果仍把这些输入送去分析，发现不允许的类型，或执行到没有定义的调用，Normalizer 就在对应源码位置报 `Panic: not-support`，不输出 PERS。这是分析失败，不是原业务抛出的异常。
