@@ -15,34 +15,31 @@ const uid = typedIdentifier;
 export function compileTypedTuple(physicalPath, sf, fn) {
   const checker = checkedTypeScript(physicalPath, sf,
     node => ts.isFunctionDeclaration(node) || ts.isTypeAliasDeclaration(node));
-  const funcs = new Map();
-  for (const dec of sf.statements.filter(ts.isFunctionDeclaration)) {
-    if (!dec.name || !uid(dec.name.text) || funcs.has(dec.name.text) || !dec.body
-        || dec.asteriskToken || has(dec, ts.SyntaxKind.AsyncKeyword)) fail('expected distinct closed synchronous functions');
-    funcs.set(dec.name.text, dec);
-  }
-  if (fn.type?.kind !== ts.SyntaxKind.NumberKeyword) fail('typed tuple module requires an exported number function');
-  const params = typedBooleanParameters(fn);
+  const functions = sf.statements.filter(ts.isFunctionDeclaration);
+  const helper = functions.find((dec) => dec !== fn);
   const [bind, ret, ...other] = fn.body.statements;
-  if (other.length || !bind || !ret || !ts.isVariableStatement(bind) || !(bind.declarationList.flags & ts.NodeFlags.Const)
-      || bind.declarationList.declarations.length !== 1 || !ts.isReturnStatement(ret) || !ret.expression) {
-    fail('tuple entry needs one destructuring declaration and a return');
+  const declarations = bind && ts.isVariableStatement(bind)
+    && (bind.declarationList.flags & ts.NodeFlags.Const) && bind.declarationList.declarations;
+  const decl = declarations?.[0];
+  const call = decl?.initializer && unwrap(decl.initializer);
+  const typeName = helper?.type;
+  const closedSync = (dec) => dec?.name && uid(dec.name.text) && dec.body
+    && !dec.asteriskToken && !has(dec, ts.SyntaxKind.AsyncKeyword);
+  if (functions.length !== 2 || !closedSync(fn) || !closedSync(helper)
+      || fn.type?.kind !== ts.SyntaxKind.NumberKeyword || has(helper, ts.SyntaxKind.ExportKeyword)
+      || fn.name.text === helper.name.text || other.length || declarations?.length !== 1
+      || !ret || !ts.isReturnStatement(ret) || !ret.expression || !ts.isArrayBindingPattern(decl.name)
+      || !call || !ts.isCallExpression(call) || call.questionDotToken
+      || !ts.isIdentifier(call.expression) || call.expression.text !== helper.name.text
+      || call.arguments.length !== helper.parameters.length || !typeName
+      || !ts.isTypeReferenceNode(typeName) || !ts.isIdentifier(typeName.typeName)
+      || !sf.statements.some((item) => ts.isTypeAliasDeclaration(item)
+        && item.name.text === typeName.typeName.text && ts.isTupleTypeNode(item.type))) {
+    fail('expected a closed typed tuple entry and one local tuple source helper');
   }
-  const decl = bind.declarationList.declarations[0];
-  const call = decl.initializer && unwrap(decl.initializer);
-  if (!ts.isArrayBindingPattern(decl.name) || !call || !ts.isCallExpression(call)
-      || call.questionDotToken || !ts.isIdentifier(call.expression)) fail('expected a closed direct tuple helper call');
-  const helper = funcs.get(call.expression.text);
-  if (!helper || helper === fn || funcs.size !== 2 || has(helper, ts.SyntaxKind.ExportKeyword)) fail('tuple plan requires one local source helper');
+  const params = typedBooleanParameters(fn);
   const inputScope = new Map(params.map(name => [name, variable(name)]));
   const helperParams = typedBooleanParameters(helper);
-  if (call.arguments.length !== helperParams.length) fail('tuple helper arity mismatch');
-
-  if (!helper.type || !ts.isTypeReferenceNode(helper.type) || !ts.isIdentifier(helper.type.typeName)
-      || !sf.statements.some(item => ts.isTypeAliasDeclaration(item)
-        && item.name.text === helper.type.typeName.text && ts.isTupleTypeNode(item.type))) {
-    fail('tuple helper needs a declared tuple type');
-  }
 
   function lowerBool(expr, scope) {
     expr = unwrap(expr);

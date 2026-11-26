@@ -10,11 +10,10 @@ function fail(message) {
   throw new Error(`SCENARIO_MODULE_INPUT: ${message}`);
 }
 
+const parameterAliases = new Map([['boolean', 'bool'], ['string', 'text']]);
 function hostType(type) {
-  if (type === 'boolean') return 'bool';
-  if (type === 'string') return 'text';
-  if (/^[A-Za-z_$][\w$]*(\[\])?$/.test(type)) return type;
-  fail(`unsupported module type ${type}`);
+  if (!/^[A-Za-z_$][\w$]*(\[\])?$/.test(type)) fail(`unsupported module type ${type}`);
+  return parameterAliases.get(type) ?? type;
 }
 
 export function readModuleEvent(modulePath, text, entryName, originPath) {
@@ -94,15 +93,11 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     }
     if (flags.has('entryInputs') || flags.has('external')) {
       const record = ts.getJSDocType(st) || ts.getJSDocType(dec);
-      if (!record || !ts.isTypeLiteralNode(record)) fail(`${root} requires a closed record type`);
+      if (!record || !ts.isTypeLiteralNode(record) || record.members.some((item) =>
+        !ts.isPropertySignature(item) || !ts.isIdentifier(item.name) || item.questionToken || !item.type)) {
+        fail(`${root} requires a closed record with required named source slots`);
+      }
       for (const item of record.members) {
-        if (
-          !ts.isPropertySignature(item) ||
-          !ts.isIdentifier(item.name) ||
-          item.questionToken ||
-          !item.type
-        )
-          fail('required named source slot needed');
         const name = item.name.text,
           path = root + '.' + name;
         if (flags.has('entryInputs')) {

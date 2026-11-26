@@ -39,17 +39,15 @@ export function readModuleProjection(modulePath, source, entryName, originPath) 
     states.set(name, { source: `${originPath}#${page}.${name}`, fields });
   }
   const fn = sf.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === entryName);
-  if (!fn || !fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
-    fail(`prepared module must export function ${entryName}`);
+  const statements = fn?.body?.statements;
+  const returned = statements?.at(-1);
+  if (!fn?.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+      || fn.modifiers.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)
+      || fn.parameters.length || !returned || !ts.isReturnStatement(returned) || !returned.expression) {
+    fail(`prepared component projection ${entryName} requires a synchronous exported function with a return expression and no parameters`);
   }
-  if (fn.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) fail(`async entry ${entryName} requires lowering await, completion and time-specific host input reads`);
   const prop = ts.getJSDocTags(fn).find(tag => tag.tagName.text === 'componentProp')?.comment;
   if (typeof prop !== 'string' || !/^[\w.-]+#[\w.-]+\.[\w-]+$/.test(prop)) fail(`missing or invalid @componentProp on ${entryName}`);
-  const statements = fn.body?.statements;
-  const returned = statements?.at(-1);
-  if (fn.parameters.length || !returned || !ts.isReturnStatement(returned) || !returned.expression) {
-    fail(`synchronous component projection ${entryName} requires a return expression and no parameters`);
-  }
   localDirectives(sf, fn.body).requireConsumed();
   const locals = [];
   for (const st of statements.slice(0, -1)) {
