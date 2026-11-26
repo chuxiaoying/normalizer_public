@@ -114,6 +114,21 @@ mod let_scope_contract {
         assert!(!mixed.contains("$l_"));
         assert_eq!(mixed.matches("SUM(").count(), 3);
     }
+
+    #[test]
+    fn an_unrelated_guarded_receipt_does_not_change_pure_boolean_spelling() {
+        let param = |name| b::param(name, ScalarSymbolType::Boolean);
+        let enabled = param("enabled");
+        let valid = param("valid");
+        let mut ctx = FormatCtx::for_business(BTreeMap::new(), BTreeMap::new());
+        ctx.bind_business_event(0, 0, enabled.clone());
+        assert!(format_guarded_boolean(BinOpKind::And, &enabled, &valid, &mut ctx).is_none());
+
+        let receipt = b::sym_e(0, ScalarSymbolType::Boolean);
+        let actual = format_guarded_boolean(BinOpKind::And, &enabled, &receipt, &mut ctx)
+            .expect("the conditional receipt still requires its guard");
+        assert!(actual.starts_with("CASE WHEN") && actual.contains("$e_0"));
+    }
 }
 
 // The mathematical CASE already selected its arms. In a minimum/maximum,
@@ -216,6 +231,22 @@ pub(crate) fn format_guarded_boolean(
         return None;
     }
     let op = ShortCircuit::from_op(op)?;
+    let mut guarded_receipt = false;
+    for operand in [left, right] {
+        operand.walk(&mut |part| {
+            guarded_receipt |= matches!(
+                part.as_sym_var(),
+                Some(SymVarOrigin::External { binding_id, .. })
+                    if ctx.business_receipt_guards.contains_key(binding_id)
+            );
+        });
+        if guarded_receipt {
+            break;
+        }
+    }
+    if !guarded_receipt {
+        return None;
+    }
     let domain = ctx.business_evaluation_guard.as_ref();
     let (guard, value, selected) = lazy_operands(op, left, right, domain, ctx)?;
     let guard_text = super::format_expr_with_ctx(guard, ctx);
