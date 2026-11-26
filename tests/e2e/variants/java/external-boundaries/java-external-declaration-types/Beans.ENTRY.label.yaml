@@ -1,0 +1,87 @@
+- name: boolean-field-projects-from-the-same-declared-receipt
+  edits:
+  - from: String label(int id)
+    to: boolean label(int id)
+  - from: return packet.label;
+    to: return packet.approved;
+  expect:
+  - path:
+    - entry
+    - returns
+    value: bool
+  - path:
+    - R
+    value: $e_0.approved
+- name: an-unused-declaration-does-not-acquire-a-receipt
+  edits:
+  - from: |-
+      Packet packet = port.lookup(id);
+              return packet.label;
+    to: return "offline";
+  expect:
+  - path:
+    - S
+    absent: true
+  - path:
+    - types
+    absent: true
+  - path:
+    - R
+    value: '"offline"'
+- name: missing-port-interface-cannot-supply-a-boundary-signature
+  edits:
+  - from: class Records {
+    to: class OtherRecords {
+  reject:
+  - '[NORM-EXTERNAL-TYPE]'
+  - kind=PREPROCESS_REQUIRED
+  - location=Records
+- name: an-ordinary-local-method-is-not-an-external-contract
+  edits:
+  - from: |-
+      class Records {
+          native Packet lookup(int id);
+      }
+    to: class Records { Packet lookup(int id) { return null; } }
+  reject:
+  - '[NORM-EXTERNAL-TYPE]'
+  - kind=PREPROCESS_REQUIRED
+  - location=Records
+- name: mutable-injected-field-is-not-a-fixed-external-port
+  edits:
+  - from: private final Records port;
+    to: private Records port;
+  reject:
+  - '[NORM-EXTERNAL-FIELD]'
+  - kind=PREPROCESS_REQUIRED
+  - location=port
+- name: static-external-field-is-not-an-injected-instance-port
+  edits:
+  - from: private final Records port;
+    to: private static final Records port = null;
+  - from: this.port = port;
+    to: ''
+  reject:
+  - '[NORM-EXTERNAL-FIELD]'
+  - kind=PREPROCESS_REQUIRED
+  - location=port
+- name: instance-port-initialized-locally-is-not-an-injected-external-port
+  edits:
+  - from: private final Records port;
+    to: private final Records port = null;
+  - from: this.port = port;
+    to: ''
+  reject:
+  - '[NORM-EXTERNAL-FIELD]'
+  - kind=PREPROCESS_REQUIRED
+  - location=port
+- name: an-explicit-instance-receiver-keeps-the-declared-external-site
+  edits:
+  - from: port.lookup(id)
+    to: this.port.lookup(id)
+- name: a-qualified-java-text-type-keeps-the-external-domain
+  edits:
+  - from: String label(int id)
+    to: java.lang.String label(int id)
+  - from: String label;
+    to: java.lang.String label;

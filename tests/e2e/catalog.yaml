@@ -78,19 +78,19 @@ groups:
     - Unknown.choose
   java/external-boundaries:
     java-external-declaration-types:
-    - ExternalTypeDemo.label
+    - Beans.ENTRY.label
     external-callback-order:
-    - NotifyService.send
+    - Beans.ENTRY.send
     external-exception-propagation:
-    - Pass.read
+    - Beans.ENTRY.read
     external-nondeterministic-result:
-    - ClockService.doubled
+    - Beans.ENTRY.doubled
     external-object-success-failure:
-    - ProfileService.score
+    - Beans.ENTRY.score
     external-scalar-success-failure:
-    - RiskService.riskScore
+    - Beans.ENTRY.riskScore
     external-timeout:
-    - QuoteService.quote
+    - Beans.ENTRY.quote
   java/language-entries:
     entry-java-instance:
     - InstanceEntry.add

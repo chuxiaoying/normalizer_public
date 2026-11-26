@@ -5,7 +5,11 @@
   expect:
   - path:
     - R
-    value: "CASE\n  WHEN completion.is_throw($e_0, RiskUnavailable) THEN -1\n  ELSE $e_0\nEND"
+    value: |-
+      CASE
+        WHEN completion.is_throw($e_0, RiskUnavailable) THEN -1
+        ELSE $e_0
+      END
 - name: rename-external-method
   edits:
   - from: fetchScore(accountId)
@@ -17,14 +21,18 @@
     - S
     value:
     - call:
-        external: riskClient.readScore
+        external: src/RiskService.java#Beans.ENTRY.riskClient.readScore
         args:
         - accountId
         returns: number
         result: $e_0
   - path:
     - R
-    value: "CASE\n  WHEN completion.is_throw($e_0, RiskUnavailable) THEN 0\n  ELSE $e_0\nEND"
+    value: |-
+      CASE
+        WHEN completion.is_throw($e_0, RiskUnavailable) THEN 0
+        ELSE $e_0
+      END
 - name: timeout-fallback
   edits:
   - from: catch (RiskUnavailable ignored)
@@ -36,7 +44,11 @@
   expect:
   - path:
     - R
-    value: "CASE\n  WHEN completion.is_throw($e_0, Timeout) THEN 0\n  ELSE $e_0\nEND"
+    value: |-
+      CASE
+        WHEN completion.is_throw($e_0, Timeout) THEN 0
+        ELSE $e_0
+      END
 - name: explicit-this-still-selects-the-declared-external-field
   edits:
   - from: return riskClient.fetchScore(accountId);
@@ -51,9 +63,15 @@
   - '[NORM-ENGINE-FAILURE]'
 - name: explicitly-qualified-port-ignores-same-named-scalar-local
   edits:
-    - from: 'int riskScore(int accountId) {'
-      to: 'int riskScore(int accountId) { int riskClient = accountId + 1;'
-    - from: 'return riskClient.fetchScore(accountId);'
-      to: 'return this.riskClient.fetchScore(riskClient);'
+  - from: int riskScore(int accountId) {
+    to: int riskScore(int accountId) { int riskClient = accountId + 1;
+  - from: return riskClient.fetchScore(accountId);
+    to: return this.riskClient.fetchScore(riskClient);
   expect:
-    - {path: [S, 0, call, args, 0], value: 'accountId + 1'}
+  - path:
+    - S
+    - 0
+    - call
+    - args
+    - 0
+    value: accountId + 1

@@ -1,0 +1,46 @@
+- name: reverse-call-order
+  edits:
+  - from: |-
+      notifier.register(value);
+              notifier.accept(value);
+    to: |-
+      notifier.accept(value);
+              notifier.register(value);
+  expect:
+  - path:
+    - S
+    value:
+    - call:
+        external: src/NotifyService.java#Beans.ENTRY.notifier.accept
+        args:
+        - value
+        returns: void
+        result: $e_0
+    - call:
+        external: src/NotifyService.java#Beans.ENTRY.notifier.register
+        args:
+        - value
+        returns: void
+        result: $e_1
+- name: increment-after-callback
+  edits:
+  - from: value + 1
+    to: value + 2
+  expect:
+  - path:
+    - R
+    value: value + 2
+- name: notify-without-registration
+  edits:
+  - from: notifier.register(value);
+    to: ''
+  expect:
+  - path:
+    - S
+    value:
+    - call:
+        external: src/NotifyService.java#Beans.ENTRY.notifier.accept
+        args:
+        - value
+        returns: void
+        result: $e_0
