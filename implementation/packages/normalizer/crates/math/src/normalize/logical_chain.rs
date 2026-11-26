@@ -14,18 +14,8 @@ pub(super) fn flatten_or(expr: &Expr) -> Vec<Expr> {
 }
 
 fn flatten(expr: &Expr, target: BinOpKind) -> Vec<Expr> {
-    fn visit(expr: &Expr, target: BinOpKind, terms: &mut Vec<Expr>) {
-        if let Some((op, left, right)) = expr.as_binop() {
-            if op == target {
-                visit(left, target, terms);
-                visit(right, target, terms);
-                return;
-            }
-        }
-        terms.push(expr.clone());
-    }
     let mut terms = Vec::new();
-    visit(expr, target, &mut terms);
+    expr.visit_operator_leaves(target, &mut |term| terms.push(term.clone()));
     terms
 }
 

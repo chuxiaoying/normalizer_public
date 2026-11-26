@@ -574,6 +574,26 @@ impl Expr {
         self.1.structural_hash
     }
 
+    /// Visit conjunction leaves in original left-to-right order.
+    pub fn for_each_conjunct<'a>(&'a self, mut visit: impl FnMut(&'a Expr)) {
+        self.visit_operator_leaves(BinOpKind::And, &mut visit);
+    }
+
+    pub(crate) fn visit_operator_leaves<'a>(
+        &'a self,
+        target: BinOpKind,
+        visit: &mut impl FnMut(&'a Expr),
+    ) {
+        if let Some((op, left, right)) = self.as_binop() {
+            if op == target {
+                left.visit_operator_leaves(target, visit);
+                right.visit_operator_leaves(target, visit);
+                return;
+            }
+        }
+        visit(self);
+    }
+
     /// Walk all sub-expressions (including self) depth-first, calling `f` on each.
     pub fn walk<F: FnMut(&Expr)>(&self, f: &mut F) {
         f(self);
