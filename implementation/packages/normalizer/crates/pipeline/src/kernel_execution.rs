@@ -53,6 +53,12 @@ impl LocalIrInitializer {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct SelectedEntry<'a> {
+    pub(super) id: &'a str,
+    pub(super) syntax: &'a simulator_parser::JavaMethod,
+}
+
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
     pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
@@ -67,7 +73,7 @@ pub(super) struct Engine<'a> {
     pub(super) methods: BTreeMap<String, AdmittedMethod<'a>>,
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
-    pub(super) selected_entry: Option<&'a str>,
+    pub(super) selected_entry: Option<SelectedEntry<'a>>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
     pub(super) checked_ports: BTreeMap<String, actions::CheckedPort>,
@@ -94,7 +100,10 @@ pub(super) struct Engine<'a> {
     pub(super) max_active_calls: usize,
 }
 
-impl Engine<'_> {
+impl<'a> Engine<'a> {
+    pub(super) fn selected_entry_id(&self) -> Option<&'a str> {
+        self.selected_entry.map(|entry| entry.id)
+    }
     fn node_inner(&mut self, n: &Node, env: &mut Env, path: Expr) -> Result<Value> {
         self.budget()?;
         self.node_visits += 1;
@@ -137,7 +146,7 @@ impl Engine<'_> {
                     let input = acquired.scalar()?;
                     let binding = math::domains::composite::input_name(&input)
                         .ok_or_else(|| fail("length requires a direct readonly Vector input"))?;
-                    let entry = self.selected_entry.and_then(|full| full.rsplit('.').next())
+                    let entry = self.selected_entry_id().and_then(|full| full.rsplit('.').next())
                         .ok_or_else(|| fail("length requires a declared entry"))?;
                     need(acquired.ty() == Ty::Vector(Box::new(Ty::Integer))
                         && self.project.parameter_value_types.get(entry).and_then(|params| params.get(binding))
@@ -657,8 +666,8 @@ impl Engine<'_> {
                     // element. Retain the adapter's exact int carrier rule.
                     // State names are not borrowed entry roots.
                     let admitted = (self.project.direct_source || java_component.as_deref() == Some("int"))
-                        && self.selected_entry.and_then(|entry| self.methods.get(entry))
-                            .is_some_and(|method| method.syntax.params().iter().any(|(_, parameter)| {
+                        && self.selected_entry
+                            .is_some_and(|entry| entry.syntax.params().iter().any(|(_, parameter)| {
                                 parameter == root
                             }));
                     if admitted {
@@ -805,7 +814,7 @@ impl Engine<'_> {
                                     && self.source_objects.allocation_owner(&reference).is_none()
                             }) {
                                 crate::preprocess::out_of_source(
-                                    self.selected_entry.unwrap_or(id),
+                                    self.selected_entry_id().unwrap_or(id),
                                     &format!("{interface}.{method}"),
                                 );
                             }
@@ -1283,7 +1292,7 @@ impl Engine<'_> {
         need(!receiver.is_null(), "null interface receiver requires a closed null-completion contract")?;
         let target = format!("{interface}.{member}");
         let owner = self.source_objects.allocation_owner(&receiver)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), &target));
+            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or("Java execution"), &target));
         let class = self.program.find_class(owner).ok_or_else(|| fail("missing selected implementation"))?;
         need(class.interfaces().iter().any(|name| name == interface), "selected receiver does not implement declared interface")?;
         let actual = format!("{owner}.{member}");
@@ -1315,7 +1324,7 @@ impl Engine<'_> {
             "recursive Java call",
         )?;
         let method = self.methods.get(id)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
+            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or("Java execution"), id));
         let m = method.syntax;
         need(m.params().len() == args.len(), "Java arity mismatch")?;
         let parameter_types = method.parameter_types();
@@ -1351,7 +1360,7 @@ impl Engine<'_> {
             if let Some(receiver) = receiver {
                 env.insert("this".into(), receiver);
             }
-            let body = m.body().unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
+            let body = m.body().unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or("Java execution"), id));
             let value = self.block(body, id, &mut env, path)?;
             need(value.ty() == self.methods[id].returns, "Java return type mismatch")?;
             value

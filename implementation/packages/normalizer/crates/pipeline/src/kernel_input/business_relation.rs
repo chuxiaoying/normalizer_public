@@ -130,7 +130,7 @@ impl<'a> Engine<'a> {
         let Some(columns) = self.source_relations.tables.get(name).filter(|_| name == alias) else {
             return false;
         };
-        let Some(entry) = self.selected_entry.and_then(|id| self.methods.get(id)) else {
+        let Some(entry) = self.selected_entry else {
             return false;
         };
         fn closed(expr: &Expr, table: &str, columns: &BTreeMap<String, String>, entry: &simulator_parser::JavaMethod) -> bool {

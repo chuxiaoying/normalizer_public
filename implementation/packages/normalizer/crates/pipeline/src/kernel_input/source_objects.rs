@@ -458,7 +458,7 @@ impl Engine<'_> {
         if completed.contains(&id) { return Ok(()); }
         if !active.insert(id) {
             return Err(format!("[NORM-CYCLIC-CONTENT-EXIT] kind=ABORT location={} problem=cyclic content at the return boundary",
-                self.selected_entry.unwrap_or("source")));
+                self.selected_entry_id().unwrap_or("source")));
         }
         let class = self.program.find_class(owner).ok_or("missing object return layout")?;
         for field in class.fields() {

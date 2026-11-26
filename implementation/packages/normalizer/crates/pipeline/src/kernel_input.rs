@@ -724,9 +724,9 @@ impl Loaded {
         }
         let selected = self.project.entries.iter().find(|s| *s == entry)
             .ok_or_else(|| fail("entry not declared"))?;
-        e.selected_entry = Some(selected.as_str());
-        e.entry_context = self.project.entry_contexts.get(entry);
         let m = e.methods.get(entry).ok_or_else(|| fail("entry method missing"))?.syntax;
+        e.selected_entry = Some(kernel_execution::SelectedEntry { id: selected.as_str(), syntax: m });
+        e.entry_context = self.project.entry_contexts.get(entry);
         let args = m
             .params()
             .iter()

@@ -109,9 +109,9 @@ impl Engine<'_> {
         // instances. Until cross-root alias analysis exists, a mutating source
         // entry may expose only one such root.
         let entry = self.selected_entry.ok_or_else(|| fail("array mutation requires a source entry"))?;
-        let (owner, _) = entry.rsplit_once('.').ok_or_else(|| fail("missing source owner"))?;
-        let parameters = self.methods[entry].syntax.params().iter().filter(|(ty, _)| crate::normalized::numeric_array(ty)).count();
-        let states = if self.methods[entry].syntax.is_static() { 0 } else {
+        let (owner, _) = entry.id.rsplit_once('.').ok_or_else(|| fail("missing source owner"))?;
+        let parameters = entry.syntax.params().iter().filter(|(ty, _)| crate::normalized::numeric_array(ty)).count();
+        let states = if entry.syntax.is_static() { 0 } else {
             self.program.find_class(owner).map_or(0, |class| class.fields().iter().filter(|field|
                 crate::normalized::entry_state(class, field) && crate::normalized::numeric_array(field.java_type())).count())
         };
