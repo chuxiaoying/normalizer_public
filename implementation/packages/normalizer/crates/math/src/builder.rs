@@ -528,6 +528,29 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
         return false;
     }
 
+    let publish_coverage = |reason: &str| {
+        if let Some(start) = profile_start {
+            crate::profile::event_elapsed_if_slow(
+                "math.proof.conditions_cover_all",
+                &format!("conds={} result={reason}", relevant.len()),
+                start,
+            );
+        }
+        conditions_cover_cache_insert(&relevant, true);
+        emit_proof_rule_event(
+            "math.proof.conditions_cover_all",
+            proof_input_size,
+            1,
+            profile_start,
+            false,
+            true,
+            false,
+            true,
+            None,
+            &[("condition_count", relevant.len().to_string())],
+        );
+        true
+    };
     let result = if let Some(groups) = independent_condition_groups(&relevant) {
         crate::profile::count(
             &CONDITIONS_COVER_GROUP_SPLITS,
@@ -549,27 +572,7 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
                 "math.proof.conditions_cover_all.direct_complement",
                 |_| format!("conds={}", relevant.len()),
             );
-            if let Some(start) = profile_start {
-                crate::profile::event_elapsed_if_slow(
-                    "math.proof.conditions_cover_all",
-                    &format!("conds={} result=true_by_direct_complement", relevant.len()),
-                    start,
-                );
-            }
-            conditions_cover_cache_insert(&relevant, true);
-            emit_proof_rule_event(
-                "math.proof.conditions_cover_all",
-                proof_input_size,
-                1,
-                profile_start,
-                false,
-                true,
-                false,
-                true,
-                None,
-                &[("condition_count", relevant.len().to_string())],
-            );
-            return true;
+            return publish_coverage("true_by_direct_complement");
         }
 
         match boolean_truth_table_covers_all_precheck(&relevant) {
@@ -579,27 +582,7 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
                     "math.proof.conditions_cover_all.truth_table_precheck",
                     |_| format!("conds={} result=true", relevant.len()),
                 );
-                if let Some(start) = profile_start {
-                    crate::profile::event_elapsed_if_slow(
-                        "math.proof.conditions_cover_all",
-                        &format!("conds={} result=true_by_truth_table", relevant.len()),
-                        start,
-                    );
-                }
-                conditions_cover_cache_insert(&relevant, true);
-                emit_proof_rule_event(
-                    "math.proof.conditions_cover_all",
-                    proof_input_size,
-                    1,
-                    profile_start,
-                    false,
-                    true,
-                    false,
-                    true,
-                    None,
-                    &[("condition_count", relevant.len().to_string())],
-                );
-                return true;
+                return publish_coverage("true_by_truth_table");
             }
             TruthTableCoverage::DoesNotCoverAllExact => {
                 crate::profile::count(
@@ -612,27 +595,7 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
             TruthTableCoverage::Unknown => {
                 let normalized_disjunction = normalized_disjunction_for_conditions(&relevant);
                 if normalized_disjunction.as_bool() == Some(true) {
-                    if let Some(start) = profile_start {
-                        crate::profile::event_elapsed_if_slow(
-                            "math.proof.conditions_cover_all",
-                            &format!("conds={} result=true_by_normalize", relevant.len()),
-                            start,
-                        );
-                    }
-                    conditions_cover_cache_insert(&relevant, true);
-                    emit_proof_rule_event(
-                        "math.proof.conditions_cover_all",
-                        proof_input_size,
-                        1,
-                        profile_start,
-                        false,
-                        true,
-                        false,
-                        true,
-                        None,
-                        &[("condition_count", relevant.len().to_string())],
-                    );
-                    return true;
+                    return publish_coverage("true_by_normalize");
                 }
 
                 // The precheck already exhausted the same input's truth
@@ -963,16 +926,6 @@ fn structural_implication(active: &Expr, goal: &Expr, budget: &mut usize) -> boo
             return true;
         }
     }
-    if let Some((BinOpKind::Or, l, r)) = active.as_binop() {
-        if structural_implication(l, goal, budget) && structural_implication(r, goal, budget) {
-            return true;
-        }
-    }
-    if let Some((BinOpKind::Or, l, r)) = goal.as_binop() {
-        if structural_implication(active, l, budget) || structural_implication(active, r, budget) {
-            return true;
-        }
-    }
     if let Some((BinOpKind::And, l, r)) = active.as_binop() {
         return structural_implication(l, goal, budget) || structural_implication(r, goal, budget);
     }
@@ -1024,16 +977,6 @@ fn evaluate_with_exact_facts(expression: &Expr, facts: &HashMap<Expr, bool>) -> 
     }
     if let Some((UnaryOpKind::Not, operand)) = expression.as_unary_op() {
         return evaluate_with_exact_facts(operand, facts).map(|value| !value);
-    }
-    if let Some(branches) = expression.as_case_when() {
-        for (condition, value) in branches {
-            match evaluate_with_exact_facts(condition, facts) {
-                Some(true) => return evaluate_with_exact_facts(value, facts),
-                Some(false) => continue,
-                None => return None,
-            }
-        }
-        return None;
     }
     let Some((op, left, right)) = expression.as_binop() else {
         return None;
@@ -1114,22 +1057,28 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
         );
         return cached;
     }
+    let finish = |result: bool, skip_reason: Option<&str>, budget_skipped: bool| {
+        // A depleted run cannot supply a durable proof result.
+        if skip_reason != Some("run_proof_budget") {
+            path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, result);
+        }
+        emit_path_implies_event(
+            active,
+            expr,
+            usize::from(result),
+            profile_start,
+            false,
+            true,
+            budget_skipped,
+            result,
+            skip_reason,
+        );
+        result
+    };
     let mut exact_facts = HashMap::new();
     if exact_active_facts(active, &mut exact_facts) {
         if let Some(result) = evaluate_with_exact_facts(expr, &exact_facts) {
-            path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, result);
-            emit_path_implies_event(
-                active,
-                expr,
-                usize::from(result),
-                profile_start,
-                false,
-                true,
-                false,
-                result,
-                Some("exact_active_facts"),
-            );
-            return result;
+            return finish(result, Some("exact_active_facts"), false);
         }
     }
     crate::profile::count(
@@ -1149,18 +1098,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
                 )
             },
         );
-        emit_path_implies_event(
-            active,
-            expr,
-            0,
-            profile_start,
-            false,
-            true,
-            true,
-            false,
-            Some("run_proof_budget"),
-        );
-        return false;
+        return finish(false, Some("run_proof_budget"), true);
     }
     let structural_proof = structural_implication(active, expr, &mut 2048);
     // Path implication is also an optimization proof. Avoid constructing a
@@ -1184,19 +1122,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
                 )
             },
         );
-        path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, false);
-        emit_path_implies_event(
-            active,
-            expr,
-            0,
-            profile_start,
-            false,
-            true,
-            true,
-            false,
-            Some("input_size_budget"),
-        );
-        return false;
+        return finish(false, Some("input_size_budget"), true);
     }
     // Propositional validity is sufficient even when the atoms are arithmetic
     // comparisons. A counterexample is conclusive only for independent Boolean
@@ -1209,34 +1135,10 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     };
     match coverage {
         TruthTableCoverage::CoversAll => {
-            path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, true);
-            emit_path_implies_event(
-                active,
-                expr,
-                1,
-                profile_start,
-                false,
-                true,
-                false,
-                true,
-                None,
-            );
-            return true;
+            return finish(true, None, false);
         }
         TruthTableCoverage::DoesNotCoverAllExact => {
-            path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, false);
-            emit_path_implies_event(
-                active,
-                expr,
-                0,
-                profile_start,
-                false,
-                true,
-                false,
-                false,
-                None,
-            );
-            return false;
+            return finish(false, None, false);
         }
         TruthTableCoverage::Unknown => {}
     }
@@ -1246,19 +1148,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
             "math.proof.path_implies.unrelated_skip",
             |_| format!("active_size={} expr_size={}", active.size(), expr.size()),
         );
-        path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, false);
-        emit_path_implies_event(
-            active,
-            expr,
-            0,
-            profile_start,
-            false,
-            true,
-            false,
-            false,
-            Some("unrelated_atoms"),
-        );
-        return false;
+        return finish(false, Some("unrelated_atoms"), false);
     }
     let counterexample_conditions = [active.clone(), not(expr.clone())];
     if boolean_conditions_have_independent_model(&counterexample_conditions) {
@@ -1267,19 +1157,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
             "math.proof.path_implies.independent_counterexample",
             |_| format!("active_size={} expr_size={}", active.size(), expr.size()),
         );
-        path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, false);
-        emit_path_implies_event(
-            active,
-            expr,
-            0,
-            profile_start,
-            false,
-            true,
-            false,
-            false,
-            Some("independent_counterexample"),
-        );
-        return false;
+        return finish(false, Some("independent_counterexample"), false);
     }
     crate::profile::count(
         &PATH_IMPLIES_NORMALIZE_FALLBACKS,
@@ -1290,19 +1168,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     // conjunction intact lets the interval/contradiction solver use its facts
     // without distributing the negation of a large path into a disjunction.
     let result = crate::normalize(and(active.clone(), not(expr.clone()))).as_bool() == Some(false);
-    path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, result);
-    emit_path_implies_event(
-        active,
-        expr,
-        usize::from(result),
-        profile_start,
-        false,
-        true,
-        false,
-        result,
-        None,
-    );
-    result
+    finish(result, None, false)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
