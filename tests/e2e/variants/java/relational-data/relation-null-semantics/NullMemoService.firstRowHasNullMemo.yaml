@@ -13,3 +13,34 @@
   expect:
     - path: [R]
       value: 'false'
+
+- name: selected-nonnull-first-row-still-needs-the-presence-guard
+  edits:
+    - {from: 'return match.memo == null;', to: 'return match.memo != null;'}
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) != null
+          ELSE false
+        END
+
+- name: a-null-filter-tests-row-existence-without-observing-a-field
+  edits:
+    - {from: 'order by row.id', to: 'where row.memo IS NULL order by row.id'}
+    - from: |-
+        if (match != null) return match.memo == null;
+                return false;
+      to: 'return match != null;'
+  expect:
+    - {path: [R], value: 'EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.memo IS NULL)'}
+
+- name: a-nonnull-filter-still-distinguishes-empty-relation-from-an-empty-string
+  edits:
+    - {from: 'order by row.id', to: 'where row.memo IS NOT NULL order by row.id'}
+    - from: |-
+        if (match != null) return match.memo == null;
+                return false;
+      to: 'return match != null;'
+  expect:
+    - {path: [R], value: 'EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.memo IS NOT NULL)'}

@@ -114,3 +114,34 @@
   edits:
     - from: 'return active && probe.read(value) > 0;'
       to: 'return !(!active || probe.read(value) <= 0);'
+
+- name: short-circuit-or-remains-guarded-in-a-later-publication-argument
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: |-
+        boolean allowed = active || probe.read(value) > 0;
+                probe.publish(allowed);
+                return allowed;
+    - from: 'interface Probe { int read(int value); }'
+      to: 'interface Probe { int read(int value); void publish(boolean allowed); }'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: probe.read, args: [value], returns: number, result: '$e_0', when: 'NOT (active)'}
+        - call: {external: probe.publish, args: ['CASE WHEN active THEN true ELSE $e_0 > 0 END'], returns: void, result: '$e_1'}
+    - {path: [R], value: 'CASE WHEN active THEN true ELSE $e_0 > 0 END'}
+
+- name: effect-guard-uses-or-result-not-an-unbound-probe
+  edits:
+    - from: 'return active && probe.read(value) > 0;'
+      to: |-
+        if (active || probe.read(value) > 0) probe.signal();
+                return true;
+    - from: 'interface Probe { int read(int value); }'
+      to: 'interface Probe { int read(int value); void signal(); }'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: probe.read, args: [value], returns: number, result: '$e_0', when: 'NOT (active)'}
+        - call: {external: probe.signal, args: [], returns: void, result: '$e_1', when: 'CASE WHEN active THEN true ELSE $e_0 > 0 END'}
+    - {path: [R], value: 'true'}
