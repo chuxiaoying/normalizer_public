@@ -372,11 +372,8 @@ impl<'a> Parser<'a> {
         Err(self.err("unclosed '{'"))
     }
 
-    pub(crate) fn skip_balanced_parens(&mut self) -> Result<&'a str, ParseError> {
-        self.skip_ws();
-        if !self.eat_char(b'(') {
-            return Err(self.err("expected '('"));
-        }
+    fn skip_balanced_parens(&mut self) -> Result<&'a str, ParseError> {
+        self.pos += 1; // read_annotations has already matched the opening parenthesis.
         let start = self.pos;
         let mut depth: i32 = 1;
         while let Some(c) = self.peek() {

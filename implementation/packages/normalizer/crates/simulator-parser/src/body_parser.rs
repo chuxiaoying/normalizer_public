@@ -991,10 +991,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<JavaExpr>, ParseError> {
-        self.skip_ws();
-        if !self.eat_char(b'(') {
-            return Err(self.err("expected '(' for arg list"));
-        }
+        self.pos += 1; // Callers have already matched the opening parenthesis.
         let mut args = Vec::new();
         self.skip_ws();
         if self.peek() == Some(b')') {
