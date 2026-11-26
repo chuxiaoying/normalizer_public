@@ -170,10 +170,10 @@ R: |-
     (
       SELECT bill.amount
       FROM bill
-      WHERE bill.account_id = :accountId
-        AND bill.due_date <= :today
+      WHERE bill.account_id == accountId
+        AND bill.due_date <= today
         AND bill.amount > 0
-        AND bill.status = 'OPEN'
+        AND bill.status == "OPEN"
       ORDER BY bill.priority, bill.due_date, bill.id
       LIMIT 1
     ),

@@ -150,9 +150,9 @@ R: |-
     SUM(
       SELECT bill.amount
       FROM bill
-      WHERE bill.account_id = :accountId
+      WHERE bill.account_id == accountId
         AND bill.amount > 0
-        AND bill.status = 'OPEN'
+        AND bill.status == "OPEN"
     ),
     0
   )
