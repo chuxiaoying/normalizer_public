@@ -526,6 +526,11 @@ impl<'a> Engine<'a> {
                     let condition=self.condition_under_path(test.scalar()?,&path);
                     self.source_if(condition,then_block,else_block.as_deref().unwrap_or_default(),id,env,path)?;
                 }
+                S::Switch { selector, cases, default } => {
+                    let selector = self.java_expr(selector, id, env, path.clone())?;
+                    need(selector.ty() == Ty::Integer, "switch requires an exact integral selector")?;
+                    self.source_switch(selector.scalar()?, cases, default, id, env, path)?;
+                }
                 S::For {init,cond,update,body} => {
                     if let Some(rectangle) = crate::normalized::fixed_for::RectangularCounter::from_for(s) {
                         self.execute_rectangular_counter(rectangle, env)?;

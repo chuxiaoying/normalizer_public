@@ -19,6 +19,25 @@ impl Engine<'_> {
         Ok(())
     }
 
+    pub(super) fn source_switch(
+        &mut self, selector: Expr,
+        cases: &[(simulator_parser::ast::JavaExpr, Vec<S>)],
+        default: &[S], id: &str, env: &mut Env, path: Expr,
+    ) -> Result<()> {
+        let Some(((label, body), rest)) = cases.split_first() else {
+            return self.source_scope(default, id, env, path);
+        };
+        use simulator_parser::ast::{JavaExpr, JavaLit};
+        let label = match label {
+            JavaExpr::Lit(JavaLit::Int(value)) => i64::from(*value),
+            JavaExpr::Lit(JavaLit::Char(value)) => i64::from(*value),
+            _ => return Err(fail("switch label requires an int or char literal")),
+        };
+        let condition = self.condition_under_path(b::eq(selector.clone(), b::lit_int(label)), &path);
+        self.source_branch(condition, body, id, env, path,
+            |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))
+    }
+
     pub(super) fn source_if(
         &mut self,
         condition: Expr,
@@ -28,8 +47,17 @@ impl Engine<'_> {
         env: &mut Env,
         path: Expr,
     ) -> Result<()> {
+        self.source_branch(condition, yes, id, env, path,
+            |engine, locals, path| engine.source_scope(no, id, locals, path))
+    }
+
+    fn source_branch(
+        &mut self, condition: Expr, yes: &[S], id: &str, env: &mut Env, path: Expr,
+        otherwise: impl FnOnce(&mut Self, &mut Env, Expr) -> Result<()>,
+    ) -> Result<()> {
         if let Some(truth) = condition.as_bool() {
-            return self.source_scope(if truth { yes } else { no }, id, env, path);
+            return if truth { self.source_scope(yes, id, env, path) }
+                else { otherwise(self, env, path) };
         }
         let parent = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
         let original_store = self.realtime_store.clone();
@@ -45,12 +73,7 @@ impl Engine<'_> {
         let yes_writes = self.realtime_store.suffix_from(original_store.len());
         self.realtime_store = original_store.clone();
         let mut no_env = env.clone();
-        self.source_steps(
-            no,
-            id,
-            &mut no_env,
-            math::normalize(b::and(path, b::not(condition.clone()))),
-        )?;
+        otherwise(self, &mut no_env, math::normalize(b::and(path, b::not(condition.clone()))))?;
         let no_completion = self.realtime_completion.clone();
         let no_writes = self.realtime_store.suffix_from(original_store.len());
         self.realtime_store = original_store;

@@ -91,7 +91,10 @@ impl<'a> Parser<'a> {
         if self.eat_keyword("synchronized") {
             return Err(self.err_at(synchronized_at, "[JAVA-MONITOR] synchronized block requires explicit preprocessing"));
         }
-        for keyword in ["switch", "do", "assert"] {
+        if self.eat_keyword("switch") {
+            return self.parse_switch();
+        }
+        for keyword in ["do", "assert"] {
             if self.eat_keyword(keyword) {
                 return Err(self.err(&format!("{keyword} requires explicit preprocessing")));
             }
@@ -178,6 +181,76 @@ impl<'a> Parser<'a> {
             then_block: then_body,
             else_block: else_body,
         })
+    }
+
+    fn parse_switch(&mut self) -> Result<JavaStatement, ParseError> {
+        self.require_delimiter(b'(', "expected '(' after switch")?;
+        let selector = self.parse_expression()?;
+        self.require_delimiter(b')', "expected ')' after switch selector")?;
+        self.require_delimiter(b'{', "expected switch body")?;
+        let mut cases = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut default = None;
+        while !self.eat_char(b'}') {
+            let label = if self.eat_keyword("case") {
+                let expression = self.parse_expression()?;
+                let key = match &expression {
+                    JavaExpr::Lit(JavaLit::Int(value)) => *value,
+                    JavaExpr::Lit(JavaLit::Char(value)) => i32::from(*value),
+                    _ => return Err(self.err("[JAVA-SWITCH] case requires a closed int or char literal")),
+                };
+                if !seen.insert(key) {
+                    return Err(self.err("[JAVA-SWITCH] duplicate case label"));
+                }
+                Some(expression)
+            } else if self.eat_keyword("default") {
+                if default.is_some() {
+                    return Err(self.err("[JAVA-SWITCH] duplicate default label"));
+                }
+                None
+            } else {
+                return Err(self.err("[JAVA-SWITCH] expected case or default label"));
+            };
+            self.require_delimiter(b':', "expected ':' after switch label")?;
+            let mut body = Vec::new();
+            let mut breaks = false;
+            loop {
+                self.skip_ws();
+                let next = self.pos;
+                let boundary = self.peek() == Some(b'}')
+                    || self.eat_keyword("case") || self.eat_keyword("default");
+                self.pos = next;
+                if boundary { break; }
+                if self.eat_keyword("break") {
+                    self.require_semicolon("switch break")?;
+                    breaks = true;
+                    break;
+                }
+                let statement = self.parse_statement(&mut body)?;
+                body.push(statement);
+            }
+            if body.iter().any(|statement| matches!(statement, JavaStatement::VarDecl { .. })) {
+                return Err(self.err("[JAVA-SWITCH] case-local declarations require an explicit block"));
+            }
+            fn exits(statement: &JavaStatement) -> bool {
+                match statement {
+                    JavaStatement::Return(_) | JavaStatement::Throw(_) => true,
+                    JavaStatement::Block(body) => body.last().is_some_and(exits),
+                    JavaStatement::If { then_block, else_block: Some(other), .. } =>
+                        then_block.last().is_some_and(exits) && other.last().is_some_and(exits),
+                    _ => false,
+                }
+            }
+            // Only independent groups are presently admitted; never interpret
+            // a colon-marked fall-through as an independent conditional arm.
+            self.skip_ws();
+            if !breaks && self.peek() != Some(b'}') && !body.last().is_some_and(exits) {
+                return Err(self.err("[JAVA-SWITCH] fall-through between case groups is not yet supported"));
+            }
+            if let Some(label) = label { cases.push((label, body)); }
+            else { default = Some(body); }
+        }
+        Ok(JavaStatement::Switch { selector, cases, default: default.unwrap_or_default() })
     }
 
     fn parse_while(&mut self) -> Result<JavaStatement, ParseError> {

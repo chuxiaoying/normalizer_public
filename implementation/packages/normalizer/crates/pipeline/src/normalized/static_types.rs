@@ -526,6 +526,24 @@ impl Admission<'_> {
                     self.block(then_block, &mut scope.clone())?;
                     if let Some(body) = else_block { self.block(body, &mut scope.clone())?; }
                 }
+                S::Switch { selector, cases, default } => {
+                    let actual = self.expression(selector, scope)?;
+                    if actual != Kind::Number || self.integer_width(selector, scope) != Some(IntegerWidth::IntFamily) {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                            "switch selector requires a proven byte, short, char or int value"));
+                    }
+                    for (label, body) in cases {
+                        let target = self.declared_type(selector, scope);
+                        self.check_assignment_narrowing(target.as_ref(), label, scope, "switch label")?;
+                        if matches!(target, Some(JavaType::Primitive(name)) if name == "char")
+                            && !Self::signed_int_literal(label).is_some_and(|c| u16::try_from(c).is_ok())
+                        {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE", "switch label is outside the Java char range"));
+                        }
+                        self.block(body, &mut scope.clone())?;
+                    }
+                    self.block(default, &mut scope.clone())?;
+                }
                 S::Try { body, catches, finally_block } => {
                     self.block(body, &mut scope.clone())?;
                     for handler in catches {

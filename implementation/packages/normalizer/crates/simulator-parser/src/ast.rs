@@ -253,6 +253,13 @@ pub enum JavaStatement {
         else_block: Option<Vec<JavaStatement>>,
     },
 
+    /// A native bounded switch with one dispatch expression and closed arms.
+    Switch {
+        selector: JavaExpr,
+        cases: Vec<(JavaExpr, Vec<JavaStatement>)>,
+        default: Vec<JavaStatement>,
+    },
+
     /// while 循环
     While {
         cond: JavaExpr,

@@ -768,6 +768,13 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                     statements(b, at, calls, catch_admission, inside_finally)?;
                 }
             }
+            S::Switch { selector, cases, default } => {
+                expr(selector, at, calls)?;
+                for (_, body) in cases {
+                    statements(body, at, calls, catch_admission, inside_finally)?;
+                }
+                statements(default, at, calls, catch_admission, inside_finally)?;
+            }
             S::ForEach { var_type, var_name, iterable, body }
                 if integral(var_type) && array_sum(var_name, body).is_some() => {
                 expr(iterable, at, calls)?;
