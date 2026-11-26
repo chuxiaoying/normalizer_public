@@ -75,6 +75,8 @@ pub(super) struct Engine<'a> {
     pub(super) steps: usize,
     pub(super) selected_entry: Option<SelectedEntry<'a>>,
     pub(super) public_source_entry: Option<&'a str>,
+    pub(super) source_root: Option<&'a Path>,
+    pub(super) active_static_receiver: Option<(String, String)>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
     pub(super) checked_ports: BTreeMap<String, actions::CheckedPort>,
@@ -938,6 +940,39 @@ impl<'a> Engine<'a> {
                 method,
                 args,
             } => {
+                if self.project.direct_source && self.source_root.is_some() {
+                    let caller = id.rsplit_once('.').unwrap().0;
+                    let candidate = match target.as_deref() {
+                        Some(J::Ident(field)) if !env.contains_key(field) =>
+                            self.program.find_class(caller).map(|owner| (owner, field)),
+                        Some(J::FieldAccess { target, field }) => match target.as_ref() {
+                            J::Ident(owner) if owner != "this" && !env.contains_key(owner) =>
+                                self.program.find_class(owner).map(|owner| (owner, field)),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    if let Some((root, field)) = candidate {
+                        if let Some((owner, declaration, key)) =
+                            super::inert_instance_method(self.program, root, field, method, args.len())
+                        {
+                            let source = Path::new(root.source_file().ok_or("missing static receiver source")?);
+                            let path_from_root = source.strip_prefix(self.source_root.unwrap())
+                                .map_err(|_| "static receiver source outside project")?;
+                            let locator = format!("{}#{}.{field}", path_from_root.display(), root.full_name());
+                            let owner = owner.full_name();
+                            for ((expected, _), actual) in declaration.params().iter().zip(args) {
+                                self.source_reference_assignment(expected, actual, id)?;
+                            }
+                            let values = args.iter().map(|arg| self.java_expr(arg, id, env, path.clone()))
+                                .collect::<Result<Vec<_>>>()?;
+                            let previous = self.active_static_receiver.replace((owner, locator));
+                            let call = self.java_call_with_receiver(&key, values, path, None, true);
+                            self.active_static_receiver = previous;
+                            return call;
+                        }
+                    }
+                }
                 let owner = match target {
                     None => id.rsplit_once('.').unwrap().0,
                     Some(t) => crate::normalized::source_ports::receiver(t)
@@ -985,16 +1020,24 @@ impl<'a> Engine<'a> {
                 let port = format!("{}.{}", id.rsplit_once('.').unwrap().0, callee);
                 if self.project.source_ports.contains_key(&port) {
                     need(target.is_some() && !self.methods[id].syntax.is_static(), "external instance field requires a bound receiver")?;
-                    if self.project.direct_source {
+                    let rooted_identity = if self.project.direct_source {
                         let owner = id.rsplit_once('.').map(|(owner, _)| owner);
-                        need(!env.contains_key("this") && self.selected_entry.is_some_and(|entry|
-                            !entry.syntax.is_static() && entry.id.rsplit_once('.').map(|(owner, _)| owner) == owner
-                        ), "external port requires the statically bound entry receiver")?;
-                    }
+                        need(!env.contains_key("this"), "external port requires a statically bound receiver")?;
+                        if let Some((receiver_owner, receiver)) = &self.active_static_receiver {
+                            need(Some(receiver_owner.as_str()) == owner, "external port receiver owner mismatch")?;
+                            let endpoint = &self.project.source_ports[&port].endpoint;
+                            Some(format!("{receiver}.{endpoint}"))
+                        } else {
+                            need(self.selected_entry.is_some_and(|entry|
+                                !entry.syntax.is_static() && entry.id.rsplit_once('.').map(|(owner, _)| owner) == owner
+                            ), "external port requires the statically bound entry receiver")?;
+                            None
+                        }
+                    } else { None };
                     let values = args.iter()
                         .map(|arg| self.java_expr(arg, id, env, path.clone()))
                         .collect::<Result<_>>()?;
-                    return self.source_port_call(&port, values, path);
+                    return self.source_port_call(&port, rooted_identity, values, path);
                 }
                 need(!field_receiver, "field receiver is not a declared external port")?;
                 if let Some(declaration) = self.methods.get(&callee) {

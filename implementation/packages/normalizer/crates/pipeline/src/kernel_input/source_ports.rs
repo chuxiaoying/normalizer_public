@@ -83,6 +83,7 @@ impl Engine<'_> {
     pub(super) fn source_port_call(
         &mut self,
         id: &str,
+        rooted_identity: Option<String>,
         args: Vec<Value>,
         path: Expr,
     ) -> Result<Value> {
@@ -105,7 +106,7 @@ impl Engine<'_> {
         let receipt = realtime_state::EffectReceipt::tagged(bind);
         let response = receipt.response().clone();
         self.realtime_effects
-            .record_port(guard.clone(), id, id, values, receipt, spec.clone());
+            .record_source_port(guard.clone(), id, values, receipt, spec.clone(), rooted_identity);
         if spec.throwing() {
             // These failures are disjoint tags of this one receipt. Install
             // the partition together: list order is not exception priority.

@@ -334,7 +334,12 @@ impl EffectReceipt {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectOperation {
-    Port { id: String, receipt: EffectReceipt, completion: Arc<PortSpec> },
+    Port {
+        id: String,
+        receipt: EffectReceipt,
+        completion: Arc<PortSpec>,
+        source_identity: Option<String>,
+    },
     Sql { statement: super::business_sql::SqlEffect, receipt: EffectReceipt },
     StateWrite { target: Vec<String>, value: Expr },
     ArrayWrite { root: String, index: i64, value: Expr },
@@ -375,11 +380,25 @@ impl EffectSequence {
         receipt: EffectReceipt,
         completion: Arc<PortSpec>,
     ) {
+        self.record_port_occurrence(guard, operation.into(), callsite.into(), args, receipt, completion, None);
+    }
+
+    pub(super) fn record_source_port(
+        &mut self, guard: Expr, id: &str, args: Vec<Expr>, receipt: EffectReceipt,
+        completion: Arc<PortSpec>, source_identity: Option<String>,
+    ) {
+        self.record_port_occurrence(guard, id.into(), id.into(), args, receipt, completion, source_identity);
+    }
+
+    fn record_port_occurrence(
+        &mut self, guard: Expr, id: String, callsite: String, args: Vec<Expr>,
+        receipt: EffectReceipt, completion: Arc<PortSpec>, source_identity: Option<String>,
+    ) {
         self.events.push(EffectEvent {
             guard: math::normalize(guard),
             sequence: self.events.len(),
-            operation: EffectOperation::Port { id: operation.into(), receipt, completion },
-            callsite: callsite.into(),
+            operation: EffectOperation::Port { id, receipt, completion, source_identity },
+            callsite,
             args,
         });
     }

@@ -168,7 +168,7 @@ pub(super) fn observations(
                 effects.push(item);
                 continue;
             }
-            EffectOperation::Port { id, receipt, completion: spec } => {
+            EffectOperation::Port { id, receipt, completion: spec, source_identity } => {
                 let contract = project
                     .ports
                     .get(id)
@@ -210,7 +210,8 @@ pub(super) fn observations(
                     event.arguments().iter().map(|arg| crate::format_expr_with_ctx(arg, ctx)).collect()
                 });
                 let endpoint = if project.direct_source {
-                    entry.direct_port_identity(&contract.endpoint)?
+                    source_identity.clone()
+                        .map_or_else(|| entry.direct_port_identity(&contract.endpoint), Ok)?
                 } else {
                     contract.endpoint.clone()
                 };

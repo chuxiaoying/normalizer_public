@@ -758,6 +758,13 @@ pub(crate) fn validate_with_receiver(
                     continue;
                 }
                 SourceCall::Method { owner, member } => (owner, member),
+                SourceCall::StaticReceiver { owner: root, field, member } => {
+                    let target = program.find_class(&root)
+                        .and_then(|root| crate::kernel_input::inert_instance_method(program, root, &field, &member, arity))
+                        .ok_or_else(|| error("NORM-UNBOUND-CALL", &format!("{id} -> {root}.{field}.{member}/{arity}")))?;
+                    targets.push(target.2);
+                    continue;
+                }
                 SourceCall::Constructor(owner) => {
                     let class = program
                         .find_class(&owner)
@@ -801,6 +808,12 @@ pub(crate) fn validate_with_receiver(
                 // present in this source. Runtime checks the selected
                 // allocation, and the active stack still rejects cycles.
                 continue;
+            }
+            if !m.params().iter().any(|(_, parameter)| parameter == &target_owner) {
+                if let Some((_, _, key)) = crate::kernel_input::inert_instance_method(program, owner, &target_owner, &target_member, arity) {
+                    targets.push(key);
+                    continue;
+                }
             }
             if program.find_class(&target_owner).is_some_and(|class| {
                 class.methods().iter().filter(|method| method.name() == target_member).count() > 1
@@ -854,6 +867,7 @@ pub(crate) fn validate_with_receiver(
 enum SourceCall {
     Resolved(String),
     Method { owner: String, member: String },
+    StaticReceiver { owner: String, field: String, member: String },
     Constructor(String),
 }
 
@@ -1215,11 +1229,24 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
             method,
             args,
         } => {
-            let owner = match target {
-                None => at.rsplit_once('.').unwrap().0,
-                Some(t) => source_ports::receiver(t).ok_or_else(|| error("NORM-CALL-TARGET", at))?,
+            let call = match target {
+                Some(t) => match t.as_ref() {
+                    E::FieldAccess { target, field } => {
+                        let E::Ident(owner) = target.as_ref() else { return Err(error("NORM-CALL-TARGET", at)); };
+                        if owner == "this" {
+                            SourceCall::Method { owner: field.clone(), member: method.clone() }
+                        } else {
+                            SourceCall::StaticReceiver { owner: owner.clone(), field: field.clone(), member: method.clone() }
+                        }
+                    }
+                    t => SourceCall::Method {
+                        owner: source_ports::receiver(t).ok_or_else(|| error("NORM-CALL-TARGET", at))?.into(),
+                        member: method.clone(),
+                    },
+                },
+                None => SourceCall::Method { owner: at.rsplit_once('.').unwrap().0.into(), member: method.clone() },
             };
-            calls.push((SourceCall::Method { owner: owner.into(), member: method.clone() }, args.len()));
+            calls.push((call, args.len()));
             for a in args {
                 expr(a, at, calls)?;
             }

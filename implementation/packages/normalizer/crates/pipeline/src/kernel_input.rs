@@ -587,6 +587,8 @@ impl Loaded {
             steps: 0,
             selected_entry: None,
             public_source_entry: None,
+            source_root: self.source_entry.as_ref().map(|source| source.project_root.as_path()),
+            active_static_receiver: None,
             entry_context: None,
             state_roots: BTreeMap::new(),
             checked_ports,
@@ -810,7 +812,7 @@ mod member_choice;
 mod temporal_graph;
 mod business_entry;
 mod source_entry;
-pub(crate) use source_entry::{assembly_allocation as inert_data_allocation, inert_singleton};
+pub(crate) use source_entry::{assembly_allocation as inert_data_allocation, inert_singleton, inert_instance_method};
 mod business_event;
 pub(crate) mod business_relation;
 mod source_control;

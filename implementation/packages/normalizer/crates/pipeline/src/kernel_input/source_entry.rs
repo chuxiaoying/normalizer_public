@@ -2,11 +2,12 @@
 use super::Result;
 use simulator_parser::{JavaClass, JavaExpr, JavaField, JavaLit, JavaProgram, JavaStatement, JavaType};
 use std::collections::BTreeSet;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug)]
 pub(super) struct SourceEntry {
     pub(super) locator: String,
+    pub(super) project_root: PathBuf,
     pub(super) target: String,
     pub(super) receiver: Option<SourceReceiver>,
 }
@@ -148,6 +149,27 @@ pub(crate) fn inert_singleton(program: &JavaProgram, owner: &JavaClass, field: &
     java_type == field.java_type() && SourceReceiver::certify(program, target, initializer).is_ok()
 }
 
+/// Find a statically assembled receiver invoked inside ordinary Java code.
+pub(crate) fn inert_instance_method<'a>(
+    program: &'a JavaProgram, owner: &JavaClass, field: &str, name: &str, arity: usize,
+) -> Option<(&'a JavaClass, &'a simulator_parser::JavaMethod, String)> {
+    let field = owner.fields().iter().find(|decl| decl.name() == field)?;
+    if !inert_singleton(program, owner, field) { return None; }
+    let JavaType::Class(target) = field.java_type() else { return None; };
+    let class = program.find_class(target)?;
+    // A distinct static receiver may use its certified external bindings.
+    // A mutable E snapshot needs a separate rooted identity and is not
+    // interchangeable with the selected entry receiver's existing state.
+    if class.fields().iter().any(|f| !f.is_static() && !crate::normalized::source_ports::marked(class, f)) {
+        return None;
+    }
+    let mut candidates = class.methods().iter().enumerate().filter(|(_, m)|
+        m.name() == name && m.arity() == arity && !m.is_constructor());
+    let (index, method) = candidates.next()?;
+    (candidates.next().is_none() && !method.is_static() && method.body().is_some()).then(||
+        (class, method, crate::normalized::method_key(class, index, method)))
+}
+
 fn assembly_argument(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {
     match (ty, arg) {
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Bool(_))) => name == "boolean",
@@ -255,7 +277,7 @@ impl SourceEntry {
         if method.is_static() != receiver.is_none() {
             return Err(fail("invocation does not match the entry method's static/instance declaration"));
         }
-        Ok(Self { locator: locator.into(), target: crate::normalized::method_key(target_class, index, method), receiver })
+        Ok(Self { locator: locator.into(), project_root: root.to_path_buf(), target: crate::normalized::method_key(target_class, index, method), receiver })
     }
 }
 

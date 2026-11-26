@@ -166,6 +166,22 @@ impl Admission<'_> {
     }
 
     fn method<'a>(&'a self, target: Option<&E>, method: &str, arity: usize, scope: &Scope) -> Option<&'a JavaMethod> {
+        if let Some(target) = target {
+            let root = match target {
+                E::Ident(field) if !scope.contains_key(field) => Some((self.class, field)),
+                E::FieldAccess { target, field } => match target.as_ref() {
+                    E::Ident(name) if !scope.contains_key(name) && self.binding(name, scope).is_none() =>
+                        self.program.find_class(name).map(|owner| (owner, field)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some((root, field)) = root {
+                if let Some((_, method, _)) = crate::kernel_input::inert_instance_method(
+                    self.program, root, field, method, arity,
+                ) { return Some(method); }
+            }
+        }
         let owner = match target {
             None => self.class,
             Some(target) => {
@@ -309,6 +325,16 @@ impl Admission<'_> {
                 if let Some(E::FieldAccess { target, field }) = target.as_deref() {
                     if matches!(target.as_ref(), E::Ident(name) if name == "this") {
                         self.check_receiver_use(field)?;
+                    }
+                }
+                if let Some(E::FieldAccess { target, .. }) = target.as_deref() {
+                    if let E::Ident(name) = target.as_ref() {
+                        if name != "this" && self.program.find_class(name).is_some()
+                            && self.binding(name, scope).is_some()
+                        {
+                            return Err(self.diagnostic("NORM-CALL-TARGET",
+                                "local or receiver binding shadows the static receiver owner"));
+                        }
                     }
                 }
                 let callee = self.method(target.as_deref(), method, args.len(), scope);
