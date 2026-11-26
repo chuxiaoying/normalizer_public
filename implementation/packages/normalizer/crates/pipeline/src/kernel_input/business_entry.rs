@@ -176,15 +176,29 @@ impl Loaded {
     /// Validate and run one closed adapter entry; do not execute unrelated methods.
     pub fn project_pers(path: &Path, entry: &str) -> Result<String> {
         let loaded = Self::read_adapter_project(path)?;
-        let result = loaded.normalize(entry)?;
-        match loaded.project.entry_contexts.get(entry) {
-            Some(context) => context.render_source(&loaded.project, &result, loaded.entry_method(entry)?.1),
-            None => Err("missing business entry context".into()),
+        let context = loaded.project.entry_contexts.get(entry);
+        if let Some(context) = context {
+            context.validate_public_bindings()?;
         }
+        let result = loaded.normalize(entry)?;
+        context.ok_or("missing business entry context")?
+            .render_source(&loaded.project, &result, loaded.entry_method(entry)?.1)
     }
 }
 
 impl EntryContext {
+    // Native source constructs this identity and dense parameter positions
+    // from its selected AST. Only the adapter accepts supplied values.
+    fn validate_public_bindings(&self) -> Result<()> {
+        if !self.function.contains('#') { return Err("missing business entry identity".into()); }
+        let mut positions: Vec<_> = self.parameters.values().map(|p| p.position).collect();
+        positions.sort_unstable();
+        if !positions.into_iter().eq(0..self.parameters.len()) {
+            return Err("invalid business parameter positions".into());
+        }
+        Ok(())
+    }
+
     pub(super) fn return_type(&self) -> &str { &self.returns }
 
     pub(super) fn parameter_type(&self, name: &str) -> Option<&str> {
@@ -353,10 +367,6 @@ impl EntryContext {
     }
 
     fn render_output(&self, output: BusinessOutput, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool) -> Result<String> {
-        if !self.function.contains('#') { return Err("missing business entry identity".into()); }
-        let mut positions: Vec<_> = self.parameters.values().map(|p| p.position).collect();
-        positions.sort_unstable();
-        if !positions.into_iter().eq(0..self.parameters.len()) { return Err("invalid business parameter positions".into()); }
         let mut names = BTreeMap::new();
         for (ty, name) in method.params() {
             let (display, domain) = self.binding(name)?;
@@ -531,6 +541,74 @@ impl EntryContext {
             if !observations.throws.is_empty() { doc["throws"] = json!(observations.throws); }
         }
         serde_yaml::to_string(&doc).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod public_entry_admission {
+    use super::*;
+
+    fn supplied_entry() -> EntryContext {
+        serde_json::from_value(json!({
+            "function": "src/page.mjs#render",
+            "returns": "number",
+            "parameters": {
+                "amount": { "position": 1, "type": "number" },
+                "ready": { "position": 0, "type": "bool" }
+            },
+            "environment": {
+                "state": {
+                    "kind": "state", "source": "src/page.vue#state",
+                    "fields": {
+                        "summary": { "amount": "number" },
+                        "title": "text"
+                    }
+                },
+                "counter": { "kind": "state", "source": "src/page.vue#counter", "type": "number" }
+            },
+            "types": { "Reply": { "fields": { "amount": "number", "scores": "number[]" } } },
+            "external_results": { "lookup": "Reply" }
+        })).unwrap()
+    }
+
+    #[test]
+    fn an_adapter_identity_has_dense_positions_independent_of_map_key_order() {
+        let mut entry = supplied_entry();
+        assert!(entry.validate_public_bindings().is_ok());
+        entry.parameters.get_mut("ready").unwrap().position = 1;
+        assert_eq!(entry.validate_public_bindings().unwrap_err(), "invalid business parameter positions");
+        entry.parameters.get_mut("ready").unwrap().position = 0;
+        entry.function = "render".into();
+        assert_eq!(entry.validate_public_bindings().unwrap_err(), "missing business entry identity");
+    }
+
+    #[test]
+    fn state_paths_preserve_scalar_and_record_boundaries() {
+        let mut entry = supplied_entry();
+        let parts = |fields: &[&str]| fields.iter().map(|field| (*field).to_owned()).collect::<Vec<_>>();
+        assert_eq!(entry.state_field("state", &parts(&["summary", "amount"])).unwrap(), "number");
+        assert_eq!(entry.state_field("counter", &parts(&["value"])).unwrap(), "number");
+        assert_eq!(entry.state_field("state", &parts(&["title", "amount"])).unwrap_err(), "scalar field has no members");
+        assert_eq!(entry.state_field("state", &parts(&["summary"])).unwrap_err(), "expected a scalar state field");
+        assert!(entry.has_field("Reply", ["scores"].into_iter()));
+        assert!(!entry.has_field("Reply", ["unknown"].into_iter()));
+        entry.environment.get_mut("state").unwrap().source.clear();
+        assert_eq!(entry.state_field("state", &parts(&["title"])).unwrap_err(), "invalid state source");
+        entry.environment.get_mut("state").unwrap().source = "src/page.vue#state".into();
+        entry.environment.get_mut("state").unwrap().kind = "table".into();
+        assert_eq!(entry.state_field("state", &parts(&["title"])).unwrap_err(), "invalid state source");
+    }
+
+    #[test]
+    fn an_external_record_type_is_closed_and_not_redefined_recursively() {
+        let mut entry = supplied_entry();
+        let (_, ty) = entry.external_type("lookup").unwrap();
+        assert_eq!(ty, super::super::Ty::Record(BTreeMap::from([
+            ("amount".into(), super::super::Ty::Integer),
+            ("scores".into(), super::super::Ty::Vector(Box::new(super::super::Ty::Integer))),
+        ])));
+        entry.types.get_mut("Reply").unwrap().fields.insert("next".into(), "Reply".into());
+        assert_eq!(entry.external_type("lookup").unwrap_err(), "recursive external value type");
     }
 }
 
