@@ -200,25 +200,29 @@ impl Engine<'_> {
         settled: bool,
     ) -> Result<Value> {
         let ty = Ty::parse(returns)?;
-        let parent_completion = self.realtime_completion.clone();
-        self.realtime_completion = realtime_state::Completion::Continue;
+        let parent_completion = std::mem::replace(
+            &mut self.realtime_completion, realtime_state::Completion::Continue,
+        );
         // A normal helper scope does not become async merely because its
         // caller is async. A settled entry observes its own async completion.
-        let caller_async_depth = self.async_depth;
-        self.async_depth = usize::from(settled);
-        let parent_settled = std::mem::replace(&mut self.settled_task_frame, settled);
-        let caller_action_path = self.action_path.clone();
-        self.action_path = path;
+        let caller_can_await = std::mem::replace(&mut self.action_can_await, settled);
+        let caller_action_path = std::mem::replace(&mut self.action_path, path);
         let executed = self.action_steps(steps, &mut env.clone(), &ty);
-        self.async_depth = caller_async_depth;
-        self.settled_task_frame = parent_settled;
+        self.action_can_await = caller_can_await;
         self.action_path = caller_action_path;
         executed?;
         let local_completion = self.realtime_completion.clone();
         let terminal = local_completion.terminal_alternatives()
             .ok_or_else(|| fail("action has a normal path without method return"))?;
         let returned = terminal.normal_return_value();
-        self.realtime_completion = parent_completion.replace_continue(local_completion);
+        let completion = parent_completion.replace_continue(local_completion);
+        // A normally completed helper is a value in the caller; a settled
+        // entry, or a mixed/throwing helper, retains its completion.
+        self.realtime_completion = if !settled && matches!(completion, realtime_state::Completion::Return(_)) {
+            parent_completion
+        } else {
+            completion
+        };
         match returned {
             Some(value) => Ok(Value::Term(ty, value)),
             // The caller has no live normal path on which to observe a value.

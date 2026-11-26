@@ -104,7 +104,7 @@ impl Engine<'_> {
 
     pub(super) fn task_wait(&mut self, name: &str, task: &Node, env: &mut Env) -> Result<()> {
         need(
-            self.async_depth > 0,
+            self.action_can_await,
             "task_wait requires an async function body",
         )?;
         let task = self.action_value(task, env)?;

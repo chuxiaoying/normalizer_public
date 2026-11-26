@@ -479,7 +479,7 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
     };
 
     // Decline before building a second copy when the input is too large.
-    if !truth_table_input_within_budget(&relevant) {
+    if proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
         return decline(false);
     }
 
@@ -559,7 +559,7 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
             return publish_coverage("true_by_direct_complement");
         }
 
-        match boolean_truth_table_covers_all_precheck(&relevant) {
+        match boolean_truth_table_within_size_limit(&relevant) {
             TruthTableCoverage::CoversAll => {
                 crate::profile::count(
                     &CONDITIONS_COVER_TRUTH_TABLE_PRECHECKS,
@@ -1088,12 +1088,7 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     // Path implication is also an optimization proof. Avoid constructing a
     // second copy of very large merged guards for the arithmetic fallback;
     // failure to prove implication conservatively retains the branch.
-    if !structural_proof
-        && active
-            .size()
-            .checked_add(expr.size())
-            .is_none_or(|size| size > MAX_TRUTH_TABLE_INPUT_SIZE)
-    {
+    if !structural_proof && proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
         crate::profile::count(
             &PATH_IMPLIES_BUDGET_SKIPS,
             "math.proof.path_implies.budget_skip",
@@ -1113,9 +1108,14 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     // symbols; correlated comparisons must still use the arithmetic prover.
     let coverage = if structural_proof {
         TruthTableCoverage::CoversAll
-    } else {
+    } else if proof_input_size < MAX_TRUTH_TABLE_INPUT_SIZE {
+        // The synthetic NOT adds one node to the already measured input.
         let conditions = [not(active.clone()), expr.clone()];
-        boolean_truth_table_covers_all_precheck(&conditions)
+        boolean_truth_table_within_size_limit(&conditions)
+    } else {
+        // The unwrapped input fits the arithmetic fallback, but the wrapped
+        // Boolean table does not. Do not report an input-budget decline.
+        TruthTableCoverage::Unknown
     };
     match coverage {
         TruthTableCoverage::CoversAll => {
@@ -1162,17 +1162,9 @@ enum TruthTableCoverage {
     Unknown,
 }
 
-fn truth_table_input_within_budget(conds: &[Expr]) -> bool {
-    conds
-        .iter()
-        .try_fold(0usize, |total, cond| total.checked_add(cond.size()))
-        .is_some_and(|total| total <= MAX_TRUTH_TABLE_INPUT_SIZE)
-}
-
-fn boolean_truth_table_covers_all_precheck(conds: &[Expr]) -> TruthTableCoverage {
-    if !truth_table_input_within_budget(conds) {
-        return TruthTableCoverage::Unknown;
-    }
+/// Callers have already checked the size of these conditions. The atom
+/// limit and the distinction between exact and unknown results remain local.
+fn boolean_truth_table_within_size_limit(conds: &[Expr]) -> TruthTableCoverage {
     let mut atoms: Vec<String> = Vec::new();
     for cond in conds {
         visit_boolean_atoms(cond, &mut |atom| atoms.push(boolean_atom_key(atom)));

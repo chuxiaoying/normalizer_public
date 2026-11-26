@@ -32,8 +32,7 @@ pub(super) struct Engine<'a> {
     pub(super) methods: BTreeMap<String, AdmittedMethod<'a>>,
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
-    pub(super) async_depth: usize,
-    pub(super) settled_task_frame: bool,
+    pub(super) action_can_await: bool,
     pub(super) selected_entry: Option<&'a str>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
@@ -122,20 +121,7 @@ impl Engine<'_> {
                 tasks::validate_settled_scope(steps)?;
                 self.action_scope(returns, steps, env, path, true)
             }
-            Node::Action { returns, steps } => {
-                let parent_completion = self.realtime_completion.clone();
-                let value = self.action_scope(returns, steps, env, path, false)?;
-                // A nested action that completes normally is a value-producing
-                // call inside the caller. Its function-level completion has
-                // already been substituted into the returned binding and must
-                // not terminate the caller's continuation. Exceptional or
-                // mixed completion remains attached for caller-side catch
-                // dispatch.
-                if self.realtime_completion.return_value().is_some() {
-                    self.realtime_completion = parent_completion;
-                }
-                Ok(value)
-            }
+            Node::Action { returns, steps } => self.action_scope(returns, steps, env, path, false),
             Node::Add { left, right } | Node::Subtract { left, right } => {
                 let left = self.node(left, env, path.clone())?;
                 let right = self.node(right, env, path)?;
