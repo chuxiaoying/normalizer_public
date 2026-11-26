@@ -1219,6 +1219,7 @@ impl Engine<'_> {
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
         let m = method.syntax;
         need(m.params().len() == args.len(), "Java arity mismatch")?;
+        let mut semantic_types_match = true;
         for (index, ((t, name), v)) in m.params().iter().zip(&mut args).enumerate() {
             let expected = method.parameter_type(self.project, id, index, name)?;
             if crate::normalized::native_decimal_type(t) {
@@ -1232,9 +1233,16 @@ impl Engine<'_> {
                 *v = Value::Term(Ty::Text, b::lit_null());
             }
             need(expected == v.ty(), "Java argument type mismatch")?;
+            if let Some(binding) = &method.binding {
+                // Same-name slots already used the semantic type above.
+                // Independently check any legacy adapter alias before execution.
+                if binding.function.params[index].name != *name {
+                    semantic_types_match &= expected == binding.parameters[index];
+                }
+            }
         }
         let value = if let Some(binding) = method.binding.clone() {
-            self.call(id, &binding, args, path)?
+            self.call(id, &binding, args, path, semantic_types_match)?
         } else {
             need(
                 m.is_static()
@@ -1264,7 +1272,10 @@ impl Engine<'_> {
         self.active.remove(&format!("java:{id}"));
         Ok(value)
     }
-    fn call(&mut self, id: &str, binding: &CheckedBinding<'_>, args: Vec<Value>, path: Expr) -> Result<Value> {
+    fn call(
+        &mut self, id: &str, binding: &CheckedBinding<'_>, args: Vec<Value>, path: Expr,
+        semantic_types_match: bool,
+    ) -> Result<Value> {
         self.budget()?;
         self.semantic_calls += 1;
         let name = binding.name;
@@ -1272,9 +1283,7 @@ impl Engine<'_> {
         // for the existing call-budget and profiling accounting.
         self.active.insert(format!("semantic:{name}"));
         let f = binding.function;
-        for (ty, v) in binding.parameters.iter().zip(&args) {
-            need(*ty == v.ty(), "semantic argument type mismatch")?;
-        }
+        need(semantic_types_match, "semantic argument type mismatch")?;
         let mut env = f
             .params
             .iter()

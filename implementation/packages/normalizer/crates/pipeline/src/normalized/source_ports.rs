@@ -44,7 +44,6 @@ pub(crate) fn declarations(
     for owner in program.classes() {
         for field in owner.fields().iter().filter(|field| marked(owner, field)) {
             if !field.is_final()
-                || field.is_volatile()
                 || field.is_static()
                 || field.has_initializer()
             {

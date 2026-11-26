@@ -204,10 +204,10 @@ function compile(source, file, entry, physicalPath) {
   const [last, ...remaining] = fn.body.statements;
   if (remaining.length || !last || !ts.isReturnStatement(last) || !last.expression) fail('expected one closed return expression');
   const returns = orderedMap ? 'map<text,text>' : parameter(returnDomain);
-  const result = orderedMap
-    ? {type: returns, node: internal('value.ordered_text_map', {entries: mapEntries(last.expression, names)})}
-    : expression(lowerExpression(last.expression, sf));
-  return projectInput(file, entry, params, returnDomain, orderedMap, returns, result.node, fn.getText(sf));
+  const body = orderedMap
+    ? internal('value.ordered_text_map', {entries: mapEntries(last.expression, names)})
+    : expression(lowerExpression(last.expression, sf)).node;
+  return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf));
 }
 
 function projectInput(file, entry, params, returnDomain, orderedMap, returns, body, excerpt, typed = {}) {

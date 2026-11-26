@@ -207,7 +207,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         continue;
       }
       if (ts.isTryStatement(st) && st.catchClause && !st.finallyBlock) {
-        const enclosing = [...outstanding];
         outstanding.clear();
         const body = sequence(st.tryBlock, undefined);
         const classes = [...outstanding].sort();
@@ -232,8 +231,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
   }
   const steps = sequence(fn.body, undefined);
   directives.requireConsumed();
-  if (steps.at(-1)?.op !== 'return')
-    steps.push({ op: 'return', value: { op: 'const', type: 'unit', value: null } });
+  steps.push({ op: 'return', value: { op: 'const', type: 'unit', value: null } });
   return {
     function: originPath + '#' + entryName,
     types,

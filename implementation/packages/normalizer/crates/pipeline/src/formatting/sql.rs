@@ -293,12 +293,29 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     format!("{}({})", name, args_str.join(", "))
 }
 
-fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<String> {
+// Count/Exists use the same exact bare-array observation in both
+// single guards and the folded union of failure guards.
+fn array_cardinality_name(expr: &Expr, expected: RelationAggregateKind) -> Option<&str> {
     use math::domains::relation::RelationExpr::Base;
-    let (RelationAggregateKind::Exists, Base { name, .. }, select, None) =
-        expr.as_relation_aggregate()? else { return None };
-    ((ctx.scalar_arrays.contains(name) || ctx.record_arrays.contains(name))
-        && select.is_none_or(|value| value.as_bool() == Some(true)))
+    use RelationAggregateKind::{Count, Exists};
+    let (kind, Base { name, .. }, select, None) = expr.as_relation_aggregate()? else {
+        return None;
+    };
+    if kind != expected { return None; }
+    match (kind, select) {
+        (Count, None) => Some(name),
+        (Exists, select) if unfiltered_exists_projection(select) => Some(name),
+        _ => None,
+    }
+}
+
+fn unfiltered_exists_projection(select: Option<&Expr>) -> bool {
+    select.is_none_or(|value| value.as_bool() == Some(true))
+}
+
+fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<String> {
+    let name = array_cardinality_name(expr, RelationAggregateKind::Exists)?;
+    (ctx.scalar_arrays.contains(name) || ctx.record_arrays.contains(name))
         .then(|| format!("LENGTH({}) == 0", array_name(name, ctx)))
 }
 
@@ -310,23 +327,18 @@ fn array_name<'a>(raw: &'a str, ctx: &'a FormatCtx) -> &'a str {
 /// is a single upper bound. This does not compare separate array instances.
 pub(crate) fn format_array_failure_union(expr: &Expr, ctx: &FormatCtx) -> Option<String> {
     fn extract<'a>(expr: &'a Expr) -> Option<(&'a str, i64)> {
-        use math::domains::relation::RelationExpr::Base;
-        let range = |n| n >= 0;
         if let Some((BinOpKind::Or, a, b)) = expr.as_binop() {
             let (left, lower) = extract(a)?;
             let (right, upper) = extract(b)?;
             return (left == right).then_some((left, lower.max(upper)));
         }
         if let Some((UnaryOpKind::Not, exists)) = expr.as_unary_op() {
-            let (RelationAggregateKind::Exists, Base { name, .. }, select, None) =
-                exists.as_relation_aggregate()? else { return None };
-            return select.is_none_or(|v| v.as_bool() == Some(true)).then_some((name, 0));
+            return Some((array_cardinality_name(exists, RelationAggregateKind::Exists)?, 0));
         }
         let (op @ (BinOpKind::Le | BinOpKind::Eq), len, index) = expr.as_binop()? else { return None };
-        let (RelationAggregateKind::Count, Base { name, .. }, None, None) =
-            len.as_relation_aggregate()? else { return None };
+        let name = array_cardinality_name(len, RelationAggregateKind::Count)?;
         let Some(Lit::Int(i)) = index.as_lit() else { return None };
-        (range(*i) && (op == BinOpKind::Le || *i == 0)).then_some((name, *i))
+        (*i >= 0 && (op == BinOpKind::Le || *i == 0)).then_some((name, *i))
     }
     if !matches!(expr.as_binop(), Some((BinOpKind::Or, ..))) { return None; }
     let (name, upper) = extract(expr)?;
@@ -337,8 +349,7 @@ pub(crate) fn format_array_failure_union(expr: &Expr, ctx: &FormatCtx) -> Option
 
 fn try_format_array_bound(op: BinOpKind, left: &Expr, right: &Expr, ctx: &FormatCtx) -> Option<String> {
     if op != BinOpKind::Gt { return None; }
-    let (RelationAggregateKind::Count, math::domains::relation::RelationExpr::Base { name, .. }, None, None) =
-        left.as_relation_aggregate()? else { return None };
+    let name = array_cardinality_name(left, RelationAggregateKind::Count)?;
     let Some(Lit::Int(index)) = right.as_lit() else { return None };
     if !ctx.scalar_arrays.contains(name) || *index <= 0 { return None; }
     Some(format!("LENGTH({}) >= {}", array_name(name, ctx), index.checked_add(1)?))
@@ -357,7 +368,7 @@ fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<S
     let array = array_name(name, ctx).to_owned();
     match (kind, select, default) {
         (Count, None, None) => Some(format!("LENGTH({array})")),
-        (Exists, select, None) if select.is_none_or(|value| value.as_bool() == Some(true)) =>
+        (Exists, select, None) if unfiltered_exists_projection(select) =>
             Some(format!("LENGTH({array}) > 0")),
         (NthValue, Some(index), default) if default.is_none_or(Expr::is_null) =>
             Some(format!("{array}[{}]", format_expr_with_ctx(index, ctx))),

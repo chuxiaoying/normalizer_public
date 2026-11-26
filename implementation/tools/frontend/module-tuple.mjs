@@ -2,7 +2,7 @@
 // The emitted plan keeps source branches and literal slots; the kernel executes it.
 import ts from 'typescript';
 import { unwrapParens as unwrap } from './ir.mjs';
-import {checkedTypeScript, failTypedModule, typedBooleanParameters, typedIdentifier} from './typed-module.mjs';
+import {checkedTypeScript, failTypedModule, typedParameterNames, typedIdentifier} from './typed-module.mjs';
 
 const n = (op, fields) => ({op, ...fields});
 const variable = name => n('var', {name});
@@ -13,8 +13,7 @@ const fail = failTypedModule;
 const uid = typedIdentifier;
 
 export function compileTypedTuple(physicalPath, sf, fn) {
-  const checker = checkedTypeScript(physicalPath, sf,
-    node => ts.isFunctionDeclaration(node) || ts.isTypeAliasDeclaration(node));
+  const checker = checkedTypeScript(physicalPath, sf);
   const functions = sf.statements.filter(ts.isFunctionDeclaration);
   const helper = functions.find((dec) => dec !== fn);
   const [bind, ret, ...other] = fn.body.statements;
@@ -37,9 +36,9 @@ export function compileTypedTuple(physicalPath, sf, fn) {
         && item.name.text === typeName.typeName.text && ts.isTupleTypeNode(item.type))) {
     fail('expected a closed typed tuple entry and one local tuple source helper');
   }
-  const params = typedBooleanParameters(fn);
+  const params = typedParameterNames(fn);
   const inputScope = new Map(params.map(name => [name, variable(name)]));
-  const helperParams = typedBooleanParameters(helper);
+  const helperParams = typedParameterNames(helper);
 
   function lowerBool(expr, scope) {
     expr = unwrap(expr);

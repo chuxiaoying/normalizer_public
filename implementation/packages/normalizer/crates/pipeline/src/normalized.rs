@@ -94,7 +94,6 @@ pub(crate) fn source_layouts(
             let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || source_nullable_field(class, field);
             if field.is_static()
                 || field.is_final()
-                || field.is_volatile()
                 || field.has_initializer()
                 || !annotation_ok
             {
@@ -230,7 +229,7 @@ pub(crate) fn source_payload_domain(class: &simulator_parser::JavaClass) -> Opti
     if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
     let [field] = class.fields() else { return None; };
     let field = Some(field).filter(|field| field.name() == "payload" && !field.is_static()
-        && !field.is_final() && !field.is_volatile() && !field.has_initializer()
+        && !field.is_final() && !field.has_initializer()
         && field.annotations().is_empty())?;
     match field.java_type() {
         JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String") => Some("text?"),

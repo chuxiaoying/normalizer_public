@@ -105,7 +105,6 @@ pub struct JavaField {
     pub(crate) java_type: JavaType,
     pub(crate) is_static: bool,
     pub(crate) is_final: bool,
-    pub(crate) is_volatile: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) has_initializer: bool,
 }
@@ -122,11 +121,6 @@ impl JavaField {
     }
     pub fn is_final(&self) -> bool {
         self.is_final
-    }
-    /// Declaration metadata only; consumers decide whether volatile access is
-    /// within their supported semantic profile.
-    pub fn is_volatile(&self) -> bool {
-        self.is_volatile
     }
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations

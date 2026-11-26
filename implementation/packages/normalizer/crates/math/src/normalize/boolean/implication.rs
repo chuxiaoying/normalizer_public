@@ -28,7 +28,7 @@ pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> boo
     } else {
         return false;
     };
-    relation_count_zero_relation(other).is_some_and(|relation| relation_cardinality_input_matches(exists_relation, relation))
+    relation_count_zero_relation(other).is_some_and(|relation| exists_relation == relation)
 }
 
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {
@@ -48,7 +48,7 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     let Some(right_relation) = relation_exists_true_relation(right) else {
         return false;
     };
-    relation_cardinality_input_matches(left_relation, right_relation)
+    left_relation == right_relation
 }
 
 /// A selection of an empty input is empty.
@@ -63,13 +63,6 @@ pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> 
     let (Some(source), Some(candidate)) = (empty_relation(left), empty_relation(right))
     else { return false };
     matches!(candidate, RelationExpr::Select { input, .. } if input.as_ref() == source)
-}
-
-pub(super) fn relation_cardinality_input_matches(
-    left: &RelationExpr,
-    right: &RelationExpr,
-) -> bool {
-    left == right
 }
 
 pub(super) fn relation_exists_true_relation(

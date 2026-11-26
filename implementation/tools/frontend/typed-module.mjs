@@ -15,15 +15,11 @@ export function typedModuleAst(source, physicalPath, entry) {
   return {sf, fn};
 }
 
-export function typedBooleanParameters(fn) {
-  const bound = new Set();
-  return fn.parameters.map(param => {
-    bound.add(param.name.text);
-    return param.name.text;
-  });
+export function typedParameterNames(fn) {
+  return fn.parameters.map(param => param.name.text);
 }
 
-export function checkedTypeScript(physicalPath, sf, allowed) {
+export function checkedTypeScript(physicalPath, sf) {
   let hasImport = false;
   const inspect = node => {
     if (ts.isImportTypeNode(node) || node.kind === ts.SyntaxKind.ImportKeyword) hasImport = true;

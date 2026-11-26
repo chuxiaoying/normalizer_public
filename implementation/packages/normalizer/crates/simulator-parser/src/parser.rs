@@ -763,7 +763,6 @@ fn parse_class_body(
                 java_type,
                 is_static: field_is_static,
                 is_final: field_is_final,
-                is_volatile: false,
                 annotations,
                 has_initializer,
             });

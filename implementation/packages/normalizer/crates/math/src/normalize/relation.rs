@@ -54,24 +54,19 @@ fn rewrite_empty_aggregate(expr: &Expr) -> Option<Expr> {
 /// its host; this rewrite neither invents order nor changes the relation.
 /// Only layouts with a certified single output binder are admitted here.
 fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
-    let (RelationAggregateKind::NthValue, relation, Some(index), Some(default)) =
-        expr.as_relation_aggregate()?
+    // A bare base is the only admitted layout with a certified output binder.
+    let (
+        RelationAggregateKind::NthValue,
+        relation @ RelationExpr::Base { alias, .. },
+        Some(index),
+        Some(default),
+    ) = expr.as_relation_aggregate()?
     else {
         return None;
     };
     if !matches!(index.as_lit(), Some(crate::Lit::Int(0))) || !default.is_null() {
         return None;
     }
-    fn ordered_row_alias(relation: &RelationExpr) -> Option<&str> {
-        match relation {
-            RelationExpr::Base { alias, .. } => Some(alias),
-            // Distinct has no stable-order declaration. Project has its
-            // own composition rule; multi-input and MapKv layouts cannot
-            // borrow a guessed alias from one of their inputs.
-            _ => None,
-        }
-    }
-    let alias = ordered_row_alias(relation)?;
     Some(crate::domains::relation::relation_first_value(
         relation.clone(),
         builder::row_value(alias),

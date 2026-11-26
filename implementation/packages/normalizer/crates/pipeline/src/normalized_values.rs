@@ -97,17 +97,8 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
     }
     Ok(None)
 }
-fn operation(op: &str, args: Vec<Value>, ty: Ty) -> Result<Value> {
-    let params = args
-        .iter()
-        .map(|v| v.ty().primitive_value())
-        .collect::<Result<Vec<_>>>()?;
-    let args = args.iter().map(Value::scalar).collect::<Result<Vec<_>>>()?;
-    let expr = data::apply(op, args, params, ty.primitive_value()?);
-    Ok(Value::Term(ty, expr))
-}
 pub(super) fn field(record: Value, name: &str) -> Result<Value> {
-    let Ty::Record(fields) = record.ty() else {
+    let Value::Term(Ty::Record(fields), value) = record else {
         return Err(fail("field requires immutable record"));
     };
     let ty = fields
@@ -115,7 +106,6 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
         .ok_or_else(|| fail("unknown record field"))?
         .clone();
     if ty == Ty::Integer {
-        let value = record.scalar()?;
         // Nonthrowing ports expose their declared record as the direct
         // completion root. Preserve the declared integer field in math's
         // typed receipt path rather than erase it into a generic Number call.
@@ -128,11 +118,14 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
             }
         }
     }
-    operation(
+    let result_type = ty.primitive_value()?;
+    let expr = data::apply(
         "value.field",
-        vec![record, Value::Term(Ty::Text, b::lit_str(name))],
-        ty,
-    )
+        vec![value, b::lit_str(name)],
+        vec![Primitive::Composite, Primitive::String],
+        result_type,
+    );
+    Ok(Value::Term(ty, expr))
 }
 
 
