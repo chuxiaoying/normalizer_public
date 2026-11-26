@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyVariant } from './business_example_series.mjs';
+import { applyVariant, explicitVariantEntry } from './business_example_series.mjs';
 import { assertPers } from './pers-schema.mjs';
 import { assertRejection } from './rejection.mjs';
 import { writePreparedSource } from './prepared-source.mjs';
@@ -22,9 +22,15 @@ function invoke(command, args, cwd, input, env = process.env) {
 }
 
 function checkExample(project, scene, entry, fixture, variant, seedReject) {
-  const { patch, source, sourceFile, mainFile, entryFunction } = fixture;
+  const { patch, source, sourceFile, mainFile, entryFunction: seedEntry } = fixture;
+  const override = explicitVariantEntry(variant);
+  if (override) assert.ok(mainFile.endsWith('.java'), 'Entry override requires a Java seed');
+  const entryFunction = override ?? seedEntry;
   writePreparedSource(project, sourceFile, source, patch);
   const expected = variant ? applyVariant(project, mainFile, fixture.expected, variant) : fixture.expected;
+  if (override && !variant.reject && !seedReject) {
+    assert.equal(expected.entry.function, override, 'A changed fixture entry must be independently asserted');
+  }
   let args;
   if (fixture.sourceLanguage === 'vue') {
     assert.ok(scene, 'Vue source requires a registered CLI scene');

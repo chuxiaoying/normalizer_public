@@ -24,17 +24,21 @@
         END
 
 - name: resolve-account-before-write
+  entry: src/PayableService.java#PayableService.INSTANCE.recordPayable
   edits:
     - from: class DatabaseWriteError
       to: |-
-        import normalizer.annotations.External;
-        interface AccountDirectory { int lookup(int accountId); }
+        import normalizer.intrinsics.N;
+        class AccountDirectory { native int lookup(int accountId); }
         class DatabaseWriteError
     - from: 'class PayableService {'
       to: |-
         class PayableService {
-            @External private final AccountDirectory directory;
+            static final PayableService INSTANCE = new PayableService(new AccountDirectory());
+            @N.External private final AccountDirectory directory;
             PayableService(AccountDirectory directory) { this.directory = directory; }
+    - from: static int recordPayable
+      to: int recordPayable
     - from: int affected;
       to: |-
         int billingId = directory.lookup(accountId);
@@ -42,10 +46,12 @@
     - from: 'account_id: accountId'
       to: 'account_id: billingId'
   expect:
+    - path: [entry, function]
+      value: src/PayableService.java#PayableService.INSTANCE.recordPayable
     - path: [S]
       value:
         - call:
-            external: directory.lookup
+            external: src/PayableService.java#PayableService.INSTANCE.directory.lookup
             args: [accountId]
             returns: number
             result: $e_0

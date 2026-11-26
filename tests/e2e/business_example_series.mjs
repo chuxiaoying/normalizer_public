@@ -8,6 +8,17 @@ function checkKeys(object, allowed) {
   for (const key of Object.keys(object)) assert.ok(allowed.includes(key), 'Unexpected fixture key: ' + key);
 }
 
+// Entry variants may choose another source-backed Java method explicitly.
+const entryComponent = '[A-Za-z_$][A-Za-z0-9_$]*';
+const entryPattern = new RegExp('^(?:' + entryComponent + '/)*[A-Za-z0-9_$-]+[.]java#'
+  + entryComponent + '(?:[.]' + entryComponent + ')+$');
+export function explicitVariantEntry(variant) {
+  if (!variant || !Object.hasOwn(variant, 'entry')) return undefined;
+  assert.ok(typeof variant.entry === 'string' && entryPattern.test(variant.entry),
+    'Entry override must be a project-relative Java source path#static invocation without arguments');
+  return variant.entry;
+}
+
 export function loadSeries(file) {
   const series = YAML.parse(readFileSync(file, 'utf8'));
   let variants = series;
@@ -22,7 +33,8 @@ export function loadSeries(file) {
   assert.ok(Array.isArray(variants) && variants.length, 'Empty series: ' + file);
   const names = new Set(['original']);
   for (const variant of variants) {
-    checkKeys(variant, ['name', 'edits', 'expect', 'reject']);
+    checkKeys(variant, ['name', 'edits', 'expect', 'reject', 'entry']);
+    explicitVariantEntry(variant);
     assert.match(variant.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
     assert.ok(!names.has(variant.name), 'Duplicate case: ' + variant.name);
     names.add(variant.name);

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { assertPers } from './pers-schema.mjs';
 import { assertRejection } from './rejection.mjs';
-import { applyExpectedChanges } from './business_example_series.mjs';
+import { applyExpectedChanges, explicitVariantEntry } from './business_example_series.mjs';
 
 const base = {
   schema: 'normalizer.pers/1',
@@ -12,6 +12,14 @@ const base = {
   R: '0',
 };
 const call = (result, args = []) => ({ call: { external: 'port.read', args, returns: 'number', result } });
+
+test('fixture entry overrides require a canonical Java source path and member chain', () => {
+  assert.equal(explicitVariantEntry({}), undefined);
+  assert.equal(explicitVariantEntry({entry: 'src/Example.java#Example.INSTANCE.run'}), 'src/Example.java#Example.INSTANCE.run');
+  for (const entry of ['../Example.java#Example.run', 'src/Example.java#run', 'src/Example.java#Example.run(1)', 'src/example.ts#run']) {
+    assert.throws(() => explicitVariantEntry({entry}), /Entry override/);
+  }
+});
 
 test('PERS requires receipt references to be bound', () => {
   assert.throws(() => assertPers({ ...base, R: '$e_9' }, 'unbound'), /unbound.*\$e_9/i);
