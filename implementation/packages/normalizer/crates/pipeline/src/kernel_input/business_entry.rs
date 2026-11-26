@@ -7,7 +7,7 @@ use simulator_parser::{JavaMethod, JavaType};
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) struct BusinessObservations {
-    pub(super) returned: String,
+    pub(super) returned: Option<String>,
     pub(super) tables: BTreeMap<String, BTreeMap<String, String>>,
     pub(super) effects: Vec<serde_json::Value>,
     pub(super) throws: Vec<serde_json::Value>,
@@ -212,28 +212,54 @@ impl EntryContext {
 
     pub(super) fn return_type(&self) -> &str { &self.returns }
 
+    // The direct-source executor must already have certified that this
+    // port uses the selected instance's bound receiver.
+    pub(super) fn direct_port_identity(&self, endpoint: &str) -> Result<String> {
+        let (file, invocation) = self.function.split_once('#').ok_or("missing entry source identity")?;
+        let locator = invocation.split_once('(').map_or(invocation, |(prefix, _)| prefix);
+        let (receiver, _) = locator.rsplit_once('.').ok_or("missing selected instance locator")?;
+        Ok(format!("{file}#{receiver}.{endpoint}"))
+    }
+
+
     pub(super) fn parameter_type(&self, name: &str) -> Option<&str> {
         self.parameters.get(name).map(|p| p.ty.as_str())
     }
 
     pub(super) fn state_field(&self, root: &str, fields: &[String]) -> Result<&str> {
         if fields.is_empty() { return Err("state path requires a field".into()); }
+        let leaf = self.state_shape_at(root, fields)?.ok_or("expected a scalar state field")?;
+        if self.types.contains_key(leaf.trim_end_matches('?')) {
+            return Err("expected a scalar state field".into());
+        }
+        Ok(leaf)
+    }
+
+    // None means an inline record. A named (potentially nullable) record
+    // can instead be a typed leaf without recursively unfolding its shape.
+    fn state_shape_at(&self, root: &str, fields: &[String]) -> Result<Option<&str>> {
         let state = self.environment.get(root).ok_or("undeclared state root")?;
         if state.kind != "state" || state.source.is_empty() { return Err("invalid state source".into()); }
         if state.fields.is_empty() {
             let domain = state.ty.as_deref().ok_or("undeclared state field")?;
-            let leaf = self.declared_field_type(domain, fields.iter().map(String::as_str))
-                .ok_or("undeclared state field")?;
-            if self.types.contains_key(leaf) { return Err("expected a scalar state field".into()); }
-            return Ok(leaf);
+            return self.declared_field_type(domain, fields.iter().map(String::as_str))
+                .map(Some).ok_or_else(|| "undeclared state field".into());
         }
-        let mut field = state.fields.get(&fields[0]).ok_or("undeclared state field")?;
-        for name in &fields[1..] {
-            let Field::Record(record) = field else { return Err("scalar field has no members".into()) };
-            field = record.get(name).ok_or("undeclared state field")?;
+        let mut members = &state.fields;
+        for (i, name) in fields.iter().enumerate() {
+            match members.get(name).ok_or("undeclared state field")? {
+                Field::Record(record) => members = record,
+                Field::Leaf(ty) if i + 1 == fields.len() => return Ok(Some(ty.as_str())),
+                Field::Leaf(ty) => {
+                    if !self.types.contains_key(ty.trim_end_matches('?')) {
+                        return Err("scalar field has no members".into());
+                    }
+                    return self.declared_field_type(ty, fields[i + 1..].iter().map(String::as_str))
+                        .map(Some).ok_or_else(|| "undeclared state field".into());
+                }
+            }
         }
-        let Field::Leaf(ty) = field else { return Err("expected a scalar state field".into()) };
-        Ok(ty)
+        Ok(None)
     }
 
     fn binding(&self, name: &str) -> Result<(String, &str)> {
@@ -247,7 +273,7 @@ impl EntryContext {
 
     fn declared_field_type<'a, 'path>(&'a self, mut ty: &'a str, path: impl Iterator<Item=&'path str>) -> Option<&'a str> {
         for name in path {
-            ty = self.types.get(ty)?.fields.get(name)?;
+            ty = self.types.get(ty.trim_end_matches('?'))?.fields.get(name)?;
         }
         Some(ty)
     }
@@ -296,13 +322,13 @@ impl EntryContext {
         }).chain(result.source_identity_states.iter().filter_map(|(id, binding)| {
             let root = result.source_state_bindings.get(binding)?;
             let state = self.environment.get(root)?;
-            self.types.contains_key(state.ty.as_deref()?).then(|| (*id, self.qualified("E", root)))
+            (!state.fields.is_empty() || state.ty.as_deref().is_some_and(|ty| self.types.contains_key(ty.trim_end_matches('?'))))
+                .then(|| (*id, self.qualified("E", root)))
         })).collect()
     }
 
     pub(super) fn source_state_path(&self, root: &str, path: &[String]) -> bool {
-        self.environment.get(root).and_then(|state| state.ty.as_deref())
-            .is_some_and(|ty| self.has_field(ty, path.iter().map(String::as_str)))
+        self.state_shape_at(root, path).is_ok()
     }
 
     pub(super) fn state_name(&self, path: &[String]) -> Result<String> {
@@ -349,7 +375,7 @@ impl EntryContext {
     }
 
     pub(super) fn publish_temporals(
-        &self, result: &ExecutionResult, returned: &Expr, names: &BTreeMap<String, String>,
+        &self, result: &ExecutionResult, returned: Option<&Expr>, names: &BTreeMap<String, String>,
         acquired_path: impl Fn(u64, &[String]) -> Option<String>,
     ) -> Result<super::temporal_graph::Publication> {
         let domains = self.parameters.iter().map(|(n, p)| (n.clone(), p.ty.clone())).collect();
@@ -413,7 +439,7 @@ impl EntryContext {
                 } else {
                     returned.clone()
                 };
-                self.publish_temporals(result, &returned, &names, |id, path| self.acquired_state_path(result, id, path))?
+                self.publish_temporals(result, Some(&returned), &names, |id, path| self.acquired_state_path(result, id, path))?
             }
             _ => super::temporal_graph::Publication::default(),
         };
@@ -476,9 +502,7 @@ impl EntryContext {
                     }
                     Some(SymVarOrigin::External { binding_id, path, .. }) => {
                         result.source_state_bindings.get(binding_id)
-                            .and_then(|root| self.environment.get(root))
-                            .and_then(|state| state.ty.as_ref())
-                            .is_some_and(|ty| self.has_field(ty, path.iter().map(String::as_str)))
+                            .is_some_and(|root| self.source_state_path(root, path))
                     }
                     Some(SymVarOrigin::Temporal { .. }) => super::temporal_definition_id(node)
                         .is_some_and(|id| definition_names.contains_key(&id)),
@@ -525,7 +549,7 @@ impl EntryContext {
 
         let value = match &output {
             BusinessOutput::Observed(observations) => observations.returned.clone(),
-            BusinessOutput::Pure(returned) => {
+            BusinessOutput::Pure(returned) => Some(
                 if let Some(record) = &result.source_record_return {
                     self.types.get(&self.returns).ok_or("result record type is undeclared")?;
                     let fields = record.iter().map(|(name, value)| {
@@ -539,27 +563,77 @@ impl EntryContext {
                 } else {
                     render_value(returned)?
                 }
-            }
+            ),
         };
         let observations = match &output {
             BusinessOutput::Observed(observations) => Some(observations),
             BusinessOutput::Pure(_) => None,
         };
         let mut doc = json!({"schema": super::kernel_result::PERS_SCHEMA, "entry": {"function": self.function, "returns": self.returns},
-            "P": {"parameters": self.parameters}, "R": value});
+            "P": {"parameters": self.parameters}});
+        if let Some(value) = value { doc["R"] = json!(value); }
         let definitions = observations.map_or(&publication.rows, |o| &o.definitions);
         if !definitions.is_empty() { doc["T"] = json!(definitions); }
-        if !self.types.is_empty() { doc["types"] = json!(self.types); }
-        if !self.environment.is_empty() { doc["E"] = json!(self.environment); }
+        if !self.environment.is_empty() {
+            let environment = self.environment.iter().map(|(name, state)| {
+                let rendered = match state.ty.as_ref().and_then(|ty| self.types.get(ty)) {
+                    // The public root is a record, not a second named value
+                    // declaration. Do not expand named nested/recursive leaves.
+                    Some(record) if state.fields.is_empty() =>
+                        json!({"kind": state.kind, "source": state.source, "fields": record.fields}),
+                    _ => json!(state),
+                };
+                (name, rendered)
+            }).collect::<BTreeMap<_, _>>();
+            doc["E"] = json!(environment);
+        }
         let tables = observations.map(|o| &o.tables).unwrap_or(&result.source_tables);
         for (table, columns) in tables {
             doc["E"][table] = json!({"kind":"table", "source":table, "columns":columns});
         }
         if let Some(observations) = observations {
-            doc["S"] = json!(observations.effects);
+            if !observations.effects.is_empty() { doc["S"] = json!(observations.effects); }
             if !observations.throws.is_empty() { doc["throws"] = json!(observations.throws); }
         }
+        // Named types remain only where referenced by the emitted PERS.
+        // The internal root type stays available for typed lookup and identity.
+        let definitions = self.published_types(&doc);
+        if !definitions.is_empty() { doc["types"] = json!(definitions); }
         serde_yaml::to_string(&doc).map_err(|e| e.to_string())
+    }
+
+    fn published_types(&self, doc: &serde_json::Value) -> BTreeMap<String, &Record> {
+        fn field_types(node: &serde_json::Value, pending: &mut Vec<String>) {
+            if let Some(leaf) = node.as_str() {
+                pending.push(leaf.to_owned());
+            } else if let Some(fields) = node.as_object() {
+                for field in fields.values() { field_types(field, pending); }
+            }
+        }
+
+        let mut pending = vec![self.returns.clone()];
+        pending.extend(self.parameters.values().map(|p| p.ty.clone()));
+        if let Some(environment) = doc["E"].as_object() {
+            for state in environment.values() {
+                for key in ["type", "fields", "columns"] { field_types(&state[key], &mut pending); }
+            }
+        }
+        if let Some(effects) = doc["S"].as_array() {
+            for operation in effects {
+                field_types(&operation["call"]["returns"], &mut pending);
+            }
+        }
+        let mut published = BTreeMap::new();
+        while let Some(domain) = pending.pop() {
+            let ty = domain.trim_end_matches('?').trim_end_matches("[]");
+            if let Some(record) = self.types.get(ty) {
+                if !published.contains_key(ty) {
+                    published.insert(ty.to_owned(), record);
+                    pending.extend(record.fields.values().cloned());
+                }
+            }
+        }
+        published
     }
 }
 
@@ -634,6 +708,14 @@ mod public_entry_admission {
         entry.parameters.get_mut("ready").unwrap().position = 0;
         entry.function = "render".into();
         assert_eq!(entry.validate_public_bindings().unwrap_err(), "missing business entry identity");
+    }
+
+    #[test]
+    fn direct_port_locator_uses_the_bound_receiver_not_the_entry_method_or_signature() {
+        let mut entry = supplied_entry();
+        entry.function = "src/Order.java#Beans.ENTRY.place(java.lang.String)".into();
+        assert_eq!(entry.direct_port_identity("orders.create").unwrap(),
+            "src/Order.java#Beans.ENTRY.orders.create");
     }
 
     #[test]

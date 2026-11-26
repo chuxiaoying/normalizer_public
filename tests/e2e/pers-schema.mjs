@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import Ajv2020 from '../../implementation/tools/frontend/node_modules/ajv/dist/2020.js';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
+import { hasGuaranteedThrows } from './pers-completion.mjs';
 
 const schemaFile = new URL('../../implementation/contracts/pers/schema.yaml', import.meta.url);
 const ajv = new Ajv2020({ allErrors: true, keywords: ['x-enums'] });
@@ -10,7 +11,11 @@ const validate = ajv.compile(YAML.parse(readFileSync(schemaFile, 'utf8')));
 const scalar = new Set(['number', 'money', 'date', 'bool', 'text', 'void', 'map<text,text>']);
 
 export function assertPers(document, label) {
-  assert.ok(validate(document), () => label + ': ' + ajv.errorsText(validate.errors));
+  if (!validate(document)) assert.fail(label + ': ' + ajv.errorsText(validate.errors));
+  const hasResult = Object.hasOwn(document, 'R');
+  const definitelyThrows = hasGuaranteedThrows(document);
+  assert.ok(hasResult || definitelyThrows, label + ': absent R needs a proven full-domain throw');
+  assert.ok(!hasResult || !definitelyThrows, label + ': a guaranteed throw cannot also publish R');
   const types = document.types ?? {};
   const typeRef = (type, location) => {
     const base = type.replace(/\[\]|\?/g, '');
@@ -59,5 +64,8 @@ export function assertPers(document, label) {
     for (const field of ['when', 'members', 'empty']) checkReferences(choice[field], 'T[' + i + '].' + field);
   }
   checkReferences(document.R, 'R');
-  for (const [i, declaration] of (document.throws ?? []).entries()) checkReferences(declaration.when, 'throws[' + i + '].when');
+  for (const [i, declaration] of (document.throws ?? []).entries()) {
+    checkReferences(declaration.when, 'throws[' + i + '].when');
+    checkReferences(declaration.payload, 'throws[' + i + '].payload');
+  }
 }

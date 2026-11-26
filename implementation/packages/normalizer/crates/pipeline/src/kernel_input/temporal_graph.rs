@@ -60,13 +60,15 @@ enum Ready {
 }
 
 pub(super) fn publish(
-    nodes: &[Definition], expression: &Expr, arrays: &BTreeSet<String>,
+    nodes: &[Definition], expression: Option<&Expr>, arrays: &BTreeSet<String>,
     domains: &BTreeMap<String, String>, names: &BTreeMap<String, String>,
     acquired_path: impl Fn(u64, &[String]) -> Option<String>,
 ) -> Result<Publication> {
     let mut pending: BTreeSet<_> = nodes.iter().enumerate().filter_map(|(id, node)|
         matches!(node, Definition::Choice(_)).then_some(id as u64)).collect();
-    expression.walk(&mut |node| { pending.extend(temporal_definition_id(node)); });
+    if let Some(expression) = expression {
+        expression.walk(&mut |node| { pending.extend(temporal_definition_id(node)); });
+    }
     let mut inspect: Vec<_> = pending.iter().copied().collect();
     while let Some(id) = inspect.pop() {
         let node = nodes.get(id as usize).ok_or_else(|| fail("undefined temporal definition"))?;

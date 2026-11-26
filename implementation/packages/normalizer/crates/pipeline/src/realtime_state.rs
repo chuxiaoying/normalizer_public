@@ -87,7 +87,7 @@ impl TerminalAlternatives {
     /// R is observed only after normal completion. Once all exits are covered
     /// and throws are published separately, the last normal arm is exhaustive
     /// on that observation domain. Its guard need not retest a failed call.
-    pub(crate) fn value_on_normal_exit(&self) -> Expr {
+    pub(crate) fn value_on_normal_exit(&self) -> Option<Expr> {
         let mut returns: Vec<_> = self.0.iter().filter_map(|alt| {
             if let TerminalOutcome::Return(value) = &alt.outcome {
                 Some((alt.guard.clone(), value.clone()))
@@ -95,8 +95,8 @@ impl TerminalAlternatives {
                 None
             }
         }).collect();
-        let Some((_, fallback)) = returns.pop() else { return b::lit_null(); };
-        canonicalize_realtime_case(math::normalize(b::case_when(returns, fallback)))
+        let (_, fallback) = returns.pop()?;
+        Some(canonicalize_realtime_case(math::normalize(b::case_when(returns, fallback))))
     }
 
 }

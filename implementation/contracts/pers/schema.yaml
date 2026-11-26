@@ -24,7 +24,30 @@ x-enums:
   type-modifiers: ['?', '[]']
 type: object
 additionalProperties: false
-required: [schema, entry, P, R]
+required: [schema, entry, P]
+# Structural minimum only. Publishers must prove that exceptional
+# completions cover the entry domain before omitting the normal result.
+anyOf:
+  - required: [R]
+  - required: [throws]
+dependentSchemas:
+  R:
+    if:
+      properties:
+        entry:
+          type: object
+          properties:
+            returns:
+              const: void
+    then:
+      properties:
+        R:
+          const: void
+    else:
+      properties:
+        R:
+          not:
+            const: void
 properties:
   schema:
     const: normalizer.pers/1
@@ -47,7 +70,9 @@ properties:
   E:
     $ref: '#/$defs/e-sources'
   S:
+    description: 只列出实际可观察的有序动作；无动作时省略。
     type: array
+    minItems: 1
     items:
       $ref: '#/$defs/operation'
   T:
@@ -59,9 +84,14 @@ properties:
         - $ref: '#/$defs/member-choice'
         - $ref: '#/$defs/pure-fold'
   R:
-    $ref: '#/$defs/expression'
+    description: 仅代表实际可能发生的正常完成；正常完成的无值入口使用 void。全域抛出时省略。
+    allOf:
+      - $ref: '#/$defs/expression'
+      - not: { const: '⊥' }
   throws:
+    description: 只有源程序异常完成进入此处。没有 R 时，异常记录覆盖入口全域。
     type: array
+    minItems: 1
     items:
       $ref: '#/$defs/throw-declaration'
 $defs:

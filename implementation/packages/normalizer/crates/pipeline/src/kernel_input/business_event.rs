@@ -69,7 +69,6 @@ pub(super) fn observations(
     let identities = entry.source_identity_names(result);
     let mut names = names;
     let alternatives = &result.terminal;
-    let always_throwing = alternatives.is_always_throwing();
     let returned = alternatives.value_on_normal_exit();
     let mut add_declared_paths = |expression: &Expr| {
         expression.walk(&mut |part| {
@@ -80,7 +79,7 @@ pub(super) fn observations(
             }
         });
     };
-    add_declared_paths(&returned);
+    if let Some(value) = &returned { add_declared_paths(value); }
     for alternative in alternatives.as_slice() {
         add_declared_paths(&alternative.guard);
         if let TerminalOutcome::Return(value) = &alternative.outcome { add_declared_paths(value); }
@@ -204,9 +203,14 @@ pub(super) fn observations(
                 let args: Vec<_> = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                     event.arguments().iter().map(|arg| crate::format_expr_with_ctx(arg, ctx)).collect()
                 });
+                let endpoint = if project.direct_source {
+                    entry.direct_port_identity(&contract.endpoint)?
+                } else {
+                    contract.endpoint.clone()
+                };
                 (
                     "call",
-                    json!({"external":contract.endpoint,"args":args,"returns":name,"result":output}),
+                    json!({"external":endpoint,"args":args,"returns":name,"result":output}),
                 )
             }
             EffectOperation::StateWrite { target, value } => {
@@ -243,7 +247,7 @@ pub(super) fn observations(
     } else {
         need(temporal_receipts.len() == effects.len(),
             "temporal definitions with effects require unconditional nonthrowing integer receipts")?;
-        entry.publish_temporals(result, &returned, &names, |id, path| {
+        entry.publish_temporals(result, returned.as_ref(), &names, |id, path| {
             entry.acquired_state_path(result, id, path)
                 .or_else(|| if path.is_empty() { temporal_receipts.get(&id).cloned() } else { None })
         })?
@@ -327,44 +331,46 @@ pub(super) fn observations(
             record
         })
         .collect();
-    validate_ids(&returned, &issued, Some(temporal_names))?;
-    // Only the settled event ledger owns public receipt ordinals. When a
-    // typed integer projection shares R with a renumbered receipt, thread
-    // that ledger into the existing context-aware normalization. If the
-    // ordinals did not move, the online expression already used the same key.
-    let mut reads_total_integer_field = false;
-    let mut reads_renumbered_receipt = false;
-    if temporal_names.is_empty() {
-        returned.walk(&mut |value| {
-            if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
-                reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
-                    && total_port_receipts.contains(binding_id);
-                reads_renumbered_receipt |= issued.contains(binding_id)
-                    && u64::try_from(ctx.e_slot(*binding_id)).ok() != Some(*binding_id);
-            }
-        });
-    }
-    let returned = if temporal_names.is_empty() && !(reads_total_integer_field && reads_renumbered_receipt) {
-        returned
+    let returned = if let Some(returned) = returned {
+        validate_ids(&returned, &issued, Some(temporal_names))?;
+        // Only the settled event ledger owns public receipt ordinals. Pass
+        // those same names into a context-aware normalization when needed.
+        let mut reads_total_integer_field = false;
+        let mut reads_renumbered_receipt = false;
+        if temporal_names.is_empty() {
+            returned.walk(&mut |value| {
+                if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
+                    reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
+                        && total_port_receipts.contains(binding_id);
+                    reads_renumbered_receipt |= issued.contains(binding_id)
+                        && u64::try_from(ctx.e_slot(*binding_id)).ok() != Some(*binding_id);
+                }
+            });
+        }
+        let returned = if temporal_names.is_empty() && !(reads_total_integer_field && reads_renumbered_receipt) {
+            returned
+        } else {
+            let external_names = ctx.published_external_names();
+            super::temporal_graph::validate_reads(&returned, &result.temporal_definitions)?;
+            let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
+                heap: &BTreeMap::new(),
+                external: Some(&external_names),
+                total_temporals: Some(&publication.total), temporals: Some(temporal_names),
+            }).map_err(|error| fail(error.to_string()))?;
+            super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
+            normalized
+        };
+        ctx.set_temporal_names(publication.aliases);
+        Some(if entry.return_type() == "void" {
+            need(returned.is_null(), "non-void return in void event")?;
+            "void".into()
+        } else {
+            crate::formatting::sql::business_value::format_value(&returned, &mut ctx)
+        })
     } else {
-        let external_names = ctx.published_external_names();
-        super::temporal_graph::validate_reads(&returned, &result.temporal_definitions)?;
-        let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
-            heap: &BTreeMap::new(),
-            external: Some(&external_names),
-            total_temporals: Some(&publication.total), temporals: Some(temporal_names),
-        }).map_err(|error| fail(error.to_string()))?;
-        super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
-        normalized
-    };
-    ctx.set_temporal_names(publication.aliases);
-    let returned = if always_throwing {
-        "⊥".into()
-    } else if entry.return_type() == "void" {
-        need(returned.is_null(), "non-void return in void event")?;
-        "void".into()
-    } else {
-        crate::formatting::sql::business_value::format_value(&returned, &mut ctx)
+        // The terminal alternatives were proved exhaustive; without a
+        // return, every alternative is an observed business throw.
+        None
     };
     Ok(BusinessObservations {
         tables,
