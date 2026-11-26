@@ -661,11 +661,11 @@ fn parse_class_body(
                 let body = if p.peek() == Some(b'{') {
                     let body_at = p.pos + 1;
                     let text = p.skip_balanced_braces()?;
-                    Some(crate::body_parser::parse_method_body_text(
+                    Some(crate::body_parser::parse_constructor_body_text(
                         text,
                         file,
                         p.surrogates.subspan(body_at),
-                        false,
+                        class.supertype.is_none(),
                         p.official_n,
                         &p.imports,
                     ).map_err(|error| p.rebase_slice(body_at, error))?)

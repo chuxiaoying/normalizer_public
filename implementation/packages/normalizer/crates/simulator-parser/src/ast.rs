@@ -240,6 +240,9 @@ pub enum JavaStatement {
         is_compound: bool,
     },
 
+    /// Explicit `this(...)` at the head of a constructor.
+    ThisConstructor(Vec<JavaExpr>),
+
     /// 纯表达式语句：`foo();` / `x++;`
     ExprStmt(JavaExpr),
 
@@ -299,14 +302,14 @@ pub enum JavaStatement {
 /// catch 子句。
 #[derive(Debug, Clone)]
 pub struct CatchClause {
-    pub(crate) exception_class: String,
+    pub(crate) exception_classes: Vec<String>,
     pub(crate) var_name: String,
     pub(crate) body: Vec<JavaStatement>,
 }
 
 impl CatchClause {
-    pub fn exception_class(&self) -> &str {
-        &self.exception_class
+    pub fn exception_classes(&self) -> &[String] {
+        &self.exception_classes
     }
     pub fn var_name(&self) -> &str {
         &self.var_name
@@ -328,6 +331,9 @@ pub enum JavaExpr {
 
     /// 标识符引用（变量名/类名/字段名，由 resolver 决定）
     Ident(String),
+
+    /// Native non-binding Java type test.
+    InstanceOf { value: Box<JavaExpr>, target: JavaType },
 
     /// 字段访问：`obj.field`
     FieldAccess {

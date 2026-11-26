@@ -3,6 +3,7 @@
 mod external_polling;
 mod static_types;
 pub(crate) mod fixed_for;
+pub(crate) mod affine_recursion;
 pub(crate) mod source_ports;
 
 use simulator_parser::{
@@ -23,6 +24,38 @@ fn error(code: &str, at: &str) -> String {
     };
     crate::preprocess::required(code, at, "输入不满足当前规范 Java 合同。", action)
 }
+// Only a pure literal constructor initializer is admitted here. The same
+// typed checker is used by layout admission and the object allocator.
+pub(crate) fn closed_field_initializer(t: &JavaType, e: &E) -> Option<math::Expr> {
+    use math::builder as b;
+    fn integer(e: &E) -> Option<(i128, bool)> {
+        match e {
+            E::Lit(JavaLit::Int(value)) => Some((i128::from(*value), false)),
+            E::Lit(JavaLit::Long(value)) => Some((i128::from(*value), true)),
+            E::UnaryOp { op: U::Neg, operand } =>
+                integer(operand).map(|(value, long)| (-value, long)),
+            _ => None,
+        }
+    }
+    match (t, e) {
+        (JavaType::Primitive(ty), e) if integral(t) => {
+            let (value, long) = integer(e)?;
+            let fits = match ty.as_str() {
+                "byte" => !long && i8::try_from(value).is_ok(),
+                "short" => !long && i16::try_from(value).is_ok(),
+                "int" => !long && i32::try_from(value).is_ok(),
+                "long" => i64::try_from(value).is_ok(),
+                _ => false,
+            };
+            fits.then(|| b::lit_integer(value))
+        }
+        (JavaType::Primitive(ty), E::Lit(JavaLit::Bool(value))) if ty == "boolean" => Some(b::lit_bool(*value)),
+        (JavaType::Class(ty), E::Lit(JavaLit::Str(value))) if matches!(ty.as_str(), "String" | "java.lang.String") => Some(b::lit_str(value)),
+        (JavaType::Class(_), E::Lit(JavaLit::Null)) => Some(b::lit_null()),
+        _ => None,
+    }
+}
+
 pub(crate) fn integral(t: &JavaType) -> bool {
     matches!(t, JavaType::Primitive(n) if matches!(n.as_str(), "byte" | "short" | "int" | "long"))
 }
@@ -104,7 +137,8 @@ fn source_layouts_with_receiver(
         }
         if source_payload_domain(class).is_some() { continue; }
         if class.fields().is_empty() {
-            if plain_source_interface(class) || !class.interfaces().is_empty() {
+            if class.supertype().is_none()
+                && (!class.is_interface() || plain_source_interface(class)) {
                 layouts.insert(class.full_name(), BTreeMap::new());
             }
             continue;
@@ -127,7 +161,8 @@ fn source_layouts_with_receiver(
             let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || source_nullable_field(class, field);
             if field.is_static()
                 || field.is_final()
-                || field.has_initializer()
+                || field.initializer().is_some_and(|value|
+                    entry_state(class, field) || closed_field_initializer(field.java_type(), value).is_none())
                 || !annotation_ok
             {
                 return Err(error("NORM-FIELD-DECLARATION", &class.full_name()));
@@ -278,7 +313,9 @@ pub(crate) const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
 // The direct source profile models only this closed subset of the Java
 // exception hierarchy. Qualified names are also the published identities.
 const SOURCE_BUILTIN_EXCEPTIONS: &[(&str, Option<&str>)] = &[
-    (RUNTIME_EXCEPTION, None),
+    ("java.lang.Throwable", None),
+    ("java.lang.Exception", Some("java.lang.Throwable")),
+    (RUNTIME_EXCEPTION, Some("java.lang.Exception")),
     ("java.lang.NullPointerException", Some(RUNTIME_EXCEPTION)),
     ("java.lang.ArithmeticException", Some(RUNTIME_EXCEPTION)),
     ("java.lang.IndexOutOfBoundsException", Some(RUNTIME_EXCEPTION)),
@@ -348,12 +385,13 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
     for name in parents.keys() {
         let mut current = name.as_str();
         let mut seen = BTreeSet::new();
-        while current != RUNTIME_EXCEPTION {
+        while current != "java.lang.Throwable" {
             if !seen.insert(current) {
                 return Err(error("NORM-EXCEPTION-CYCLE", name));
             }
             current = parents
-                .get(current)
+                .get(current).map(String::as_str)
+                .or_else(|| builtin_exception(current).and_then(|(_, parent)| parent))
                 .ok_or_else(|| error("NORM-EXCEPTION-BASE", name))?;
         }
     }
@@ -377,8 +415,16 @@ pub(crate) fn subtype(child: &str, parent: &str, parents: &BTreeMap<String, Stri
 /// exception can leave at any binding. Such temporaries are out of scope in
 /// every handler, so their partial values need no exceptional snapshot.
 pub(crate) fn protected_return(body: &[S]) -> bool {
-    matches!(body.split_last(), Some((S::Return(Some(_)), prefix))
-        if prefix.iter().all(|s| matches!(s, S::VarDecl { initializer: Some(_), .. })))
+    fn isolated(statement: &S) -> bool {
+        match statement {
+            S::VarDecl { initializer: Some(_), .. } | S::Throw(_) | S::Return(_) => true,
+            S::Block(body) => body.iter().all(isolated),
+            S::If { then_block, else_block, .. } => then_block.iter().all(isolated)
+                && else_block.as_ref().is_none_or(|other| other.iter().all(isolated)),
+            _ => false,
+        }
+    }
+    matches!(body.split_last(), Some((S::Return(_), prefix)) if prefix.iter().all(isolated))
 }
 
 /// Syntactic terminal-throw shape. Admission binds its declared type before execution.
@@ -434,6 +480,13 @@ pub(crate) fn method_for_key<'a>(class: &'a JavaClass, key: &str) -> Option<&'a 
         (method_key(class, index, method) == key).then_some(method))
 }
 
+pub(crate) fn constructor_for_arity(class: &JavaClass, arity: usize) -> Option<(String, &JavaMethod)> {
+    let mut matches = class.methods().iter().enumerate()
+        .filter(|(_, method)| method.is_constructor() && method.arity() == arity);
+    let (index, method) = matches.next()?;
+    matches.next().is_none().then(|| (method_key(class, index, method), method))
+}
+
 fn same_parameters(left: &JavaMethod, right: &JavaMethod) -> bool {
     left.params().iter().map(|(ty, _)| ty).eq(right.params().iter().map(|(ty, _)| ty))
 }
@@ -485,7 +538,11 @@ pub(crate) fn validate_with_receiver(
         }
         for (index, m) in c.methods().iter().enumerate() {
             if c.methods()[..index].iter().any(|prior| prior.name() == m.name()
-                && (m.is_constructor() || prior.is_constructor() || same_parameters(prior, m)))
+                && (match (prior.is_constructor(), m.is_constructor()) {
+                    (true, true) => prior.arity() == m.arity(),
+                    (false, false) => same_parameters(prior, m),
+                    _ => true,
+                }))
             {
                 return Err(error("NORM-OVERLOAD", &format!("{name}.{}", m.name())));
             }
@@ -544,7 +601,10 @@ pub(crate) fn validate_with_receiver(
                     if !class.methods().iter().any(|m| m.is_constructor()) && arity == 0 {
                         continue;
                     }
-                    (owner.clone(), owner)
+                    let (target, _) = constructor_for_arity(class, arity).ok_or_else(|| error(
+                        "NORM-UNBOUND-CALL", &format!("{id} -> {owner} constructor/{arity}")))?;
+                    targets.push(target);
+                    continue;
                 }
             };
             let target = format!("{target_owner}.{target_member}");
@@ -588,7 +648,9 @@ pub(crate) fn validate_with_receiver(
                     &format!("{id} -> {target}/{arity}"),
                 ));
             }
-            targets.push(target);
+            if target != *id || affine_recursion::prove(m).is_none() {
+                targets.push(target);
+            }
         }
         graph.insert(id.clone(), targets);
     }
@@ -693,6 +755,9 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
             S::For {init,cond,update,body}
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {
+                if let Some(S::Block(declarations)) = init.as_deref() {
+                    statements(declarations, at, calls, catch_admission, inside_finally)?;
+                }
                 statements(body, at, calls, catch_admission, inside_finally)?;
             }
             S::Try { body, catches, finally_block } => {
@@ -700,21 +765,37 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 statements(body, at, calls, catch_admission, inside_finally)?;
                 let mut prior_types: Vec<String> = Vec::new();
                 for handler in catches {
-                    let class = catch_admission.bind(at, handler.exception_class())?;
-                    if let Some(prior) = prior_types.iter().find(|prior|
-                        subtype(&class, prior, catch_admission.parents))
-                    {
-                        return Err(crate::preprocess::required(
-                            "NORM-CATCH-ORDER", at, &format!("catch class {class} is already caught by {prior}"),
-                            "把更具体的异常处理器放在父类之前，不要删除处理分支。",
-                        ));
+                    let mut alternatives: Vec<String> = Vec::new();
+                    for name in handler.exception_classes() {
+                        let class = catch_admission.bind(at, name)?;
+                        if let Some(other) = alternatives.iter().find(|other|
+                            subtype(&class, other, catch_admission.parents)
+                            || subtype(other, &class, catch_admission.parents))
+                        {
+                            return Err(crate::preprocess::required(
+                                "NORM-CATCH-TYPE", at,
+                                &format!("multi-catch alternatives {class} and {other} overlap"),
+                                "并列的异常类型不能相同，也不能互为父子类。",
+                            ));
+                        }
+                        if let Some(prior) = prior_types.iter().find(|prior|
+                            subtype(&class, prior, catch_admission.parents))
+                        {
+                            return Err(crate::preprocess::required(
+                                "NORM-CATCH-ORDER", at, &format!("catch class {class} is already caught by {prior}"),
+                                "把更具体的异常处理器放在父类之前，不要删除处理分支。",
+                            ));
+                        }
+                        alternatives.push(class);
                     }
-                    prior_types.push(class);
+                    prior_types.extend(alternatives);
                     statements(handler.body(), at, calls, catch_admission, inside_finally)?;
                 }
                 if let Some(finally) = finally_block {
                     let body = match finally.split_last()
-                        .and_then(|(last, prefix)| finally_throw(last).map(|class| (class, prefix)))
+                        .and_then(|(last, prefix)| finally_throw(last)
+                            .filter(|class| !matches!(*class, "RuntimeException" | crate::normalized::RUNTIME_EXCEPTION))
+                            .map(|class| (class, prefix)))
                     {
                         Some((class, prefix)) => {
                             catch_admission.bind_finally_throw(at, class)?;
@@ -766,8 +847,21 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 value,
                 ..
             } => expr(value, at, calls)?,
-            S::Throw(_) if inside_finally => return Err(unsupported_finally_throw(at)),
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
+            S::Throw(e) if !inside_finally => {
+                if let Some(class) = finally_throw(stmt) {
+                    catch_admission.bind_finally_throw(at, class)?;
+                } else {
+                    expr(e, at, calls)?;
+                    return Err(error("NORM-EXPLICIT-THROW", at));
+                }
+            }
+            S::Throw(_) => return Err(unsupported_finally_throw(at)),
+            S::ThisConstructor(args) => {
+                let owner = at.rsplit_once('.').expect("constructor key has an owner").0;
+                for a in args { expr(a, at, calls)?; }
+                calls.push((SourceCall::Constructor(owner.into()), args.len()));
+            }
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
             S::Block(b) => statements(b, at, calls, catch_admission, inside_finally)?,
             S::If {
@@ -905,6 +999,7 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
             op: U::Not | U::Neg,
             operand,
         } => expr(operand, at, calls)?,
+        E::InstanceOf { value, .. } => expr(value, at, calls)?,
         E::Ternary {
             cond,
             then_expr,

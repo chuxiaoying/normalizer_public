@@ -219,7 +219,12 @@ impl Engine<'_> {
             need(!env.contains_key(header.counter), "duplicate loop variable")?;
         }
         let mut locals = env.clone();
-        for index in 0..header.count {
+        let mut offset = 0;
+        let not_proven = || crate::preprocess::required(
+            "NORM-LOOP", id, "loop body does not prove strictly forward induction",
+            "保留源码；需要证明所有继续执行的路径都朝循环终点前进。",
+        );
+        while offset < header.count {
             let active = math::normalize(b::and(
                 path.clone(),
                 self.realtime_completion.continuing_guard(),
@@ -228,19 +233,26 @@ impl Engine<'_> {
                 break;
             }
             self.budget()?;
-            let counter = b::lit_integer(header.start + index * header.step);
+            let current = header.start + offset * header.step;
+            let counter = b::lit_integer(current);
             locals.insert(
                 header.counter.into(),
                 Value::Term(Ty::Integer, counter.clone()),
             );
             self.source_steps(body, id, &mut locals, active)?;
-            need(
-                locals[header.counter].scalar()? == counter,
-                "loop body changes its proven induction variable",
-            )?;
-            if header.assigns_outer && self.realtime_completion.continuing_guard().as_bool() != Some(false) {
+            if self.realtime_completion.continuing_guard().as_bool() == Some(false) { break; }
+            let observed: i128 = locals[header.counter].scalar()?.as_lit().and_then(|l| l.as_integer())
+                .and_then(|n| n.try_into().ok()).ok_or_else(not_proven)?;
+            // Do not forecast the number of remaining steps using stale
+            // values. A forward body write may skip iterations, while a
+            // backward write invalidates this particular closure proof.
+            if (observed - current) * header.step < 0 {
+                return Err(not_proven());
+            }
+            offset = (observed - header.start) * header.step + 1;
+            if header.assigns_outer {
                 // Return/throw paths already captured the pre-update counter.
-                locals.insert(header.counter.into(), counter_value(header.start + (index + 1) * header.step));
+                locals.insert(header.counter.into(), counter_value(observed + header.step));
             }
             for (name, value) in env.iter_mut() {
                 *value = locals[name].clone();
@@ -269,15 +281,17 @@ impl Engine<'_> {
         let mut handled = Vec::new();
         for catch in catches {
             // from_parsed_source has bound every handler, independent of its reachability.
-            let caught = &self.project.source_exception_bindings[id][catch.exception_class()];
+            let caught = catch.exception_classes().iter()
+                .map(|name| &self.project.source_exception_bindings[id][name])
+                .collect::<Vec<_>>();
             let mut guard = b::lit_bool(false);
             pending.retain(|alternative| {
                 if let CompletionOutcome::Throw { class, .. } = &alternative.outcome {
-                    if crate::normalized::subtype(
+                    if caught.iter().any(|kind| crate::normalized::subtype(
                         class,
-                        caught,
+                        kind,
                         &self.project.source_exception_parents,
-                    ) {
+                    )) {
                         guard = b::or(guard.clone(), alternative.guard.clone());
                         return false;
                     }
@@ -313,7 +327,9 @@ impl Engine<'_> {
             self.realtime_throws.truncate(prior_realtime_throws);
             self.realtime_completion = Completion::Continue;
             let trailing_throw = finally.split_last().and_then(|(last, prefix)|
-                crate::normalized::finally_throw(last).map(|class| (class, prefix)));
+                crate::normalized::finally_throw(last)
+                            .filter(|class| !matches!(*class, "RuntimeException" | crate::normalized::RUNTIME_EXCEPTION))
+                            .map(|class| (class, prefix)));
             let body = trailing_throw.map_or(finally, |(_, prefix)| prefix);
             self.source_steps(body, id, &mut env.clone(), path.clone())?;
             if let Some((class, _)) = trailing_throw {

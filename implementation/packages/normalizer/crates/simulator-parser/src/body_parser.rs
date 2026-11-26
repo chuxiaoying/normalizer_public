@@ -24,6 +24,41 @@ pub(crate) fn parse_method_body_text(
     p.parse_statements_until_end()
 }
 
+pub(crate) fn parse_constructor_body_text(
+    body_text: &str,
+    file: &str,
+    surrogates: Surrogates<'_>,
+    implicit_object_parent: bool,
+    official_n: bool,
+    imports: &[String],
+) -> Result<Vec<JavaStatement>, ParseError> {
+    let mut p = Parser::new(body_text, file).with_surrogates(surrogates);
+    p.official_n = official_n;
+    p.imports.extend_from_slice(imports);
+    let initial_position = p.pos;
+    let same_class = p.eat_keyword("this");
+    p.skip_ws();
+    if same_class && p.peek() == Some(b'(') {
+        let args = p.parse_arg_list()?;
+        p.require_semicolon("same-class constructor call")?;
+        let mut body = vec![JavaStatement::ThisConstructor(args)];
+        body.extend(p.parse_statements_until_end()?);
+        return Ok(body);
+    }
+    p.pos = initial_position;
+    if implicit_object_parent && p.eat_keyword("super") && p.eat_char(b'(') {
+        if !p.eat_char(b')') {
+            return Err(p.err("[JAVA-CONSTRUCTOR-DELEGATION] Object has only a zero-argument constructor"));
+        }
+        p.require_semicolon("Object constructor call")?;
+        // java.lang.Object() has no source-observable instance effect. The
+        // allocator already executes this implicit stage before field init.
+    } else {
+        p.pos = initial_position;
+    }
+    p.parse_statements_until_end()
+}
+
 impl<'a> Parser<'a> {
     /// 解析语句列表直到输入结束（用于方法体顶层）。
     pub(crate) fn parse_statements_until_end(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
@@ -288,10 +323,8 @@ impl<'a> Parser<'a> {
             } else {
                 // init 可以是 vardecl 或 expression
                 let stmt = if let Some((v, rest)) = self.try_parse_vardecl()? {
-                    if !rest.is_empty() {
-                        return Err(self.err("[JAVA-FOR-INITIALIZER] only one induction declaration is supported"));
-                    }
-                    v
+                    if rest.is_empty() { v }
+                    else { JavaStatement::Block(std::iter::once(v).chain(rest).collect()) }
                 } else {
                     let e = self.parse_expression()?;
                     self.skip_ws();
@@ -390,13 +423,14 @@ impl<'a> Parser<'a> {
             self.require_delimiter(b'(', "expected '(' after 'catch'")?;
             self.skip_ws();
             self.eat_keyword("final");
-            let exception_class = match parse_type(self) {
-                Some(JavaType::Class(name)) => name,
-                _ => return Err(self.err("catch requires an exception class name")),
-            };
-            self.skip_ws();
-            if self.peek() == Some(b'|') {
-                return Err(self.err("multi-catch is not supported in normalized Java"));
+            let mut exception_classes = Vec::new();
+            loop {
+                let name = match parse_type(self) {
+                    Some(JavaType::Class(name)) => name,
+                    _ => return Err(self.err("catch requires an exception class name")),
+                };
+                exception_classes.push(name);
+                if !self.eat_char(b'|') { break; }
             }
             let var_name = self
                 .read_ident()
@@ -405,7 +439,7 @@ impl<'a> Parser<'a> {
             self.require_delimiter(b')', "expected ')' after catch clause")?;
             let body = self.parse_braced_statements()?;
             catches.push(CatchClause {
-                exception_class,
+                exception_classes,
                 var_name,
                 body,
             });
@@ -604,8 +638,19 @@ impl<'a> Parser<'a> {
             self.skip_ws();
             let operator = self.pos;
             if self.eat_keyword("instanceof") {
-                self.pos = operator;
-                return Err(self.err("[JAVA-UNSUPPORTED-TYPE-TEST] instanceof requires explicit preprocessing"));
+                if min_prec > 9 {
+                    self.pos = operator;
+                    break;
+                }
+                self.skip_ws();
+                let type_at = self.pos;
+                let target = parse_type(self)
+                    .ok_or_else(|| self.err_at(type_at, "[JAVA-INSTANCEOF] expected a reference type after instanceof"))?;
+                if !matches!(target, JavaType::Class(_) | JavaType::Array(_)) {
+                    return Err(self.err_at(type_at, "[JAVA-INSTANCEOF] expected a reference type after instanceof"));
+                }
+                left = JavaExpr::InstanceOf { value: Box::new(left), target };
+                continue;
             }
             if self.starts_with("<<") || self.starts_with(">>")
                 || matches!(self.peek(), Some(b'^'))

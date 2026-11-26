@@ -345,6 +345,18 @@ impl<'a> Engine<'a> {
             self.budget()?;
             match s {
                 S::Block(statements) => self.source_scope(statements, id, env, path)?,
+                S::ThisConstructor(args) => {
+                    let owner = id.rsplit_once('.').expect("constructor key has an owner").0;
+                    let class = self.program.find_class(owner).ok_or_else(|| fail("no constructor owner"))?;
+                    let (target, _) = crate::normalized::constructor_for_arity(class, args.len())
+                        .ok_or_else(|| fail("unresolved same-class constructor"))?;
+                    let receiver = env.get("this").cloned()
+                        .ok_or_else(|| fail("constructor delegation needs the original receiver"))?;
+                    let values = args.iter()
+                        .map(|argument| self.java_expr(argument, id, env, path.clone()))
+                        .collect::<Result<Vec<_>>>()?;
+                    self.java_call_on(&target, values, path, Some(receiver))?;
+                }
                 S::Return(Some(expr)) => {
                     need(
                         i + 1 == body.len(),
@@ -363,17 +375,22 @@ impl<'a> Engine<'a> {
                 }
                 S::Throw(expr) => {
                     use crate::normalized::RuntimeThrowMessage;
-                    let payload = match crate::normalized::runtime_throw_message(expr)
-                        .ok_or_else(|| fail("source throw needs an explicit RuntimeException message contract"))?
-                    {
-                        RuntimeThrowMessage::Absent => None,
-                        RuntimeThrowMessage::Null => Some(b::lit_null()),
-                        RuntimeThrowMessage::Text(text) => Some(b::lit_str(text)),
+                    let (class, payload) = match crate::normalized::runtime_throw_message(expr) {
+                        Some(RuntimeThrowMessage::Absent) => (crate::normalized::RUNTIME_EXCEPTION.into(), None),
+                        Some(RuntimeThrowMessage::Null) => (crate::normalized::RUNTIME_EXCEPTION.into(), Some(b::lit_null())),
+                        Some(RuntimeThrowMessage::Text(text)) => (crate::normalized::RUNTIME_EXCEPTION.into(), Some(b::lit_str(text))),
+                        None => {
+                            let class = crate::normalized::finally_throw(s)
+                                .and_then(|raw| self.project.source_exception_bindings.get(id)?.get(raw))
+                                .ok_or_else(|| fail("source throw requires an admitted exception constructor"))?
+                                .clone();
+                            (class, None)
+                        }
                     };
                     self.realtime_throws.push(path);
                     self.realtime_completion = self.realtime_completion.replace_continue(
                         realtime_state::Completion::Throw {
-                            class: crate::normalized::RUNTIME_EXCEPTION.into(),
+                            class,
                             payload,
                         },
                     );
@@ -550,7 +567,17 @@ impl<'a> Engine<'a> {
                     }
                     let header = crate::normalized::fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref())
                         .ok_or_else(||fail("for loop needs a proven fixed induction bound"))?;
-                    self.execute_fixed_for(header,body,id,env,path)?;
+                    if let Some(declarations) = header.declarations {
+                        let mut locals = env.clone();
+                        self.source_steps(declarations, id, &mut locals, path.clone())?;
+                        locals.remove(header.counter);
+                        self.execute_fixed_for(header, body, id, &mut locals, path)?;
+                        for (name, value) in env.iter_mut() {
+                            *value = locals.remove(name).expect("loop scope preserved its outer binding");
+                        }
+                    } else {
+                        self.execute_fixed_for(header,body,id,env,path)?;
+                    }
                 }
                 S::Try {body,catches,finally_block} => {
                     self.execute_source_try(body,catches,finally_block.as_deref(),id,env,path)?;
@@ -755,6 +782,27 @@ impl<'a> Engine<'a> {
                     return self.read_entry_state(owner, n, &path);
                 }
                 Err(fail(format!("undefined Java variable {n}")))
+            }
+            J::InstanceOf { value, target } => {
+                let value = self.java_expr(value, id, env, path)?.scalar()?;
+                let JavaType::Class(target) = target else { return Err(fail("instanceof target is not nominal")); };
+                let present = if value.is_null() {
+                    false
+                } else {
+                    let actual = self.source_objects.allocation_owner(&value)
+                        .ok_or_else(|| fail("instanceof requires an exact source allocation identity"))?;
+                    let allocated = self.program.find_class(actual)
+                        .ok_or_else(|| fail("instanceof allocation has no declared class"))?;
+                    if let Some(target) = self.program.find_class(target) {
+                        allocated.full_name() == target.full_name() ||
+                            allocated.interfaces().iter().any(|name| self.program.find_class(name)
+                                .is_some_and(|interface| interface.full_name() == target.full_name()))
+                    } else {
+                        need(matches!(target.as_str(), "java.lang.Object" | "Object"), "instanceof class is not declared")?;
+                        true
+                    }
+                };
+                Ok(Value::Term(Ty::Bool, b::lit_bool(present)))
             }
             J::Lit(JavaLit::Str(v)) => Ok(Value::Term(Ty::Text, b::lit_str(v))),
             // A char constant contributes its unsigned UTF-16 code unit to
@@ -987,16 +1035,23 @@ impl<'a> Engine<'a> {
                 }
                 need(left.ty() == Ty::Integer && right.ty() == Ty::Integer,
                     "division and remainder require integer operands")?;
-                let concrete = |v: Value| v.scalar()?.as_lit().and_then(math::Lit::as_integer)
+                let (left, right) = (math::normalize(left.scalar()?), math::normalize(right.scalar()?));
+                let zero = self.condition_under_path(b::eq(right.clone(), b::lit_int(0)), &normal);
+                if zero.as_bool() != Some(false) {
+                    // Register the actual Java completion before simplifying
+                    // the normal domain. A caught divide-by-zero is observable.
+                    self.throw_source_on_path(b::and(normal, zero.clone()), "java.lang.ArithmeticException");
+                }
+                if zero.as_bool() == Some(true) { return Ok(no_value()); }
+                if left == right {
+                    return Ok(Value::Term(Ty::Integer, b::lit_int(if *op == B::Div { 1 } else { 0 })));
+                }
+                let concrete = |v: Expr| v.as_lit().and_then(math::Lit::as_integer)
                     .ok_or_else(|| crate::preprocess::required(
                         "NORM-EXPRESSION", id, "division and remainder require concrete integers",
                         "保留原操作数和异常行为；当前入口不接纳符号化商或余数。",
                     ));
                 let (left, right) = (concrete(left)?, concrete(right)?);
-                if right == math::Integer::from(0) {
-                    self.throw_source_on_path(normal, "java.lang.ArithmeticException");
-                    return Ok(no_value());
-                }
                 let result = if *op == B::Div { left / right } else { left % right };
                 Ok(Value::Term(Ty::Integer, b::lit_integer(result)))
             }
@@ -1421,6 +1476,17 @@ impl Engine<'_> {
         }
         let value = if let Some(binding) = method.binding.clone() {
             self.call(id, &binding, args, path)?
+        } else if let Some(proof) = crate::normalized::affine_recursion::prove(m) {
+            let input = args.pop().expect("unary affine recursion").scalar()?;
+            let base = b::lit_integer(proof.base);
+            let boundary = b::lit_integer(proof.boundary);
+            let affine = math::normalize(b::add(base.clone(), b::mul(
+                b::sub(input.clone(), boundary.clone()), b::lit_integer(proof.slope))));
+            let positive = self.condition_under_path(b::gt(input, boundary), &path);
+            let value = math::normalize(b::case_when(vec![(positive, affine)], base));
+            self.realtime_completion =
+                realtime_state::Completion::Return(value.clone());
+            Value::Term(Ty::Integer, value)
         } else {
             need(
                 m.is_static()

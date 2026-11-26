@@ -338,6 +338,31 @@ impl Admission<'_> {
                     kind
                 }
             }
+            E::InstanceOf { value, target } => {
+                let kind = self.expression(value, scope)?;
+                let JavaType::Class(target) = target else {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof needs a supported closed nominal type"));
+                };
+                if !matches!(kind, Kind::Ref | Kind::Null) ||
+                   !(matches!(target.as_str(), "java.lang.Object" | "Object")
+                       || self.program.find_class(target).is_some())
+                {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof needs a supported closed nominal type and a reference value"));
+                }
+                if let Some(JavaType::Class(source)) = self.declared_type(value, scope) {
+                    if let (Some(source), Some(target)) =
+                        (self.program.find_class(&source), self.program.find_class(target))
+                    {
+                        if !source.is_interface() && !target.is_interface()
+                            && source.full_name() != target.full_name()
+                            && source.supertype().is_none() && target.supertype().is_none()
+                        {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof has unrelated source classes"));
+                        }
+                    }
+                }
+                Kind::Bool
+            }
             E::Ternary { cond, then_expr, else_expr } => {
                 self.condition(self.expression(cond, scope)?, "ternary condition")?;
                 let yes = self.expression_in_context(then_expr, scope, object_target)?;
@@ -491,18 +516,30 @@ impl Admission<'_> {
         Ok(())
     }
 
-    fn prove_initialized_counter(&self, name: &str, body: &[S], scope: &Scope) -> Result<(), String> {
+    fn prove_initialized_counter(&self, header: &super::fixed_for::FixedFor<'_>, body: &[S], scope: &Scope) -> Result<(), String> {
+        let name = header.counter;
         let not_proven = |detail: &str| crate::preprocess::required(
             "NORM-LOOP", self.id, detail,
-            "当前赋值初始化循环只证明已初始化的可变 int/long 局部计数器；保留合法源码，不要编造初值。",
+            "保留合法源码；对于固定循环，计数器必须在可证范围内单向前进。",
         );
-        if !scope.get(name).is_some_and(|binding| binding.initialized_local
-            && matches!(&binding.ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
-        {
-            return Err(not_proven("assignment counter needs an already initialized int/long local"));
-        }
-        if !super::fixed_for::preserves_assignment_counter(body, name) {
-            return Err(not_proven(&format!("body must preserve proven induction counter {name}")));
+        let inspected = scope.get(name).filter(|binding| binding.initialized_local)
+            .and_then(|binding| match &binding.ty {
+                JavaType::Primitive(ty) => Some(ty.as_str()), _ => None,
+            });
+        let narrow = match inspected {
+            Some("int" | "long") => false,
+            Some("short") => {
+                if i16::try_from(header.start).is_err()
+                    || i16::try_from(header.start + header.count * header.step).is_err()
+                {
+                    return Err(not_proven("short loop counter may overflow before its final update"));
+                }
+                true
+            }
+            _ => return Err(not_proven("assignment counter needs an initialized integer local")),
+        };
+        if !super::fixed_for::closed_assignment_counter(body, name, !narrow) {
+            return Err(not_proven(&format!("unproved write to induction counter {name}")));
         }
         Ok(())
     }
@@ -534,6 +571,32 @@ impl Admission<'_> {
                         initialized_final: *is_final && initializer.is_some(),
                         initialized_local: initializer.is_some(),
                     });
+                }
+                S::ThisConstructor(args) => {
+                    let only_parameter_value = |name: &str| self.method.params().iter().any(|(_, n)| n == name);
+                    fn pure_arg(value: &E, has_parameter: &impl Fn(&str) -> bool) -> bool {
+                        match value {
+                            E::Lit(_) => true,
+                            E::Ident(name) => has_parameter(name),
+                            E::BinOp { left, right, .. } =>
+                                pure_arg(left, has_parameter) && pure_arg(right, has_parameter),
+                            E::UnaryOp { op: U::Neg | U::Not, operand } =>
+                                pure_arg(operand, has_parameter),
+                            E::Cast { operand, .. } => pure_arg(operand, has_parameter),
+                            _ => false,
+                        }
+                    }
+                    let (_, constructor) = super::constructor_for_arity(self.class, args.len())
+                        .ok_or_else(|| self.diagnostic("NORM-UNBOUND-CALL", "unresolved same-class constructor"))?;
+                    for ((expected, _), arg) in constructor.params().iter().zip(args) {
+                        if !pure_arg(arg, &only_parameter_value) {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                                "same-class delegation must not observe the receiver before construction"));
+                        }
+                        let actual = self.expression_in_context(arg, scope, self.root_object_target(expected))?;
+                        self.check_assignment_narrowing(Some(expected), arg, scope, "constructor argument")?;
+                        self.compatible(Kind::declared(expected), actual, "constructor argument")?;
+                    }
                 }
                 S::Assign { target, value, is_compound } => {
                     self.assignment(target, value, *is_compound, scope)?;
@@ -572,7 +635,12 @@ impl Admission<'_> {
                     for handler in catches {
                         let mut handler_scope = scope.clone();
                         self.check_local_name(handler.var_name(), scope)?;
-                        handler_scope.insert(handler.var_name().into(), Binding::plain(JavaType::Class(handler.exception_class().into())));
+                        let mut binding = Binding::plain(JavaType::Class(handler.exception_classes()[0].clone()));
+                        // The handler shares all alternatives. The interpreter
+                        // models type-only exception objects; in particular a
+                        // multi-catch binding is implicitly final in Java.
+                        binding.initialized_final = handler.exception_classes().len() > 1;
+                        handler_scope.insert(handler.var_name().into(), binding);
                         self.block(handler.body(), &mut handler_scope)?;
                     }
                     if let Some(body) = finally_block { self.block(body, &mut scope.clone())?; }
@@ -581,18 +649,22 @@ impl Admission<'_> {
                 S::Throw(value) | S::ExprStmt(value) => { self.expression(value, scope)?; }
                 // Structural admission already required both components of
                 // each fixed or rectangular loop. Only check their bindings here.
-                S::For { init: Some(init), update: Some(update), body, .. } => {
+                S::For { init: Some(init), cond, update: Some(update), body } => {
                     let mut loop_scope = scope.clone();
                     let assignment = super::fixed_for::assignment_init(init.as_ref());
                     if let Some((_, target, value)) = assignment {
                         self.assignment(target, value, false, scope)?;
+                    } else if let S::Block(declarations) = init.as_ref() {
+                        self.block(declarations, &mut loop_scope)?;
                     } else {
                         self.block(std::slice::from_ref(init.as_ref()), &mut loop_scope)?;
                     }
                     self.expression(update, &loop_scope)?;
                     self.block(body, &mut loop_scope)?;
-                    if let Some((name, ..)) = assignment {
-                        self.prove_initialized_counter(name, body, scope)?;
+                    if assignment.is_some() {
+                        let header = super::fixed_for::FixedFor::from_header(Some(init), cond.as_ref(), Some(update))
+                            .expect("structural admission proved the fixed assignment counter");
+                        self.prove_initialized_counter(&header, body, scope)?;
                     }
                 }
                 S::ForEach { var_type, var_name, iterable, body } => {

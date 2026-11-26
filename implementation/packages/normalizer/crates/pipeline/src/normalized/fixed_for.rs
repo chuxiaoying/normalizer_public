@@ -9,6 +9,7 @@ pub(crate) struct FixedFor<'a> {
     pub step: i128,
     pub count: i128,
     pub assigns_outer: bool,
+    pub declarations: Option<&'a [S]>,
 }
 
 fn literal(expr: &E) -> Option<i128> {
@@ -30,14 +31,15 @@ pub(super) fn assignment_init(init: &S) -> Option<(&str, &E, &E)> {
 // Assignment-initialized loops may assign other locals or return early.
 // Every conditional arm must preserve the counter; other body shapes need
 // their own proof rather than inheriting this one.
-pub(super) fn preserves_assignment_counter(body: &[S], counter: &str) -> bool {
+pub(super) fn closed_assignment_counter(body: &[S], counter: &str, mutable_counter: bool) -> bool {
     body.iter().all(|statement| match statement {
-        S::Assign { target: E::Ident(name), .. } => name != counter,
+        S::Assign { target: E::Ident(name), value, .. } => name != counter
+            || mutable_counter && literal(value).is_some(),
         S::Return(_) => true,
-        S::Block(body) => preserves_assignment_counter(body, counter),
+        S::Block(body) => closed_assignment_counter(body, counter, mutable_counter),
         S::If { then_block, else_block, .. } =>
-            preserves_assignment_counter(then_block, counter)
-                && else_block.as_deref().is_none_or(|body| preserves_assignment_counter(body, counter)),
+            closed_assignment_counter(then_block, counter, mutable_counter)
+                && else_block.as_deref().is_none_or(|body| closed_assignment_counter(body, counter, mutable_counter)),
         _ => false,
     })
 }
@@ -82,13 +84,31 @@ fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<
 impl<'a> FixedFor<'a> {
     pub fn from_header(init: Option<&'a S>, cond: Option<&E>, update: Option<&E>) -> Option<Self> {
         let init = init?;
-        let (name, value, assigns_outer) = if let Some((name, _, value)) =
-            declares_counter(init).filter(|(_, ty, _)| matches!(ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
-        {
-            (name, value, false)
+        let eligible_type = |ty: &JavaType|
+            matches!(ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long"));
+        let (name, value, assigns_outer, declarations) = if let Some((name, ty, value)) = declares_counter(init) {
+            if !eligible_type(ty) { return None; }
+            (name, value, false, None)
+        } else if let S::Block(declarations) = init {
+            let E::UnaryOp { operand, .. } = update? else { return None; };
+            let E::Ident(induction_name) = operand.as_ref() else { return None; };
+            let mut induction = None;
+            for declaration in declarations {
+                let (name, ty, value) = declares_counter(declaration)?;
+                if !eligible_type(ty) { return None; }
+                if name == induction_name {
+                    if induction.replace((name, value)).is_some() { return None; }
+                } else if literal(value).is_none() && !matches!(value, E::Ident(_)) {
+                    // Extra declarators may use an earlier local, but may not
+                    // reassign the counter or have other execution effects.
+                    return None;
+                }
+            }
+            let (name, value) = induction?;
+            (name, value, false, Some(declarations.as_slice()))
         } else {
             let (name, _, value) = assignment_init(init)?;
-            (name, value, true)
+            (name, value, true, None)
         };
         let (bound, step, inclusive) = induction(name, cond, update)?;
         let start = literal(value)?;
@@ -99,6 +119,7 @@ impl<'a> FixedFor<'a> {
             step,
             count: ((end - start) * step + i128::from(inclusive)).max(0),
             assigns_outer,
+            declarations,
         })
     }
 }

@@ -191,16 +191,28 @@ impl Engine<'_> {
         for field in class.fields().iter().filter(|field| !field.is_static()) {
             let default = match self.project.parameter_type(field.java_type())? {
                 Ty::Integer => b::lit_int(0),
+                Ty::Bool => b::lit_bool(false),
                 Ty::Ref | Ty::Text => b::lit_null(),
                 _ => return Err(fail("unsupported source field initializer")),
             };
             self.realtime_store
                 .store_guarded(path.clone(), r.clone(), field.name(), default);
         }
+        // Java initializes every field to its default, then evaluates
+        // declaration initializers in source order, then enters the body.
+        for field in class.fields().iter().filter(|field| !field.is_static()) {
+            if let Some(initializer) = field.initializer() {
+                let value = crate::normalized::closed_field_initializer(field.java_type(), initializer)
+                    .ok_or_else(|| fail("unsupported source field initializer"))?;
+                self.realtime_store.store_guarded(path.clone(), r.clone(), field.name(), value);
+            }
+        }
         let value = Value::Term(Ty::Ref, r);
-        if let Some(constructor) = class.methods().iter().find(|m| m.is_constructor()) {
+        if class.methods().iter().any(|method| method.is_constructor()) {
+            let (target, _) = crate::normalized::constructor_for_arity(class, args.len())
+                .ok_or_else(|| fail("unresolved source constructor"))?;
             self.java_call_on(
-                &format!("{owner}.{}", constructor.name()),
+                &target,
                 args,
                 path,
                 Some(value.clone()),
