@@ -280,21 +280,13 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
 }
 
 fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option<Expr> {
-    let mut values: Vec<Expr> = Vec::new();
-    let mut counts: Vec<usize> = Vec::new();
-    for (_, value) in branches {
-        if let Some(idx) = values.iter().position(|v| v == value) {
-            counts[idx] += 1;
-        } else {
-            values.push(value.clone());
-            counts.push(1);
-        }
-    }
-    if values.len() != 2 {
-        return None;
-    }
     let (last_cond, default_value) = branches.last()?;
     if last_cond.as_bool() != Some(true) {
+        return None;
+    }
+    let mut values = branches.iter().map(|(_, value)| value);
+    let distinct = values.find(|value| *value != default_value)?;
+    if values.any(|value| value != default_value && value != distinct) {
         return None;
     }
     // The explicit TRUE arm certifies coverage. Effective domains are still

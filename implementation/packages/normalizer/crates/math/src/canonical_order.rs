@@ -323,7 +323,9 @@ fn payload_key(expr: &Expr, ctx: &dyn SortContext) -> String {
 
             if left_subject == subject && right_subject != subject {
                 structural_key(right, ctx)
-            } else if right_subject == subject && left_subject != subject {
+            } else if left_subject != subject {
+                // binop_subject_key selects one of the two subject keys, so
+                // a nonmatching left key means the right key is the subject.
                 structural_key(left, ctx)
             } else {
                 let l = structural_key(left, ctx);
