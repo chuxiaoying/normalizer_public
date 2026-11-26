@@ -45,6 +45,31 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
     output
 }
 
+/// The protected arm already evaluates the acquired reference's non-null
+/// comparison first. Move the adjacent null arm ahead to express that
+/// partition once; the protected guard and value still run only when nonnull.
+/// Do not move a nullable field observation or a preceding guard.
+fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr)>> {
+    use crate::BinOpKind::{Eq, Ne};
+    for (index, pair) in branches.windows(2).enumerate() {
+        let [(protected, selected), (null, on_null)] = pair else { continue; };
+        let Some((Eq, subject, nil)) = null.as_binop() else { continue; };
+        if subject.as_heap_ref().is_none() || !nil.is_null() { continue; }
+        let parts = flatten_and(protected);
+        let Some((first, rest)) = parts.split_first() else { continue; };
+        if rest.is_empty()
+            || !matches!(first.as_binop(), Some((Ne, other, rhs)) if other == subject && rhs == nil)
+        {
+            continue;
+        }
+        let mut result = branches.to_vec();
+        result[index] = (null.clone(), on_null.clone());
+        result[index + 1] = (rebuild_and(rest), selected.clone());
+        return Some(result);
+    }
+    None
+}
+
 fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext) -> Expr {
     if let Some(value) = redundant_integer_point_arm(branches) {
         return value;
@@ -84,6 +109,10 @@ fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_c
     } else {
         branches
     };
+
+    if let Some(guarded) = factor_leading_null_test(branches_ref) {
+        return Expr::new(ExprKind::CaseWhen { branches: guarded });
+    }
 
     if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
         // Normalize guards before comparison to avoid commuting AND terms
@@ -738,6 +767,31 @@ mod first_match_domain_tests {
         assert!(complement(n.clone(), 0));
         assert!(!complement(n, 1));
         assert!(!complement(unknown, 0));
+    }
+
+    #[test]
+    fn null_partition_preserves_the_order_of_protected_evaluation() {
+        let reference = b::heap_ref(-1);
+        let nil = b::lit_null();
+        let is_null = b::eq(reference.clone(), nil.clone());
+        let not_null = b::ne(reference.clone(), nil);
+        let extra = b::eq(reference, b::heap_ref(-2));
+        let original = [
+            (b::and(not_null.clone(), extra.clone()), b::lit_int(7)),
+            (is_null.clone(), b::lit_int(11)),
+            (b::lit_bool(true), b::lit_int(13)),
+        ];
+        assert_eq!(factor_leading_null_test(&original), Some(vec![
+            original[1].clone(),
+            (extra.clone(), b::lit_int(7)),
+            original[2].clone(),
+        ]));
+        let reversed = [
+            (b::and(extra, not_null), b::lit_int(7)),
+            original[1].clone(),
+            original[2].clone(),
+        ];
+        assert_eq!(factor_leading_null_test(&reversed), None);
     }
 
     #[test]
