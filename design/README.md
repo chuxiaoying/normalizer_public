@@ -11,6 +11,7 @@
 ## 设计思想
 
 1. [JVM 模拟器：执行即归约](chapters/01-jvm-symbolic-execution.md)
+2. [多重宇宙的分裂坍缩](chapters/02-universe-split-collapse.md)
 
 设计种子和派生案例的覆盖原则见[种子覆盖审查](seed-coverage-audit.md)。
 
