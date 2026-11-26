@@ -113,9 +113,14 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     return name;
   }
   function lower(n, steps) {
+    return lowerValue(n, (input) => variable(readInput(input, steps)));
+  }
+  // The only callback available in a value expression reads invariant P.
+  // State, port and task effects are emitted by sequence at their own site.
+  function lowerValue(n, readP) {
     n = unwrapParens(n);
     const input = inputs.get(n.getText());
-    if (input !== undefined) return variable(readInput(input, steps));
+    if (input !== undefined) return readP(input);
     if (ts.isIdentifier(n)) return variable(n.text);
     if (ts.isNumericLiteral(n) && Number.isSafeInteger(Number(n.text)))
       return { op: 'const', type: 'number', value: Number(n.text) };
@@ -123,20 +128,12 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       return { op: 'const', type: 'bool', value: n.kind === ts.SyntaxKind.TrueKeyword };
     if (ts.isStringLiteral(n)) return { op: 'const', type: 'text?', value: n.text };
     if (ts.isPropertyAccessExpression(n))
-      return { op: 'value.field', value: lower(n.expression, steps), name: n.name.text };
+      return { op: 'value.field', value: lowerValue(n.expression, readP), name: n.name.text };
     if (ts.isConditionalExpression(n)) {
-      const condition = lower(n.condition, steps);
-      const yes = [],
-        no = [];
-      const then = lower(n.whenTrue, yes),
-        otherwise = lower(n.whenFalse, no);
-      const bindings = [...yes, ...no];
-      // Only pure bindings of argument P can precede the lazy value selection.
-      // A mutable observation or an effect must stay in its selected arm.
-      if (bindings.some((step) => step.op !== 'read_input'))
-        fail('host reads in conditional arms require guarded observation');
-      steps.push(...bindings);
-      return { op: 'if', cond: condition, then, else: otherwise };
+      const cond = lowerValue(n.condition, readP);
+      const then = lowerValue(n.whenTrue, readP);
+      const otherwise = lowerValue(n.whenFalse, readP);
+      return { op: 'if', cond, then, else: otherwise };
     }
     if (ts.isBinaryExpression(n)) {
       const op = new Map([
@@ -145,7 +142,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         [ts.SyntaxKind.PlusToken, 'add'],
         [ts.SyntaxKind.MinusToken, 'subtract'],
       ]).get(n.operatorToken.kind);
-      if (op) return { op, left: lower(n.left, steps), right: lower(n.right, steps) };
+      if (op) return { op, left: lowerValue(n.left, readP), right: lowerValue(n.right, readP) };
     }
     fail(`unsupported expression ${n.getText()}`);
   }
