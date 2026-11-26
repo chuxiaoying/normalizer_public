@@ -37,3 +37,10 @@
     - { from: 'private final Records port;', to: 'private final Records port = null;' }
     - { from: 'this.port = port;', to: '' }
   reject: ['[NORM-EXTERNAL-FIELD]', 'kind=PREPROCESS_REQUIRED', 'location=port']
+- name: an-explicit-instance-receiver-keeps-the-declared-external-site
+  edits:
+    - {from: 'port.lookup(id)', to: 'this.port.lookup(id)'}
+- name: a-qualified-java-text-type-keeps-the-external-domain
+  edits:
+    - {from: 'String label(int id)', to: 'java.lang.String label(int id)'}
+    - {from: 'String label;', to: 'java.lang.String label;'}

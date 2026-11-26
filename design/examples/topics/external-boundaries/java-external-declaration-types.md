@@ -61,3 +61,5 @@ R: $e_0.label
 | 普通形参与字段同名、异常和取得域变化 | 复用[标量端口及同名接收者对照](java-external-scalar.md)、[异常传播](java-exception-propagation.md)和[有条件外部回执](../unified-canonical-form/java-exception-payload.md)；不重复测试 |
 
 这里只验收已获准注入字段的接口签名与标量记录字段，不为未裁决的可变端口或任意嵌套返回扩张准入。
+
+在未被遮蔽的实例方法中，`this.port.lookup(id)` 和 `port.lookup(id)` 都引用同一个已注入的字段，S 的端点和已取得的回执不变。将方法返回和记录字段的 `String` 全称写作 `java.lang.String` 也只改变源码拼写，PERS 仍是同一个 `text`。
