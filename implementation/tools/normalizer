@@ -98,7 +98,8 @@ case "$command" in
         ;;
       engineering)
         python3 -B -m unittest discover -s "$ROOT/../tests/architecture"
-        node --test "$ROOT/../tests/architecture/design-reader.test.mjs"
+        ensure_frontend_dependencies
+        node --test "$ROOT/../tests/architecture/design-reader.test.mjs" "$ROOT/../tests/architecture/frontend-transport.test.mjs"
         exec python3 -B "$ROOT/tools/docs/check_links.py"
         ;;
       seed-patches)
