@@ -135,3 +135,31 @@
   reject:
   - '[NORM-TS-MODULE]'
   - unsupported listener host contract tag
+- name: negated-boolean-inverts-only-the-dispatch-domain
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!deliver) pending!()' }
+  expect:
+    - { path: [S, 1, call, when], value: 'NOT (deliver)' }
+- name: repeated-negation-restores-the-original-dispatch
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!!deliver) pending!()' }
+- name: a-negated-true-guard-keeps-registration-but-skips-dispatch
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!true) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+- name: complementary-dispatch-sites-keep-distinct-guarded-receipts
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (deliver) pending!(); if (!deliver) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+        - call: { external: notices.notify, args: [], returns: void, result: $e_1, when: deliver }
+        - call: { external: notices.notify, args: [], returns: void, result: $e_2, when: 'NOT (deliver)' }
+- name: negation-does-not-admit-implicit-number-to-boolean-dispatch
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!1) pending!()' }
+  reject: ['[NORM-TS-MODULE]', 'listener dispatch condition must be a closed Boolean']
