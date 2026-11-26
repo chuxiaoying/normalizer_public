@@ -1,6 +1,6 @@
 - name: class-without-payload-publishes-only-the-type
   edits:
-  - from: String payload;
+  - from: '@N.Nullable String payload;'
     to: ''
   expect:
   - path:
@@ -15,7 +15,7 @@
     absent: true
 - name: scalar-integer-payload-uses-the-same-receipt-projection
   edits:
-  - from: String payload;
+  - from: '@N.Nullable String payload;'
     to: int payload;
   expect:
   - path:
@@ -25,7 +25,7 @@
     value: number
 - name: arbitrary-reference-is-not-an-exception-payload-contract
   edits:
-  - from: String payload;
+  - from: '@N.Nullable String payload;'
     to: Object payload;
   reject:
   - '[NORM-EXCEPTION-DECLARATION]'
@@ -41,13 +41,13 @@
     - S
     value:
     - call:
-        external: rates.read
+        external: src/RemotePayload.java#RemotePayload.INSTANCE.rates.read
         args:
         - input
         returns: number
         result: $e_0
     - call:
-        external: rates.read
+        external: src/RemotePayload.java#RemotePayload.INSTANCE.rates.read
         args:
         - $e_0
         returns: number
@@ -85,11 +85,11 @@
 
 - name: one-receipt-keeps-separate-type-only-and-typed-exception-classes
   edits:
-  - from: 'class RemoteFault extends RuntimeException { String payload; }'
+  - from: 'class RemoteFault extends RuntimeException { @N.Nullable String payload; }'
     to: |-
       class AlphaFault extends RuntimeException {}
       class LaterFault extends RuntimeException {}
-      class RemoteFault extends RuntimeException { String payload; }
+      class RemoteFault extends RuntimeException { @N.Nullable String payload; }
       class ZuluFault extends RuntimeException { int payload; }
   - from: 'throws RemoteFault;'
     to: 'throws ZuluFault, LaterFault, RemoteFault, AlphaFault;'

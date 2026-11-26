@@ -14,8 +14,6 @@
     - from: '(new int[]{2, 7})[-1]'
       to: '(new int[]{2, 7})[1]'
   expect:
-    - path: [S]
-      absent: true
     - path: [throws]
       absent: true
 - name: caught-index-failure-executes-its-fallback
@@ -27,8 +25,6 @@
   expect:
     - path: [R]
       value: '42'
-    - path: [S]
-      absent: true
     - path: [throws]
       absent: true
 - name: caught-negative-size-executes-its-fallback
@@ -40,8 +36,6 @@
   expect:
     - path: [R]
       value: '42'
-    - path: [S]
-      absent: true
     - path: [throws]
       absent: true
 
@@ -53,7 +47,6 @@
       to: 'try { return (new int[]{2, 7})[2]; } catch (ArrayIndexOutOfBoundsException ignored) { return 17; }'
   expect:
     - { path: [R], value: '17' }
-    - { path: [S], absent: true }
     - { path: [throws], absent: true }
 
 - name: catch-the-qualified-index-supertype
@@ -64,7 +57,6 @@
       to: 'try { return (new int[]{2, 7})[2]; } catch (java.lang.IndexOutOfBoundsException ignored) { return 19; }'
   expect:
     - { path: [R], value: '19' }
-    - { path: [S], absent: true }
     - { path: [throws], absent: true }
 
 - name: catch-the-actual-negative-array-size-type
@@ -75,7 +67,6 @@
       to: 'try { return (new int[-1]).length; } catch (NegativeArraySizeException ignored) { return 23; }'
   expect:
     - { path: [R], value: '23' }
-    - { path: [S], absent: true }
     - { path: [throws], absent: true }
 
 - name: inline-length-stops-after-first-failing-initializer-element
@@ -90,13 +81,16 @@
 
 - name: inline-length-preserves-ordered-effects-and-conditional-element-completion
   edits:
+    - { from: 'static int guarded', to: 'int readGuarded' }
     - from: 'class CanonicalArray {'
       to: |-
-        interface InlineProbe { int read(int value); }
+        import normalizer.intrinsics.N;
+        class InlineProbe { native int read(int value); }
         class CanonicalArray {
-            @normalizer.annotations.External private final InlineProbe probe;
+            static final CanonicalArray INSTANCE = new CanonicalArray(new InlineProbe());
+            @N.External private final InlineProbe probe;
             CanonicalArray(InlineProbe probe) { this.probe = probe; }
-    - { from: 'static int guarded', to: 'int guarded' }
+            static int guarded(boolean fail) { return INSTANCE.readGuarded(fail); }
     - from: |-
         if (fail) return (new int[]{2, 7})[-1];
                 return 7;
@@ -104,9 +98,9 @@
   expect:
     - { path: [R], value: 'CASE WHEN fail THEN 42 ELSE 3 END' }
     - path: [S]
-      value:
-        - call: { external: probe.read, args: ['10'], returns: number, result: $e_0 }
-        - call: { external: probe.read, args: ['30'], returns: number, result: $e_1, when: 'NOT (fail)' }
+      add:
+        - call: { external: src/CanonicalArray.java#CanonicalArray.INSTANCE.probe.read, args: ['10'], returns: number, result: $e_0 }
+        - call: { external: src/CanonicalArray.java#CanonicalArray.INSTANCE.probe.read, args: ['30'], returns: number, result: $e_1, when: 'NOT (fail)' }
     - { path: [throws], absent: true }
 
 - name: minimum-java-int-index-still-exits-only-on-the-guarded-path

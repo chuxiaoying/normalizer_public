@@ -27,5 +27,5 @@
     - {from: 'class Base { int value; }', to: 'class Base { int value; int offset; }'}
     - {from: 'int initial = seed.value;', to: 'int initial = seed.offset;'}
   expect:
-    - {path: [types, Base, fields, offset], add: number}
+    - {path: [E, seed, fields, offset], add: number}
     - {path: [T, 0, initial], value: seed.offset}

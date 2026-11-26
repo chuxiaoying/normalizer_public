@@ -224,21 +224,21 @@ groups:
     - CanonicalQuotient.caught
     canonical-exception-payload:
     - CanonicalFailure.validate
-    - GuardedCanonicalFailure.validate
-    - RemotePayload.read
+    - GuardedCanonicalFailure.INSTANCE.validate
+    - RemotePayload.INSTANCE.read
     canonical-integer-partition:
     - CanonicalQuantity.band
     - CanonicalQuantity.signGuarded
     canonical-member-choice:
     - CanonicalPick.total
-    - StatePick.choose
-    - ReceiptPick.choose
+    - StatePick.INSTANCE.choose
+    - ReceiptPick.INSTANCE.choose
     - MixedTemporal.settle
     canonical-number-selection:
     - CanonicalQuota.smaller
     canonical-pure-fold-definitions:
     - CanonicalFolds.difference
-    - CanonicalFolds.fromState
+    - CanonicalFolds.INSTANCE.fromState
     canonical-text-order:
     - CanonicalLabel.label
     - CanonicalLabel.charCode
