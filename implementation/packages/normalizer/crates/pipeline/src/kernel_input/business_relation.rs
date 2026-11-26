@@ -684,8 +684,7 @@ impl Engine<'_> {
                 env.insert(query.binding.clone(), Value::Term(Ty::Ref, b::heap_ref(id)));
                 return Ok(());
             }
-            RowOperation::EagerPath(_) | RowOperation::Count { distinct: true }
-            | RowOperation::UnsupportedProjection { .. } =>
+            RowOperation::EagerPath(_) | RowOperation::Count { distinct: true } =>
                 return Err(fail("incompatible query operation and projection")),
         };
         if let Some(declared) = decl {

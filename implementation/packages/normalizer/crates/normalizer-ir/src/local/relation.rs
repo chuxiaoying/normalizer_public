@@ -51,16 +51,11 @@ pub enum RowOperation {
     FirstValue { value: Scalar, fallback: Scalar },
     FirstRow,
     Fold { accumulator: String, initial: Scalar, body: Scalar },
-    // Well-formed syntax can ask for an unsupported projection. Keep it
-    // distinct from parser-exclusive operation combinations so row-source
-    // and clause diagnostics remain at their original execution boundary.
-    UnsupportedProjection { table_declaration: bool },
 }
 
 impl RowOperation {
     pub fn introduces_table(&self) -> bool {
-        matches!(self, Self::Project(_) | Self::EagerPath(..)
-            | Self::UnsupportedProjection { table_declaration: true })
+        matches!(self, Self::Project(_) | Self::EagerPath(_))
     }
 }
 
@@ -358,7 +353,8 @@ fn parse_query_tail(
                 RowOperation::Count { distinct: kind == Kind::CountDistinct },
         (Kind::First, Yield::Value(Scalar::Path(path)))
             if path.as_slice() == std::slice::from_ref(&alias) => RowOperation::FirstRow,
-        _ => RowOperation::UnsupportedProjection { table_declaration: kind == Kind::Rows },
+        // No input types or acquired values can make this pair legal.
+        _ => return Err("incompatible query operation and projection".into()),
     };
     Ok(Query { binding, accumulate, source, alias, clauses, operation: Operation::OnRows(operation) })
 }
