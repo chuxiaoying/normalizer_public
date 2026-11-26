@@ -48,15 +48,15 @@ class BillRow {
 
 ## AI 预处理结果
 
-循环本身的次数取决于查询结果。AI 保留 Java 方法和账单字段，在查询与循环原处交付局部关系 IR。Normalizer 继续解析外围 Java，并由内核处理筛选结果。
+循环本身的次数取决于查询结果。AI 保留 Java 方法的参数和账单字段，在查询与循环原处交付局部关系指令。查询结果用工程声明的行类型数组承载；Mapper 装配不再参与计算，因此改成可直接定位的静态入口。Normalizer 继续解析外围 Java，并由内核处理筛选结果。
 
 ```diff
 --- a/src/PositiveCount.java
 +++ b/src/PositiveCount.java
-@@ -1,33 +1,23 @@
- import java.util.List;
+@@ -1,33 +1,21 @@
+-import java.util.List;
 -import org.apache.ibatis.annotations.Select;
-
+-
  class PositiveCount {
 -    private final BillMapper billMapper;
 -
@@ -64,14 +64,15 @@ class BillRow {
 -        this.billMapper = billMapper;
 -    }
 -
-     int count(int accountId) {
+-    int count(int accountId) {
++    static int count(int accountId) {
          int count = 0;
 -        for (BillRow row : billMapper.selectRows(accountId)) {
 -            if (row.amount > 0) {
 -                count++;
 -            }
 -        }
-+        List<BillRow> rows;
++        BillRow[] rows;
 +        /* @normalizer-ir
 +           rows = from bill as b
 +               where b.account_id == accountId
@@ -84,8 +85,8 @@ class BillRow {
 +        */
          return count;
      }
- }
-
+-}
+-
 -interface BillMapper {
 -    @Select("""
 -        SELECT amount
@@ -93,18 +94,18 @@ class BillRow {
 -        WHERE account_id = #{accountId}
 -    """)
 -    List<BillRow> selectRows(int accountId);
--}
--
+ }
+
  class BillRow {
      int amount;
  }
 ```
 
-预处理只替换无法直接按有限次数展开的查询和循环片段，保留入口参数、初值和返回语句。集合的空集贡献零。
+预处理只替换无法直接按有限次数展开的查询和循环片段，保留入口参数、初值和返回语句。集合的空集贡献零。查询和行遍历不再依赖 MyBatis 或 List 的实现。
 
 **预处理要点**
 
-- AI 只补充循环片段的集合语义，复用已有关系聚合合同，工程面对保持 Java 合法的外围程序。
+- AI 只补充循环片段的集合语义，复用已有关系聚合合同，外层 Java 声明和控制流由入口校验，关系指令负责初始化 rows。
 - 预处理改动范围应与工程无法处理的语义片段重合，不能把完整入口翻译成另一种语言。
 
 ## 归一化最终结果

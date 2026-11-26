@@ -36,28 +36,47 @@ class ProfileUnavailable extends RuntimeException {}
 
 ## AI 预处理结果
 
-AI 只在外部对象声明处增加 Normalizer 自身的标记，调用、字段读取和异常声明保持 Java 原生结构。
+AI 在外部对象声明处增加 `@N.External` 并显式装配入口接收者，调用、字段读取和异常声明保持 Java 原生结构。
 
 ```diff
 --- a/src/ProfileService.java
 +++ b/src/ProfileService.java
-@@ -1,8 +1,11 @@
-+import normalizer.annotations.External;
+@@ -1,21 +1,28 @@
++import normalizer.intrinsics.N;
 +
  class Profile {
      int score;
  }
- 
+
  class ProfileService {
-+    @External
++    @N.External
      private final ProfileClient client;
- 
+
      ProfileService(ProfileClient client) {
          this.client = client;
      }
+
+     int score(int accountId) {
+         return client.fetch(accountId).score;
+     }
+ }
+
+-interface ProfileClient {
+-    Profile fetch(int accountId) throws ProfileUnavailable;
++class ProfileClient {
++    native Profile fetch(int accountId) throws ProfileUnavailable;
+ }
+
+ class ProfileUnavailable extends RuntimeException {}
++
++class Beans {
++    static final ProfileService ENTRY = new ProfileService(new ProfileClient());
++}
 ```
 
-Normalizer 只识别 `@External`，不按 ProfileClient 的来源库和方法名做特判。
+Normalizer 只识别 `@N.External`，不按 ProfileClient 的来源库和方法名做特判。
+
+分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
 
 ## 归一化最终结果
 
@@ -70,7 +89,7 @@ types:
       score: number
 
 entry:
-  function: src/ProfileService.java#ProfileService.score
+  function: src/ProfileService.java#Beans.ENTRY.score
   returns: number
 
 P:
@@ -83,7 +102,7 @@ R: $e_0.score
 
 S:
   - call:
-      external: client.fetch
+      external: src/ProfileService.java#Beans.ENTRY.client.fetch
       args:
         - accountId
       returns: Profile

@@ -30,20 +30,43 @@ class RiskUnavailable extends RuntimeException {}
 
 ## AI 预处理结果
 
-AI 只在外部对象声明处增加 Normalizer 自身的标记，调用和未捕获异常路径继续保持 Java 原生结构。
+AI 在外部对象声明处增加 `@N.External` 并显式装配入口接收者，调用和未捕获异常路径继续保持 Java 原生结构。
 
 ```diff
 --- a/src/Pass.java
 +++ b/src/Pass.java
-@@ -1,2 +1,5 @@
-+import normalizer.annotations.External;
+@@ -1,17 +1,24 @@
++import normalizer.intrinsics.N;
 +
  class Pass {
-+    @External
++    @N.External
      private final RiskClient client;
+
+     Pass(RiskClient client) {
+         this.client = client;
+     }
+
+     int read(int accountId) {
+         return client.fetch(accountId);
+     }
+ }
+
+-interface RiskClient {
+-    int fetch(int accountId) throws RiskUnavailable;
++class RiskClient {
++    native int fetch(int accountId) throws RiskUnavailable;
+ }
+
+ class RiskUnavailable extends RuntimeException {}
++
++class Beans {
++    static final Pass ENTRY = new Pass(new RiskClient());
++}
 ```
 
-Normalizer 识别 `@External` 和源码中的 `throws RiskUnavailable`，不按客户端库名做特判。
+Normalizer 识别 `@N.External` 和源码中的 `throws RiskUnavailable`，不按客户端库名做特判。
+
+分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
 
 ## 归一化最终结果
 
@@ -51,7 +74,7 @@ Normalizer 识别 `@External` 和源码中的 `throws RiskUnavailable`，不按�
 schema: normalizer.pers/1
 
 entry:
-  function: src/Pass.java#Pass.read
+  function: src/Pass.java#Beans.ENTRY.read
   returns: number
 
 P:
@@ -64,7 +87,7 @@ R: $e_0
 
 S:
   - call:
-      external: client.fetch
+      external: src/Pass.java#Beans.ENTRY.client.fetch
       args:
         - accountId
       returns: number

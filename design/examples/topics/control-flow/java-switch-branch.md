@@ -1,12 +1,12 @@
-# Hello World：switch 预处理为原生 if 分支
+# Hello World：原生 switch 由内核执行
 
 ## 设计意图
 
-检验受支持 switch 分支能由预处理保留成原生 if 语义。命中不同标签、默认以及与其相关的控制转移必须区分；不按标签字符串排序后重解旧语义。
+检验纯净的原生 Java switch 由内核执行。命中不同标签、默认以及相关的控制转移必须区分，不因预处理或定形改变求值顺序。
 
 ## 输入原始代码
 
-入口按代码选择固定结果。当前 Java 规范子集不能直接闭合 `switch`，但它的业务语义可以保持为原生 Java 的有序 `if` 分支。
+入口按代码选择固定结果。这里的 `switch` 不依赖外部行为，分支均有明确返回。
 
 ```java
 class SwitchMode {
@@ -25,30 +25,7 @@ class SwitchMode {
 
 ## AI 预处理结果
 
-AI 只把当前工程不能闭合的 `switch` 片段改写为语义等价的原生 Java 条件，保留入口、参数和返回结构。
-
-```diff
---- a/src/SwitchMode.java
-+++ b/src/SwitchMode.java
-@@ -1,12 +1,7 @@
- class SwitchMode {
-     static int classify(int code) {
--        switch (code) {
--            case 1:
--                return 10;
--            case 2:
--                return 20;
--            default:
--                return 0;
--        }
-+        if (code == 1) return 10;
-+        if (code == 2) return 20;
-+        return 0;
-     }
- }
-```
-
-预处理没有引入库特判或共享控制流语法，Normalizer 接收到的是仍然合法的 Java。
+**原样通过。** `switch` 是已写清楚的原生控制流，不改成一串 `if`。内核按 Java 执行选择表达式、匹配标签并收束各条返回路径。
 
 ## 归一化最终结果
 
@@ -73,6 +50,6 @@ R: |-
   END
 ```
 
-**预处理要点**：AI 预处理只消除工程当前无法解析的语言片段，交付仍属于原语言的最小改写。
+**预处理要点**：不因某种原生语法的内核实现尚未闭合，就把本应由内核承担的求值移交 AI。
 
-**PERS 验收要点**：分支归一化由内核负责，预处理不提前计算或改写成共享扩展语法。
+**PERS 验收要点**：`code = 1` 返回 10，`code = 2` 返回 20，其他值返回 0。各分支的返回互不重叠，无环境读取、对外动作或异常完成。

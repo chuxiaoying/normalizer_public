@@ -23,23 +23,41 @@ class Packet { boolean approved; String label; }
 
 ## AI 预处理结果
 
-该注入字段有已确认的外部接口签名。只补标准标记，不变更接收者、方法体或字段类型。
+该注入字段有已确认的外部接口签名。用标准标记和静态装配保留同一接收者，不变更业务方法体或回执字段类型。
 
 ```diff
 --- a/src/ExternalTypeDemo.java
 +++ b/src/ExternalTypeDemo.java
-@@ -1,3 +1,4 @@
+@@ -1,10 +1,19 @@
++import normalizer.intrinsics.N;
++
  class ExternalTypeDemo {
-+    @normalizer.annotations.External
++    @N.External
      private final Records port;
      ExternalTypeDemo(Records port) { this.port = port; }
+     String label(int id) {
+         Packet packet = port.lookup(id);
+         return packet.label;
+     }
+ }
+-interface Records { Packet lookup(int id); }
++class Records {
++    native Packet lookup(int id);
++}
+ class Packet { boolean approved; String label; }
++
++class Beans {
++    static final ExternalTypeDemo ENTRY = new ExternalTypeDemo(new Records());
++}
 ```
+
+分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
 
 ## 归一化最终结果
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/ExternalTypeDemo.java#ExternalTypeDemo.label, returns: text }
+entry: { function: src/ExternalTypeDemo.java#Beans.ENTRY.label, returns: text }
 P:
   parameters:
     id: { position: 0, type: number }
@@ -47,7 +65,7 @@ types:
   Packet:
     fields: { approved: bool, label: text }
 S:
-  - call: { external: port.lookup, args: [id], result: $e_0, returns: Packet }
+  - call: { external: src/ExternalTypeDemo.java#Beans.ENTRY.port.lookup, args: [id], result: $e_0, returns: Packet }
 R: $e_0.label
 ```
 
@@ -56,11 +74,11 @@ R: $e_0.label
 | 改读同一记录的布尔字段 | 同一 S 和记录类型，R 指向布尔字段，入口返回 bool |
 | 源码不再调用端口 | 不产生 S，也不发布未取得的记录类型；R 是入口直接给出的文字 |
 | 注入字段所声明的端口类型不存在 | 无法证明端点和签名，预处理诊断且无 PERS |
-| 给注入字段换成有源码实现的类，而非端口接口 | 不能把一个本地方法仅靠标记伪装成 S；当前 Java 边界声明须给出端口接口 |
+| 给注入字段换成有实际业务源码、没有外部合同的类 | 不能把一个本地方法仅靠标记伪装成 S；端口须有明确的外部声明与接收者绑定 |
 | 可变实例字段、静态字段、带初值的 final 实例字段 | 这三种都是可以编译的 Java 字段，但不能证明这次调用使用了入口注入的固定实例端口。入口报 `NORM-EXTERNAL-FIELD`，不发布 PERS。分别对照：只有非 final、final 且静态、final 且本地初始化。 |
 | 普通形参与字段同名、异常和取得域变化 | 复用[标量端口及同名接收者对照](java-external-scalar.md)、[异常传播](java-exception-propagation.md)和[有条件外部回执](../unified-canonical-form/java-exception-payload.md)；不重复测试 |
 
-这里只验收已获准注入字段的接口签名与标量记录字段，不为未裁决的可变端口或任意嵌套返回扩张准入。
+这里只验收已获准注入字段的端口签名与标量记录字段，不为未裁决的可变端口或任意嵌套返回扩张准入。
 
 在未被遮蔽的实例方法中，`this.port.lookup(id)` 和 `port.lookup(id)` 都引用同一个已注入的字段，S 的端点和已取得的回执不变。将方法返回和记录字段的 `String` 全称写作 `java.lang.String` 也只改变源码拼写，PERS 仍是同一个 `text`。
 

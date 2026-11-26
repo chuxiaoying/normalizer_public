@@ -26,24 +26,39 @@ class Timeout extends RuntimeException {}
 ```diff
 --- a/src/QuoteService.java
 +++ b/src/QuoteService.java
-@@ -1,4 +1,7 @@
-+import normalizer.annotations.External;
+@@ -1,10 +1,19 @@
++import normalizer.intrinsics.N;
 +
  class QuoteService {
-+    @External
++    @N.External
      private final QuoteClient client;
 
      QuoteService(QuoteClient client) {
+         this.client = client;
+     }
+     int quote(int id) { return client.fetch(id); }
+ }
+-interface QuoteClient { int fetch(int id) throws Timeout; }
++class QuoteClient {
++    native int fetch(int id) throws Timeout;
++}
+ class Timeout extends RuntimeException {}
++
++class Beans {
++    static final QuoteService ENTRY = new QuoteService(new QuoteClient());
++}
 ```
+
+分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
 
 ## 归一化最终结果
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/QuoteService.java#QuoteService.quote, returns: number }
+entry: { function: src/QuoteService.java#Beans.ENTRY.quote, returns: number }
 P: { parameters: { id: { position: 0, type: number } } }
 S:
-  - call: { external: client.fetch, args: [id], returns: number, result: $e_0 }
+  - call: { external: src/QuoteService.java#Beans.ENTRY.client.fetch, args: [id], returns: number, result: $e_0 }
 R: $e_0
 throws:
   - { type: Timeout, when: 'completion.is_throw($e_0, Timeout)' }

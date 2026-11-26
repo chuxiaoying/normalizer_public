@@ -49,15 +49,15 @@ class BillRow {
 
 ## AI 预处理结果
 
-AI 将 Mapper 查询和未知次数的首项循环分别交付为关系语义，保留 Java 的匹配判断、字段读取和默认返回。
+AI 将 Mapper 查询和未知次数的首项循环分别交付为关系语义，保留 Java 的匹配判断、字段读取和默认返回。查询行用工程内行类型数组承载；去掉 Mapper 后以静态方法作为分析入口。
 
 ```diff
 --- a/src/First.java
 +++ b/src/First.java
-@@ -1,36 +1,25 @@
- import java.util.List;
+@@ -1,36 +1,23 @@
+-import java.util.List;
 -import org.apache.ibatis.annotations.Select;
-
+-
  class First {
 -    private final BillMapper billMapper;
 -
@@ -65,7 +65,7 @@ AI 将 Mapper 查询和未知次数的首项循环分别交付为关系语义，
 -        this.billMapper = billMapper;
 -    }
 -
-     int first(int accountId) {
+-    int first(int accountId) {
 -        BillRow match = null;
 -        for (BillRow row : billMapper.selectRows(accountId)) {
 -            if (row.amount > 0) {
@@ -73,7 +73,8 @@ AI 将 Mapper 查询和未知次数的首项循环分别交付为关系语义，
 -                break;
 -            }
 -        }
-+        List<BillRow> rows;
++    static int first(int accountId) {
++        BillRow[] rows;
 +        /* @normalizer-ir
 +           rows = from bill as b
 +               where b.account_id == accountId
@@ -150,7 +151,7 @@ R: |-
 - AI 只替换工程无法处理的未知次数集合循环，保留外围 Java 的入口和默认出口。
 - 首项选择必须显式绑定顺序，不能把无序集合的任意元素冒充业务上的第一项。
 
-**PERS 验收要点**：集合首项、无匹配默认值和顺序约束在 PERS 中共同可见，内核不需要理解 Java `break`。
+**PERS 验收要点**：集合首项、无匹配默认值和顺序约束在 PERS 中共同可见；未知次数的原循环由局部指令表达，不表示普通 Java 的 `break` 不受支持。
 
 派生的“找到后加一”对照只在满足过滤条件的记录存在时读取首项，再计算 `amount + 1`；没有符合记录时仍返回 0，不是对空集默认值加一。首项的投影、过滤和 `ORDER BY` 必须都留在 `FIRST` 内，外层 CASE 保留读值的取得域。
 

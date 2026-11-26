@@ -32,24 +32,45 @@ interface Notifier {
 ```diff
 --- a/src/NotifyService.java
 +++ b/src/NotifyService.java
-@@ -1,4 +1,7 @@
-+import normalizer.annotations.External;
+@@ -1,16 +1,23 @@
++import normalizer.intrinsics.N;
 +
  class NotifyService {
-+    @External
++    @N.External
      private final Notifier notifier;
 
      NotifyService(Notifier notifier) {
+         this.notifier = notifier;
+     }
+     int send(int value) {
+         notifier.register(value);
+         notifier.accept(value);
+         return value + 1;
+     }
+ }
+-interface Notifier {
+-    void register(int value);
+-    void accept(int value);
++class Notifier {
++    native void register(int value);
++    native void accept(int value);
+ }
++
++class Beans {
++    static final NotifyService ENTRY = new NotifyService(new Notifier());
++}
 ```
+
+分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
 
 ## 归一化最终结果
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/NotifyService.java#NotifyService.send, returns: number }
+entry: { function: src/NotifyService.java#Beans.ENTRY.send, returns: number }
 P: { parameters: { value: { position: 0, type: number } } }
 S:
-  - call: { external: notifier.register, args: [value], returns: void, result: $e_0 }
-  - call: { external: notifier.accept, args: [value], returns: void, result: $e_1 }
+  - call: { external: src/NotifyService.java#Beans.ENTRY.notifier.register, args: [value], returns: void, result: $e_0 }
+  - call: { external: src/NotifyService.java#Beans.ENTRY.notifier.accept, args: [value], returns: void, result: $e_1 }
 R: value + 1
 ```

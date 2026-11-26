@@ -34,25 +34,52 @@ class RiskUnavailable extends RuntimeException {}
 
 ## AI 预处理结果
 
-AI 只在外部对象声明处增加 Normalizer 自身的标记。调用、try/catch 和返回路径保持 Java 原生结构。
+AI 在外部对象声明处增加 `@N.External` 并显式装配入口接收者。调用、try/catch 和返回路径保持 Java 原生结构。
 
 ```diff
 --- a/src/RiskService.java
 +++ b/src/RiskService.java
-@@ -1,2 +1,5 @@
-+import normalizer.annotations.External;
+@@ -1,21 +1,28 @@
++import normalizer.intrinsics.N;
 +
  class RiskService {
-+    @External
++    @N.External
      private final RiskClient riskClient;
+
+     RiskService(RiskClient riskClient) {
+         this.riskClient = riskClient;
+     }
+
+     int riskScore(int accountId) {
+         try {
+             return riskClient.fetchScore(accountId);
+         } catch (RiskUnavailable ignored) {
+             return 0;
+         }
+     }
+ }
+
+-interface RiskClient {
+-    int fetchScore(int accountId) throws RiskUnavailable;
++class RiskClient {
++    native int fetchScore(int accountId) throws RiskUnavailable;
+ }
+
+ class RiskUnavailable extends RuntimeException {}
++
++class Beans {
++    static final RiskService ENTRY = new RiskService(new RiskClient());
++}
 ```
 
-Normalizer 工程只识别自己的 `@External` 标记。它不需要理解 `RiskClient` 来自哪个库，也不为 `fetchScore` 这个方法名增加特判。
+Normalizer 工程只识别自己的 `@N.External` 标记。它不需要理解 `RiskClient` 来自哪个库，也不为 `fetchScore` 这个方法名增加特判。
 
 **预处理要点**
 
 - 特殊含义通过 Normalizer 标记进入统一 IR，工程不按外部库名称和方法名做特判。
 - 标记应补充边界身份，源代码结构和语言语义继续由 Java parser 处理。
+
+分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
 
 ## 归一化最终结果
 
@@ -60,7 +87,7 @@ Normalizer 工程只识别自己的 `@External` 标记。它不需要理解 `Ris
 schema: normalizer.pers/1
 
 entry:
-  function: src/RiskService.java#RiskService.riskScore
+  function: src/RiskService.java#Beans.ENTRY.riskScore
   returns: number
 
 P:
@@ -71,7 +98,7 @@ P:
 
 S:
   - call:
-      external: riskClient.fetchScore
+      external: src/RiskService.java#Beans.ENTRY.riskClient.fetchScore
       args:
         - accountId
       returns: number
