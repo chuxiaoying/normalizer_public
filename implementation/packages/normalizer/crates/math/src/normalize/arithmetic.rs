@@ -270,15 +270,11 @@ fn simplify_positive_heap_ref_compare_null(expr: &Expr) -> Option<Expr> {
         return None;
     }
 
-    let heap_side = if left.is_null() {
-        right
-    } else if right.is_null() {
-        left
-    } else {
+    // The preceding Eq/Ne orientation owns null on the left.
+    if !right.is_null() {
         return None;
-    };
-
-    let Some(heap_id) = heap_side.as_heap_ref() else {
+    }
+    let Some(heap_id) = left.as_heap_ref() else {
         return None;
     };
     if heap_id <= 0 {

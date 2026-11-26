@@ -201,36 +201,26 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
 
 pub fn reduce(key: crate::FuncKey, args: &[Expr]) -> Option<Expr> {
     if let ("value.field", [record, field]) = (output_name(&crate::func_name(key)), args) {
-        // Projection preserves the existing first-match domain. Only
-        // distribute when every arm has a defined projection; an absent
-        // field must not become a null/default or affect another arm.
-        fn project(
-            record: &Expr,
+        fn project_case(
+            branches: &[(Expr, Expr)],
             field: &Expr,
             key: crate::FuncKey,
-            in_case: bool,
-        ) -> Option<Expr> {
-            if let Some(branches) = record.as_case_when() {
-                let projected = branches
-                    .iter()
-                    .map(|(condition, value)| {
-                        Some((
-                            condition.clone(),
-                            project(value, field, key, true)?,
-                        ))
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                // The input already carries its total/normal-return domain.
-                // Rebuild it verbatim, without adding a fallback branch.
-                return Some(b::normal_return_case_when(projected));
-            }
-            if !in_case {
-                return None;
-            }
-            let args = vec![record.clone(), field.clone()];
-            Some(b::call(key, args))
+        ) -> Expr {
+            let projected = branches
+                .iter()
+                .map(|(condition, value)| {
+                    let value = match value.as_case_when() {
+                        Some(nested) => project_case(nested, field, key),
+                        None => b::call(key, vec![value.clone(), field.clone()]),
+                    };
+                    (condition.clone(), value)
+                })
+                .collect();
+            // Keep the original first-match/normal-return domain; no new ELSE.
+            b::normal_return_case_when(projected)
         }
-        project(record, field, key, false)
+
+        Some(project_case(record.as_case_when()?, field, key))
     } else {
         None
     }
