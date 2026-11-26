@@ -8,32 +8,18 @@ pub(crate) fn fold(expr: &Expr) -> Expr {
     if let Some(length) = crate::domains::composite::fold_vector_length_predicate(expr) {
         return length;
     }
-    match expr.kind() {
-        ExprKind::BinOp { op, left, right } => {
-            if let (ExprKind::Lit(a), ExprKind::Lit(b)) = (left.kind(), right.kind()) {
-                if let Some(folded) = fold_binop(*op, a, b) {
-                    return folded;
-                }
-            }
-            expr.clone()
-        }
-
-        ExprKind::UnaryOp { op, operand } => {
-            if let ExprKind::Lit(v) = operand.kind() {
-                if let Some(folded) = fold_unary(*op, v) {
-                    return folded;
-                }
-            }
-            expr.clone()
-        }
-
-        ExprKind::Call {
-            key,
-            args,
-        } => fold_call(*key, args).unwrap_or_else(|| expr.clone()),
-
-        _ => expr.clone(),
-    }
+    let folded = match expr.kind() {
+        ExprKind::BinOp { op, left, right } => left.as_lit().zip(right.as_lit())
+            .and_then(|(a, b)| fold_binop(*op, a, b)),
+        ExprKind::UnaryOp { op, operand } => operand.as_lit()
+            .and_then(|value| fold_unary(*op, value)),
+        ExprKind::Call { key, args } => fold_call(*key, args),
+        _ => None,
+    };
+    // An inapplicable literal rule is not a second admission check. All
+    // non-applicable operators, including symbolic forms, keep the same node
+    // for the other normalization rules to inspect.
+    folded.unwrap_or_else(|| expr.clone())
 }
 
 /// Fold calls whose pure registry contract provides a result. An actual
@@ -88,22 +74,30 @@ fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
 }
 
 fn fold_unary(op: UnaryOpKind, v: &Lit) -> Option<Expr> {
-    if op == UnaryOpKind::Neg {
-        if let Some(value) = v.as_integer() {
-            return Some(builder::lit_integer(-value));
-        }
-    }
     use Lit::*;
     use UnaryOpKind::*;
     match (op, v) {
+        (Neg, Int(n)) => Some(builder::lit_integer(-num_bigint::BigInt::from(*n))),
+        (Neg, BigInt(n)) => Some(builder::lit_integer(-n.clone())),
         (Not, Bool(x)) => Some(builder::lit_bool(!x)),
         _ => None,
     }
 }
 
 #[cfg(test)]
-mod literal_boolean_fold_tests {
+mod literal_fold_tests {
     use super::*;
+
+    #[test]
+    fn unary_fold_uses_the_admitted_domain_not_the_storage_width() {
+        let positive = builder::lit_integer(num_bigint::BigInt::from(i64::MAX) + 1_u8);
+        assert_eq!(fold(&builder::neg(builder::lit_int(i64::MIN))), positive);
+        assert_eq!(fold(&builder::neg(positive)), builder::lit_int(i64::MIN));
+        assert_eq!(fold(&builder::neg(builder::lit_int(4))), builder::lit_int(-4));
+        assert_eq!(fold(&builder::not(builder::lit_bool(false))), builder::lit_bool(true));
+        let symbolic = builder::neg(builder::param("amount", crate::ScalarSymbolType::Integer));
+        assert_eq!(fold(&symbolic), symbolic);
+    }
 
     #[test]
     fn literal_or_is_true_for_either_position_without_source_short_circuiting() {
