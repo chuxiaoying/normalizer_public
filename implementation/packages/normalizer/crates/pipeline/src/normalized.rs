@@ -223,7 +223,7 @@ fn source_layouts_with_receiver(
             }
             let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || source_nullable_field(class, field);
             if field.is_static()
-                || field.is_final()
+                || field.is_final() && !class.is_record()
                     && !(closed_resource_close(program, class).is_some() && resource_blank_final(class, field))
                 || field.initializer().is_some_and(|value|
                     entry_state(class, field) || closed_field_initializer(field.java_type(), value).is_none())
@@ -678,6 +678,9 @@ pub(crate) fn validate_with_receiver(
                     let class = program
                         .find_class(&owner)
                         .ok_or_else(|| error("NORM-UNBOUND-CALL", &owner))?;
+                    if class.is_record() {
+                        return Err(error("NORM-RECORD-CONSTRUCTOR", &format!("{id} -> {owner}")));
+                    }
                     if !class.methods().iter().any(|m| m.is_constructor()) && arity == 0 {
                         continue;
                     }

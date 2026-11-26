@@ -468,14 +468,43 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_record_components(&mut self) -> Result<Vec<JavaField>, ParseError> {
+        self.require_delimiter(b'(', "[JAVA-RECORD] expected component header")?;
+        let mut components = Vec::new();
+        let mut names = std::collections::BTreeSet::new();
+        if self.eat_char(b')') { return Ok(components); }
+        loop {
+            let ty = parse_type(self).ok_or_else(|| self.err("[JAVA-RECORD] expected component type"))?;
+            let name = self.read_ident().ok_or_else(|| self.err("[JAVA-RECORD] expected component name"))?;
+            if is_reserved_identifier(&name)
+                || matches!(name.as_str(), "clone" | "finalize" | "getClass" | "hashCode" | "notify" | "notifyAll" | "toString" | "wait")
+                || !names.insert(name.clone())
+            {
+                return Err(self.err("[JAVA-RECORD] invalid or repeated component name"));
+            }
+            components.push(JavaField {
+                name,
+                java_type: ty,
+                is_static: false,
+                is_final: true,
+                annotations: Vec::new(),
+                initializer: None,
+            });
+            if self.eat_char(b')') { return Ok(components); }
+            self.require_delimiter(b',', "[JAVA-RECORD] expected component separator")?;
+        }
+    }
+
     fn parse_class(&mut self) -> Result<JavaClass, ParseError> {
         let annotations = self.read_annotations()?;
         let modifiers = [
             "public", "private", "protected", "static", "final", "abstract", "sealed", "strictfp",
         ];
         while modifiers.iter().any(|keyword| self.eat_keyword(keyword)) {}
-        let is_interface = self.take_class_kind()?
-            .ok_or_else(|| self.err("expected class or interface declaration"))?;
+        let is_record = self.eat_keyword("record");
+        let is_interface = if is_record { false } else {
+            self.take_class_kind()?.ok_or_else(|| self.err("expected class or interface declaration"))?
+        };
 
         let simple_name = self
             .read_ident()
@@ -483,7 +512,11 @@ impl<'a> Parser<'a> {
 
         let type_parameters = self.parse_type_parameters()?;
 
+        let fields = if is_record { self.parse_record_components()? } else { Vec::new() };
         let (supertype, interfaces) = self.parse_class_hierarchy(is_interface)?;
+        if is_record && (supertype.is_some() || !interfaces.is_empty()) {
+            return Err(self.err("[JAVA-RECORD] a passive record cannot declare inheritance"));
+        }
 
         self.skip_ws();
         let body_at = self.pos + 1; // after the opening brace
@@ -497,14 +530,24 @@ impl<'a> Parser<'a> {
             simple_name,
             type_parameters,
             annotations,
-            fields: Vec::new(),
+            fields,
             static_initializers: Vec::new(),
             methods: Vec::new(),
             inner_classes: Vec::new(),
             supertype,
             interfaces,
             is_interface,
+            is_record,
         };
+
+        if is_record {
+            let mut body = Parser::new(body_text, &self.file);
+            body.skip_ws();
+            if body.peek().is_some() {
+                return Err(self.err_at(body_at, "[JAVA-RECORD] only an empty passive record body is supported"));
+            }
+            return Ok(class);
+        }
 
         parse_class_body(body_text, &mut class, &self.file, self.surrogates.subspan(body_at)).map_err(|error| self.rebase_slice(body_at, error))?;
 
@@ -640,6 +683,7 @@ fn parse_class_body(
                 supertype: nested_supertype,
                 interfaces: nested_interfaces,
                 is_interface: nested_is_interface,
+                is_record: false,
             };
             parse_class_body(
                 nested_body,

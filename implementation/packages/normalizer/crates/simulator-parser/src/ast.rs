@@ -58,6 +58,7 @@ pub struct JavaClass {
     pub(crate) supertype: Option<String>,
     pub(crate) interfaces: Vec<String>,
     pub(crate) is_interface: bool,
+    pub(crate) is_record: bool,
 }
 
 impl JavaClass {
@@ -103,6 +104,10 @@ impl JavaClass {
     }
     pub fn interfaces(&self) -> &[String] {
         &self.interfaces
+    }
+    /// A native Java record header supplies immutable positional components.
+    pub fn is_record(&self) -> bool {
+        self.is_record
     }
     pub fn is_interface(&self) -> bool {
         self.is_interface

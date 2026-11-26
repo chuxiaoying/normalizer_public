@@ -89,6 +89,24 @@ mod lexical_regressions {
     }
 
     #[test]
+    fn passive_record_keeps_declared_nominal_component_schema() {
+        let program = parse(
+            "record BatchRow(int sequence, boolean active) { /* passive */ } class Entry {}",
+            "Entrance.java", &ParseOptions::default(),
+        ).unwrap();
+        let record = program.find_class("BatchRow").unwrap();
+        assert!(record.is_record());
+        assert_eq!(record.source_file(), Some("Entrance.java"));
+        assert!(record.methods().is_empty());
+        assert!(record.fields().iter().all(|field| field.is_final() && !field.is_static()));
+        assert_eq!(record.fields()[0].name(), "sequence");
+        assert_eq!(*record.fields()[1].java_type(), JavaType::Primitive("boolean".into()));
+        assert!(!program.find_class("Entry").unwrap().is_record());
+        syntax_failure("record Row(int x, int x) {}", "[JAVA-RECORD]");
+        syntax_failure("record Row(int x) { public int x() { return 0; } }", "[JAVA-RECORD]");
+    }
+
+    #[test]
     fn incomplete_unit_reports_the_original_parse_failure() {
         syntax_failure("class Incomplete", "expected '{'");
         syntax_failure(r#"class Incomplete { String field = "unfinished"#, "unclosed '{'");

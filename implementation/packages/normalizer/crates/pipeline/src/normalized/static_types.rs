@@ -240,6 +240,12 @@ impl Admission<'_> {
                     self.check_receiver_use(field)?;
                 }
                 self.expression(target, scope)?;
+                if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
+                    if self.program.find_class(&owner).is_some_and(JavaClass::is_record) {
+                        return Err(self.diagnostic("NORM-RECORD-ACCESS",
+                            "a passive record component is private; direct Java field access is not supported"));
+                    }
+                }
                 declared()
             }
             E::MethodCall { target, method, args } => {
