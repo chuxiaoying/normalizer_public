@@ -166,7 +166,7 @@ pub struct Project {
     #[serde(skip)]
     source_exception_parents: BTreeMap<String, String>,
     #[serde(skip)]
-    source_catch_types: crate::normalized::CatchTypes,
+    source_exception_bindings: crate::normalized::ExceptionBindings,
     #[serde(skip)]
     source_nullable_entry_parameters: BTreeSet<String>,
     schema: String,
@@ -432,7 +432,7 @@ impl Loaded {
         let crate::normalized::SourceEvidence {
             layouts: source_layouts,
             exception_parents: source_exception_parents,
-            catch_types: source_catch_types,
+            exception_bindings: source_exception_bindings,
             ports: source_ports,
             nullable_entry_parameters: source_nullable_entry_parameters,
         } = crate::normalized::validate(&program, entry)?;
@@ -458,7 +458,7 @@ impl Loaded {
             source_layouts,
             source_ports,
             source_exception_parents,
-            source_catch_types,
+            source_exception_bindings,
             source_nullable_entry_parameters,
             schema: KERNEL_INPUT_SCHEMA.into(),
             source: "<parsed-java-source>".into(),

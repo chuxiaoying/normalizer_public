@@ -308,8 +308,7 @@ pub(crate) fn protected_return(body: &[S]) -> bool {
         if prefix.iter().all(|s| matches!(s, S::VarDecl { initializer: Some(_), .. })))
 }
 
-/// Only a fieldless, source-declared type-only exception with an implicit
-/// constructor is eligible for a terminal throw in the supported finally subset.
+/// Syntactic terminal-throw shape. Admission binds its declared type before execution.
 pub(crate) fn finally_throw<'a>(statement: &'a S) -> Option<&'a str> {
     match statement {
         S::Throw(E::New { java_type: JavaType::Class(class), args }) if args.is_empty() => Some(class),
@@ -341,7 +340,7 @@ fn validate_protected_try(body: &[S], catches: &[simulator_parser::ast::CatchCla
 pub(crate) struct SourceEvidence {
     pub(crate) layouts: BTreeMap<String, BTreeMap<String, String>>,
     pub(crate) exception_parents: BTreeMap<String, String>,
-    pub(crate) catch_types: CatchTypes,
+    pub(crate) exception_bindings: ExceptionBindings,
     pub(crate) ports: BTreeMap<String, source_ports::SourcePort>,
     pub(crate) nullable_entry_parameters: BTreeSet<String>,
 }
@@ -415,7 +414,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
         return Err(error("NORM-ENTRY", entry));
     }
     let mut graph = BTreeMap::new();
-    let mut catch_types = CatchTypes::new();
+    let mut exception_bindings = ExceptionBindings::new();
     for (id, &(owner, m)) in &methods {
         let mut calls = Vec::new();
         let Some(body) = m.body() else {
@@ -425,10 +424,11 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             continue;
         };
         let mut catches = CatchAdmission {
+            program,
             parents: &exceptions,
-            resolved: catch_types.entry(id.clone()).or_default(),
+            resolved: exception_bindings.entry(id.clone()).or_default(),
         };
-        statements(body, id, &mut calls, &mut catches)?;
+        statements(body, id, &mut calls, &mut catches, false)?;
         static_types::validate(program, owner, m, id, body, &layouts)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
@@ -502,7 +502,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
     for id in graph.keys() {
         visit(id, &graph, &mut BTreeSet::new(), &mut done)?;
     }
-    Ok(SourceEvidence { layouts, exception_parents: exceptions, catch_types, ports, nullable_entry_parameters })
+    Ok(SourceEvidence { layouts, exception_parents: exceptions, exception_bindings, ports, nullable_entry_parameters })
 }
 
 enum SourceCall {
@@ -531,10 +531,11 @@ pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
     }
 }
 
-/// Per-method lexical catch bindings, proved once before simulation.
-pub(crate) type CatchTypes = BTreeMap<String, BTreeMap<String, String>>;
+/// Per-method exception classes for catches and terminal finally throws.
+pub(crate) type ExceptionBindings = BTreeMap<String, BTreeMap<String, String>>;
 
 struct CatchAdmission<'a> {
+    program: &'a JavaProgram,
     parents: &'a BTreeMap<String, String>,
     resolved: &'a mut BTreeMap<String, String>,
 }
@@ -550,9 +551,26 @@ impl CatchAdmission<'_> {
         self.resolved.insert(raw.into(), name.clone());
         Ok(name)
     }
+
+    fn bind_finally_throw(&mut self, at: &str, raw: &str) -> Result<(), String> {
+        let owner = at.rsplit_once('.').map_or("", |(owner, _)| owner);
+        let name = exception_name(raw, owner, self.parents)
+            .filter(|name| self.parents.contains_key(name))
+            .filter(|name| self.program.find_class(name).is_some_and(|class| class.fields().is_empty()))
+            .ok_or_else(|| unsupported_finally_throw(at))?;
+        self.resolved.insert(raw.into(), name);
+        Ok(())
+    }
 }
 
-fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>) -> Result<(), String> {
+fn unsupported_finally_throw(at: &str) -> String {
+    crate::preprocess::required(
+        "NORM-PROJECT", at, "finally throw requires a source-declared type-only exception",
+        "只在 finally 的末尾抛出源码声明且无字段的异常，并使用无参构造。",
+    )
+}
+
+fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>, inside_finally: bool) -> Result<(), String> {
     for stmt in body {
         match stmt {
             S::LocalIr(normalizer_ir::local::LocalIr::CountRange { .. }
@@ -562,11 +580,11 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
             S::For {init,cond,update,body}
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {
-                statements(body, at, calls, catch_admission)?;
+                statements(body, at, calls, catch_admission, inside_finally)?;
             }
             S::Try { body, catches, finally_block } => {
                 validate_protected_try(body, catches, finally_block.as_deref(), at)?;
-                statements(body, at, calls, catch_admission)?;
+                statements(body, at, calls, catch_admission, inside_finally)?;
                 let mut prior_types: Vec<String> = Vec::new();
                 for handler in catches {
                     let class = catch_admission.bind(at, handler.exception_class())?;
@@ -579,14 +597,19 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                         ));
                     }
                     prior_types.push(class);
-                    statements(handler.body(), at, calls, catch_admission)?;
+                    statements(handler.body(), at, calls, catch_admission, inside_finally)?;
                 }
                 if let Some(finally) = finally_block {
-                    let body = match finally.split_last() {
-                        Some((last, prefix)) if finally_throw(last).is_some() => prefix,
+                    let body = match finally.split_last()
+                        .and_then(|(last, prefix)| finally_throw(last).map(|class| (class, prefix)))
+                    {
+                        Some((class, prefix)) => {
+                            catch_admission.bind_finally_throw(at, class)?;
+                            prefix
+                        }
                         _ => finally,
                     };
-                    statements(body, at, calls, catch_admission)?;
+                    statements(body, at, calls, catch_admission, true)?;
                 }
             }
             S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { .. }
@@ -629,18 +652,19 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 value,
                 ..
             } => expr(value, at, calls)?,
+            S::Throw(_) if inside_finally => return Err(unsupported_finally_throw(at)),
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
-            S::Block(b) => statements(b, at, calls, catch_admission)?,
+            S::Block(b) => statements(b, at, calls, catch_admission, inside_finally)?,
             S::If {
                 cond,
                 then_block,
                 else_block,
             } => {
                 expr(cond, at, calls)?;
-                statements(then_block, at, calls, catch_admission)?;
+                statements(then_block, at, calls, catch_admission, inside_finally)?;
                 if let Some(b) = else_block {
-                    statements(b, at, calls, catch_admission)?;
+                    statements(b, at, calls, catch_admission, inside_finally)?;
                 }
             }
             S::ForEach { var_type, var_name, iterable, body }

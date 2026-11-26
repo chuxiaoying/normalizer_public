@@ -243,7 +243,7 @@ impl Engine<'_> {
         let mut handled = Vec::new();
         for catch in catches {
             // from_parsed_source has bound every handler, independent of its reachability.
-            let caught = &self.project.source_catch_types[id][catch.exception_class()];
+            let caught = &self.project.source_exception_bindings[id][catch.exception_class()];
             let mut guard = b::lit_bool(false);
             pending.retain(|alternative| {
                 if let CompletionOutcome::Throw { class, .. } = &alternative.outcome {
@@ -291,11 +291,7 @@ impl Engine<'_> {
             let body = trailing_throw.map_or(finally, |(_, prefix)| prefix);
             self.source_steps(body, id, &mut env.clone(), path.clone())?;
             if let Some((class, _)) = trailing_throw {
-                let owner = id.rsplit_once('.').map(|(owner, _)| owner).unwrap_or("");
-                let exceptions = &self.project.source_exception_parents;
-                let class = crate::normalized::exception_name(class, owner, exceptions)
-                    .filter(|name| exceptions.contains_key(name))
-                    .ok_or_else(|| fail("finally throw requires a source-declared type-only exception"))?;
+                let class = self.project.source_exception_bindings[id][class].clone();
                 self.realtime_completion = self.realtime_completion.replace_continue(
                     Completion::Throw { class, payload: None },
                 );
