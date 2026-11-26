@@ -37,19 +37,19 @@ impl Engine<'_> {
         self.program.find_class(name).ok_or_else(|| fail("undeclared row type"))
     }
 
-    fn query_row_type(&self, decl: &JavaType) -> Result<BTreeMap<String, Ty>> {
-        self.query_row_declaration(decl)?.fields()
+    fn query_row_types(&self, row: &simulator_parser::JavaClass) -> Result<BTreeMap<String, Ty>> {
+        row.fields()
             .iter()
             .map(|f| Ok((f.name().into(), self.project.parameter_type(f.java_type())?)))
             .collect()
     }
 
     fn table_rows(&mut self, query: &Query, decl: &JavaType, env: &Env) -> Result<Rows> {
-        let types = self.query_row_type(decl)?;
+        let row = self.query_row_declaration(decl)?;
+        let types = self.query_row_types(row)?;
         let Projection::Fields(fields) = &query.projection else {
             return Err(fail("table rows require a record projection"));
         };
-        let row = self.query_row_declaration(decl)?;
         let nullable_fields: std::collections::BTreeSet<_> = row.fields().iter()
             .filter(|field| crate::normalized::nullable_text_field(row, field))
             .map(|field| field.name()).collect();
@@ -625,7 +625,7 @@ impl Engine<'_> {
         if let Some(declared) = decl {
             match &result {
                 Value::Rows(rows) => {
-                    let types = self.query_row_type(declared)?;
+                    let types = self.query_row_types(self.query_row_declaration(declared)?)?;
                     need(
                         types.len() == rows.fields.len()
                             && rows
