@@ -147,46 +147,48 @@ pub fn register_func(
 ) -> FuncKey {
     let key_hint = (name.to_string(), param_types.clone());
     let reg = registry();
-    {
-        let r = reg.read().unwrap();
-        if let Some(&existing) = r.name_arity_index.get(&key_hint) {
-            let entry = &r.entries[existing.0 as usize];
-            if entry.return_type != return_type {
-                panic!(
-                    "[MATH-REGISTRY] conflicting registration for ({}, param_types={:?}): existing return_type={:?} != new return_type={:?}",
-                    name, param_types, entry.return_type, return_type
-                );
-            }
-            if !semantics_equivalent(&entry.semantics, &semantics) {
-                panic!(
-                    "[MATH-REGISTRY] conflicting registration for ({}, param_types={:?}): existing semantics != new semantics",
-                    name, param_types
-                );
-            }
-            return existing;
+    let registered = |registry: &FuncRegistry| {
+        let &key = registry.name_arity_index.get(&key_hint)?;
+        let entry = &registry.entries[key.0 as usize];
+        Some((key, entry.return_type, semantics_equivalent(&entry.semantics, &semantics)))
+    };
+
+    // Most calls reuse a key. After a read miss, recheck with the writer
+    // held so concurrent first registrations cannot create multiple keys.
+    let known = registered(&reg.read().unwrap());
+    let (key, existing_type, same_semantics) = if let Some(known) = known {
+        known
+    } else {
+        let mut writer = reg.write().unwrap();
+        if let Some(known) = registered(&writer) {
+            known
+        } else {
+            let key = FuncKey(writer.entries.len() as u32);
+            writer.entries.push(FuncEntry {
+                name: name.to_string(),
+                param_types,
+                return_type,
+                semantics,
+            });
+            writer.name_arity_index.insert(key_hint, key);
+            return key;
         }
-    }
-    let mut w = reg.write().unwrap();
-    if let Some(&existing) = w.name_arity_index.get(&key_hint) {
-        let entry = &w.entries[existing.0 as usize];
-        let compatible =
-            entry.return_type == return_type && semantics_equivalent(&entry.semantics, &semantics);
-        drop(w);
-        assert!(
-            compatible,
-            "[MATH-REGISTRY] conflicting concurrent registration"
+    };
+
+    // Diagnose conflicts only after releasing the lock, including the race
+    // above, so a rejected registration cannot poison the shared registry.
+    if existing_type != return_type {
+        panic!(
+            "[MATH-REGISTRY] conflicting registration for ({}, param_types={:?}): existing return_type={:?} != new return_type={:?}",
+            name, param_types, existing_type, return_type
         );
-        return existing;
     }
-    let idx = w.entries.len() as u32;
-    let key = FuncKey(idx);
-    w.entries.push(FuncEntry {
-        name: name.to_string(),
-        param_types: param_types.clone(),
-        return_type,
-        semantics,
-    });
-    w.name_arity_index.insert(key_hint, key);
+    if !same_semantics {
+        panic!(
+            "[MATH-REGISTRY] conflicting registration for ({}, param_types={:?}): existing semantics != new semantics",
+            name, param_types
+        );
+    }
     key
 }
 

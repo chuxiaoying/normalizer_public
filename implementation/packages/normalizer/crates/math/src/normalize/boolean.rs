@@ -21,7 +21,6 @@
 use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
 use crate::builder;
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, RelationAggregateKind, UnaryOpKind};
-use crate::symvar::SymVarOrigin;
 use implication::*;
 
 pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
