@@ -75,7 +75,7 @@ fn bounds_failure(root: &str, index: i64) -> Expr {
 }
 
 fn original_slot(root: &str, index: i64) -> Expr {
-    math::normalize(r::relation_nth_value(initial_array(root), b::lit_int(index), b::lit_null()))
+    math::normalize(r::relation_nth_value(initial_array(root), b::lit_int(index)))
 }
 
 impl Engine<'_> {

@@ -349,7 +349,7 @@ fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<S
     match (kind, select, default) {
         (Count, None, None) => Some(format!("LENGTH({array})")),
         (Exists, _, None) => Some(format!("LENGTH({array}) > 0")),
-        (NthValue, Some(index), default) if default.is_none_or(Expr::is_null) =>
+        (NthValue, Some(index), _) =>
             Some(format!("{array}[{}]", format_expr_with_ctx(index, ctx))),
         _ => None,
     }

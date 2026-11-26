@@ -58,18 +58,18 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
         RelationAggregateKind::NthValue,
         relation @ RelationExpr::Base { alias, .. },
         Some(index),
-        Some(default),
+        _,
     ) = expr.as_relation_aggregate()?
     else {
         return None;
     };
-    if !matches!(index.as_lit(), Some(crate::Lit::Int(0))) || !default.is_null() {
+    if !matches!(index.as_lit(), Some(crate::Lit::Int(0))) {
         return None;
     }
     Some(crate::domains::relation::relation_first_value(
         relation.clone(),
         builder::row_value(alias),
-        default.clone(),
+        builder::lit_null(),
     ))
 }
 

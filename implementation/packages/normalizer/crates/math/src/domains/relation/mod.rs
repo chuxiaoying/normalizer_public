@@ -243,17 +243,18 @@ pub fn relation_first_value(relation: RelationExpr, value: Expr, default: Expr) 
     })
 }
 
-/// Construct NthValue(index) over an ordered-list relation.
+/// Construct NthValue(index) over an ordered-list relation, with implicit
+/// null for an absent row. An explicit default belongs to FirstValue.
 ///
 /// `index` is an ordinary math Expr.  The relation must denote OrderedList
 /// semantics at the executor/runtime boundary; math keeps this Java-free and
 /// only provides the ordered-list query form.
-pub fn relation_nth_value(relation: RelationExpr, index: Expr, default: Expr) -> Expr {
+pub fn relation_nth_value(relation: RelationExpr, index: Expr) -> Expr {
     Expr::new(ExprKind::RelationAggregate {
         kind: RelationAggregateKind::NthValue,
         relation: Box::new(relation),
         select_expr: Some(index),
-        default_expr: Some(default),
+        default_expr: None,
     })
 }
 
