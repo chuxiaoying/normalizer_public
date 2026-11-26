@@ -89,14 +89,7 @@ fn simplify_or_under_and_context(or_expr: &Expr, context: &[Expr]) -> Option<Exp
             continue;
         }
 
-        let conjuncts = flatten_and(&disjunct);
-        if conjuncts.len() > 1 {
-            // The whole disjunct is already known not to be entirely true
-            // and to contain no contradicted conjunct under this context.
-            kept.push(disjunct);
-        } else {
-            kept.push(disjunct);
-        }
+        kept.push(disjunct);
     }
 
     changed.then(|| rebuild_or(&kept))
@@ -765,9 +758,8 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
             continue;
         }
 
-        // The insertion loop already refuted every contradictory pair.
-        // For these intervals, an empty intersection requires a conflicting
-        // pair of endpoints (the maximum lower and minimum upper bounds).
+        // These shared-subject bounds can be intersected exactly even when
+        // an earlier optional contextual proof declined a contradiction.
         for idx in &group {
             consumed[*idx] = true;
         }
@@ -781,6 +773,9 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
         return None;
     }
 
+    // Terms outside a solved multi-bound group remain conjuncts, including
+    // single bounds on different subjects and non-comparison predicates.
+    solved.extend(items.iter().zip(consumed).filter_map(|(item, used)| (!used).then(|| item.clone())));
     Some(solved)
 }
 
@@ -793,8 +788,14 @@ fn intersect_intervals(left: Interval, right: Interval) -> Interval {
 
 fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
     if let (Some(lower), Some(upper)) = (interval.lower, interval.upper) {
-        if lower.value == upper.value && lower.inclusive && upper.inclusive {
-            return vec![builder::eq(subject.clone(), builder::lit_int(lower.value))];
+        match lower.value.cmp(&upper.value) {
+            std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
+            std::cmp::Ordering::Equal => return vec![if lower.inclusive && upper.inclusive {
+                builder::eq(subject.clone(), builder::lit_int(lower.value))
+            } else {
+                builder::lit_bool(false)
+            }],
+            std::cmp::Ordering::Less => (),
         }
     }
 
@@ -1091,6 +1092,33 @@ mod contextual_proof_tests {
     use crate::{builder as b, DefaultSortContext, Primitive, ScalarSymbolType};
     use crate::domains::primitive::registry::FuncSemantics;
     use crate::domains::relation::{relation_count, relation_exists, RelationExpr};
+
+    #[test]
+    fn ordered_interval_reduction_preserves_single_bounds_and_opaque_conjuncts() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let y = b::param("y", ScalarSymbolType::Integer);
+        let ready = b::param("ready", ScalarSymbolType::Boolean);
+        let loose = b::ge(x.clone(), b::lit_int(0));
+        let tight = b::ge(x.clone(), b::lit_int(1));
+        let upper = b::le(x, b::lit_int(5));
+        let only_y = b::gt(y, b::lit_int(3));
+        let source = [ready.clone(), loose, only_y.clone(), tight.clone(), upper.clone()];
+        assert_eq!(solve_ordered_comparison_conjunction(&source), Some(vec![tight, upper, ready, only_y]));
+    }
+
+    #[test]
+    fn exact_interval_endpoints_distinguish_closed_singletons_from_empty_intersections() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let point = b::lit_int(3);
+        let lower = b::ge(x.clone(), point.clone());
+        let upper = b::le(x.clone(), point.clone());
+        assert_eq!(solve_ordered_comparison_conjunction(&[lower.clone(), upper.clone()]),
+            Some(vec![b::eq(x.clone(), point.clone())]));
+        assert_eq!(solve_ordered_comparison_conjunction(&[lower, b::lt(x.clone(), point.clone())]),
+            Some(vec![b::lit_bool(false)]));
+        assert_eq!(solve_ordered_comparison_conjunction(&[b::gt(x.clone(), point), upper]),
+            Some(vec![b::lit_bool(false)]));
+    }
 
     #[test]
     fn repeated_common_terms_are_factored_once_in_both_dual_shapes() {
