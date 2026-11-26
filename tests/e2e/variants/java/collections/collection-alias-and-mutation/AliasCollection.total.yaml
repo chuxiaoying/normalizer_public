@@ -125,3 +125,50 @@
     - { path: [S, 0, write, when], value: 'LENGTH(values) >= 2' }
     - { path: [throws, 0, when], value: 'LENGTH(values) <= 1' }
     - { path: [R], value: 'COALESCE(SUM(SELECT value FROM values), 0) - values[1] + next' }
+
+- name: distinct-alias-writes-keep-the-committed-prefix-before-caught-bounds
+  edits:
+    - from: 'values[0] = next;'
+      to: |-
+        try {
+                    values[0] = next;
+                    alias[1] = next + 1;
+                } catch (ArrayIndexOutOfBoundsException ignored) {}
+  expect:
+    - path: [S]
+      value:
+        - write: {target: 'values[0]', value: next, when: 'LENGTH(values) > 0'}
+        - write: {target: 'values[1]', value: next + 1, when: 'LENGTH(values) >= 2'}
+    - { path: [throws], absent: true }
+    # The guards indicate independently committed positions, not multiple
+    # contributions to the aggregate from one row or effect re-execution.
+    - path: [R]
+      value: |-
+        COALESCE(SUM(SELECT value FROM values), 0) + CASE
+          WHEN LENGTH(values) > 0 THEN next - FIRST(value FROM values)
+          ELSE 0
+        END + CASE
+          WHEN LENGTH(values) <= 1 THEN 0
+          ELSE next + 1 - values[1]
+        END
+
+- name: same-slot-shadowing-keeps-both-effects-but-only-the-latest-in-the-sum
+  edits:
+    - from: 'values[0] = next;'
+      to: |-
+        try {
+                    values[0] = next;
+                    alias[0] = next + 1;
+                } catch (ArrayIndexOutOfBoundsException ignored) {}
+  expect:
+    - path: [S]
+      value:
+        - write: {target: 'values[0]', value: next, when: 'LENGTH(values) > 0'}
+        - write: {target: 'values[0]', value: next + 1, when: 'LENGTH(values) > 0'}
+    - { path: [throws], absent: true }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN LENGTH(values) > 0 THEN COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values) + next + 1
+          ELSE COALESCE(SUM(SELECT value FROM values), 0)
+        END
