@@ -394,10 +394,10 @@ impl<'a> Engine<'a> {
                     let RelationExpr::Base { name, alias: bound } = &rows.input else {
                         return Err(fail("join count currently requires unfiltered table declarations"));
                     };
-                    need(name == bound && self.source_relations.tables.contains_key(name),
-                        "join count requires a declared table")?;
-                    let columns = &self.source_relations.tables[name];
+                    let columns = self.source_relations.tables.get(name).filter(|_| name == bound)
+                        .ok_or_else(|| fail("join count requires a declared table"))?;
                     for (field, value) in &rows.fields {
+                        let ty = value.ty();
                         let value = value.scalar()?;
                         let (table, column) = value.as_row_value().and_then(|p| p.split_once('.'))
                             .ok_or_else(|| fail("join requires direct table columns"))?;
@@ -407,7 +407,7 @@ impl<'a> Engine<'a> {
                         need(domain != "text?",
                             "join count currently requires non-nullable columns")?;
                         names.insert(format!("{alias}.{field}"),
-                            Value::Term(rows.fields[field].ty(), b::row_value(format!("{alias}.{field}"))));
+                            Value::Term(ty, b::row_value(format!("{alias}.{field}"))));
                     }
                     Ok(RelationExpr::base(name, alias))
                 };
@@ -594,9 +594,8 @@ impl<'a> Engine<'a> {
                 let RelationExpr::Base { name, alias } = &rows.input else {
                     return Err(fail("group count currently requires an unfiltered table declaration"));
                 };
-                need(name == alias && self.source_relations.tables.contains_key(name),
-                    "group count requires a declared table")?;
-                let columns = &self.source_relations.tables[name];
+                let columns = self.source_relations.tables.get(name).filter(|_| name == alias)
+                    .ok_or_else(|| fail("group count requires a declared table"))?;
                 let keys = keys.iter().map(|key| {
                     let value = self.query_value(key, &query.alias, &rows.fields, &locals, guard)?;
                     let value = value.scalar()?;
