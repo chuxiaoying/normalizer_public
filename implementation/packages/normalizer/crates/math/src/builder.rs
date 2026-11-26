@@ -638,7 +638,10 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
                     return true;
                 }
 
-                boolean_truth_table_covers_all(&relevant)
+                // The precheck already exhausted the same input's truth
+                // table (or declined it at the same budget). Normalization
+                // above was the only additional proof; retain the branches.
+                false
             }
         }
     };
@@ -1364,25 +1367,6 @@ fn boolean_truth_table_covers_all_precheck(conds: &[Expr]) -> TruthTableCoverage
     }
 
     TruthTableCoverage::Unknown
-}
-
-fn boolean_truth_table_covers_all(conds: &[Expr]) -> bool {
-    if !truth_table_input_within_budget(conds) {
-        return false;
-    }
-    let mut atoms: Vec<String> = Vec::new();
-    for cond in conds {
-        collect_boolean_atoms(cond, &mut atoms);
-    }
-    atoms.sort();
-    atoms.dedup();
-
-    if atoms.len() > 16 {
-        return false;
-    }
-
-    let compiled = compile_boolean_truth_table_conditions(conds, &atoms);
-    boolean_truth_table_covers_all_compiled(&compiled, atoms.len())
 }
 
 #[derive(Clone, Debug)]
