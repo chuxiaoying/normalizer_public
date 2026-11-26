@@ -109,10 +109,16 @@ impl Loaded {
     }
 
     pub fn source_pers(&self, root: &Path, entry: &str) -> Result<String> {
-        let (class, method) = self.entry_method(entry)?;
+        let selected = self.source_entry.as_ref();
+        let method_key = match selected {
+            Some(source) if source.locator == entry => source.target.as_str(),
+            Some(_) => return Err("[NORM-ENTRY] selected source locator does not match".into()),
+            None => entry,
+        };
+        let (class, method) = self.entry_method(method_key)?;
         let source = Path::new(class.source_file().ok_or("missing entry source location")?);
         let path = source.strip_prefix(root).map_err(|_| "entry file outside project")?;
-        let result = self.normalize(entry)?;
+        let result = self.normalize(method_key)?;
         let signature = method.params().iter().map(|(ty, _)| ty).chain([method.return_type()]);
         let mut types = BTreeMap::new();
         let mut environment = BTreeMap::new();
@@ -130,8 +136,12 @@ impl Loaded {
                 .ok_or("unresolved source state declaration")?;
             let ty = source_type(field.java_type())?.to_owned();
             pending.push(field.java_type());
+            let identity = selected.and_then(|source| source.receiver.as_ref().map(|receiver| {
+                let file = source.locator.split_once('#').expect("validated entry locator").0;
+                format!("{file}#{}.{receiver_field}.{name}", receiver.owner, receiver_field = receiver.field)
+            })).unwrap_or_else(|| format!("{}#{}.{name}", path.display(), class.full_name()));
             environment.insert(name.clone(), State {
-                kind: "state".into(), source: format!("{}#{}.{name}", path.display(), class.full_name()),
+                kind: "state".into(), source: identity,
                 ty: Some(ty), fields: BTreeMap::new(),
             });
         }
@@ -153,7 +163,8 @@ impl Loaded {
         }
         let context = EntryContext {
             external_results,
-            function: format!("{}#{entry}", path.display()),
+            function: selected.map(|source| source.locator.clone())
+                .unwrap_or_else(|| format!("{}#{entry}", path.display())),
             types,
             returns: {
                 let mut domain = source_type(method.return_type())?;

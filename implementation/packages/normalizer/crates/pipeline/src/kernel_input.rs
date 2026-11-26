@@ -364,6 +364,7 @@ fn emit_stage_profile(stage: &str, started: Instant, detail: impl AsRef<str>) {
 pub struct Loaded {
     project: Project,
     program: JavaProgram,
+    source_entry: Option<source_entry::SourceEntry>,
 }
 impl Project {
     fn java_type(&self, t: &JavaType) -> Result<Ty> {
@@ -428,14 +429,26 @@ impl Project {
 impl Loaded {
     /// Closed source entrance: consume the exact AST validated by the source
     /// capability gate. No YAML roundtrip, native stand-in or general executor.
+    pub fn from_linked_source(program: JavaProgram, root: &Path, locator: &str) -> Result<Self> {
+        let resolved = source_entry::SourceEntry::resolve(&program, root, locator)?;
+        let target = resolved.target.clone();
+        Self::admit_source(program, &target, Some(resolved))
+    }
+
     pub fn from_parsed_source(program: JavaProgram, entry: &str) -> Result<Self> {
+        Self::admit_source(program, entry, None)
+    }
+
+    fn admit_source(program: JavaProgram, entry: &str, source_entry: Option<source_entry::SourceEntry>) -> Result<Self> {
+        let receiver = source_entry.as_ref().and_then(|source| source.receiver.as_ref())
+            .map(|receiver| (receiver.owner.as_str(), &receiver.assembly_fields));
         let crate::normalized::SourceEvidence {
             layouts: source_layouts,
             exception_parents: source_exception_parents,
             exception_bindings: source_exception_bindings,
             ports: source_ports,
             nullable_entry_parameters: source_nullable_entry_parameters,
-        } = crate::normalized::validate(&program, entry)?;
+        } = crate::normalized::validate_with_receiver(&program, entry, receiver)?;
         let ports = source_ports::contracts(&program, &source_ports)?;
         let exceptions = source_exception_parents
             .keys()
@@ -474,7 +487,7 @@ impl Loaded {
         // The source gate already checked syntax, calls and cycles. Only
         // normalize(entry) executes code, with the actual entry arguments and
         // receiver; auditing a constructor as a stand-alone call has no meaning.
-        Ok(Self { project, program })
+        Ok(Self { project, program, source_entry })
     }
     fn read_adapter_project(path: &Path) -> Result<Self> {
         let load_started = Instant::now();
@@ -552,7 +565,7 @@ impl Loaded {
             load_started,
             format!("classes={}", program.classes().len()),
         );
-        Ok(Self { project, program })
+        Ok(Self { project, program, source_entry: None })
     }
     fn engine(&self, checked_ports: BTreeMap<String, actions::CheckedPort>) -> Engine<'_> {
         Engine {
@@ -742,7 +755,11 @@ impl Loaded {
             })
             .collect::<Result<_>>()?;
         let entry_started = Instant::now();
-        let value = e.java_call(entry, args, b::lit_bool(true))?;
+        let value = if self.source_entry.as_ref().is_some_and(|source| source.receiver.is_some()) {
+            e.java_call_on_certified_entry_receiver(entry, args, b::lit_bool(true))?
+        } else {
+            e.java_call(entry, args, b::lit_bool(true))?
+        };
         e.emit_stage_profile(
             "entry_execute",
             entry_started,
@@ -776,6 +793,7 @@ mod pure_fold;
 mod member_choice;
 mod temporal_graph;
 mod business_entry;
+mod source_entry;
 mod business_event;
 pub(crate) mod business_relation;
 mod source_control;

@@ -86,8 +86,18 @@ fn local_interface_receiver<'a>(
 pub(crate) fn source_layouts(
     program: &JavaProgram,
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
+    source_layouts_with_receiver(program, None)
+}
+
+fn source_layouts_with_receiver(
+    program: &JavaProgram,
+    receiver: Option<(&str, &BTreeSet<String>)>,
+) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
     let mut layouts = BTreeMap::new();
     for class in program.classes() {
+        if !class.static_initializers().is_empty() && !receiver.is_some_and(|(owner, _)| owner == class.full_name()) {
+            return Err(error("NORM-STATIC-INITIALIZER", &class.full_name()));
+        }
         if source_payload_domain(class).is_some() { continue; }
         if class.fields().is_empty() {
             if plain_source_interface(class) || !class.interfaces().is_empty() {
@@ -97,6 +107,9 @@ pub(crate) fn source_layouts(
         }
         let mut fields = BTreeMap::new();
         for field in class.fields() {
+            if receiver.is_some_and(|(owner, fields)| owner == class.full_name() && fields.contains(field.name())) {
+                continue;
+            }
             if source_ports::marked(class, field) {
                 continue;
             }
@@ -347,9 +360,15 @@ pub(crate) struct SourceEvidence {
 
 /// Validate every supplied method, including unused helpers.
 pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvidence, String> {
+    validate_with_receiver(program, entry, None)
+}
+
+pub(crate) fn validate_with_receiver(
+    program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>,
+) -> Result<SourceEvidence, String> {
     external_polling::validate_entry(program, entry)?;
     let exceptions = source_exceptions(program)?;
-    let layouts = source_layouts(program)?;
+    let layouts = source_layouts_with_receiver(program, receiver)?;
     let ports = source_ports::declarations(program, &exceptions)?;
     let is_port_interface = |name: &str| ports.values().any(|port| port.interface == name);
     let supported = |ty: &JavaType| {

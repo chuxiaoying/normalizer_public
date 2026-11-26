@@ -848,6 +848,12 @@ impl<'a> Engine<'a> {
                 let port = format!("{}.{}", id.rsplit_once('.').unwrap().0, callee);
                 if self.project.source_ports.contains_key(&port) {
                     need(target.is_some() && !self.methods[id].syntax.is_static(), "external instance field requires a bound receiver")?;
+                    if self.project.direct_source {
+                        let owner = id.rsplit_once('.').map(|(owner, _)| owner);
+                        need(!env.contains_key("this") && self.selected_entry.is_some_and(|entry|
+                            !entry.syntax.is_static() && entry.id.rsplit_once('.').map(|(owner, _)| owner) == owner
+                        ), "external port requires the statically bound entry receiver")?;
+                    }
                     let values = args.iter()
                         .map(|arg| self.java_expr(arg, id, env, path.clone()))
                         .collect::<Result<_>>()?;
@@ -1331,6 +1337,14 @@ impl Engine<'_> {
         receiver: Option<Value>,
     ) -> Result<Value> {
         self.java_call_with_receiver(id, args, path, receiver, false)
+    }
+
+    /// The linked entry already proved its statically assembled receiver.
+    /// Entry-state reads use the initial snapshot, not constructor constants.
+    pub(super) fn java_call_on_certified_entry_receiver(
+        &mut self, id: &str, args: Vec<Value>, path: Expr,
+    ) -> Result<Value> {
+        self.java_call_with_receiver(id, args, path, None, true)
     }
 
     fn java_call_with_receiver(

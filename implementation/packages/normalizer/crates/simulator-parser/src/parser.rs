@@ -475,6 +475,7 @@ impl<'a> Parser<'a> {
 
             annotations,
             fields: Vec::new(),
+            static_initializers: Vec::new(),
             methods: Vec::new(),
             inner_classes: Vec::new(),
             supertype,
@@ -599,6 +600,7 @@ fn parse_class_body(
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
                 annotations: annotations.clone(),
                 fields: Vec::new(),
+                static_initializers: Vec::new(),
                 methods: Vec::new(),
                 inner_classes: Vec::new(),
                 supertype: nested_supertype,
@@ -616,7 +618,16 @@ fn parse_class_body(
         }
 
         if p.peek() == Some(b'{') {
-            return Err(p.err("[INITIALIZER-BLOCK-UNSUPPORTED] initializer block cannot be discarded; preprocess explicit initialization with original order and exceptions (implementation/skills/normalizer-preprocess/SKILL.md)"));
+            if !is_static || is_final || is_native || native_modifier_conflict || !annotations.is_empty() || class.is_interface {
+                return Err(p.err("[INITIALIZER-BLOCK-UNSUPPORTED] expected a standalone static initialization block"));
+            }
+            let body_at = p.pos + 1;
+            let text = p.skip_balanced_braces()?;
+            let body = crate::body_parser::parse_method_body_text(
+                text, file, p.surrogates.subspan(body_at), true,
+            ).map_err(|error| p.rebase_slice(body_at, error))?;
+            class.static_initializers.push((class.fields.len(), body));
+            continue;
         }
 
         let save = p.pos;
@@ -748,14 +759,14 @@ fn parse_class_body(
             let field_is_static = is_static || class.is_interface;
             let field_is_final = is_final || class.is_interface;
 
-            // Validate the initializer syntax, but retain only its presence:
-            // the source contract must reject it, never silently execute or drop it.
-            let has_initializer = p.eat_char(b'=');
-            if has_initializer {
+            let initializer = if p.eat_char(b'=') {
                 p.static_context = field_is_static;
-                p.parse_initializer_expr(&java_type)?;
+                let value = p.parse_initializer_expr(&java_type)?;
                 p.static_context = false;
-            }
+                Some(value)
+            } else {
+                None
+            };
             p.require_semicolon("field declaration")?;
             class.fields.push(JavaField {
                 name: member_name,
@@ -763,7 +774,7 @@ fn parse_class_body(
                 is_static: field_is_static,
                 is_final: field_is_final,
                 annotations,
-                has_initializer,
+                initializer,
             });
         }
     }

@@ -50,6 +50,7 @@ pub struct JavaClass {
     pub(crate) simple_name: String,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) fields: Vec<JavaField>,
+    pub(crate) static_initializers: Vec<(usize, Vec<JavaStatement>)>,
     pub(crate) methods: Vec<JavaMethod>,
     pub(crate) inner_classes: Vec<JavaClass>,
     pub(crate) supertype: Option<String>,
@@ -81,6 +82,10 @@ impl JavaClass {
     pub fn fields(&self) -> &[JavaField] {
         &self.fields
     }
+    /// Each block is paired with the number of fields preceding it in source.
+    pub fn static_initializers(&self) -> &[(usize, Vec<JavaStatement>)] {
+        &self.static_initializers
+    }
     pub fn methods(&self) -> &[JavaMethod] {
         &self.methods
     }
@@ -106,7 +111,7 @@ pub struct JavaField {
     pub(crate) is_static: bool,
     pub(crate) is_final: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
-    pub(crate) has_initializer: bool,
+    pub(crate) initializer: Option<JavaExpr>,
 }
 
 impl JavaField {
@@ -125,9 +130,11 @@ impl JavaField {
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations
     }
-    /// Declaration shape only; source contracts reject field initialization.
+    pub fn initializer(&self) -> Option<&JavaExpr> {
+        self.initializer.as_ref()
+    }
     pub fn has_initializer(&self) -> bool {
-        self.has_initializer
+        self.initializer.is_some()
     }
 }
 

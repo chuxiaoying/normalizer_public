@@ -19,7 +19,7 @@ fn run() -> Result<(), String> {
                 return Err("[NORM-SOURCE] expected existing directory".into());
             }
             let program = parse_source_directory(path).map_err(|e| e.to_string())?;
-            let loaded = pipeline::kernel_input::Loaded::from_parsed_source(program, entry)?;
+            let loaded = pipeline::kernel_input::Loaded::from_linked_source(program, path, entry)?;
             print!("{}", loaded.source_pers(path, entry)?);
         }
         _ => return Err("invalid kernel invocation; use implementation/tools/normalizer help".into()),
