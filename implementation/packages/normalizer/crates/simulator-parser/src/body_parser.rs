@@ -190,7 +190,6 @@ impl<'a> Parser<'a> {
     fn parse_for_or_foreach(&mut self) -> Result<JavaStatement, ParseError> {
         self.require_delimiter(b'(', "expected '(' after 'for'")?;
         // 尝试识别 for-each: Type name : expr
-        let save = self.pos;
         if let Some(fe) = self.try_parse_foreach_head()? {
             let body = self.parse_single_or_block()?;
             return Ok(JavaStatement::ForEach {
@@ -200,7 +199,6 @@ impl<'a> Parser<'a> {
                 body,
             });
         }
-        self.pos = save;
 
         // 普通 for: (init; cond; update) body
         let init: Option<Box<JavaStatement>> = {
@@ -248,33 +246,38 @@ impl<'a> Parser<'a> {
         })
     }
 
+    // Parse the shared `Type identifier` prefix without committing until the
+    // caller recognizes its declaration-specific suffix. An expression may
+    // legally start with type-like tokens, so a miss must restore the cursor.
+    fn declaration_head<T>(
+        &mut self,
+        start: usize,
+        suffix: impl FnOnce(&mut Self, JavaType, String) -> Option<T>,
+    ) -> Option<T> {
+        let head = (|| {
+            let ty = parse_type(self)?;
+            self.skip_ws();
+            let name = self.read_ident()?;
+            self.skip_ws();
+            suffix(self, ty, name)
+        })();
+        if head.is_none() {
+            self.pos = start;
+        }
+        head
+    }
+
     fn try_parse_foreach_head(
         &mut self,
     ) -> Result<Option<(JavaType, String, JavaExpr)>, ParseError> {
-        let save = self.pos;
-        // 跳过可选 final
+        let start = self.pos;
         self.skip_ws();
         self.eat_keyword("final");
-        let var_type = match parse_type(self) {
-            Some(t) => t,
-            None => {
-                self.pos = save;
-                return Ok(None);
-            }
-        };
-        self.skip_ws();
-        let var_name = match self.read_ident() {
-            Some(n) => n,
-            None => {
-                self.pos = save;
-                return Ok(None);
-            }
-        };
-        self.skip_ws();
-        if !self.eat_char(b':') {
-            self.pos = save;
+        let Some((var_type, var_name)) = self.declaration_head(start, |p, ty, name| {
+            p.eat_char(b':').then_some((ty, name))
+        }) else {
             return Ok(None);
-        }
+        };
         let iterable = self.parse_expression()?;
         self.require_delimiter(b')', "expected ')' after for-each")?;
         Ok(Some((var_type, var_name, iterable)))
@@ -398,38 +401,13 @@ impl<'a> Parser<'a> {
         if annotations.iter().any(|annotation| annotation.name() != "java.lang.SuppressWarnings") {
             return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] unsupported local variable annotation"));
         }
-        let base_ty = match parse_type(self) {
-            Some(t) => t,
-            None => {
-                self.pos = save;
-                return Ok(None);
-            }
+        let Some((base_ty, name, ty)) = self.declaration_head(save, |p, base_ty, name| {
+            let ty = parse_array_type_suffix(p, base_ty.clone())?;
+            p.skip_ws();
+            matches!(p.peek(), Some(b'=' | b';' | b',')).then_some((base_ty, name, ty))
+        }) else {
+            return Ok(None);
         };
-        self.skip_ws();
-        let name = match self.read_ident() {
-            Some(n) => n,
-            None => {
-                self.pos = save;
-                return Ok(None);
-            }
-        };
-        self.skip_ws();
-        let ty = match parse_array_type_suffix(self, base_ty.clone()) {
-            Some(t) => t,
-            None => {
-                self.pos = save;
-                return Ok(None);
-            }
-        };
-        self.skip_ws();
-        // 后续必须是 `=`、`;` 或 `,`——否则可能是 `Type.method()` 被误判
-        match self.peek() {
-            Some(b'=') | Some(b';') | Some(b',') => {}
-            _ => {
-                self.pos = save;
-                return Ok(None);
-            }
-        }
 
         let init = if self.eat_char(b'=') {
             Some(self.parse_initializer_expr(&ty)?)
