@@ -54,6 +54,25 @@ fn owned_column_domain<'a>(
     columns.get(column).map(String::as_str)
 }
 
+type TableColumns = BTreeMap<String, String>;
+
+/// This is specifically a physical-table proof, not a claim about every
+/// finite relation that can be counted.
+fn closed_count_table<'a>(
+    relation: &'a RelationExpr,
+    tables: &'a BTreeMap<String, TableColumns>,
+) -> Option<(&'a str, &'a TableColumns, Vec<&'a Expr>)> {
+    let mut predicates = Vec::new();
+    let mut base = relation;
+    while let RelationExpr::Select { predicate, input } = base {
+        predicates.push(predicate);
+        base = input;
+    }
+    let RelationExpr::Base { name, alias } = base else { return None; };
+    let columns = tables.get(name).filter(|_| name == alias)?;
+    Some((name.as_str(), columns, predicates))
+}
+
 #[cfg(test)]
 mod physical_column_contract {
     use super::*;
@@ -68,6 +87,23 @@ mod physical_column_contract {
         assert_eq!(owned_column_domain(&columns, "bill", ("bill", "memo")), Some("text?"));
         assert_eq!(owned_column_domain(&columns, "bill", ("invoice", "id")), None);
         assert_eq!(owned_column_domain(&columns, "bill", ("bill", "missing")), None);
+    }
+
+    #[test]
+    fn a_countable_vector_is_not_evidence_of_a_physical_table_snapshot() {
+        let tables = BTreeMap::from([("bill".to_owned(), BTreeMap::from([
+            ("amount".to_owned(), "number".to_owned())
+        ]))]);
+        let predicate = b::gt(b::row_value("bill.amount"), b::lit_int(0));
+        let table = RelationExpr::select(predicate.clone(), RelationExpr::base("bill", "bill"));
+        let (name, _, predicates) = closed_count_table(&table, &tables).unwrap();
+        assert_eq!(name, "bill");
+        assert_eq!(predicates, vec![&predicate]);
+
+        let vector = math::domains::composite::lifted_number_vector(vec![b::lit_int(4)]).unwrap();
+        let rows = RelationExpr::vector(vector, "value");
+        assert!(closed_count_table(&rows, &tables).is_none());
+        assert!(closed_count_table(&RelationExpr::base("bill", "other"), &tables).is_none());
     }
 
     #[test]
@@ -120,14 +156,7 @@ impl<'a> Engine<'a> {
     /// current source frame are admitted. In particular, raw E/T values or
     /// composite observations cannot acquire this proof through their name.
     fn closed_count_source(&self, relation: &RelationExpr) -> bool {
-        let mut predicates = Vec::new();
-        let mut base = relation;
-        while let RelationExpr::Select { predicate, input } = base {
-            predicates.push(predicate);
-            base = input;
-        }
-        let RelationExpr::Base { name, alias } = base else { return false; };
-        let Some(columns) = self.source_relations.tables.get(name).filter(|_| name == alias) else {
+        let Some((name, columns, predicates)) = closed_count_table(relation, &self.source_relations.tables) else {
             return false;
         };
         let Some(entry) = self.selected_entry else {
