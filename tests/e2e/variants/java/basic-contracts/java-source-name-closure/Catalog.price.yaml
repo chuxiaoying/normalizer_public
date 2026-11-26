@@ -1,0 +1,36 @@
+- name: changing-the-explicit-owner-changes-the-bound-method
+  edits:
+    - { from: 'return Price.price();', to: 'return OtherPrice.price();' }
+  expect:
+    - path: [R]
+      value: '99'
+- name: conflicting-top-level-owner-in-one-file-does-not-bind
+  edits:
+    - from: 'class Price {'
+      to: |-
+        class Price { static int price() { return 99; } }
+        class Price {
+  reject: ['[NORM-DUPLICATE-CLASS]', 'kind=PREPROCESS_REQUIRED', 'location=Price']
+- name: conflicting-top-level-owner-across-files-does-not-bind
+  edits:
+    - { file: src/OtherPrice.java, from: 'class OtherPrice {', to: 'class Price {' }
+  reject: ['[NORM-DUPLICATE-CLASS]', 'kind=PREPROCESS_REQUIRED', 'location=Price']
+- name: duplicate-nested-owner-is-invalid-even-if-unreferenced
+  edits:
+    - from: 'static int price() { return Price.price(); }'
+      to: |-
+        static int price() { return Price.price(); }
+            static class Offer {}
+            static class Offer {}
+  reject: ['[NORM-DUPLICATE-CLASS]', 'kind=PREPROCESS_REQUIRED', 'location=Catalog.Offer']
+- name: entry-without-signature-does-not-select-an-overload
+  edits:
+    - from: 'static int price() { return Price.price(); }'
+      to: |-
+        static int price() { return Price.price(); }
+            static int price(int offer) { return 99; }
+  reject: ['[NORM-OVERLOAD]', 'kind=PREPROCESS_REQUIRED', 'location=Catalog.price']
+- name: missing-selected-entry-does-not-bind-a-same-named-helper
+  edits:
+    - { from: 'static int price() { return Price.price(); }', to: 'static int renamed() { return Price.price(); }' }
+  reject: ['[NORM-ENTRY]', 'kind=PREPROCESS_REQUIRED', 'location=Catalog.price']
