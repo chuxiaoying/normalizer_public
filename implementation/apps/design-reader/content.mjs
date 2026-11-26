@@ -166,7 +166,7 @@ export async function loadContent(repoRoot) {
       pages.set(path, await readDocument(root, path));
     }
   }
-  const order = [...new Set(['design/README.md', 'design/architecture.md', ...aliases.keys(), ...pages.keys()])];
+  const order = [...new Set(['design/README.md', ...aliases.keys(), ...pages.keys()])];
   const routes = new Set([...pages.keys(), ...seriesFiles]);
   const documents = order.filter(path => pages.has(path)).map(path => {
     const doc = pages.get(path);

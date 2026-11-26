@@ -20,7 +20,6 @@ REQUIRED_PATHS = (
     "AGENTS.md",
     "README.md",
     "design/README.md",
-    "design/architecture.md",
     "implementation/docs/principles.md",
     "implementation/docs/architecture-three-modules.md",
     "implementation/docs/contributing.md",
