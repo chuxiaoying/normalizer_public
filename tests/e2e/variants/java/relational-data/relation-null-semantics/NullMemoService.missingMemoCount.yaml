@@ -66,3 +66,21 @@
     - { from: 'return count;', to: 'return count >= 0 ? 7 : 11;' }
   expect:
     - { path: [R], value: '7' }
+
+- name: unknown-signed-offset-does-not-inherit-count-floor
+  edits:
+    - { from: 'static int missingMemoCount(', to: 'static boolean missingMemoCount(' }
+    - { from: 'return count;', to: 'return accountId + count >= 0;' }
+  expect:
+    - { path: [entry, returns], value: bool }
+    - path: [R]
+      value: |-
+        accountId + COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NULL
+          ),
+          0
+        ) >= 0
