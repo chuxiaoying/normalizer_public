@@ -269,11 +269,7 @@ fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::resul
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
     #[serde(rename = "value.observe_tuple")]
-    ObserveTuple {
-        tuple: tuple_observation::Plan,
-        observations: Vec<tuple_observation::Binding>,
-        body: Box<Node>,
-    },
+    ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.number_vector")]
     NumberVector { items: Vec<Node> },
     #[serde(rename = "value.ordered_text_map")]
@@ -288,7 +284,7 @@ enum Node {
     Settled {
         #[serde(deserialize_with = "read_action_return")]
         returns: Ty,
-        steps: Vec<actions::Action>,
+        steps: tasks::SettledSteps,
     },
     Action {
         #[serde(deserialize_with = "read_action_return")]

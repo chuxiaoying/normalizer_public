@@ -1,6 +1,6 @@
 //! An induction variable with two literal endpoints has a closed integer trip count.
 use simulator_parser::{
-    JavaBinOp as B, JavaExpr as E, JavaLit, JavaStatement as S, JavaType, JavaUnaryOp as U,
+    JavaBinOp as B, JavaExpr as E, JavaStatement as S, JavaType, JavaUnaryOp as U,
 };
 
 pub(crate) struct FixedFor<'a> {
@@ -12,14 +12,10 @@ pub(crate) struct FixedFor<'a> {
 }
 
 fn literal(expr: &E) -> Option<i128> {
-    match expr {
-        E::Lit(JavaLit::Int(n)) => Some(i128::from(*n)),
-        E::Lit(JavaLit::Long(n)) => Some(i128::from(*n)),
-        E::UnaryOp {
-            op: U::Neg,
-            operand,
-        } => literal(operand).map(|n| -n),
-        _ => None,
+    if let E::UnaryOp { op: U::Neg, operand } = expr {
+        literal(operand).map(|value| -value)
+    } else {
+        super::integer_token(expr).map(i128::from)
     }
 }
 
@@ -122,13 +118,11 @@ impl<'a> RectangularCounter<'a> {
             statement = inner;
         }
         let S::Assign { target: E::Ident(target), value: E::BinOp { op: B::Add, left, right }, .. } = statement else { return None; };
-        if bounds.len() < 2 || counters.contains(target.as_str())
-            || bounds.iter().any(|(end, _)| counters.contains(end) || end == target)
-        {
-            return None;
-        }
-        let offset = [(left, right), (right, left)].into_iter()
-            .find_map(|(acc, offset)| is_counter(acc, target).then_some(offset))?;
+        let offset = (bounds.len() >= 2 && !counters.contains(target.as_str())
+            && bounds.iter().all(|(end, _)| !counters.contains(end) && end != target))
+            .then(|| [(left, right), (right, left)]
+                .into_iter()
+                .find_map(|(acc, offset)| is_counter(acc, target).then_some(offset)))??;
         let increment = literal(offset)?;
         Some(Self { bounds, target, increment: increment.try_into().ok()? })
     }

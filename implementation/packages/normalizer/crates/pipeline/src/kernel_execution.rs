@@ -104,10 +104,8 @@ impl Engine<'_> {
             );
         }
         match n {
-            Node::ObserveTuple { tuple, observations, body } => {
-                need(super::tasks::expression_is_closed(body), "tuple observation requires a pure scalar body")?;
-                self.observe_tuple(tuple, observations, body, env, path)
-            }
+            Node::ObserveTuple(observation) =>
+                self.observe_tuple(&observation.tuple, &observation.body, env, path),
             Node::OrderedTextMap { entries } => {
                 let acquired = entries.iter().map(|entry| {
                     let value = env.get(&entry.input).ok_or_else(|| fail("unbound readonly Map entry"))?;
@@ -143,10 +141,8 @@ impl Engine<'_> {
                     values::field(acquired, name)
                 }
             }
-            Node::Settled { returns, steps } => {
-                tasks::validate_settled_scope(steps)?;
-                self.action_scope(returns, steps, env, path, true)
-            }
+            Node::Settled { returns, steps } =>
+                self.action_scope(returns, steps.as_slice(), env, path, true),
             Node::Action { returns, steps } => self.action_scope(returns, steps, env, path, false),
             Node::Add { left, right } | Node::Subtract { left, right } => {
                 let left = self.node(left, env, path.clone())?;

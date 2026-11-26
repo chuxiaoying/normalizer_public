@@ -82,16 +82,15 @@ fn external_call(
 ) -> Option<String> {
     let (receiver, method, args) = match expr {
         JavaExpr::MethodCall { target: Some(receiver), method, args }
-            => (receiver, method, args),
+            if args.iter().all(|arg| matches!(arg, JavaExpr::Ident(_) | JavaExpr::Lit(_)))
+            => (receiver.as_ref(), method, args),
         _ => return None,
     };
-    let JavaExpr::Ident(receiver_name) = receiver.as_ref() else { return None; };
-    let qualifies = args.iter().all(|arg| matches!(arg, JavaExpr::Ident(_) | JavaExpr::Lit(_)));
-    let receiver_type = bindings.get(receiver_name.as_str()).filter(|_| qualifies)?;
-    let qualified = match receiver_type {
-        JavaType::Class(qualified) => qualified,
-        _ => return None,
-    };
+    let Some(JavaType::Class(qualified)) = (if let JavaExpr::Ident(name) = receiver {
+        bindings.get(name.as_str()).copied()
+    } else {
+        None
+    }) else { return None; };
     let interface = program.find_class(qualified).filter(|class| class.is_interface())?;
     (!program.classes().iter().any(|class| class.interfaces().iter()
         .any(|ty| ty == qualified || ty == interface.simple_name()))

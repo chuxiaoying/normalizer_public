@@ -21,7 +21,22 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
     }
 }
 
-pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct SettledSteps(Vec<Action>);
+
+impl SettledSteps {
+    pub(super) fn as_slice(&self) -> &[Action] { &self.0 }
+}
+
+impl<'de> Deserialize<'de> for SettledSteps {
+    fn deserialize<D: serde::Deserializer<'de>>(reader: D) -> std::result::Result<Self, D::Error> {
+        let steps = Vec::<Action>::deserialize(reader)?;
+        validate_settled_scope(&steps).map_err(serde::de::Error::custom)?;
+        Ok(Self(steps))
+    }
+}
+
+fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
     while let Some((action, tail)) = steps.split_first() {
         steps = tail;
         match action {
@@ -45,15 +60,14 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
                     tail,
                 )) = steps.split_first()
                 else {
-                    return Err(fail("entry contains an outstanding task"));
+                    return Err("entry contains an outstanding task".into());
                 };
-                need(
-                    name == awaited,
-                    "wait does not belong to the preceding invocation",
-                )?;
+                if name != awaited {
+                    return Err("wait does not belong to the preceding invocation".into());
+                }
                 steps = tail;
             }
-            _ => return Err(fail("unclosed operation in settled entry")),
+            _ => return Err("unclosed operation in settled entry".into()),
         }
     }
     Ok(())

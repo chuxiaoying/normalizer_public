@@ -3,14 +3,14 @@ use super::*;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Plan {
+enum WirePlan {
     Literal { items: Vec<Slot> },
-    Branch { cond: Box<Node>, yes: Box<Plan>, no: Box<Plan> },
+    Branch { cond: Box<Node>, yes: Box<WirePlan>, no: Box<WirePlan> },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Slot {
+enum Slot {
     Undefined,
     Text { value: String },
     Record { fields: BTreeMap<String, bool> },
@@ -18,50 +18,102 @@ pub(super) enum Slot {
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Binding {
+enum Binding {
     IsUndefined { name: String, index: usize },
     OptionalFlag { name: String, index: usize, field: String },
     RestLength { name: String, from: usize },
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireObservation {
+    tuple: WirePlan,
+    observations: Vec<Binding>,
+    body: Box<Node>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(try_from = "WireObservation")]
+pub(super) struct Observation {
+    pub(super) tuple: Plan,
+    pub(super) body: Box<Node>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum Plan {
+    Literal(Vec<(String, Ty, Expr)>),
+    Branch { cond: Box<Node>, yes: Box<Plan>, no: Box<Plan> },
+}
+
+fn admit_plan(plan: WirePlan, observations: &[Binding]) -> Result<Plan> {
+    Ok(match plan {
+        WirePlan::Branch { cond, yes, no } => {
+            if !super::tasks::expression_is_closed(&cond) {
+                return Err("tuple branch requires a pure condition".into());
+            }
+            Plan::Branch {
+                cond,
+                yes: Box::new(admit_plan(*yes, observations)?),
+                no: Box::new(admit_plan(*no, observations)?),
+            }
+        }
+        WirePlan::Literal { items } => {
+            let fields = observations.iter().map(|binding| {
+                let field = match binding {
+                    Binding::IsUndefined { name, index } => {
+                        let flag = matches!(items.get(*index), None | Some(Slot::Undefined));
+                        (name, Ty::Bool, b::lit_bool(flag))
+                    }
+                    Binding::OptionalFlag { name, index, field } => {
+                        let flag = match items.get(*index) {
+                            None | Some(Slot::Undefined) => false,
+                            Some(Slot::Record { fields }) => fields.get(field).copied().unwrap_or(false),
+                            _ => return Err("optional tuple receiver is not a record".to_owned()),
+                        };
+                        (name, Ty::Bool, b::lit_bool(flag))
+                    }
+                    Binding::RestLength { name, from } => {
+                        let count = i64::try_from(items.get(*from..).unwrap_or_default().len())
+                            .map_err(|_| "tuple length range".to_owned())?;
+                        (name, Ty::Integer, b::lit_int(count))
+                    }
+                };
+                Ok((field.0.clone(), field.1, field.2))
+            }).collect::<Result<_>>()?;
+            Plan::Literal(fields)
+        }
+    })
+}
+
+impl TryFrom<WireObservation> for Observation {
+    type Error = String;
+
+    fn try_from(raw: WireObservation) -> Result<Self> {
+        if !super::tasks::expression_is_closed(&raw.body) {
+            return Err("tuple observation requires a pure scalar body".into());
+        }
+        Ok(Self { tuple: admit_plan(raw.tuple, &raw.observations)?, body: raw.body })
+    }
+}
+
 impl Engine<'_> {
     pub(super) fn observe_tuple(
-        &mut self, plan: &Plan, observations: &[Binding], body: &Node, env: &Env, path: Expr,
+        &mut self, plan: &Plan, body: &Node, env: &Env, path: Expr,
     ) -> Result<Value> {
         self.budget()?;
         match plan {
             Plan::Branch { cond, yes, no } => {
-                need(super::tasks::expression_is_closed(cond), "tuple branch requires a pure condition")?;
                 let value = self.node(cond, &mut env.clone(), path.clone())?;
                 need(value.ty() == Ty::Bool, "tuple branch requires Boolean")?;
                 let condition = self.condition_under_path(value.scalar()?, &path);
-                let a = self.observe_tuple(yes, observations, body, env, b::and(path.clone(), condition.clone()))?;
-                let z = self.observe_tuple(no, observations, body, env, b::and(path, b::not(condition.clone())))?;
+                let a = self.observe_tuple(yes, body, env, b::and(path.clone(), condition.clone()))?;
+                let z = self.observe_tuple(no, body, env, b::and(path, b::not(condition.clone())))?;
                 self.choose(condition, a, z)
             }
-            Plan::Literal { items } => {
+            Plan::Literal(fields) => {
                 let mut scope = env.clone();
-                for binding in observations {
-                    let (name, value) = match binding {
-                        Binding::IsUndefined { name, index } => {
-                            let flag = matches!(items.get(*index), None | Some(Slot::Undefined));
-                            (name, Value::Term(Ty::Bool, b::lit_bool(flag)))
-                        }
-                        Binding::OptionalFlag { name, index, field } => {
-                            let flag = match items.get(*index) {
-                                None | Some(Slot::Undefined) => false,
-                                Some(Slot::Record { fields }) => fields.get(field).copied().unwrap_or(false),
-                                _ => return Err(fail("optional tuple receiver is not a record")),
-                            };
-                            (name, Value::Term(Ty::Bool, b::lit_bool(flag)))
-                        }
-                        Binding::RestLength { name, from } => {
-                            let tail = items.get(*from..).unwrap_or_default();
-                            let count = i64::try_from(tail.len()).map_err(|_| fail("tuple length range"))?;
-                            (name, Value::Term(Ty::Integer, b::lit_int(count)))
-                        }
-                    };
-                    Self::bind_local(&mut scope, name, value)?;
+                for (name, ty, value) in fields {
+                    Self::bind_local(&mut scope, name, Value::Term(ty.clone(), value.clone()))?;
                 }
                 self.node(body, &mut scope, path)
             }

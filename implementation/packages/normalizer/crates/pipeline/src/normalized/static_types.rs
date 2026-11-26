@@ -58,11 +58,11 @@ impl Kind {
         {
             return false;
         }
-        if self == Self::Null || other == Self::Null {
-            return matches!(self, Self::Bool | Self::Number | Self::Float | Self::Double)
-                || matches!(other, Self::Bool | Self::Number | Self::Float | Self::Double);
-        }
-        true
+        // Null is compatible only with the remaining nullable families.
+        // Primitive kinds still fail source admission before evaluation.
+        !matches!((self, other),
+            (Self::Null, Self::Text | Self::Sequence | Self::DecimalCarrier)
+            | (Self::Text | Self::Sequence | Self::DecimalCarrier, Self::Null))
     }
 }
 

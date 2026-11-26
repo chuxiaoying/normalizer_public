@@ -660,27 +660,36 @@ fn source_array_read(target: &E, index: &E) -> bool {
     }
 }
 
-// Only a single exact sum update with an element coefficient of one.
+// Match one full accumulator update and reject every other loop shape at
+// one boundary. The element may have one closed integer token offset.
 pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)> {
-    let [S::Assign { target: E::Ident(total), value: E::BinOp { op: B::Add, left, right }, .. }] = body else {
-        return None;
-    };
+    let update = body.first().filter(|_| body.len() == 1)?;
+    let S::Assign {
+        target: E::Ident(total),
+        value: E::BinOp { op: B::Add, left, right },
+        ..
+    } = update else { return None; };
     let total = Some(total).filter(|total| item != total.as_str()
         && matches!(left.as_ref(), E::Ident(name) if name == *total))?;
-    let delta = match right.as_ref() {
-        E::Ident(n) if n == item => 0,
+    let offset = match right.as_ref() {
+        E::Ident(name) if name == item => Some(0),
         E::BinOp { op: op @ (B::Add | B::Sub), left, right }
-            if matches!(left.as_ref(), E::Ident(n) if n == item) => {
-            let amount = match right.as_ref() {
-                E::Lit(JavaLit::Int(n)) => i64::from(*n),
-                E::Lit(JavaLit::Long(n)) => *n,
-                _ => return None,
-            };
-            if *op == B::Sub { amount.checked_neg()? } else { amount }
-        }
-        _ => return None,
-    };
-    Some((total, delta))
+            if matches!(left.as_ref(), E::Ident(name) if name == item) => {
+                integer_token(right).and_then(|value| {
+                    if *op == B::Sub { value.checked_neg() } else { Some(value) }
+                })
+            }
+        _ => None,
+    }?;
+    Some((total, offset))
+}
+
+fn integer_token(e: &E) -> Option<i64> {
+    match e {
+        E::Lit(JavaLit::Int(n)) => Some(i64::from(*n)),
+        E::Lit(JavaLit::Long(n)) => Some(*n),
+        _ => None,
+    }
 }
 
 pub(crate) fn java_int(ty: &JavaType) -> bool {

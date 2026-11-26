@@ -32,7 +32,26 @@ pub(super) struct EntryContext {
     #[serde(default)]
     environment: BTreeMap<String, State>,
     #[serde(default)]
-    bindings: BTreeMap<String, Vec<String>>,
+    bindings: BTreeMap<String, StateBinding>,
+}
+
+struct StateBinding {
+    root: String,
+    fields: Vec<String>,
+}
+
+impl<'de> Deserialize<'de> for StateBinding {
+    fn deserialize<D: serde::Deserializer<'de>>(reader: D) -> std::result::Result<Self, D::Error> {
+        let parts = Vec::<String>::deserialize(reader)?;
+        let mut parts = parts.into_iter();
+        let kind = parts.next();
+        let root = parts.next();
+        let fields: Vec<_> = parts.collect();
+        match (kind.as_deref(), root) {
+            (Some("E"), Some(root)) if !fields.is_empty() => Ok(Self { root, fields }),
+            _ => Err(serde::de::Error::custom("invalid business source binding")),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -195,13 +214,8 @@ impl EntryContext {
             let parameter = self.parameters.get(name).ok_or_else(|| format!("undeclared input {name}"))?;
             return Ok((self.qualified("P", name), &parameter.ty));
         };
-        match path.as_slice() {
-            [kind, root, fields @ ..] if kind == "E" && !fields.is_empty() => {
-                let ty = self.state_field(root, fields)?;
-                Ok((format!("{}.{}", self.qualified(kind, root), fields.join(".")), ty))
-            }
-            _ => Err("invalid business source binding".into())
-        }
+        let ty = self.state_field(&path.root, &path.fields)?;
+        Ok((format!("{}.{}", self.qualified("E", &path.root), path.fields.join(".")), ty))
     }
 
     fn has_field<'a>(&'a self, mut ty: &'a str, path: impl Iterator<Item=&'a str>) -> bool where Self: 'a {
