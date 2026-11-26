@@ -162,8 +162,9 @@ pub fn round(value: Expr, scale: u32, mode: Mode) -> Expr {
         vec![Primitive::Composite, Primitive::Number, Primitive::String])
 }
 
+/// Render a canonical fractional atom returned by `view`.
+/// Integral and zero values are ordinary integer expressions.
 pub fn display_literal(value: BigInt, scale: u32) -> String {
-    if scale == 0 { return value.to_string(); }
     let negative = value.sign() == Sign::Minus;
     let mut digits = value.magnitude().to_string();
     let width = scale as usize;
@@ -171,8 +172,6 @@ pub fn display_literal(value: BigInt, scale: u32) -> String {
         digits.insert_str(0, &"0".repeat(width+1-digits.len()));
     }
     digits.insert(digits.len()-width, '.');
-    while digits.ends_with('0') { digits.pop(); }
-    if digits.ends_with('.') { digits.pop(); }
     if negative { digits.insert(0, '-'); }
     digits
 }
