@@ -23,3 +23,17 @@
   edits:
     - { from: 'interface Records { Packet lookup(int id); }', to: 'class Records { Packet lookup(int id) { return null; } }' }
   reject: ['[NORM-EXTERNAL-TYPE]', 'kind=PREPROCESS_REQUIRED', 'location=Records']
+- name: mutable-injected-field-is-not-a-fixed-external-port
+  edits:
+    - { from: 'private final Records port;', to: 'private Records port;' }
+  reject: ['[NORM-EXTERNAL-FIELD]', 'kind=PREPROCESS_REQUIRED', 'location=port']
+- name: static-external-field-is-not-an-injected-instance-port
+  edits:
+    - { from: 'private final Records port;', to: 'private static final Records port = null;' }
+    - { from: 'this.port = port;', to: '' }
+  reject: ['[NORM-EXTERNAL-FIELD]', 'kind=PREPROCESS_REQUIRED', 'location=port']
+- name: instance-port-initialized-locally-is-not-an-injected-external-port
+  edits:
+    - { from: 'private final Records port;', to: 'private final Records port = null;' }
+    - { from: 'this.port = port;', to: '' }
+  reject: ['[NORM-EXTERNAL-FIELD]', 'kind=PREPROCESS_REQUIRED', 'location=port']
