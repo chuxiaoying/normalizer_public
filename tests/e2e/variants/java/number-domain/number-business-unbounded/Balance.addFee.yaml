@@ -333,3 +333,19 @@
     - { from: 'return balance + fee;', to: 'return -2147483648.0;' }
   expect:
     - { path: [R], value: '-2147483648' }
+
+- name: an-acquired-integer-parameter-minus-itself-is-zero
+  edits:
+    - { from: 'return balance + fee;', to: 'return fee - fee;' }
+  expect:
+    - { path: [R], value: '0' }
+- name: subtraction-cancels-inside-the-two-acquired-case-arms
+  edits:
+    - { from: 'return balance + fee;', to: 'int adjusted = balance > 0 ? balance : balance + 2; return adjusted - balance;' }
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN balance > 0 THEN 0
+          ELSE 2
+        END

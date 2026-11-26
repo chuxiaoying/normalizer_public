@@ -47,17 +47,19 @@
 
 - **关系并集和连接的来源**：对[并集](../../design/examples/topics/relational-data/sql-projected-distinct.md)和[内连接](../../design/examples/topics/relational-data/java-join.md)，正式区分未绑定的来源和已绑定但带过滤的表行。当前直接表行合同拒绝二者；错误原因不同，都不生成 PERS。
 
+- **已取得值相消**：正式回归验收纯入参、已取得的 CASE 两臂、同一回执字段和第二次完整回执；R 可归零，但实际调用顺序和异常不被抹去。不同回执的同名字段不能抵消。
+
 ### 待补回归（不属于覆盖例外）
 
 - **有序折叠的空提交前缀与隐式依赖**：沿[提前退出种子](../../design/examples/topics/loops-and-termination/java-break-continue.md)把首个可处理索引移到终止界之后，断言初值不变；沿[纯折叠定义](../../design/examples/topics/unified-canonical-form/java-pure-fold-definitions.md)让 R 只引用后一项，断言 T 仍按依赖顺序保留前项。
 - **Java 名称、声明和分派**：在已支持的源码场景中覆盖 `$` 和关键字前缀标识符、受保护和 `strictfp` 的方法、`final` 类、`transient` 字段、普通 `Object` / `java.lang.Object` 和 `java.lang.String` 声明，以及多接口的已声明方法分派。另覆盖右操作数为文本的 `null + "s"`，R 为 `"nulls"`。不据此扩张可空引用类型或默认接口方法的合同。
 - **独立 JavaScript 无源码调用与适配器启动失败**：按[无源码边界](../../design/chapters/第四章%20·%20AI%20救赎.md)，同步直接调用与 `await` 都不得把普通参数的方法变成 external，分别保留 `:call` 和 `:await` 的失败位置且不输出 PERS。适配器内核若无法启动，工程验收用隔离的可执行文件路径重现启动失败，断言退出非零且无 PERS，不伪造业务种子。
 - **证明预算和缓存边界**：按[性能治理](performance-risk-response.md)，用同一份合法 Java 嵌套条件和异常源码，分别降低证明节点上限与缓存条目体积上限，覆盖拒绝证明及跳过过大缓存项。仍要得到相同 PERS；性能探针不能把近似答案变成成功，也不计作已经补齐的正式回归。
-- **布尔 CASE、整数穷尽和相消**：按[统一正则规范](../../design/chapters/第八章%20·%20统一定形规范.md)，`(p ? q : !q) ? true : p` 归约为 `p OR NOT(q)`；`x<0`、`0<=x<=5`、`x>=6` 穷尽整数域，不残留不可达尾臂。把 `x>0?x:x+2` 的值减去 `x`，结果应为 `x<=0?2:0`，不能残留 `x-x`。最后一例已发现实现缺口，不把未化简结果当预期。
+- **布尔 CASE、整数穷尽和相消**：按[统一正则规范](../../design/chapters/第八章%20·%20统一定形规范.md)，`(p ? q : !q) ? true : p` 归约为 `p OR NOT(q)`；`x<0`、`0<=x<=5`、`x>=6` 穷尽整数域，不残留不可达尾臂。把 `x>0?x:x+2` 的值减去 `x`，结果应为 `x<=0?2:0`，不能残留 `x-x`。后一相消对照已由正式回归验收，前两项保留为待补。
 - **关系连接和 LET 输出**：在[内连接计数](../../design/examples/topics/relational-data/java-join.md)中给两表匹配追加独立布尔开关；为假时结果为零，为真时保留原连接和重复行计数。按[CASE LET 种子](../../design/examples/topics/expression-simplification/java-case-let-extraction.md)区分入参数组、E 状态数组、借用记录字段和 CASE 内取反；检查完整 PERS 中重复子式究竟提取为 LET 还是保持内联，不能把未确认的读取条件冒充已取得的值。
 - **状态写入、独立字段与可空内容**：在[多次写后读](../../design/examples/topics/state-and-aliasing/java-multi-write-read-order.md)中分别验证同一对象的相邻字段、不同声明对象的同名字段。写入进 S，读取不得混到另一字段或对象；空值声明则沿[可选字段](../../design/examples/topics/objects-and-types/java-optional-field.md)断言完整 R 中保留 `null`，不省字段。
 - **合法接收者与身份**：按[多态分派](../../design/examples/topics/objects-and-types/java-polymorphic-dispatch.md)验证显式 `this.field` 读实际分派到的对象；按[内容与身份](../../design/examples/topics/objects-and-types/java-structural-vs-identity.md)验证非空入参与已绑定为 null 的局部变量不相同。比较不创造外部身份或改变 P。
-- **已取得值相消但不抹掉效果**：纯参数、不可变外部回执字段、第二次采集的完整回执分别计算同值减自身，R 都应归零。参数版不新增 S；两次采集均保留；[原子写入](../../design/examples/topics/relational-data/java-batch-write.md)后取时钟只发生于成功路径，仍保留 SQL、时钟及异常完成。当前参数和回执字段版本还有未化简结果，不能把它们当作预期。
+- **原子写入后的时钟**：[原子写入](../../design/examples/topics/relational-data/java-batch-write.md)后取时钟只发生于成功路径，仍保留 SQL、时钟及异常完成。
 - **多臂与部分 CASE、精确值取负**：六个标量分支进入同一运算时仍依首匹配顺序，部分 CASE 保留独立抛出完成而不补默认值。局部数组首项不能套用 COUNT 的规则，空数组仍抛出；已绑定的精确小数可以符号化取负，不新增舍入规则。
 - **逆序关闭的规范排序**：沿[按相反顺序关闭嵌套任务](../../design/examples/topics/state-and-aliasing/java-lifo-release.md)只重命名两个等长的公开参数名，使共同长度的 LEAST 不需要交换操作数。比较方向必须同时换符号，反向索引仍以打开序列为基准；完整匹配返回真、部分匹配返回假、位置不符抛异常，S 始终为空。
 - **只读 Vector 长度的适配边界**：[统一正则规范](../../design/secondary/有序序列的长度与首项.md#已取得-typed-vector-长度的自然域)定义自然数长度及正长度与零长度的唯一方向。合法的 `>= 0`、`!== -1` 和 `<= 0` 变体目前在独立 JS 入口被拒绝，尚未命中对应内核分支；记录为待修，不把拒绝变成规范答案。
