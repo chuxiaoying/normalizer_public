@@ -156,6 +156,19 @@ impl SourceEntry {
         {
             return Err(fail("expected a project-relative .java file"));
         }
+        let (invocation, signature) = match invocation.split_once('(') {
+            Some((prefix, signature)) => {
+                let signature = signature.strip_suffix(')').filter(|sig| !sig.contains(['(', ')']))
+                    .ok_or_else(|| fail("malformed source parameter signature"))?;
+                let types = if signature.trim().is_empty() { Vec::new() }
+                    else { signature.split(',').map(str::trim).collect() };
+                if types.iter().any(|ty| ty.is_empty()) {
+                    return Err(fail("empty source parameter type"));
+                }
+                (prefix, Some(types))
+            }
+            None => (invocation, None),
+        };
         let segments: Vec<_> = invocation.split('.').collect();
         let (root_name, receiver_name, method_name) = match segments.as_slice() {
             [owner, method] => (*owner, None, *method),
@@ -186,14 +199,30 @@ impl SourceEntry {
             (root_name, None)
         };
         let target_class = program.find_class(target).ok_or_else(|| fail("undeclared receiver class"))?;
-        let mut candidates = target_class.methods().iter().filter(|method| !method.is_constructor() && method.name() == method_name);
-        let method = candidates.next().ok_or_else(|| fail("undeclared entry method"))?;
+        let mut candidates = target_class.methods().iter().enumerate().filter(|(_, method)|
+            !method.is_constructor() && method.name() == method_name
+                && signature.as_ref().is_none_or(|types| method.params().iter()
+                    .map(|(ty, _)| java_type_spelling(ty)).eq(types.iter().copied().map(str::to_owned))));
+        let (index, method) = candidates.next().ok_or_else(|| fail("undeclared entry method or source parameter signature"))?;
         if candidates.next().is_some() {
-            return Err(fail("ambiguous entry method"));
+            return Err(crate::preprocess::required(
+                "NORM-OVERLOAD", invocation, "ambiguous entry method", "入口需要显式的 Java 源码参数类型签名。",
+            ));
         }
         if method.is_static() != receiver.is_none() {
             return Err(fail("invocation does not match the entry method's static/instance declaration"));
         }
-        Ok(Self { locator: locator.into(), target: format!("{target}.{method_name}"), receiver })
+        Ok(Self { locator: locator.into(), target: crate::normalized::method_key(target_class, index, method), receiver })
+    }
+}
+
+
+fn java_type_spelling(ty: &JavaType) -> String {
+    match ty {
+        JavaType::Primitive(name) | JavaType::Class(name) => name.clone(),
+        JavaType::Array(element) => format!("{}[]", java_type_spelling(element)),
+        JavaType::Generic(name, args) => format!("{name}<{}>",
+            args.iter().map(java_type_spelling).collect::<Vec<_>>().join(", ")),
+        JavaType::Void => "void".into(),
     }
 }

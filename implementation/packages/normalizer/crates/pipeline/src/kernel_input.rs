@@ -648,8 +648,12 @@ impl Loaded {
             if c.is_interface() {
                 continue;
             }
-            for m in c.methods() {
-                let id = format!("{}.{}", c.full_name(), m.name());
+            for (index, m) in c.methods().iter().enumerate() {
+                let id = if self.project.direct_source {
+                    crate::normalized::method_key(c, index, m)
+                } else {
+                    format!("{}.{}", c.full_name(), m.name())
+                };
                 if !self.project.direct_source {
                     need(m.body().is_none(), "adapter signature carriers must not contain Java method bodies")?;
                     need(m.annotations().is_empty(), "unsupported method shape")?;

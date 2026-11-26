@@ -5,14 +5,10 @@ use simulator_parser::{
 use std::collections::BTreeMap;
 
 pub(super) fn validate_entry(program: &JavaProgram, entry: &str) -> Result<(), String> {
-    let Some((class, method)) = entry
-        .rsplit_once('.')
-        .and_then(|(owner, name)| Some((program.find_class(owner)?, name)))
-    else { return Ok(()); };
-    let mut candidates = class.methods().iter().filter(|m| m.name() == method);
-    let Some(method) = candidates.next().filter(|_| candidates.next().is_none()) else {
-        return Ok(()); // Let normal entry admission resolve or diagnose the entry.
-    };
+    let Some((class, method)) = entry.rsplit_once('.').and_then(|(owner, _)| {
+        let class = program.find_class(owner)?;
+        Some((class, super::method_for_key(class, entry)?))
+    }) else { return Ok(()); }; // Let admission diagnose an unresolved entry.
     let mut fields = BTreeMap::new();
     for field in class.fields() {
         bind_interface(program, &mut fields, field.name(), field.java_type());

@@ -6,7 +6,7 @@ pub(crate) mod fixed_for;
 pub(crate) mod source_ports;
 
 use simulator_parser::{
-    AnnotationRef, JavaBinOp as B, JavaExpr as E, JavaLit, JavaProgram, JavaStatement as S, JavaType,
+    AnnotationRef, JavaBinOp as B, JavaExpr as E, JavaClass, JavaLit, JavaMethod, JavaProgram, JavaStatement as S, JavaType,
     JavaUnaryOp as U,
 };
 use std::{
@@ -399,6 +399,26 @@ pub(crate) struct SourceEvidence {
     pub(crate) nullable_entry_parameters: BTreeSet<String>,
 }
 
+// Keep declaration keys separate from Java call spellings and public locators.
+// The source index only disambiguates an overload set inside this parsed class.
+pub(crate) fn method_key(class: &JavaClass, index: usize, method: &JavaMethod) -> String {
+    let base = format!("{}.{}", class.full_name(), method.name());
+    if class.methods().iter().filter(|m| m.name() == method.name()).count() > 1 {
+        format!("{base}@{index}")
+    } else {
+        base
+    }
+}
+
+pub(crate) fn method_for_key<'a>(class: &'a JavaClass, key: &str) -> Option<&'a JavaMethod> {
+    class.methods().iter().enumerate().find_map(|(index, method)|
+        (method_key(class, index, method) == key).then_some(method))
+}
+
+fn same_parameters(left: &JavaMethod, right: &JavaMethod) -> bool {
+    left.params().iter().map(|(ty, _)| ty).eq(right.params().iter().map(|(ty, _)| ty))
+}
+
 /// Validate every supplied method, including unused helpers.
 pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvidence, String> {
     validate_with_receiver(program, entry, None)
@@ -444,11 +464,14 @@ pub(crate) fn validate_with_receiver(
         if c.is_interface() {
             continue;
         }
-        for m in c.methods() {
-            let id = format!("{}.{}", name, m.name());
-            if methods.insert(id.clone(), (c, m)).is_some() {
-                return Err(error("NORM-OVERLOAD", &id));
+        for (index, m) in c.methods().iter().enumerate() {
+            if c.methods()[..index].iter().any(|prior| prior.name() == m.name()
+                && (m.is_constructor() || prior.is_constructor() || same_parameters(prior, m)))
+            {
+                return Err(error("NORM-OVERLOAD", &format!("{name}.{}", m.name())));
             }
+            let id = method_key(c, index, m);
+            methods.insert(id.clone(), (c, m));
             if (!m.annotations().is_empty() && !nullable_text_return(c, m))
 
                 || (!m.is_constructor() && !matches!(m.return_type(), JavaType::Void) && !supported(m.return_type()))
@@ -527,6 +550,14 @@ pub(crate) fn validate_with_receiver(
                 // present in this source. Runtime checks the selected
                 // allocation, and the active stack still rejects cycles.
                 continue;
+            }
+            if program.find_class(&target_owner).is_some_and(|class| {
+                class.methods().iter().filter(|method| method.name() == target_member).count() > 1
+            }) {
+                return Err(crate::preprocess::required(
+                    "NORM-OVERLOADED-CALL", id, &format!("no checked call-site dispatch for {target}/{arity}"),
+                    "重载入口可用源码参数类型定位；方法体内的重载分派暂不支持，不会猜测目标。",
+                ));
             }
             if methods
                 .get(&target)
