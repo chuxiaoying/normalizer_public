@@ -201,7 +201,7 @@ fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     // impossible NPE/throw domains from source-visible helpers.
     if let Some(null_subject) = null_comparison_subject(expr, BinOpKind::Eq) {
         if context.iter().any(|c| {
-            predicate_implies_nonnull_subject(c)
+            predicate_subject_at_null(c, false)
                 .as_ref()
                 .is_some_and(|subject| subject == &null_subject)
         }) {
@@ -397,10 +397,7 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
                 });
                 if contradiction { return Some(builder::lit_bool(false)); }
                 if matches!(domain, EqualityAtomDomain::Allocated) {
-                    out.retain(|existing| {
-                        null_comparison_subject(existing, BinOpKind::Ne)
-                            .as_ref().is_none_or(|candidate| candidate != &subject)
-                    });
+                    discard_null_guard(&mut out, BinOpKind::Ne, &subject);
                 }
             } else {
                 for existing in &out {
@@ -425,7 +422,7 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         // business conditions such as route-channel response checks.
         if let Some(non_null_subject) = null_comparison_subject(item, BinOpKind::Ne) {
             if out.iter().any(|existing| {
-                predicate_implies_nonnull_subject(existing)
+                predicate_subject_at_null(existing, false)
                     .as_ref()
                     .is_some_and(|subject| subject == &non_null_subject)
                     || heap_ref_eq_ne_comparison(existing).is_some_and(|(op, subj, id)| {
@@ -435,12 +432,8 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
                 continue;
             }
         }
-        if let Some(predicate_subject) = predicate_implies_nonnull_subject(item) {
-            out.retain(|existing| {
-                null_comparison_subject(existing, BinOpKind::Ne)
-                    .as_ref()
-                    .is_none_or(|subject| subject != &predicate_subject)
-            });
+        if let Some(predicate_subject) = predicate_subject_at_null(item, false) {
+            discard_null_guard(&mut out, BinOpKind::Ne, &predicate_subject);
         }
 
         out.push(item.clone());
@@ -640,19 +633,15 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         // function names here; only consume FuncSemantics.
         if let Some(null_subject) = null_comparison_subject(item, BinOpKind::Eq) {
             if out.iter().any(|existing| {
-                predicate_covers_null_subject(existing)
+                predicate_subject_at_null(existing, true)
                     .as_ref()
                     .is_some_and(|subject| subject == &null_subject)
             }) {
                 continue;
             }
         }
-        if let Some(predicate_subject) = predicate_covers_null_subject(item) {
-            out.retain(|existing| {
-                null_comparison_subject(existing, BinOpKind::Eq)
-                    .as_ref()
-                    .is_none_or(|subject| subject != &predicate_subject)
-            });
+        if let Some(predicate_subject) = predicate_subject_at_null(item, true) {
+            discard_null_guard(&mut out, BinOpKind::Eq, &predicate_subject);
             if out.iter().any(|existing| {
                 null_comparison_subject(existing, BinOpKind::Ne)
                     .as_ref()
@@ -663,7 +652,7 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         }
         if let Some(non_null_subject) = null_comparison_subject(item, BinOpKind::Ne) {
             if out.iter().any(|existing| {
-                predicate_covers_null_subject(existing)
+                predicate_subject_at_null(existing, true)
                     .as_ref()
                     .is_some_and(|subject| subject == &non_null_subject)
             }) {
@@ -1222,24 +1211,19 @@ fn is_complement(a: &Expr, b: &Expr) -> bool {
     false
 }
 
-fn predicate_implies_nonnull_subject(expr: &Expr) -> Option<Expr> {
-    if let Some((_key, subject)) = negated_call_subject_with_null_result(expr, true) {
-        return Some(subject);
-    }
-    if let Some((_key, subject)) = call_subject_with_null_result(expr, false) {
-        return Some(subject);
-    }
-    None
-}
-
-fn predicate_covers_null_subject(expr: &Expr) -> Option<Expr> {
-    if let Some((_key, subject)) = call_subject_with_null_result(expr, true) {
-        return Some(subject);
-    }
-    if let Some((_key, subject)) = negated_call_subject_with_null_result(expr, false) {
-        return Some(subject);
-    }
-    None
+/// Match the registered Boolean result when the unary predicate's argument
+/// is null. A single explicit NOT flips only the required result.
+fn predicate_subject_at_null(expr: &Expr, expected: bool) -> Option<Expr> {
+    let (call, expected) = match expr.as_unary_op() {
+        Some((UnaryOpKind::Not, operand)) => (operand, !expected),
+        _ => (expr, expected),
+    };
+    let (key, args) = call.as_call()?;
+    let [subject] = args else { return None; };
+    let behavior = crate::domains::primitive::registry::func_semantics(key).null_behavior?;
+    (behavior.trigger_positions.contains(&0)
+        && matches!(behavior.result, Lit::Bool(value) if value == expected))
+        .then(|| subject.clone())
 }
 
 fn null_comparison_subject(expr: &Expr, expected_op: BinOpKind) -> Option<Expr> {
@@ -1251,37 +1235,10 @@ fn null_comparison_subject(expr: &Expr, expected_op: BinOpKind) -> Option<Expr> 
         .map(|(_, subject, ())| subject.clone())
 }
 
-fn negated_call_subject_with_null_result(
-    expr: &Expr,
-    expected: bool,
-) -> Option<(crate::domains::primitive::registry::FuncKey, Expr)> {
-    if let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand,
-    } = expr.kind()
-    {
-        return call_subject_with_null_result(operand, expected);
-    }
-    None
-}
-
-fn call_subject_with_null_result(
-    expr: &Expr,
-    expected: bool,
-) -> Option<(crate::domains::primitive::registry::FuncKey, Expr)> {
-    if let ExprKind::Call { key, args, .. } = expr.kind() {
-        if args.len() != 1 {
-            return None;
-        }
-        let sem = crate::domains::primitive::registry::func_semantics(*key);
-        let null_behavior = sem.null_behavior?;
-        if null_behavior.trigger_positions.contains(&0)
-            && matches!(null_behavior.result, Lit::Bool(v) if v == expected)
-        {
-            return Some((*key, args[0].clone()));
-        }
-    }
-    None
+fn discard_null_guard(terms: &mut Vec<Expr>, op: BinOpKind, subject: &Expr) {
+    terms.retain(|term| {
+        null_comparison_subject(term, op).as_ref().is_none_or(|guarded| guarded != subject)
+    });
 }
 
 fn is_demorgan_complement(a: &Expr, b: &Expr) -> bool {
