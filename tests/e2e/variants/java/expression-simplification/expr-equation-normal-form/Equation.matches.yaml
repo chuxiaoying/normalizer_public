@@ -5,10 +5,10 @@
   expect:
     - path: [R]
       value: target == value - 1
-- name: target-shift
+- name: target-shift-is-the-same-solved-constraint-as-subtract-offset
   edits:
     - from: 'return value + 1 == target;'
       to: 'return value + 1 == target + 2;'
   expect:
     - path: [R]
-      value: target + 2 == value + 1
+      value: target == value - 1

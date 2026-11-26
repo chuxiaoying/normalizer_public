@@ -32,7 +32,7 @@
     - type: java.lang.RuntimeException
       when: code == 3
     - type: java.lang.RuntimeException
-      when: code == 1 or code == 2
+      when: code <= 2 AND code >= 1
       payload: '"alpha"'
 - name: first-match-domain-is-not-source-order-independent
   edits:
@@ -72,5 +72,5 @@
     - throws
     value:
     - type: java.lang.RuntimeException
-      when: code != 1 and code != 2 and code != 3
+      when: code <= 0 OR code >= 4
       payload: '"invalid"'
