@@ -1,5 +1,23 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JavaArithmetic {
+    Add,
+    Sub,
+    Mul,
+}
+
+impl JavaArithmetic {
+    fn build(self, left: Expr, right: Expr) -> Expr {
+        match self {
+            Self::Add => b::add(left, right),
+            Self::Sub => b::sub(left, right),
+            Self::Mul => b::mul(left, right),
+        }
+    }
+}
+
+
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
     pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
@@ -560,6 +578,42 @@ impl Engine<'_> {
         }
         Ok(None)
     }
+    fn java_arithmetic(
+        &mut self,
+        op: JavaArithmetic,
+        operands: (&J, &J),
+        id: &str,
+        env: &mut Env,
+        path: Expr,
+    ) -> Result<Value> {
+        let (left, right) = operands;
+        let left = self.java_expr(left, id, env, path.clone())?;
+        let right = self.java_expr(right, id, env, path.clone())?;
+        if op == JavaArithmetic::Add && (left.ty() == Ty::Text || right.ty() == Ty::Text) {
+            let (left, right) = (left.scalar()?, right.scalar()?);
+            let text = |value: Expr| match value.as_lit() {
+                Some(math::Lit::Str(_)) => Some(value),
+                Some(math::Lit::Null) => Some(b::lit_str("null")),
+                _ => None,
+            };
+            if let (Some(left), Some(right)) = (text(left), text(right)) {
+                return Ok(Value::Term(Ty::Text, math::normalize(b::add(left, right))));
+            }
+            return Err(fail("text concatenation requires concrete text or null operands"));
+        }
+        need(
+            left.ty() == Ty::Integer && right.ty() == Ty::Integer,
+            "integer operands required",
+        )?;
+        let (left, right) = (left.scalar()?, right.scalar()?);
+        // Operand evaluation is already recorded in S. An identical
+        // numeric receipt can cancel only on a path that acquired it.
+        if op == JavaArithmetic::Sub && left == right && self.acquired_integer_receipt(&left, &path) {
+            return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+        }
+        Ok(Value::Term(Ty::Integer, math::normalize(op.build(left, right))))
+    }
+
     pub(super) fn java_expr(
         &mut self,
         j: &J,
@@ -767,46 +821,12 @@ impl Engine<'_> {
                     math::normalize(b::neg(value.scalar()?)),
                 ))
             }
-            J::BinOp {
-                op: op @ (B::Add | B::Sub | B::Mul),
-                left,
-                right,
-            } => {
-                let left = self.java_expr(left, id, env, path.clone())?;
-                let right = self.java_expr(right, id, env, path.clone())?;
-                if *op == B::Add && (left.ty() == Ty::Text || right.ty() == Ty::Text) {
-                    let (left, right) = (left.scalar()?, right.scalar()?);
-                    let text = |value: Expr| match value.as_lit() {
-                        Some(math::Lit::Str(_)) => Some(value),
-                        Some(math::Lit::Null) => Some(b::lit_str("null")),
-                        _ => None,
-                    };
-                    if let (Some(left), Some(right)) = (text(left), text(right)) {
-                        return Ok(Value::Term(Ty::Text, math::normalize(b::add(left, right))));
-                    }
-                    return Err(fail("text concatenation requires concrete text or null operands"));
-                }
-                need(
-                    left.ty() == Ty::Integer && right.ty() == Ty::Integer,
-                    "integer operands required",
-                )?;
-                let (left, right) = (left.scalar()?, right.scalar()?);
-                // Operand evaluation is already recorded in S. An identical
-                // numeric receipt can cancel only on a path that acquired it.
-                if *op == B::Sub && left == right && self.acquired_integer_receipt(&left, &path) {
-                    return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
-                }
-                let build = match op {
-                    B::Add => b::add,
-                    B::Sub => b::sub,
-                    B::Mul => b::mul,
-                    _ => unreachable!(),
-                };
-                Ok(Value::Term(
-                    Ty::Integer,
-                    math::normalize(build(left, right)),
-                ))
-            }
+            J::BinOp { op: B::Add, left, right } =>
+                self.java_arithmetic(JavaArithmetic::Add, (left, right), id, env, path),
+            J::BinOp { op: B::Sub, left, right } =>
+                self.java_arithmetic(JavaArithmetic::Sub, (left, right), id, env, path),
+            J::BinOp { op: B::Mul, left, right } =>
+                self.java_arithmetic(JavaArithmetic::Mul, (left, right), id, env, path),
             J::BinOp { op: op @ (B::Div | B::Mod), left, right } => {
                 let left = self.java_expr(left, id, env, path.clone())?;
                 let normal = self.normal_path(path.clone());

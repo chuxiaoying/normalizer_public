@@ -178,7 +178,13 @@ impl Completion {
                 .iter()
                 .all(|alternative| matches!(alternative.outcome, CompletionOutcome::Return(_)))
         {
-            return Self::Return(collapse_return_values(&alternatives));
+            let returns = alternatives.iter().filter_map(|alternative| match &alternative.outcome {
+                CompletionOutcome::Return(value) => Some((&alternative.guard, value)),
+                _ => None,
+            });
+            if let Some(value) = collapse_return_values(returns) {
+                return Self::Return(value);
+            }
         }
         if covered && alternatives.iter().all(|alternative| alternative.outcome == alternatives[0].outcome) {
             return outcome_to_completion(alternatives[0].outcome.clone());
@@ -282,23 +288,13 @@ fn coverage(alternatives: &[CompletionAlternative]) -> Expr {
     )
 }
 
-fn collapse_return_values(alternatives: &[CompletionAlternative]) -> Expr {
-    let mut reversed = alternatives.iter().rev();
-    let CompletionOutcome::Return(mut value) = reversed
-        .next()
-        .expect("return alternatives are nonempty")
-        .outcome
-        .clone()
-    else {
-        unreachable!("return alternatives were checked before collapsing")
-    };
-    for alternative in reversed {
-        let CompletionOutcome::Return(branch) = &alternative.outcome else {
-            unreachable!("return alternatives were checked before collapsing");
-        };
-        value = join_value(alternative.guard.clone(), branch.clone(), value);
-    }
-    value
+fn collapse_return_values<'a>(
+    mut returns: impl DoubleEndedIterator<Item = (&'a Expr, &'a Expr)>,
+) -> Option<Expr> {
+    let (_, last) = returns.next_back()?;
+    Some(returns.rfold(last.clone(), |value, (guard, branch)| {
+        join_value(guard.clone(), branch.clone(), value)
+    }))
 }
 
 #[derive(Clone, Debug, PartialEq)]
