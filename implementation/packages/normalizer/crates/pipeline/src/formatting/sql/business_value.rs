@@ -106,11 +106,26 @@ fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> b
     available
 }
 
-fn selected_domain(op: BinOpKind, guard: &Expr, domain: Option<&Expr>) -> Expr {
+#[derive(Clone, Copy)]
+enum ShortCircuit {
+    And,
+    Or,
+}
+
+impl ShortCircuit {
+    fn from_op(op: BinOpKind) -> Option<Self> {
+        match op {
+            BinOpKind::And => Some(Self::And),
+            BinOpKind::Or => Some(Self::Or),
+            _ => None,
+        }
+    }
+}
+
+fn selected_domain(op: ShortCircuit, guard: &Expr, domain: Option<&Expr>) -> Expr {
     let selected = match op {
-        BinOpKind::And => guard.clone(),
-        BinOpKind::Or => math::normalize(b::not(guard.clone())),
-        _ => unreachable!("only short-circuit Boolean operations have a selected domain"),
+        ShortCircuit::And => guard.clone(),
+        ShortCircuit::Or => math::normalize(b::not(guard.clone())),
     };
     match domain {
         Some(domain) => math::normalize(b::and(domain.clone(), selected)),
@@ -122,14 +137,13 @@ fn is_safe(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
     if receipts_available(value, domain, ctx) {
         return true;
     }
-    if let Some((op @ (BinOpKind::And | BinOpKind::Or), left, right)) = value.as_binop() {
-        return lazy_operands(op, left, right, domain, ctx).is_some();
-    }
-    false
+    value.as_binop().is_some_and(|(op, left, right)| {
+        ShortCircuit::from_op(op).is_some_and(|op| lazy_operands(op, left, right, domain, ctx).is_some())
+    })
 }
 
 fn lazy_operands<'a>(
-    op: BinOpKind,
+    op: ShortCircuit,
     left: &'a Expr,
     right: &'a Expr,
     domain: Option<&Expr>,
@@ -156,9 +170,10 @@ pub(crate) fn format_guarded_boolean(
     right: &Expr,
     ctx: &mut FormatCtx,
 ) -> Option<String> {
-    if ctx.business_receipt_guards.is_empty() || !matches!(op, BinOpKind::And | BinOpKind::Or) {
+    if ctx.business_receipt_guards.is_empty() {
         return None;
     }
+    let op = ShortCircuit::from_op(op)?;
     let domain = ctx.business_evaluation_guard.as_ref();
     if receipts_available(left, domain, ctx) && receipts_available(right, domain, ctx) {
         return None;
@@ -168,7 +183,7 @@ pub(crate) fn format_guarded_boolean(
     let value_text = ctx.with_business_evaluation_guard(&selected, |ctx| {
         super::format_expr_with_ctx(value, ctx)
     });
-    let (yes, no) = if op == BinOpKind::And {
+    let (yes, no) = if matches!(op, ShortCircuit::And) {
         (value_text.as_str(), "false")
     } else {
         ("true", value_text.as_str())

@@ -10,6 +10,19 @@ enum Origin {
     Allocation,
 }
 
+enum BorrowedRoot<'a> {
+    Parameter(&'a str),
+    State(u64),
+}
+
+fn borrowed_root(origin: &Origin) -> Option<BorrowedRoot<'_>> {
+    match origin {
+        Origin::Parameter { path, .. } if !path.contains('.') => Some(BorrowedRoot::Parameter(path)),
+        Origin::State { binding, path } if path.is_empty() => Some(BorrowedRoot::State(*binding)),
+        _ => None,
+    }
+}
+
 #[derive(Default)]
 pub(super) struct SourceObjects {
     objects: BTreeMap<i64, (String, Origin)>,
@@ -442,19 +455,17 @@ impl Engine<'_> {
         };
         match (origin(a), origin(b)) {
             (Some(Origin::Allocation), _) | (_, Some(Origin::Allocation)) | (None, None) => Ok(()),
-            (Some(left), Some(right)) if [left, right].into_iter().all(|origin| match origin {
-                Origin::State { path, .. } => path.is_empty(),
-                Origin::Parameter { path, .. } => !path.contains('.'),
-                Origin::Allocation => false,
-            }) => {
+            (Some(left), Some(right)) => {
+                let (Some(left), Some(right)) = (borrowed_root(left), borrowed_root(right)) else {
+                    return Err(fail("borrowed identity comparison requires an alias contract"));
+                };
                 // A different borrowed ID describes a different acquisition
                 // path, not necessarily a different Java object.
                 for (reference, origin) in [(a, left), (b, right)] {
                     let id = reference.as_heap_ref().unwrap();
                     match origin {
-                        Origin::Parameter { path, .. } => { self.source_objects.compared_parameters.insert(id, path.clone()); }
-                        Origin::State { binding, .. } => { self.source_objects.compared_states.insert(id, *binding); }
-                        Origin::Allocation => unreachable!(),
+                        BorrowedRoot::Parameter(path) => { self.source_objects.compared_parameters.insert(id, path.to_owned()); }
+                        BorrowedRoot::State(binding) => { self.source_objects.compared_states.insert(id, binding); }
                     }
                 }
                 Ok(())
