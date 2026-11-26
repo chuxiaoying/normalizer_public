@@ -4,7 +4,7 @@
 use math::{
     builder as b,
     domains::relation::{self as r, RelationExpr},
-    BinOpKind, Expr, SymVarOrigin,
+    BinOpKind, Expr, ScalarSymbolType, SymVarOrigin,
 };
 use serde::Deserialize;
 use crate::runtime_heap::Heap;
@@ -842,10 +842,10 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
             Ty::Ref,
             b::heap_ref(heap.new_path_object().id()),
         ),
-        Ty::Bool => Value::Term(t.clone(), b::param(name, "boolean")),
-        Ty::Integer => Value::Term(t.clone(), b::param(name, "integer")),
-        Ty::Decimal => Value::Term(t.clone(), b::param(name, math::domains::decimal::VALUE_TAG)),
-        Ty::Text => Value::Term(t.clone(), b::param(name, "text")),
+        Ty::Bool => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Boolean)),
+        Ty::Integer => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Integer)),
+        Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),
+        Ty::Text => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Text)),
         Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
             return Err(fail("this value type has no input symbol contract")),
     })

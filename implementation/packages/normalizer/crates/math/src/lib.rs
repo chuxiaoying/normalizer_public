@@ -46,7 +46,7 @@ pub use canonical_order::{
 };
 pub use primitive_enum::Primitive;
 pub use sort_context::{DefaultSortContext, SortContext};
-pub use symvar::SymVarOrigin;
+pub use symvar::{ScalarSymbolType, SymVarOrigin};
 
 /// Exact mathematical integer, distinct from source-language machine words.
 pub use num_bigint::BigInt as Integer;

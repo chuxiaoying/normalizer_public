@@ -6,20 +6,20 @@
 //! ## 使用示例
 //!
 //! ```text
-//! use math::builder::*;
-//! let x = param("x", "integer");
+//! use math::{builder::*, ScalarSymbolType};
+//! let x = param("x", ScalarSymbolType::Integer);
 //! let e = add(x, lit_int(1));  // x + 1
 //! ```
 //!
 //! ## P0 架构断言（20260427）
 //!
-//! 所有 SymVar 构造（param/sym_e/sym_e_path/sym_t）必须传入 primitive_type，
-//! 普通标量构造器校验语言适配器交付的逻辑类型，发布版本也同样校验。
+//! 普通标量构造器（param/sym_e/sym_e_path）只接收封闭的 ScalarSymbolType。
+//! 完成、任务与复合时序绑定使用各自的构造器。
 //! 业务 Pojo 必须用 HeapRef，禁止用 SymVar 表达。
 
 use crate::domains::primitive::registry::{func_arity, FuncKey};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
-use crate::symvar::SymVarOrigin;
+use crate::symvar::{ScalarSymbolType, SymVarOrigin};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
@@ -126,23 +126,6 @@ thread_local! {
 }
 
 // =============================================================================
-// P0 内部断言 helper
-// =============================================================================
-
-/// 断言 primitive_type 是合法 primitive。
-///
-/// Both debug and release builds validate the type.
-/// 用户指示：SymVar 必须 primitive，业务 Pojo 用 HeapRef。
-#[inline]
-fn assert_primitive_type(ty: &str) {
-    assert!(
-        crate::Primitive::from_symbol_tag(ty).is_some(),
-        "[MATH-BUILDER] SymVar primitive_type must be primitive (closed scalar encoding), got: '{}'. Pojo types must use HeapRef, not SymVar.",
-        ty
-    );
-}
-
-// =============================================================================
 // 字面量
 // =============================================================================
 
@@ -184,51 +167,29 @@ pub fn lit(l: Lit) -> Expr {
 // 符号变量（P0：所有 SymVar 构造强制 primitive_type）
 // =============================================================================
 
-/// 入参符号（P0：必填 primitive_type）。
-///
-/// # 示例
-/// ```text
-/// use math::builder::param;
-/// let x = param("x", "integer");
-/// let s = param("s", "text");
-/// ```
-///
-/// # Panics
-/// 如果 primitive_type 不是 primitive（如传入 `"biz.Pojo"`），assert panic（release mode 也生效）。
-/// Pojo 值必须用 HeapRef 表达。
-pub fn param<N: Into<String>, T: Into<String>>(name: N, primitive_type: T) -> Expr {
-    let ty = primitive_type.into();
-    assert_primitive_type(&ty);
+/// Construct an entry parameter with an admitted logical scalar type.
+pub fn param<N: Into<String>>(name: N, symbol_type: ScalarSymbolType) -> Expr {
     Expr::new(ExprKind::SymVar {
         origin: SymVarOrigin::Parameter {
             name: name.into(),
-            primitive_type: ty,
+            primitive_type: symbol_type.tag().into(),
         },
     })
 }
 
-/// 外部寄存符号（E）。binding_id 由外部发放（P0：必填 primitive_type）。
-///
-/// # Panics
-/// primitive_type 必须是 primitive。Boundary 返回 Pojo 场景应改走 HeapRef
-/// （方向1独立 PR 处理）。
-pub fn sym_e<T: Into<String>>(binding_id: u64, primitive_type: T) -> Expr {
-    sym_e_path(binding_id, Vec::new(), primitive_type)
+/// Construct an ordinary external scalar binding.
+pub fn sym_e(binding_id: u64, symbol_type: ScalarSymbolType) -> Expr {
+    sym_e_path(binding_id, Vec::new(), symbol_type)
 }
 
 /// A scalar projection of a declared external binding. The caller supplies
 /// the binding and ordered field path directly, without intermediate Exprs.
-///
-/// # Panics
-/// The projected type must be a primitive symbol type.
-pub fn sym_e_path<T: Into<String>>(binding_id: u64, path: Vec<String>, primitive_type: T) -> Expr {
-    let ty = primitive_type.into();
-    assert_primitive_type(&ty);
+pub fn sym_e_path(binding_id: u64, path: Vec<String>, symbol_type: ScalarSymbolType) -> Expr {
     Expr::new(ExprKind::SymVar {
         origin: SymVarOrigin::External {
             binding_id,
             path,
-            primitive_type: ty,
+            primitive_type: symbol_type.tag().into(),
         },
     })
 }
@@ -266,7 +227,7 @@ pub fn record_temporal_result(binding_id: u64) -> Expr {
 /// Exact integer produced by a closed, caller-owned temporal definition.
 pub fn integer_temporal_result(binding_id: u64) -> Expr {
     Expr::new(ExprKind::SymVar {
-        origin: SymVarOrigin::Temporal { binding_id, primitive_type: "integer".into() },
+        origin: SymVarOrigin::Temporal { binding_id, primitive_type: ScalarSymbolType::Integer.tag().into() },
     })
 }
 

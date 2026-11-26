@@ -17,7 +17,27 @@
 //! 业务对象必须用 HeapRef 表达。
 //! 内部 pending_task_handle 可携带专用任务句柄，不能作为公开 T 定义；纯递推结果另有精确整数构造器。
 //!
-//! 普通标量构造器会校验逻辑类型，发布版本也同样校验。
+//! 普通标量构造器只接收封闭的 ScalarSymbolType。
+
+/// Logical types admitted by ordinary scalar symbol constructors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScalarSymbolType {
+    Integer,
+    ExactDecimal,
+    Boolean,
+    Text,
+}
+
+impl ScalarSymbolType {
+    pub(crate) fn tag(self) -> &'static str {
+        match self {
+            Self::Integer => "integer",
+            Self::ExactDecimal => crate::domains::decimal::VALUE_TAG,
+            Self::Boolean => "boolean",
+            Self::Text => "text",
+        }
+    }
+}
 
 /// 符号变量 origin。
 ///

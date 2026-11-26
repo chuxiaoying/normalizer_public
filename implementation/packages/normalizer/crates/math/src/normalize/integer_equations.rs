@@ -84,7 +84,7 @@ fn primitive(mut equation: Equation) -> Equation {
 
 fn predicate(equation: &Equation) -> Option<Expr> {
     let left = equation.coefficients.iter().map(|(name, coefficient)| {
-        let input = b::param(name, "integer");
+        let input = b::param(name, crate::ScalarSymbolType::Integer);
         if coefficient.is_one() { input } else { b::mul(b::lit_integer(coefficient.clone()), input) }
     }).reduce(b::add)?;
     Some(b::eq(left, b::lit_integer(-&equation.constant)))
@@ -181,6 +181,6 @@ fn solve_full_rank(equations: &[Equation], variables: BTreeSet<String>) -> Optio
     variables
         .iter()
         .zip(solution)
-        .map(|(name, value)| b::eq(b::param(name, "integer"), b::lit_integer(value)))
+        .map(|(name, value)| b::eq(b::param(name, crate::ScalarSymbolType::Integer), b::lit_integer(value)))
         .reduce(b::and)
 }

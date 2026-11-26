@@ -25,18 +25,6 @@ pub enum Primitive {
 }
 
 impl Primitive {
-    /// Lower an internal scalar symbol tag, after the language adapter has
-    /// provided its evidence. A machine-width Java spelling does not give
-    /// an ordinary business number an implicit bounded domain.
-    pub(crate) fn from_symbol_tag(tag: &str) -> Option<Self> {
-        match tag {
-            "integer" | crate::domains::decimal::VALUE_TAG => Some(Self::Number),
-            "boolean" => Some(Self::Boolean),
-            "text" => Some(Self::String),
-            _ => None,
-        }
-    }
-
     /// 代数术语名（用于 Primitive Functions 归宿名前缀 / Display）。
     ///
     /// **全部用小写代数术语，不用 Java 类名**。

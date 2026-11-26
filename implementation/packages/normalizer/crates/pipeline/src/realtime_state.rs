@@ -5,7 +5,7 @@
 //! It is used by both source execution and normalized action execution so the
 //! earliest branch join has one implementation and one simplification boundary.
 
-use math::{builder as b, Expr};
+use math::{builder as b, Expr, ScalarSymbolType};
 
 /// The completion channel carried by a real-time execution state.
 ///
@@ -337,7 +337,7 @@ impl EffectReceipt {
     }
 
     pub(super) fn sql_count(binding_id: u64) -> Self {
-        Self { binding_id, response: b::sym_e(binding_id, "integer") }
+        Self { binding_id, response: b::sym_e(binding_id, ScalarSymbolType::Integer) }
     }
 
     pub(super) fn binding_id(&self) -> u64 { self.binding_id }

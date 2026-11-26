@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn structural_case_key_uses_both_arms_to_break_equal_guards() {
-        let guard = b::param("guard", "boolean");
+        let guard = b::param("guard", crate::ScalarSymbolType::Boolean);
         let one = b::lit_int(1);
         let seven = b::lit_int(7);
         let nine = b::lit_int(9);

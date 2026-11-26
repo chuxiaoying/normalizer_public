@@ -114,7 +114,7 @@ impl Engine<'_> {
         // this receipt, not the completion control token. The identity and
         // guarded occurrence in S stay exactly the same.
         let value = if spec.returns == Ty::Integer && !spec.throwing() {
-            b::sym_e(bind, "integer")
+            b::sym_e(bind, ScalarSymbolType::Integer)
         } else {
             spec.normal_value(&response)
         };

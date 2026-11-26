@@ -145,7 +145,7 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
             value.as_sym_var()
         {
             if path.is_empty() && primitive_type == "normalized.completion" {
-                return Ok(Value::Term(ty, b::sym_e_path(*binding_id, vec![name.into()], "integer")));
+                return Ok(Value::Term(ty, b::sym_e_path(*binding_id, vec![name.into()], ScalarSymbolType::Integer)));
             }
         }
     }

@@ -531,11 +531,11 @@ impl Engine<'_> {
     }
 }
 
-fn scalar_origin_type(ty: &Ty) -> Result<&'static str> {
+fn scalar_origin_type(ty: &Ty) -> Result<ScalarSymbolType> {
     match ty {
-        Ty::Integer => Ok("integer"),
-        Ty::Bool => Ok("boolean"),
-        Ty::Text => Ok("text"),
+        Ty::Integer => Ok(ScalarSymbolType::Integer),
+        Ty::Bool => Ok(ScalarSymbolType::Boolean),
+        Ty::Text => Ok(ScalarSymbolType::Text),
         _ => Err(fail(
             "source scalar origin requires a declared scalar field",
         )),
