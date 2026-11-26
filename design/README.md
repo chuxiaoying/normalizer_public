@@ -14,6 +14,7 @@
 2. [多重宇宙的分裂坍缩](chapters/02-universe-split-collapse.md)
 3. [数学化简：把业务条件算出来](chapters/03-mathematical-simplification.md)
 4. [AI 圈地：让模拟器知道自己在执行什么](chapters/04-ai-boundary.md)
+5. [关系代数：让 SQL 和集合运算一起化简](chapters/05-relational-algebra.md)
 
 设计种子和派生案例的覆盖原则见[种子覆盖审查](seed-coverage-audit.md)。
 
