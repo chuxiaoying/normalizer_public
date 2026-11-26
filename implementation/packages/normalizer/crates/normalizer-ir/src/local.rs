@@ -194,8 +194,10 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         if accumulate { return Err("local stack uses only the = binding".into()); }
         return Ok(LocalIr::Stack(action));
     }
-    let mut map = Tokens { source: tokens.source };
-    if map.take("value") && map.take(".") {
+    if let Some(source) = tokens.rest().strip_prefix("value")
+        .and_then(|tail| tail.trim_start().strip_prefix('.'))
+    {
+        let mut map = Tokens { source };
         let key = |t: &mut Tokens<'_>| match t.value()? {
             ScalarOperand::Text(text) => Ok(text),
             _ => Err("local map key must be a text literal".to_owned()),
@@ -206,32 +208,35 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
             ScalarOperand::Text(text) => Ok(MapText::Literal(text)),
             _ => Err("local map requires a nullable text value".to_owned()),
         };
-        let mut operation = None;
-        if map.take("map_empty") {
-            map.expect("(")?; map.expect("text")?; map.expect(",")?;
-            map.expect("text")?; map.expect("?")?;
-            operation = Some(LocalIr::LocalMapEmpty { binding: binding.clone() });
-        } else if map.take("map_put") {
-            map.expect("(")?;
-            let target = map.name()?;
-            if target != binding { return Err("local map update cannot alias to another binding".into()); }
-            map.expect(",")?;
-            let key = key(&mut map)?;
-            map.expect(",")?;
-            operation = Some(LocalIr::LocalMapPut { binding: binding.clone(), key, value: value(&mut map)? });
-        } else if map.take("map_get_or") {
-            map.expect("(")?;
-            let source = map.name()?;
-            map.expect(",")?;
-            let key = key(&mut map)?;
-            map.expect(",")?;
-            operation = Some(LocalIr::LocalMapGet { binding: binding.clone(), source, key, fallback: value(&mut map)? });
-        }
-        if let Some(operation) = operation {
-            map.expect(")")?;
-            if accumulate || !map.rest().is_empty() { return Err("local map requires a closed = definition".into()); }
-            return Ok(operation);
-        }
+        let operation = match map.name().ok().as_deref() {
+            Some("map_empty") => {
+                map.expect("(")?; map.expect("text")?; map.expect(",")?;
+                map.expect("text")?; map.expect("?")?;
+                LocalIr::LocalMapEmpty { binding }
+            }
+            Some("map_put") => {
+                map.expect("(")?;
+                let target = map.name()?;
+                if target != binding { return Err("local map update cannot alias to another binding".into()); }
+                map.expect(",")?;
+                let key = key(&mut map)?;
+                map.expect(",")?;
+                LocalIr::LocalMapPut { binding, key, value: value(&mut map)? }
+            }
+            Some("map_get_or") => {
+                map.expect("(")?;
+                let source = map.name()?;
+                map.expect(",")?;
+                let key = key(&mut map)?;
+                map.expect(",")?;
+                LocalIr::LocalMapGet { binding, source, key, fallback: value(&mut map)? }
+            }
+            _ if accumulate => return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown accumulating local operation".into()),
+            _ => return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation".into()),
+        };
+        map.expect(")")?;
+        if accumulate || !map.rest().is_empty() { return Err("local map requires a closed = definition".into()); }
+        return Ok(operation);
     }
     let mut union = Tokens { source: tokens.source };
     if union.take("count") && union.take("distinct") && union.take("union") {
@@ -379,4 +384,20 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         assignments,
         exception,
     }))
+}
+
+#[cfg(test)]
+mod map_namespace_contract {
+    use super::*;
+
+    #[test]
+    fn a_map_operation_uses_its_whole_token_in_the_value_namespace() {
+        assert!(matches!(parse("labels = value . map_empty(text,text?)").unwrap(),
+            LocalIr::LocalMapEmpty { binding } if binding == "labels"));
+        assert!(matches!(parse("choice = value").unwrap(), LocalIr::Decimal(_)));
+        for expression in ["value.map_putter(labels,\"key\",null)", "value.entries(labels)"] {
+            assert_eq!(parse(&format!("labels = {expression}")).unwrap_err(),
+                "[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation");
+        }
+    }
 }
