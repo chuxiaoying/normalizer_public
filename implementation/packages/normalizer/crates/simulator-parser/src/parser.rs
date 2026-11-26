@@ -434,7 +434,9 @@ impl<'a> Parser<'a> {
                     (false, true) => name == "java.util",
                     (true, true) => name == "java.lang.Math",
                     (true, false) => name.strip_prefix("java.lang.Math.")
-                        .is_some_and(|member| !member.contains('.')),
+                        .is_some_and(|member| matches!(member,
+                            "E" | "PI" | "abs" | "min" | "max" | "ceil" | "floor" | "round"
+                            | "sqrt" | "pow" | "sin" | "cos" | "tan" | "exp" | "log" | "random")),
                     _ => false,
                 };
                 self.has_unknown_import_origins |= !inert_jdk;
