@@ -13,8 +13,10 @@ pub(crate) fn parse_method_body_text(
     body_text: &str,
     file: &str,
     surrogates: Surrogates<'_>,
+    static_context: bool,
 ) -> Result<Vec<JavaStatement>, ParseError> {
     let mut p = Parser::new(body_text, file).with_surrogates(surrogates);
+    p.static_context = static_context;
     p.parse_statements_until_end()
 }
 
@@ -37,7 +39,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let body_at = self.pos + 1;
         let text = self.skip_balanced_braces()?;
-        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at)).map_err(|error| self.rebase_slice(body_at, error))
+        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context).map_err(|error| self.rebase_slice(body_at, error))
     }
 
     /// Return the last statement from this source position. A local declaration
@@ -274,6 +276,7 @@ impl<'a> Parser<'a> {
         }) else {
             return Ok(None);
         };
+        self.require_local_receiver_name(&var_name)?;
         let iterable = self.parse_expression()?;
         self.require_delimiter(b')', "expected ')' after for-each")?;
         Ok(Some((var_type, var_name, iterable)))
@@ -321,6 +324,7 @@ impl<'a> Parser<'a> {
             let var_name = self
                 .read_ident()
                 .ok_or_else(|| self.err("expected catch var name"))?;
+            self.require_local_receiver_name(&var_name)?;
             self.require_delimiter(b')', "expected ')' after catch clause")?;
             let body = self.parse_braced_statements()?;
             catches.push(CatchClause {
@@ -387,6 +391,13 @@ impl<'a> Parser<'a> {
             .transpose()
     }
 
+    fn require_local_receiver_name(&self, name: &str) -> Result<(), ParseError> {
+        if name == "this" {
+            return Err(self.err("[JAVA-RESERVED-LOCAL-NAME] this cannot declare a local binding"));
+        }
+        Ok(())
+    }
+
     fn try_parse_vardecl(&mut self) -> Result<Option<(JavaStatement, Vec<JavaStatement>)>, ParseError> {
         let save = self.pos;
         self.skip_ws();
@@ -407,6 +418,7 @@ impl<'a> Parser<'a> {
             return Ok(None);
         };
 
+        self.require_local_receiver_name(&name)?;
         let init = self.parse_optional_initializer(&ty)?;
         self.skip_ws();
 
@@ -417,6 +429,7 @@ impl<'a> Parser<'a> {
             let n2 = self
                 .read_ident()
                 .ok_or_else(|| self.err("expected var name in multi-decl"))?;
+            self.require_local_receiver_name(&n2)?;
             self.skip_ws();
             let ty2 = parse_array_type_suffix(self, base_ty.clone())
                 .ok_or_else(|| self.err("expected ']' in array declarator"))?;
@@ -818,6 +831,10 @@ impl<'a> Parser<'a> {
                     return Err(self.err(&format!(
                         "[JAVA-CONSTRUCTOR-DELEGATION] {keyword}(...) requires explicit constructor preprocessing"
                     )));
+                }
+                if keyword == "this" && self.static_context {
+                    return Err(self.err_at(receiver_at,
+                        "[JAVA-STATIC-THIS] this is not available in a static context"));
                 }
                 return Ok(JavaExpr::Ident(keyword.into()));
             }

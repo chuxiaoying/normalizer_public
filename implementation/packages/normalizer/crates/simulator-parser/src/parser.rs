@@ -86,6 +86,7 @@ pub(crate) struct Parser<'a> {
     /// 显式 import 的 FQN 列表（`import x.y.Z;`）——parser 只收集，不做 FQN 化
     pub(crate) imports: Vec<String>,
     pub(crate) has_unbound_imports: bool,
+    pub(crate) static_context: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -98,6 +99,7 @@ impl<'a> Parser<'a> {
             file: file_hint.to_string(),
             imports: Vec::new(),
             has_unbound_imports: false,
+            static_context: false,
         }
     }
 
@@ -640,6 +642,7 @@ fn parse_class_body(
                         text,
                         file,
                         p.surrogates.subspan(body_at),
+                        false,
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
                     return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
@@ -711,6 +714,7 @@ fn parse_class_body(
                     text,
                     file,
                     p.surrogates.subspan(body_at),
+                    is_static,
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {
                 p.require_semicolon("bodyless method declaration")?;
@@ -745,7 +749,9 @@ fn parse_class_body(
             // the source contract must reject it, never silently execute or drop it.
             let has_initializer = p.eat_char(b'=');
             if has_initializer {
+                p.static_context = field_is_static;
                 p.parse_initializer_expr(&java_type)?;
+                p.static_context = false;
             }
             p.require_semicolon("field declaration")?;
             class.fields.push(JavaField {
