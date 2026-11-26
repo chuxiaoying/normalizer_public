@@ -62,3 +62,5 @@ readWhenReady:
 未生成 PERS。
 
 轮询条件写成 `!ready(...)`、`ready(...) == false` 或 `false == ready(...)`，都只依赖一次外部探测。比较项位置不提供有限次数保证，入口都要求明确终止合同，不生成 PERS。
+
+显式写 `this.readinessClient` 仍指同一实例字段；它不从同名局部变量推断，也不把任意对象的字段调用扩成外部轮询识别。

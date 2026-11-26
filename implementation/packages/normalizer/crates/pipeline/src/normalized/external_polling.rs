@@ -13,10 +13,12 @@ pub(super) fn validate_entry(program: &JavaProgram, entry: &str) -> Result<(), S
     let Some(method) = candidates.next().filter(|_| candidates.next().is_none()) else {
         return Ok(()); // Let normal entry admission resolve or diagnose the entry.
     };
-    let mut bindings = BTreeMap::new();
+    let mut fields = BTreeMap::new();
     for field in class.fields() {
-        bind_interface(program, &mut bindings, field.name(), field.java_type());
+        bind_interface(program, &mut fields, field.name(), field.java_type());
     }
+    let mut bindings = fields.clone();
+    if method.is_static() { fields.clear(); }
     for (ty, name) in method.params() {
         bind_interface(program, &mut bindings, name, ty);
     }
@@ -36,7 +38,7 @@ pub(super) fn validate_entry(program: &JavaProgram, entry: &str) -> Result<(), S
                 update: None,
                 body,
             } => {
-                let boundary = |expr| external_call(program, &bindings, expr);
+                let boundary = |expr| external_call(program, &bindings, &fields, expr);
                 let only_external_calls = || body.iter().all(|statement| {
                     matches!(statement, JavaStatement::ExprStmt(expr) if boundary(expr).is_some())
                 });
@@ -102,6 +104,7 @@ fn bind_interface<'a>(
 fn external_call(
     program: &JavaProgram,
     bindings: &InterfaceBindings<'_>,
+    fields: &InterfaceBindings<'_>,
     expr: &JavaExpr,
 ) -> Option<String> {
     let (receiver, method, args) = match expr {
@@ -110,8 +113,13 @@ fn external_call(
             => (receiver.as_ref(), method, args),
         _ => return None,
     };
-    let JavaExpr::Ident(receiver) = receiver else { return None; };
-    let &(qualified, interface) = bindings.get(receiver.as_str())?;
+    let &(qualified, interface) = match receiver {
+        JavaExpr::Ident(name) => bindings.get(name.as_str()),
+        JavaExpr::FieldAccess { target, field }
+            if matches!(target.as_ref(), JavaExpr::Ident(name) if name == "this") =>
+                fields.get(field.as_str()),
+        _ => None,
+    }?;
     (!program.classes().iter().any(|class| class.interfaces().iter()
         .any(|ty| ty.as_str() == qualified))
         && super::source_ports::declares_bodyless_member(interface, method, args.len()))

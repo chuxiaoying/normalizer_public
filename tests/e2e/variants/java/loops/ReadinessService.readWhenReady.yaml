@@ -8,6 +8,10 @@ variants:
     edits:
       - from: '!readinessClient.isReady(accountId)'
         to: 'false == readinessClient.isReady(accountId)'
+  - name: explicit-instance-field-is-the-same-unbounded-receiver
+    edits:
+      - { from: '!readinessClient.isReady(accountId)', to: '!this.readinessClient.isReady(accountId)' }
+      - { from: 'readinessClient.waitForChange(accountId);', to: 'this.readinessClient.waitForChange(accountId);' }
   - name: poll-with-unbounded-for
     edits:
       - from: 'while (!readinessClient.isReady(accountId))'
