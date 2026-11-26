@@ -531,7 +531,19 @@ impl Engine<'_> {
                         ))
                     })
                     .collect::<Result<_>>()?;
-                Value::Rows(Box::new(rows))
+                if let Some(declared) = decl {
+                    let types = self.query_row_types(self.query_row_declaration(declared)?)?;
+                    need(
+                        types.len() == rows.fields.len()
+                            && rows
+                                .fields
+                                .iter()
+                                .all(|(name, value)| types.get(name) == Some(&value.ty())),
+                        "row projection does not match declared fields and types",
+                    )?;
+                }
+                env.insert(query.binding.clone(), Value::Rows(Box::new(rows)));
+                return Ok(());
             }
             (Kind::Sum, Projection::Value(expr)) => {
                 let value = self.query_value(expr, &query.alias, &rows.fields, &locals, guard)?;
@@ -646,33 +658,7 @@ impl Engine<'_> {
             (Kind::First, Projection::Value(Scalar::Path(path))) if matches!(path.as_slice(),[s] if s==&query.alias) =>
             {
                 need(!rows.ordering.is_empty(), "first requires an ordered input")?;
-                let id = self
-                    .heap
-                    .new_path_object()
-                    .id();
-                self.source_relations.first_rows.insert(id, rows);
-                Value::Term(Ty::Ref, b::heap_ref(id))
-            }
-            _ => return Err(fail("incompatible query operation and projection")),
-        };
-        if let Some(declared) = decl {
-            match &result {
-                Value::Rows(rows) => {
-                    let types = self.query_row_types(self.query_row_declaration(declared)?)?;
-                    need(
-                        types.len() == rows.fields.len()
-                            && rows
-                                .fields
-                                .iter()
-                                .all(|(name, value)| types.get(name) == Some(&value.ty())),
-                        "row projection does not match declared fields and types",
-                    )?;
-                }
-                Value::Term(Ty::Ref, reference) => {
-                    let first = reference
-                        .as_heap_ref()
-                        .and_then(|id| self.source_relations.first_rows.get(&id))
-                        .ok_or_else(|| fail("expected selected row reference"))?;
+                if let Some(declared) = decl {
                     let JavaType::Class(target) = declared else {
                         return Err(fail("first requires a declared row type"));
                     };
@@ -681,23 +667,30 @@ impl Engine<'_> {
                         .find_class(target)
                         .ok_or_else(|| fail("first result has no row declaration"))?;
                     need(
-                        class.fields().len() == first.fields.len()
+                        class.fields().len() == rows.fields.len()
                             && class.fields().iter().all(|f| {
                                 self.project
                                     .parameter_type(f.java_type())
                                     .ok()
                                     .is_some_and(|ty| {
-                                        first.fields.get(f.name()).is_some_and(|v| v.ty() == ty)
+                                        rows.fields.get(f.name()).is_some_and(|v| v.ty() == ty)
                                     })
                             }),
                         "first row does not match declared fields and types",
                     )?;
                 }
-                _ => need(
-                    self.project.parameter_type(declared)? == result.ty(),
-                    "query result does not match declared local type",
-                )?,
+                let id = self.heap.new_path_object().id();
+                self.source_relations.first_rows.insert(id, rows);
+                env.insert(query.binding.clone(), Value::Term(Ty::Ref, b::heap_ref(id)));
+                return Ok(());
             }
+            _ => return Err(fail("incompatible query operation and projection")),
+        };
+        if let Some(declared) = decl {
+            need(
+                self.project.parameter_type(declared)? == result.ty(),
+                "query result does not match declared local type",
+            )?;
         }
         env.insert(query.binding.clone(), result);
         Ok(())
