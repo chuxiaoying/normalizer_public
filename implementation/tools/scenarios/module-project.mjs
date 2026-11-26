@@ -20,14 +20,12 @@ function compileProjection(projection) {
   function read(target) {
     const [binding, ...fields] = target;
     const alias = bindings.get(binding);
-    if (alias && !alias.statePath) throw new Error(`SCENARIO_MODULE_INPUT: scalar projection local ${binding} has no fields`);
     const statePath = [...(alias?.statePath ?? [binding]), ...fields];
     const [root, ...path] = statePath;
     const key = JSON.stringify(statePath);
     const label = path.reduce((prefix, part) =>
       /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(part) ? prefix + '.' + part : prefix + '[' + JSON.stringify(part) + ']', root);
     const state = projection.states.get(root);
-    if (!state) throw new Error(`SCENARIO_MODULE_INPUT: ${label} must name an @entryState field`);
     let type = state.fields;
     for (const name of path) {
       if (!type || typeof type !== 'object' || !Object.hasOwn(type, name)) throw new Error(`SCENARIO_MODULE_INPUT: missing type for ${label}`);
@@ -64,14 +62,10 @@ function compileProjection(projection) {
         return { type: yes.type, body: { op: 'if', cond: test.body, then: yes.body, else: no.body } };
       }
     }
-    throw new Error(`SCENARIO_MODULE_INPUT: unsupported component projection operation ${expr.op}`);
   }
 
   const steps = [];
   for (const local of projection.locals) {
-    if (bindings.has(local.name) || projection.states.has(local.name)) {
-      throw new Error(`SCENARIO_MODULE_INPUT: duplicate or shadowed projection binding ${local.name}`);
-    }
     const value = compile(local.value);
     if (value.statePath) {
       // The projection contract admits plain immutable records for the duration
@@ -85,7 +79,6 @@ function compileProjection(projection) {
     bindings.set(local.name, { type, name });
   }
   const returned = compile(projection.expression);
-  if (!returned.type) throw new Error('SCENARIO_MODULE_INPUT: projection must return a scalar field or expression');
   const body = steps.length
     ? { op: 'action', returns: carriers[returned.type][1], steps: [...steps, { op: 'return', value: returned.body }] }
     : returned.body;

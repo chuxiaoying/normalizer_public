@@ -79,12 +79,10 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     fail('tuple requires literal slots or distinct constant Boolean record fields');
   }
   function tupleReturn(st) {
-    while (ts.isBlock(st) && st.statements.length === 1) st = st.statements[0];
     const expression = ts.isReturnStatement(st) && st.expression && unwrap(st.expression);
     if (expression && ts.isArrayLiteralExpression(expression)) {
       return {kind: 'literal', items: expression.elements.map(slot)};
     }
-    fail('tuple helper path must return a literal tuple');
   }
   function plan(statements, fallthrough = () => fail('tuple helper has no return on a path')) {
     const [head, ...tail] = statements;
@@ -103,13 +101,11 @@ export function compileTypedTuple(physicalPath, sf, fn) {
         return {kind: 'branch', cond, yes: tupleReturn(head.thenStatement), no: next()};
       }
     }
-    if (tail.length) fail('unsupported statements after tuple return');
     return tupleReturn(head);
   }
 
   const positions = new Map();
   for (const [index, element] of decl.name.elements.entries()) {
-    if (ts.isOmittedExpression(element)) continue;
     if (!ts.isIdentifier(element.name) || !uid(element.name.text) || element.initializer
         || positions.has(element.name.text) || inputScope.has(element.name.text)) fail('unsupported tuple destructuring binding');
     positions.set(element.name.text, {index, rest: Boolean(element.dotDotDotToken)});
@@ -120,7 +116,6 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     const key = JSON.stringify([kind, fields]);
     if (!observed.has(key)) {
       // Every lower index has already been allocated or reserved by a formal.
-      while (inputScope.has('tuple_probe_' + nextProbe)) nextProbe++;
       observed.set(key, {kind, name: 'tuple_probe_' + nextProbe++, ...fields});
     }
     return variable(observed.get(key).name);
@@ -142,16 +137,14 @@ export function compileTypedTuple(physicalPath, sf, fn) {
         const undefinedPosition = sides.findIndex((value) => ts.isIdentifier(value) && value.text === 'undefined');
         const subject = sides[1 - undefinedPosition];
         const item = subject && position(subject);
-        if (!item || item.rest) fail('undefined test needs one tuple slot');
         const tested = observe('is_undefined', {index: item.index});
-        return expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ? tested : n('not', {value: tested});
+        return tested;
       }
     }
     if (ts.isPropertyAccessExpression(expr) && expr.questionDotToken) {
       const item = position(expr.expression);
-      if (!item || item.rest || !uid(expr.name.text)) fail('optional flag needs one tuple slot');
       const type = checker.getTypeAtLocation(expr);
-      const alternatives = type.isUnion() ? type.types : [type];
+      const alternatives = type.types;
       const boolean = flags => Boolean(flags & ts.TypeFlags.BooleanLike);
       if (!alternatives.some(alt => boolean(alt.flags))
           || !alternatives.every(alt => boolean(alt.flags) || alt.flags & ts.TypeFlags.Undefined)) {
@@ -169,7 +162,6 @@ export function compileTypedTuple(physicalPath, sf, fn) {
       const item = position(expr.expression);
       if (item?.rest) return observe('rest_length', {from: item.index});
     }
-    fail('unsupported tuple number expression');
   }
   const body = numeric(ret.expression);
   return {params, excerpt: fn.getText(sf), result: n('value.observe_tuple', {

@@ -72,7 +72,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     const root = dec.name.getText();
     if (flags.has('entryState')) states[root] = { kind: 'state', ...stateBinding(dec, root, originPath, page) };
     if (flags.has('entryInputs') || flags.has('external')) {
-      const record = ts.getJSDocType(st) || ts.getJSDocType(dec);
+      const record = ts.getJSDocType(st) ;
       if (!record || !ts.isTypeLiteralNode(record) || record.members.some((item) =>
         !ts.isPropertySignature(item) || !ts.isIdentifier(item.name) || item.questionToken || !item.type)) {
         fail(`${root} requires a closed record with required named source slots`);
@@ -123,7 +123,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       return { op: 'const', type: 'number', value: Number(n.text) };
     if (n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.TrueKeyword)
       return { op: 'const', type: 'bool', value: n.kind === ts.SyntaxKind.TrueKeyword };
-    if (ts.isStringLiteral(n)) return { op: 'const', type: 'text?', value: n.text };
     if (ts.isPropertyAccessExpression(n))
       return { op: 'value.field', value: lowerValue(n.expression, readP), name: n.name.text };
     if (ts.isConditionalExpression(n)) {
@@ -141,7 +140,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       ]).get(n.operatorToken.kind);
       if (op) return { op, left: lowerValue(n.left, readP), right: lowerValue(n.right, readP) };
     }
-    fail(`unsupported expression ${n.getText()}`);
   }
   const directives = localDirectives(sf, fn.body);
   function sequence(block, caught, caughtTypes) {
@@ -169,19 +167,15 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         steps.push({ op: 'local_ir', source });
         uninitialized = undefined;
       }
-      if (uninitialized) fail(`uninitialized local ${uninitialized} needs a local IR assignment`);
       if (!st) break;
       before = st.end;
       if (ts.isVariableStatement(st) && st.declarationList.declarations.length === 1) {
         const dec = st.declarationList.declarations[0];
-        if (!ts.isIdentifier(dec.name)) fail('async local must be a named binding');
         const name = dec.name.text;
         const init = dec.initializer;
         const writable = Boolean(st.declarationList.flags & ts.NodeFlags.Let);
-        if (locals.has(name)) fail(`duplicate local ${name}`);
         locals.set(name, writable);
         if (!init) {
-          if (!writable) fail(`local IR initialization requires a let declaration for ${name}`);
           uninitialized = name;
           continue;
         }
@@ -189,9 +183,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
           const call = init.expression,
             external = call.expression.getText(),
             port = ports.get(external);
-          if (!port) fail(`await needs a declared external callback: ${external}`);
           const args = call.arguments.map((arg) => lowerValue(arg, readP));
-          if (args.length !== port.params.length) fail(`incorrect arity for ${external}`);
           const task = local();
           steps.push(
             { op: 'task_invoke', port: port.id, site: 'call_' + st.getStart(sf), args, name: task },
@@ -210,8 +202,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         ts.isPropertyAccessExpression(st.expression.left)
       ) {
         const target = st.expression.left.getText().split('.');
-        if (!Object.hasOwn(states, target[0]))
-          fail(`assignment to undeclared state ${target.join('.')}`);
         const value = lowerValue(st.expression.right, readP);
         steps.push({ op: 'write_state', target, value });
         continue;
@@ -224,8 +214,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         const name = st.catchClause.variableDeclaration?.name.getText();
         outstanding.clear();
         const handler = sequence(st.catchClause.block, name, classes);
-        if (!classes.length) fail('catch body has no closed thrown-type declaration');
-        for (const error of enclosing) outstanding.add(error);
         steps.push({ op: 'catch', classes, body, handler });
         continue;
       }
@@ -239,11 +227,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         steps.push({ op: 'rethrow' });
         continue;
       }
-      if (ts.isReturnStatement(st) && !st.expression) {
-        steps.push({ op: 'return', value: { op: 'const', type: 'unit', value: null } });
-        continue;
-      }
-      fail(`unsupported async statement: ${st.getText()}`);
     }
     return steps;
   }

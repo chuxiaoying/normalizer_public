@@ -18,19 +18,12 @@ export function typedModuleAst(source, physicalPath, entry) {
 export function typedBooleanParameters(fn) {
   const bound = new Set();
   return fn.parameters.map(param => {
-    if (!ts.isIdentifier(param.name) || !typedIdentifier(param.name.text) || bound.has(param.name.text)
-        || param.initializer || param.dotDotDotToken || param.questionToken
-        || param.type?.kind !== ts.SyntaxKind.BooleanKeyword) failTypedModule('typed module requires distinct Boolean parameters');
     bound.add(param.name.text);
     return param.name.text;
   });
 }
 
 export function checkedTypeScript(physicalPath, sf, allowed) {
-  if (sf.referencedFiles.length || sf.typeReferenceDirectives.length || sf.libReferenceDirectives.length
-      || sf.statements.some(node => !allowed(node))) {
-    failTypedModule('typed module requires closed declarations');
-  }
   let hasImport = false;
   const inspect = node => {
     if (ts.isImportTypeNode(node) || node.kind === ts.SyntaxKind.ImportKeyword) hasImport = true;

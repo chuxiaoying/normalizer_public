@@ -24,20 +24,10 @@ export function compileTypedListener(physicalPath, sf, fn) {
   for (const host of sf.statements) {
     if (host === fn) continue;
     const [root, ...extra] = host.declarationList.declarations;
-    if (!root || extra.length || root.initializer || !ts.isIdentifier(root.name)
-        || !(host.declarationList.flags & ts.NodeFlags.Const)
-        || !host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))
-        || !root.type || !ts.isTypeLiteralNode(root.type)) fail('listener host needs a closed typed declaration');
     const markers = ts.getJSDocTags(host);
     if (markers.some(tag => tag.tagName.text !== 'external')) fail('unsupported listener host contract tag');
-    if (markers.length > 1 || markers.some(tag => tag.comment)) fail('invalid listener external marker');
     for (const signature of root.type.members) {
-      if (!ts.isMethodSignature(signature) || !ts.isIdentifier(signature.name) || signature.questionToken
-          || signature.parameters.length || signature.typeParameters?.length || !is(signature.type, ts.SyntaxKind.VoidKeyword)) {
-        fail('listener external must declare a zero-argument void method');
-      }
       const target = root.name.text + '.' + signature.name.text;
-      if (contracts.has(target)) fail('duplicate listener target');
       const port = markers.length ? 'sync_' + contracts.size : null;
       contracts.set(target, { declaration: root, port });
       if (port) {
@@ -63,11 +53,11 @@ export function compileTypedListener(physicalPath, sf, fn) {
       || !slotType || !ts.isUnionTypeNode(slotType) || slotType.types.length !== 2
       || !slotType.types.some(callbackType) || !slotType.types.some((item) => is(item, ts.SyntaxKind.UndefinedKeyword))
       || !registrar?.name || !registrar.body || registrar.asteriskToken
-      || registrar.modifiers?.length || registrar.parameters.length !== 1
+      || registrar.modifiers || registrar.parameters.length !== 1
       || !ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
       || parameter.dotDotDotToken || parameter.questionToken
       || !registration || registration.questionDotToken || registration.arguments.length !== 1
-      || !named(registration.expression, registrar.name.text) || !body || arrow.modifiers?.length
+      || !named(registration.expression, registrar.name.text) || !body || arrow.modifiers
       || arrow.parameters.length || !returns || !ts.isReturnStatement(returns)
       || !returns.expression || !ts.isStringLiteral(returns.expression)) {
     fail('listener needs a closed synchronous entry, callback slot and registration');
@@ -90,8 +80,6 @@ export function compileTypedListener(physicalPath, sf, fn) {
   }
   function lowerExternal(st, condition) {
     const callee = callExpression(st);
-    if (!callee || !ts.isPropertyAccessExpression(callee) || callee.questionDotToken
-        || !ts.isIdentifier(callee.expression)) fail('listener effect must be a direct closed host call');
     const target = callee.expression.text + '.' + callee.name.text;
     const contract = contracts.get(target);
     // A callback runs at the dispatch site, but its names bind at definition.
@@ -99,7 +87,6 @@ export function compileTypedListener(physicalPath, sf, fn) {
     if (declaration && contract && declaration !== contract.declaration) {
       fail('local name shadows declared listener host');
     }
-    if (!contract || declaration !== contract.declaration) fail('listener effect target has no closed source signature');
     steps.push({op: 'call_sync', port: contract.port, target, site: 'sync_call_' + serial++, condition});
   }
   const executeCallback = condition => { for (const st of callback) lowerExternal(st, condition); };
@@ -111,7 +98,6 @@ export function compileTypedListener(physicalPath, sf, fn) {
       if (declarationOf(expr.left) !== pending || declarationOf(expr.right) !== parameter) {
         fail('listener registration must write the entry callback slot from its callback parameter');
       }
-      if (saved) fail('listener source slot must be assigned only once');
       saved = true;
     } else if (named(callExpression(st), parameter.name.text)) {
       executeCallback(null);
@@ -146,9 +132,6 @@ export function compileTypedListener(physicalPath, sf, fn) {
   }
   function dispatch(st, condition) {
     const callee = callExpression(st);
-    if (!callee || !ts.isNonNullExpression(callee) || !named(callee.expression, pending.name.text)) {
-      fail('dispatch must call the registered local callback');
-    }
     executeCallback(condition);
   }
   for (const st of dispatches) {

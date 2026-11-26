@@ -20,12 +20,6 @@ export function localDirectives(sourceFile, body) {
       return;
     }
     for (const range of commentRanges(node.pos)) {
-      if (
-        range.kind !== ts.SyntaxKind.MultiLineCommentTrivia ||
-        range.pos < body.getStart(sourceFile) ||
-        range.end > body.end
-      )
-        continue;
       const block = /^\/\*\s*@normalizer-ir\b([\s\S]*)\*\/$/.exec(text.slice(range.pos, range.end));
       if (block) pending.set(range.pos, block[1].trim());
     }

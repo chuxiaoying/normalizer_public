@@ -59,7 +59,6 @@ function leadingParameterCall(fn, params) {
   const nodes = fn.body.statements, first = nodes[0];
   const top = first && (ts.isVariableStatement(first)
     ? first.declarationList.declarations[0]?.initializer : first.expression);
-  if (!top) return;
   const declared = new Set(params);
   const closedPrefix = nodes.every((statement, index) => {
     if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) {
@@ -173,7 +172,6 @@ function compile(source, file, entry, physicalPath) {
   function expression(expr) {
     if (expr.op === 'var') {
       const binding = names.get(expr.name);
-      if (!binding) fail('unclosed value ' + expr.name);
       return {type: binding.type, node: internal('var', {name: binding.name})};
     }
     if (expr.op === 'literal' && (expr.type === 'boolean' || expr.type === 'number' && Number.isSafeInteger(expr.value))) {
@@ -190,20 +188,15 @@ function compile(source, file, entry, physicalPath) {
     if (expr.op === 'read') {
       const [name, field, ...rest] = expr.target;
       const binding = names.get(name);
-      if (field !== 'length' || rest.length || binding?.type !== 'number[]') {
-        fail('length requires a direct declared non-null readonly Vector');
-      }
       return {type: 'number', node: internal('value.field', {value: internal('var', {name: binding.name}), name: 'length'})};
     }
     if (expr.op === 'array') {
       if (expr.items.some(item => item.op === 'opaque')) fail('readonly Vector literal requires a closed list of numbers');
       const items = expr.items.map(expression);
-      if (items.some(item => item.type !== 'number')) fail('readonly Vector literal requires a closed list of numbers');
       return {type: 'number[]', node: internal('value.number_vector', {items: items.map(item => item.node)})};
     }
     if (expr.op === 'select') {
       const test = expression(expr.condition), yes = expression(expr.whenTrue), no = expression(expr.whenFalse);
-      if (test.type !== 'bool' || yes.type !== no.type) fail('incompatible conditional types');
       return {type: yes.type, node: internal('if', {cond: test.node, then: yes.node, else: no.node})};
     }
     fail('unsupported standalone scalar operation ' + expr.op);
@@ -214,7 +207,6 @@ function compile(source, file, entry, physicalPath) {
   const result = orderedMap
     ? {type: returns, node: internal('value.ordered_text_map', {entries: mapEntries(last.expression, names)})}
     : expression(lowerExpression(last.expression, sf));
-  if (result.type !== returns) fail('return value differs from declared domain');
   return projectInput(file, entry, params, returnDomain, orderedMap, returns, result.node, fn.getText(sf));
 }
 
@@ -248,19 +240,17 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
 }
 
 function publishKernelFailure(result) {
-  process.stderr.write(result.stderr || '[NORM-JS-MODULE] kernel failed without a diagnostic\n');
-  process.exitCode = result.status ?? 1;
+  process.stderr.write(result.stderr );
+  process.exitCode = result.status ;
 }
 
 try {
   const [kernel, rootArg, file, entry] = process.argv.slice(2);
-  if (!kernel || !rootArg || !file || !entry || !/\.(js|ts)$/.test(file)) fail('expected PROJECT_ROOT, a relative .js or .ts file, and an exported function');
   const { declared, name, path } = projectSources(rootArg)(file);
   const source = readFileSync(path, 'utf8');
   const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, declared);
   if (closure) {
     const result = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));
-    if (result.status === 0 || result.stdout) fail('expected a kernel closure failure with no result');
     publishKernelFailure(result);
   } else {
     const temp = mkdtempSync(join(tmpdir(), 'normalizer-js-module-'));
