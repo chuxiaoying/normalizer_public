@@ -195,7 +195,8 @@ impl Engine<'_> {
             .ok_or_else(|| fail("missing method owner"))?
             .0;
         match expression {
-            J::Ident(n) if n == "this" && !self.methods[id].syntax.is_static() => {
+            // Source admission owns the instance-only receiver invariant.
+            J::Ident(n) if n == "this" => {
                 return Ok(JavaType::Class(owner.into()))
             }
             J::New { java_type, .. } => return Ok(java_type.clone()),
