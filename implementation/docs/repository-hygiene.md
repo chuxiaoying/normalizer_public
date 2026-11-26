@@ -46,6 +46,10 @@
 - **状态写入、独立字段与可空内容**：在[多次写后读](../../design/examples/topics/state-and-aliasing/java-multi-write-read-order.md)中分别验证同一对象的相邻字段、不同声明对象的同名字段。写入进 S，读取不得混到另一字段或对象；空值声明则沿[可选字段](../../design/examples/topics/objects-and-types/java-optional-field.md)断言完整 R 中保留 `null`，不省字段。
 - **合法接收者与身份**：按[多态分派](../../design/examples/topics/objects-and-types/java-polymorphic-dispatch.md)验证显式 `this.field` 读实际分派到的对象；按[内容与身份](../../design/examples/topics/objects-and-types/java-structural-vs-identity.md)验证非空入参与已绑定为 null 的局部变量不相同。比较不创造外部身份或改变 P。
 - **已取得值相消但不抹掉效果**：纯参数、不可变外部回执字段、第二次采集的完整回执分别计算同值减自身，R 都应归零。参数版不新增 S；两次采集均保留；[原子写入](../../design/examples/topics/relational-data/java-batch-write.md)后取时钟只发生于成功路径，仍保留 SQL、时钟及异常完成。当前参数和回执字段版本还有未化简结果，不能把它们当作预期。
+- **合法 Java 词法边界**：`intValue`、`int_value`、`int$value` 在括号表达式里仍是名称，不是强制类型转换的关键字；最小负整数边界带浮点后缀时按精确业务数解释；文件最后一行注释没有换行不能吞掉已闭合的程序。以普通 `source` CLI 验收，不把非法语法做成业务种子。
+- **多臂与部分 CASE、精确值取负**：六个标量分支进入同一运算时仍依首匹配顺序，部分 CASE 保留独立抛出完成而不补默认值。局部数组首项不能套用 COUNT 的规则，空数组仍抛出；已绑定的精确小数可以符号化取负，不新增舍入规则。
+- **逆序关闭的规范排序**：沿[按相反顺序关闭嵌套任务](../../design/examples/topics/state-and-aliasing/java-lifo-release.md)只重命名两个等长的公开参数名，使共同长度的 LEAST 不需要交换操作数。比较方向必须同时换符号，反向索引仍以打开序列为基准；完整匹配返回真、部分匹配返回假、位置不符抛异常，S 始终为空。
+- **只读 Vector 长度的适配边界**：[统一正则规范](../../design/unified-canonical-form.md)定义自然数长度及正长度与零长度的唯一方向。合法的 `>= 0`、`!== -1` 和 `<= 0` 变体目前在独立 JS 入口被拒绝，尚未命中对应内核分支；记录为待修，不把拒绝变成规范答案。
 
 ## 好找、好改、好验证
 
