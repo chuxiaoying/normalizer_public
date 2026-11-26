@@ -78,4 +78,70 @@ mod lexical_regressions {
                     && matches!(elements.as_slice(), [JavaExpr::Lit(JavaLit::Int(2)), JavaExpr::Lit(JavaLit::Int(3))])
         ));
     }
+
+    fn syntax_failure(source: &str, fragment: &str) {
+        let error = parse(source, "Entrance.java", &ParseOptions::default())
+            .expect_err("unsupported or malformed source must not produce an AST");
+        let ParseError::Syntax { file, line, col, msg } = error;
+        assert_eq!(file, "Entrance.java");
+        assert!(line >= 1 && col >= 1);
+        assert!(msg.contains(fragment), "{source:?}: {msg}");
+    }
+
+    #[test]
+    fn incomplete_unit_reports_the_original_parse_failure() {
+        syntax_failure("class Incomplete", "expected '{'");
+        syntax_failure(r#"class Incomplete { String field = "unfinished"#, "unclosed '{'");
+        syntax_failure("class WrongConstructor { Other() {} }", "[MEMBER-NAME-UNPARSED]");
+    }
+
+    #[test]
+    fn malformed_expressions_are_not_reinterpreted_as_legal_java() {
+        syntax_failure("class Entrance { static int read() { int n = {1}; return n; } }", "expected expression");
+        syntax_failure("class Entrance { static boolean read(boolean a) { return a ?? false; } }", "expected ';' after return value");
+        syntax_failure("class Entrance { static int read() { return .; } }", "expected expression");
+    }
+
+    #[test]
+    fn unsupported_enum_is_not_dropped_from_the_compilation_unit() {
+        syntax_failure(
+            "class Entrance { static int read() { return 7; } } enum Mode { NORMAL }",
+            "enum requires explicit preprocessing",
+        );
+    }
+
+    #[test]
+    fn explicit_this_has_only_an_instance_receiver() {
+        syntax_failure(
+            "class Entrance { static int read() { if (true) { return this.helper(); } return 0; } static int helper() { return 7; } }",
+            "[JAVA-STATIC-THIS]",
+        );
+        syntax_failure(
+            "class Entrance { int read() { int initial = 1, this = 7; return initial; } }",
+            "[JAVA-RESERVED-LOCAL-NAME]",
+        );
+        let source = "class Entrance {
+            int value;
+            Entrance(int value) { this.value = value; }
+            int instance() { return this.value; }
+            static int read() { return Entrance.helper(); }
+            static int helper() { return 7; }
+        }";
+        let program = parse(source, "Entrance.java", &ParseOptions::default()).unwrap();
+        let class = program.find_class("Entrance").unwrap();
+        assert!(class.methods().iter().any(JavaMethod::is_constructor));
+        let instance = class.methods().iter().find(|method| method.name() == "instance").unwrap();
+        assert!(matches!(
+            instance.body().unwrap(),
+            [JavaStatement::Return(Some(JavaExpr::FieldAccess { target, field }))]
+                if field == "value" && matches!(target.as_ref(), JavaExpr::Ident(name) if name == "this")
+        ));
+        let read = class.methods().iter().find(|method| method.name() == "read").unwrap();
+        assert!(matches!(
+            read.body().unwrap(),
+            [JavaStatement::Return(Some(JavaExpr::MethodCall { target: Some(owner), method, args }))]
+                if method == "helper" && args.is_empty()
+                    && matches!(owner.as_ref(), JavaExpr::Ident(name) if name == "Entrance")
+        ));
+    }
 }
