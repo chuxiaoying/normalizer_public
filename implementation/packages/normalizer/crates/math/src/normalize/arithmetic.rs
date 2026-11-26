@@ -172,7 +172,7 @@ fn simplify_reference_comparison(expr: &Expr) -> Option<Expr> {
     if distinct_positive || positive_vs_null {
         return Some(crate::builder::lit_bool(op == BinOpKind::Ne));
     }
-    (left.is_null() && !right.is_null()).then(|| binop(op, right.clone(), left.clone()))
+    (left.is_null() && !right.is_null()).then(|| crate::builder::binop_public(op, right.clone(), left.clone()))
 }
 
 /// 同 subject 偏移量比较化简。
@@ -246,13 +246,9 @@ fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
         return None;
     };
 
-    Some(binop(cmp_op, x.clone(), y.clone()))
+    Some(crate::builder::binop_public(cmp_op, x.clone(), y.clone()))
 }
 
 fn is_lit_int_zero(expr: &Expr) -> bool {
     matches!(expr.kind(), ExprKind::Lit(Lit::Int(0)))
-}
-
-fn binop(op: BinOpKind, left: Expr, right: Expr) -> Expr {
-    Expr::new(ExprKind::BinOp { op, left, right })
 }

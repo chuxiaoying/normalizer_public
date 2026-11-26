@@ -117,6 +117,17 @@ pub(crate) fn bound_implies(existing: ConstraintBound, target: ConstraintBound) 
     }
 }
 
+fn any_matching_bound(
+    expr: &Expr,
+    context: &[Expr],
+    proves: impl Fn(ConstraintBound, ConstraintBound) -> bool,
+) -> bool {
+    let Some(target) = extract_linear_constraint(expr) else { return false; };
+    context.iter().filter_map(extract_linear_constraint).any(|candidate| {
+        candidate.subject == target.subject && proves(candidate.bound, target.bound)
+    })
+}
+
 /// 在 AND 上下文中检查 `expr` 是否因线性约束矛盾而恒 false。
 ///
 /// 从 `context` 提取所有 `subject op literal` 约束，然后检查 `expr`
@@ -124,17 +135,8 @@ pub(crate) fn bound_implies(existing: ConstraintBound, target: ConstraintBound) 
 ///
 /// 如果 `expr` 本身是 AND/OR 复合式，递归检查子式。
 pub(crate) fn expr_contradicts_linear_context(expr: &Expr, context: &[Expr]) -> bool {
-    // Try to extract a linear constraint from expr itself
-    if let Some(target) = extract_linear_constraint(expr) {
-        for ctx_item in context {
-            if let Some(ctx_constraint) = extract_linear_constraint(ctx_item) {
-                if ctx_constraint.subject == target.subject
-                    && bounds_contradict(ctx_constraint.bound, target.bound)
-                {
-                    return true;
-                }
-            }
-        }
+    if any_matching_bound(expr, context, bounds_contradict) {
+        return true;
     }
 
     // For OR expressions: if ALL disjuncts contradict, the whole OR is false
@@ -159,19 +161,6 @@ pub(crate) fn expr_contradicts_linear_context(expr: &Expr, context: &[Expr]) -> 
 /// 从 `context` 提取所有 `subject op literal` 约束，然后检查 `expr`
 /// 是否被某个同 subject 约束蕴含。
 pub(crate) fn expr_implied_by_linear_context(expr: &Expr, context: &[Expr]) -> bool {
-    // Try to extract a linear constraint from expr itself
-    if let Some(target) = extract_linear_constraint(expr) {
-        for ctx_item in context {
-            if let Some(ctx_constraint) = extract_linear_constraint(ctx_item) {
-                if ctx_constraint.subject == target.subject
-                    && bound_implies(ctx_constraint.bound, target.bound)
-                {
-                    return true;
-                }
-            }
-        }
-    }
-
-    // The Boolean proof caller checks every leaf of a conjunction here.
-    false
+    // The Boolean proof caller checks each leaf of a conjunction.
+    any_matching_bound(expr, context, bound_implies)
 }

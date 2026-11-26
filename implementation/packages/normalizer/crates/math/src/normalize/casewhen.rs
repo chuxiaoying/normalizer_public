@@ -447,11 +447,15 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
                 right,
             } = conj.kind()
             {
-                if left == value && right.as_lit().is_some() {
-                    return right.clone();
-                }
-                if right == value && left.as_lit().is_some() {
-                    return left.clone();
+                let replacement = if left == value {
+                    right
+                } else if right == value {
+                    left
+                } else {
+                    continue;
+                };
+                if replacement.as_lit().is_some() {
+                    return replacement.clone();
                 }
             }
         }
@@ -513,31 +517,18 @@ fn project_boolean_condition_under_domain(cond: &Expr, domain: &Expr) -> Expr {
     }
 
     match cond.kind() {
-        ExprKind::BinOp { op, left, right } => match op {
-            BinOpKind::And => {
-                let left_projected = project_boolean_condition_under_domain(left, domain);
-                let scoped_domain =
-                    crate::normalize(crate::builder::and(domain.clone(), left_projected.clone()));
-                let right_projected = project_boolean_condition_under_domain(right, &scoped_domain);
-                crate::normalize(crate::builder::and(left_projected, right_projected))
-            }
-            BinOpKind::Or => {
-                let left_projected = project_boolean_condition_under_domain(left, domain);
-                let scoped_domain = crate::normalize(crate::builder::and(
-                    domain.clone(),
-                    crate::builder::not(left_projected.clone()),
-                ));
-                let right_projected = project_boolean_condition_under_domain(right, &scoped_domain);
-                crate::normalize(crate::builder::or(left_projected, right_projected))
-            }
-            BinOpKind::Eq
-            | BinOpKind::Ne
-            | BinOpKind::Lt
-            | BinOpKind::Le
-            | BinOpKind::Gt
-            | BinOpKind::Ge => cond.clone(),
-            _ => cond.clone(),
-        },
+        ExprKind::BinOp { op: op @ (BinOpKind::And | BinOpKind::Or), left, right } => {
+            let left = project_boolean_condition_under_domain(left, domain);
+            let and = *op == BinOpKind::And;
+            let entrance = if and { left.clone() } else { crate::builder::not(left.clone()) };
+            let scoped = crate::normalize(crate::builder::and(domain.clone(), entrance));
+            let right = project_boolean_condition_under_domain(right, &scoped);
+            crate::normalize(if and {
+                crate::builder::and(left, right)
+            } else {
+                crate::builder::or(left, right)
+            })
+        }
         ExprKind::UnaryOp {
             op: UnaryOpKind::Not,
             operand,
@@ -663,38 +654,38 @@ fn flatten_nested_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)
 /// CaseWhen 按序匹配：进入 branch[k] 时，所有前序 branch cond 已经匹配失败。
 /// 因此 `WHEN A THEN v1; WHEN A || B THEN v2` 的第二分支中 A 已知为 false，
 /// 可化简为 `WHEN B THEN v2`。
-fn strip_prev_disjuncts_from_or_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
-    let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(branches.len());
+fn map_prior_guards(
+    branches: &[(Expr, Expr)],
+    mut rewrite: impl FnMut(&Expr, &[&Expr]) -> Option<Expr>,
+) -> (Vec<(Expr, Expr)>, bool) {
+    let mut previous = Vec::with_capacity(branches.len());
+    let mut out = Vec::with_capacity(branches.len());
     let mut changed = false;
+    for (condition, value) in branches {
+        let rewritten = rewrite(condition, &previous);
+        changed |= rewritten.is_some();
+        out.push((rewritten.unwrap_or_else(|| condition.clone()), value.clone()));
+        previous.push(condition);
+    }
+    (out, changed)
+}
 
-    for (idx, (cond, value)) in branches.iter().enumerate() {
-        let prev_conds: Vec<&Expr> = branches[..idx].iter().map(|(c, _)| c).collect();
-        // The previous-branch OR is the same proof domain for every
-        // disjunct in this branch. Build it once instead of reconstructing a
-        // large expression for each character-range disjunct.
+fn strip_prev_disjuncts_from_or_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
+    map_prior_guards(branches, |cond, prev_conds| {
         let previous_or = prev_conds
             .iter()
-            .map(|prev_cond| (*prev_cond).clone())
+            .map(|prev_cond| (**prev_cond).clone())
             .reduce(crate::builder::or)
             .unwrap_or_else(|| crate::builder::lit_bool(false));
         let disjuncts = flatten_or(cond);
         let original_len = disjuncts.len();
-
         let filtered: Vec<Expr> = disjuncts
             .into_iter()
             .filter(|d| !prev_conds.iter().any(|prev| *prev == d))
             .filter(|d| !is_covered_by_previous_or(d, &previous_or))
             .collect();
-
-        if filtered.len() != original_len {
-            changed = true;
-            out.push((rebuild_or(&filtered), value.clone()));
-        } else {
-            out.push((cond.clone(), value.clone()));
-        }
-    }
-
-    (out, changed)
+        (filtered.len() != original_len).then(|| rebuild_or(&filtered))
+    })
 }
 
 fn merge_adjacent_same_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
@@ -840,38 +831,19 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     (out, true)
 }
 
-fn simplify_branch_conditions_under_prior_failures(
-    branches: &[(Expr, Expr)],
-) -> (Vec<(Expr, Expr)>, bool) {
-    let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(branches.len());
-    let mut changed = false;
-    let mut prev_conds: Vec<Expr> = Vec::new();
-
-    for (cond, value) in branches.iter() {
+fn simplify_branch_conditions_under_prior_failures(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
+    map_prior_guards(branches, |cond, prev_conds| {
         if cond.as_bool() == Some(true) {
-            out.push((cond.clone(), value.clone()));
-            prev_conds.push(cond.clone());
-            continue;
+            return None;
         }
-
         let conjuncts = flatten_and(cond);
         let original_len = conjuncts.len();
         let filtered: Vec<Expr> = conjuncts
             .into_iter()
             .filter(|conj| !prev_conds.iter().any(|prev| is_not_of(prev, conj)))
             .collect();
-
-        let simplified = if filtered.len() != original_len {
-            changed = true;
-            rebuild_and(&filtered)
-        } else {
-            cond.clone()
-        };
-        out.push((simplified, value.clone()));
-        prev_conds.push(cond.clone());
-    }
-
-    (out, changed)
+        (filtered.len() != original_len).then(|| rebuild_and(&filtered))
+    })
 }
 
 /// 死分支消除（相同 cond 的后续 branch）：若 branch[k].cond 与某 branch[j].cond (j<k)
@@ -939,32 +911,20 @@ fn is_covered_by_previous_or(cond: &Expr, previous_or: &Expr) -> bool {
 /// switch-case 按序匹配语义：branch[k] 被选中时，branch[0..k].cond 全部为 false。
 /// 因此 branch[k].cond 显式包含 NOT(prev_cond) 作为 AND 项是冗余的。
 fn strip_redundant_path_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
-    let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(branches.len());
-    let mut changed = false;
-
-    for (idx, (cond, value)) in branches.iter().enumerate() {
-        let prev_conds: Vec<&Expr> = branches[..idx].iter().map(|(c, _)| c).collect();
+    map_prior_guards(branches, |cond, prev_conds| {
         let conjuncts = flatten_and(cond);
         let original_len = conjuncts.len();
         let filtered: Vec<Expr> = conjuncts
             .iter()
             .filter(|c| {
-                !is_not_of_any(c, &prev_conds)
-                    && !is_not_conj_implied_by_prev_failure(c, &conjuncts, &prev_conds)
-                    && !is_demorgan_conj_implied_by_prev_failure(c, &conjuncts, &prev_conds)
+                !is_not_of_any(c, prev_conds)
+                    && !is_not_conj_implied_by_prev_failure(c, &conjuncts, prev_conds)
+                    && !is_demorgan_conj_implied_by_prev_failure(c, &conjuncts, prev_conds)
             })
             .cloned()
             .collect();
-        if filtered.len() != original_len {
-            changed = true;
-            let new_cond = rebuild_and(&filtered);
-            out.push((new_cond, value.clone()));
-        } else {
-            out.push((cond.clone(), value.clone()));
-        }
-    }
-
-    (out, changed)
+        (filtered.len() != original_len).then(|| rebuild_and(&filtered))
+    })
 }
 
 /// 检查 cond 是否是 NOT(expected) 对任一 prev_cond 成立。
@@ -1044,7 +1004,7 @@ fn is_demorgan_conj_implied_by_prev_failure(
         }
 
         let mut used = vec![false; current_conjuncts.len()];
-        let mut matched_current_indices: Vec<usize> = Vec::with_capacity(prev_disjuncts.len());
+        let mut contains = false;
 
         for prev_disjunct in &prev_disjuncts {
             let Some(idx) = current_conjuncts
@@ -1057,12 +1017,10 @@ fn is_demorgan_conj_implied_by_prev_failure(
                 return false;
             };
             used[idx] = true;
-            matched_current_indices.push(idx);
+            contains |= &current_conjuncts[idx] == cond;
         }
 
-        matched_current_indices
-            .into_iter()
-            .any(|idx| current_conjuncts.get(idx) == Some(cond))
+        contains
     })
 }
 
