@@ -1,16 +1,29 @@
 use super::FormatCtx;
 use math::{builder as b, BinOpKind, Expr, SymVarOrigin};
+use std::collections::HashMap;
+
+struct Repetition {
+    query: Expr,
+    eager: usize,
+}
 
 // Count only eager uses of a closed, CASE-bearing sum over an acquired
 // numeric input array. Never take a projection out of a guarded CASE or move
 // a partial E/T observation. A row binder remains local to its query.
-fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<(Expr, usize)>) {
+fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<Repetition>) {
     use math::{domains::relation::RelationExpr, BinOpKind, RelationAggregateKind, SymVarOrigin};
 
     if let Some((RelationAggregateKind::Sum, RelationExpr::Base { name, alias }, Some(select), None)) =
         value.as_relation_aggregate()
     {
-        let mut closed = !name.starts_with('$') && ctx.scalar_arrays.contains(name) && select.has_case_when();
+        if let Some(repetition) = queries.iter_mut().find(|repetition| &repetition.query == value) {
+            repetition.eager += 1;
+            return;
+        }
+        if name.starts_with('$') || !ctx.scalar_arrays.contains(name) || !select.has_case_when() {
+            return;
+        }
+        let mut closed = true;
         select.walk(&mut |part| {
             closed &= match part.as_sym_var() {
                 Some(SymVarOrigin::Parameter { name, .. }) => !name.starts_with('$') && !name.contains('.')
@@ -24,11 +37,7 @@ fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<(
             };
         });
         if closed {
-            if let Some((_, count)) = queries.iter_mut().find(|(expr, _)| expr == value) {
-                *count += 1;
-            } else {
-                queries.push((value.clone(), 1));
-            }
+            queries.push(Repetition { query: value.clone(), eager: 1 });
         }
     } else if let Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right)) = value.as_binop() {
         collect_closed_repetitions(left, ctx, queries);
@@ -39,16 +48,23 @@ fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<(
 pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
     let mut queries = Vec::new();
     collect_closed_repetitions(value, ctx, &mut queries);
+    queries.retain(|repetition| repetition.eager > 1);
+    // Count all occurrences together: formatter substitutions are
+    // expression-wide, so none of a query's occurrences may be guarded.
+    let mut total_counts = vec![0; queries.len()];
+    if !queries.is_empty() {
+        let indices: HashMap<_, _> = queries.iter().enumerate()
+            .map(|(index, repetition)| (&repetition.query, index))
+            .collect();
+        value.walk(&mut |expr| {
+            if let Some(&index) = indices.get(expr) {
+                total_counts[index] += 1;
+            }
+        });
+    }
     let mut definitions = Vec::new();
-    for (query, count) in queries {
-        if count < 2 {
-            continue;
-        }
-        // Formatter substitutions are expression-wide. If the same query
-        // also exists outside the eager scope, do not capture that occurrence.
-        let mut all = 0;
-        value.walk(&mut |expr| all += usize::from(*expr == query));
-        if all != count {
+    for (Repetition { query, eager }, total) in queries.into_iter().zip(total_counts) {
+        if total != eager {
             continue;
         }
         let name = format!("$l_{}", definitions.len());
