@@ -452,19 +452,15 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
         .map(Expr::size)
         .fold(0usize, usize::saturating_add);
 
-    // Coverage is an optimization proof. If the merged guards are too large,
-    // decline the proof before constructing a second copy for truth-table or
-    // disjunction normalization; retaining the branch is the sound fallback.
-    if !truth_table_input_within_budget(&relevant) {
+    let decline = |cache_miss: bool| {
+        let reason = if cache_miss { "run_proof_budget" } else { "input_size_budget" };
         crate::profile::count(
             &CONDITIONS_COVER_BUDGET_SKIPS,
             "math.proof.conditions_cover_all.budget_skip",
-            |_| {
-                format!(
-                    "conds={} size_budget={}",
-                    relevant.len(),
-                    MAX_TRUTH_TABLE_INPUT_SIZE
-                )
+            |_| if cache_miss {
+                format!("conds={} reason={}", relevant.len(), reason)
+            } else {
+                format!("conds={} size_budget={}", relevant.len(), MAX_TRUTH_TABLE_INPUT_SIZE)
             },
         );
         emit_proof_rule_event(
@@ -473,13 +469,18 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
             0,
             profile_start,
             false,
-            false,
+            cache_miss,
             true,
             false,
-            Some("input_size_budget"),
+            Some(reason),
             &[("condition_count", relevant.len().to_string())],
         );
-        return false;
+        false
+    };
+
+    // Decline before building a second copy when the input is too large.
+    if !truth_table_input_within_budget(&relevant) {
+        return decline(false);
     }
 
     if let Some(cached) = conditions_cover_cache_get(&relevant) {
@@ -508,24 +509,7 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
         |_| format!("conds={}", relevant.len()),
     );
     if !crate::normalize::consume_proof_budget(proof_input_size, proof_input_size) {
-        crate::profile::count(
-            &CONDITIONS_COVER_BUDGET_SKIPS,
-            "math.proof.conditions_cover_all.budget_skip",
-            |_| format!("conds={} reason=run_proof_budget", relevant.len()),
-        );
-        emit_proof_rule_event(
-            "math.proof.conditions_cover_all",
-            proof_input_size,
-            0,
-            profile_start,
-            false,
-            true,
-            true,
-            false,
-            Some("run_proof_budget"),
-            &[("condition_count", relevant.len().to_string())],
-        );
-        return false;
+        return decline(true);
     }
 
     let publish_coverage = |reason: &str| {
