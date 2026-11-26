@@ -397,6 +397,17 @@ impl Admission<'_> {
                     "{label}: integral literal {literal} is outside the Java {name} range")));
             }
         }
+        // A parameter, mutable local or blank final is not a Java constant
+        // variable. Scope excludes fields; an initialized final may be a
+        // constant, so leave it to a separate constant-expression proof.
+        if let (Some(JavaType::Primitive(target)), E::Ident(name)) = (expected, value) {
+            if let Some(Binding { ty: JavaType::Primitive(source), initialized_final: false }) = scope.get(name) {
+                if matches!((source.as_str(), target.as_str()), ("int", "byte" | "short") | ("short", "byte")) {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                        "{label}: nonconstant {source} binding {name} cannot implicitly narrow to Java {target}")));
+                }
+            }
+        }
         Ok(())
     }
 
