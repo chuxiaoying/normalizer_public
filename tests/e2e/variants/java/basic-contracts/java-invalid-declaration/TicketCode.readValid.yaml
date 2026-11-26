@@ -426,6 +426,12 @@
     - { from: 'return value;', to: 'int $left = 1; int right$ = 2; return value + $left + right$;' }
   expect:
     - { path: [R], value: 'value + 3' }
+- name: parenthesized-keyword-prefix-names-are-not-casts
+  edits:
+    - from: 'return value;'
+      to: 'int intValue = 1; int int_value = 2; int int$value = 3; return value + (intValue) + (int_value) + (int$value);'
+  expect:
+    - { path: [R], value: 'value + 6' }
 - name: final-line-comment-does-not-need-a-line-terminator
   edits:
     - from: "    static native int booleanValue();\n}\n"
