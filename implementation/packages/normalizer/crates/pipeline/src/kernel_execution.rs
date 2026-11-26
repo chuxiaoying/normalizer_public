@@ -249,7 +249,12 @@ impl<'a> Engine<'a> {
                 }
             }
             J::FieldAccess { target, field } => {
-                let JavaType::Class(owner) = self.source_declared_type(target, id)? else {
+                let value_type = self.source_declared_type(target, id)?;
+                if let Some(product) = crate::normalized::generic_product::instantiated(self.program, &value_type) {
+                    return product.field_type(field, &value_type)
+                        .ok_or_else(|| fail("undeclared generic product field"));
+                }
+                let JavaType::Class(owner) = value_type else {
                     return Err(fail("scalar has no fields"));
                 };
                 return self
@@ -320,6 +325,9 @@ impl<'a> Engine<'a> {
     }
     fn source_field(&self, receiver: &J, field: &str, id: &str) -> Result<()> {
         let ty = self.source_declared_type(receiver, id)?;
+        if let Some(product) = crate::normalized::generic_product::instantiated(self.program, &ty) {
+            return need(product.field_type(field, &ty).is_some(), "undeclared generic product field");
+        }
         let owner = self
             .project
             .source_owner(&ty)
@@ -519,7 +527,9 @@ impl<'a> Engine<'a> {
                     v.check_java_array_component(primitive_array_component(java_type))?;
                     need(v.ty() != Ty::LocalRelation, "local relation requires a typed query, not a Java scalar binding")?;
                     need(
-                        v.ty() == self.project.declared_result_type(java_type)?
+                        if crate::normalized::generic_product::instantiated(self.program, java_type).is_some() {
+                            v.ty() == Ty::Ref
+                        } else { v.ty() == self.project.declared_result_type(java_type)? }
                             || (matches!(v.ty(), Ty::Record(_)) && self.project.source_owner(java_type).is_some()
                                 && self.source_declared_type(expr, id)? == *java_type),
                         "local type mismatch",
@@ -878,6 +888,13 @@ impl<'a> Engine<'a> {
                     .map(|expr| self.java_expr(expr, id, env, path.clone()))
                     .collect::<Result<_>>()?;
                 self.construct_source_object(owner, args, path)
+            }
+            J::New { java_type: ty @ JavaType::Generic(..), args } => {
+                let proof = crate::normalized::generic_product::instantiated(self.program, ty)
+                    .ok_or_else(|| fail("generic allocation requires concrete source constructor proof"))?;
+                let evaluated = args.iter().map(|expr| self.java_expr(expr, id, env, path.clone()))
+                    .collect::<Result<Vec<_>>>()?;
+                self.construct_generic_product(&proof, evaluated)
             }
             J::ArrayInitializer { element_type, elements } => self
                 .evaluate_local_array_initializer(element_type, elements, id, env, path)

@@ -189,7 +189,11 @@ impl Admission<'_> {
                 Some(JavaType::Array(Box::new(element_type.clone()))),
             E::Cast { target_type, .. } => Some(target_type.clone()),
             E::FieldAccess { target, field } => {
-                let JavaType::Class(owner) = self.declared_type(target, scope)? else { return None };
+                let target = self.declared_type(target, scope)?;
+                if let Some(product) = super::generic_product::instantiated(self.program, &target) {
+                    return product.field_type(field, &target);
+                }
+                let JavaType::Class(owner) = target else { return None };
                 self.program.find_class(&owner)?.fields().iter().find(|f| f.name() == field)
                     .map(|f| f.java_type().clone())
             }
@@ -256,6 +260,12 @@ impl Admission<'_> {
                             "a passive record component is private; direct Java field access is not supported"));
                     }
                 }
+                if self.declared_type(target, scope).is_some_and(|ty|
+                    super::generic_product::instantiated(self.program, &ty).is_some())
+                    && self.declared_type(expr, scope).is_none()
+                {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("unknown generic product field {field}")));
+                }
                 declared()
             }
             E::MethodCall { target, method, args } => {
@@ -312,6 +322,22 @@ impl Admission<'_> {
                     }
                 }
                 declared()
+            }
+            E::New { java_type: ty @ JavaType::Generic(owner, _), args } => {
+                let product = super::generic_product::instantiated(self.program, ty)
+                    .ok_or_else(|| self.diagnostic("NORM-SOURCE-TYPE",
+                        &format!("generic constructor {owner} needs explicit supported type arguments")))?;
+                if args.len() != product.arity() {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("generic constructor {owner} has wrong arity")));
+                }
+                for arg in args {
+                    let actual = self.expression(arg, scope)?;
+                    if !matches!(actual, Kind::Text | Kind::Null) {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                            &format!("generic constructor {owner} requires the declared String type argument")));
+                    }
+                }
+                Kind::Ref
             }
             E::New { java_type, args } => {
                 let record = match java_type {
@@ -536,6 +562,11 @@ impl Admission<'_> {
 
     fn check_writable(&self, target: &E, scope: &Scope) -> Result<(), String> {
         if let E::FieldAccess { target: value, field } = target {
+            if self.declared_type(value, scope).is_some_and(|ty|
+                super::generic_product::instantiated(self.program, &ty).is_some())
+            {
+                return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("cannot update final generic product field {field}")));
+            }
             if let Some(JavaType::Class(owner)) = self.declared_type(value, scope) {
                 if let Some(declaration) = self.program.find_class(&owner) {
                     if declaration.fields().iter().any(|f| f.name() == field && f.is_final())
@@ -562,6 +593,14 @@ impl Admission<'_> {
         let object_target = !is_compound && self.declared_type(target, scope).as_ref()
             .is_some_and(|ty| self.root_object_target(ty));
         let actual = self.expression_in_context(value, scope, object_target)?;
+        if let Some(target_ty) = self.declared_type(target, scope) {
+            if super::generic_product::instantiated(self.program, &target_ty).is_some()
+                && !self.declared_type(value, scope).is_some_and(|actual|
+                    super::generic_product::same_instantiation(self.program, &target_ty, &actual))
+            {
+                return Err(self.diagnostic("NORM-SOURCE-TYPE", "generic product assignment has different type arguments"));
+            }
+        }
         let label = match target {
             E::Ident(name) => format!("assignment to {name}"),
             E::FieldAccess { field, .. } => format!("assignment to {field}"),
@@ -617,7 +656,17 @@ impl Admission<'_> {
                 S::VarDecl { java_type, name, initializer, is_final } => {
                     self.check_local_name(name, scope)?;
                     if let Some(value) = initializer {
+                        if super::host_collection_allocation(java_type, value) {
+                            scope.insert(name.clone(), Binding::plain(java_type.clone()));
+                            continue;
+                        }
                         let actual = self.expression_in_context(value, scope, self.root_object_target(java_type))?;
+                        if super::generic_product::instantiated(self.program, java_type).is_some()
+                            && !self.declared_type(value, scope).is_some_and(|actual|
+                                super::generic_product::same_instantiation(self.program, java_type, &actual))
+                        {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE", "generic product initializer has different type arguments"));
+                        }
                         let label = format!("initializer for {name}");
                         // Structural admission already required a local name.
                         // Record arrays share one sequence type, so resolve

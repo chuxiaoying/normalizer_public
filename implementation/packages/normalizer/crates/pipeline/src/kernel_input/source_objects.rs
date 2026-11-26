@@ -29,6 +29,7 @@ pub(super) struct SourceObjects {
     objects: BTreeMap<i64, (String, Origin)>,
     states: BTreeMap<(String, String), Expr>,
     entry_receiver: Option<i64>,
+    generic_products: BTreeMap<i64, BTreeMap<String, Value>>,
     borrowed_fields: BTreeMap<(i64, String), i64>,
     pub(super) state_bindings: BTreeMap<u64, String>,
     pub(super) compared_parameters: BTreeMap<i64, String>,
@@ -186,6 +187,23 @@ impl Engine<'_> {
         Ok(())
     }
 
+    pub(super) fn construct_generic_product(
+        &mut self, proof: &crate::normalized::generic_product::Product<'_>, args: Vec<Value>,
+    ) -> Result<Value> {
+        need(args.len() == proof.arity(), "generic product arity")?;
+        let mut fields = BTreeMap::new();
+        for &(field, index) in proof.bindings() {
+            let value = args[index].scalar()?;
+            need(args[index].ty() == Ty::Text || value.is_null(), "generic product argument type")?;
+            fields.insert(field.to_owned(), Value::Term(Ty::Text, value));
+        }
+        let reference = self.heap.new_object();
+        self.realtime_local_allocations.insert(reference.id());
+        self.source_objects.objects.insert(reference.id(), (proof.name(), Origin::Allocation));
+        self.source_objects.generic_products.insert(reference.id(), fields);
+        Ok(Value::Term(Ty::Ref, b::heap_ref(reference.id())))
+    }
+
     pub(super) fn construct_source_object(
         &mut self,
         owner: &str,
@@ -255,6 +273,9 @@ impl Engine<'_> {
         let (id, owner, origin) = reference.as_heap_ref()
             .and_then(|id| self.source_objects.objects.get(&id).map(|(owner, origin)| (id, owner, origin)))
             .ok_or_else(|| fail("unknown source receiver"))?;
+        if let Some(fields) = self.source_objects.generic_products.get(&id) {
+            return fields.get(name).cloned().ok_or_else(|| fail("undeclared generic product field"));
+        }
         if matches!(origin, Origin::EntryReceiver) {
             return self.read_entry_state(&owner.clone(), name, path);
         }

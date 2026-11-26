@@ -651,6 +651,11 @@ impl Loaded {
                         "result value alias requires a declared empty carrier class and composite state type")?;
                 }
             }
+            if self.project.direct_source && crate::normalized::generic_product::prove(c).is_some() {
+                // Pure product constructors are instantiated at their typed
+                // allocation sites, never registered as bare erased methods.
+                continue;
+            }
             for (index, m) in c.methods().iter().enumerate() {
                 if c.is_interface() && !m.is_default() { continue; }
                 let id = if self.project.direct_source {

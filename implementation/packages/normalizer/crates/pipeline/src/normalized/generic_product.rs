@@ -1,0 +1,106 @@
+//! A closed family of source-owned, immutable, generic products. The constructor
+//! proof maps real source parameters to declared fields; actual type arguments
+//! supply their types. Nothing is inferred from a class or field name.
+use simulator_parser::{JavaClass, JavaExpr as E, JavaProgram, JavaStatement as S, JavaType};
+
+#[derive(Debug)]
+pub(crate) struct Product<'a> {
+    class: &'a JavaClass,
+    field_from_argument: Vec<(&'a str, usize)>,
+    argument_type_parameter: Vec<usize>,
+}
+
+pub(crate) fn prove(class: &JavaClass) -> Option<Product<'_>> {
+    let parameters = class.type_parameters();
+    if parameters.is_empty() || class.is_interface() || class.supertype().is_some()
+        || !class.interfaces().is_empty() || !class.static_initializers().is_empty()
+        || !class.annotations().is_empty()
+    { return None; }
+    let [constructor] = class.methods() else { return None; };
+    if !constructor.is_constructor() || !constructor.type_parameters().is_empty()
+        || !constructor.throws().is_empty() || !constructor.annotations().is_empty()
+        || constructor.arity() != class.fields().len() || class.fields().is_empty()
+    { return None; }
+    let mut used_names = std::collections::BTreeSet::new();
+    if !constructor.params().iter().all(|(_, name)| used_names.insert(name)
+        && !simulator_parser::is_reserved_identifier(name)
+        && constructor.param_annotations(name).is_empty())
+    { return None; }
+    let param_slot = |ty: &JavaType| {
+        let JavaType::Class(parameter) = ty else { return None; };
+        parameters.iter().position(|name| name == parameter)
+    };
+    let argument_type_parameter = constructor.params().iter().map(|(ty, _)| param_slot(ty))
+        .collect::<Option<Vec<_>>>()?;
+    let mut field_from_argument = Vec::new();
+    for statement in constructor.body()? {
+        let S::Assign { target: E::FieldAccess { target, field }, value: E::Ident(argument),
+            is_compound: false } = statement else { return None; };
+        if !matches!(target.as_ref(), E::Ident(receiver) if receiver == "this")
+            || field_from_argument.iter().any(|(prior, _)| *prior == field.as_str())
+        { return None; }
+        let (index, _) = constructor.params().iter().enumerate().find(|(_, (_, name))| name == argument)?;
+        let field = class.fields().iter().find(|declaration| declaration.name() == field)?;
+        if field.is_static() || !field.is_final() || field.has_initializer() || !field.annotations().is_empty()
+            || param_slot(field.java_type()) != Some(argument_type_parameter[index])
+        { return None; }
+        field_from_argument.push((field.name(), index));
+    }
+    if field_from_argument.len() != class.fields().len() { return None; }
+    Some(Product { class, field_from_argument, argument_type_parameter })
+}
+
+pub(crate) fn instantiated<'a>(program: &'a JavaProgram, ty: &JavaType) -> Option<Product<'a>> {
+    let JavaType::Generic(name, args) = ty else { return None; };
+    let class = program.find_class(name)?;
+    if args.len() != class.type_parameters().len()
+        || !args.iter().all(|arg| matches!(arg, JavaType::Class(name)
+            if name == "java.lang.String" || name == "String" && program.find_class(name).is_none()))
+    { return None; }
+    prove(class)
+}
+
+pub(crate) fn same_instantiation(program: &JavaProgram, a: &JavaType, b: &JavaType) -> bool {
+    let (Some(a), Some(b)) = (instantiated(program, a), instantiated(program, b)) else {
+        return false;
+    };
+    // All presently admitted arguments resolve to the one java.lang.String
+    // value type, including an unshadowed short spelling.
+    a.name() == b.name()
+}
+
+impl<'a> Product<'a> {
+    pub(crate) fn name(&self) -> String { self.class.full_name() }
+
+    pub(crate) fn bindings(&self) -> &[(&'a str, usize)] { &self.field_from_argument }
+
+    pub(crate) fn arity(&self) -> usize { self.argument_type_parameter.len() }
+
+    pub(crate) fn field_type(&self, field: &str, ty: &JavaType) -> Option<JavaType> {
+        let JavaType::Generic(_, args) = ty else { return None; };
+        let (_, index) = self.field_from_argument.iter().find(|(name, _)| *name == field)?;
+        args.get(self.argument_type_parameter[*index]).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use simulator_parser::{parse, ParseOptions};
+
+    #[test]
+    fn product_proof_keeps_typed_source_constructor_binding() {
+        let ast = parse("class Item<X,Y> { final Y other; final X value; Item(X first,Y second) { this.value = first; this.other = second; } }",
+            "Item.java", &ParseOptions::default()).unwrap();
+        let text = JavaType::Class("String".into());
+        let alias = JavaType::Class("java.lang.String".into());
+        let ty = JavaType::Generic("Item".into(), vec![text.clone(), alias.clone()]);
+        let product = instantiated(&ast, &ty).unwrap();
+        assert_eq!(product.bindings(), &[("value", 0), ("other", 1)]);
+        assert_eq!(product.field_type("other", &ty), Some(alias.clone()));
+        assert!(same_instantiation(&ast, &ty, &JavaType::Generic("Item".into(), vec![alias, text])));
+        let invalid = parse("class Item<X,Y> { final Y other; final X value; Item(X first,Y second) { this.value = second; this.other = first; } }",
+            "Item.java", &ParseOptions::default()).unwrap();
+        assert!(instantiated(&invalid, &ty).is_none());
+    }
+}

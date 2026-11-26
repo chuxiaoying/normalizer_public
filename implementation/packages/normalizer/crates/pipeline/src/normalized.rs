@@ -3,6 +3,7 @@
 mod external_polling;
 mod static_types;
 pub(crate) mod fixed_for;
+pub(crate) mod generic_product;
 pub(crate) mod affine_recursion;
 pub(crate) mod source_ports;
 
@@ -255,7 +256,7 @@ fn source_layouts_with_receiver(
         if !class.static_initializers().is_empty() && !receiver.is_some_and(|(owner, _)| owner == class.full_name()) {
             return Err(error("NORM-STATIC-INITIALIZER", &class.full_name()));
         }
-        if source_payload_domain(class).is_some() { continue; }
+        if source_payload_domain(class).is_some() || generic_product::prove(class).is_some() { continue; }
         if class.fields().is_empty() {
             if class.supertype().is_none()
                 && (!class.is_interface() || plain_source_interface(class)) {
@@ -672,7 +673,9 @@ pub(crate) fn validate_with_receiver(
             })
         })
             || !unambiguous_interface_defaults(program, c)
-            || (!c.is_interface() && !c.type_parameters().is_empty())
+            || (!c.is_interface() && !c.type_parameters().is_empty()
+                && !(c.fields().is_empty() && c.methods().is_empty())
+                && generic_product::prove(c).is_none())
             || (c.is_interface() && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || !c.annotations().is_empty()
@@ -680,6 +683,9 @@ pub(crate) fn validate_with_receiver(
             || c.has_unknown_import_origins()
         {
             return Err(error("NORM-CLASS-SHAPE", &name));
+        }
+        if generic_product::prove(c).is_some() {
+            continue;
         }
         for (index, m) in c.methods().iter().enumerate() {
             if c.methods()[..index].iter().any(|prior| prior.name() == m.name()
@@ -694,7 +700,13 @@ pub(crate) fn validate_with_receiver(
             if c.is_interface() && !m.is_default() { continue; }
             let id = method_key(c, index, m);
             methods.insert(id.clone(), (c, m));
-            if !m.type_parameters().is_empty() || (!m.annotations().is_empty() && !nullable_text_return(c, m))
+            // A phantom method parameter header does not create a value
+            // carrier. Do not let a type parameter shadow a resolvable
+            // app or native type and obtain that type's semantics by name.
+            if m.type_parameters().iter().any(|name| {
+                let ty = JavaType::Class(name.clone());
+                supported(&ty) || program.find_class(name).is_some()
+            }) || (!m.annotations().is_empty() && !nullable_text_return(c, m))
 
                 || (!m.is_constructor() && !matches!(m.return_type(), JavaType::Void) && !supported(m.return_type()))
                 || m.params().iter().any(|(t, _)| !supported(t))
@@ -991,6 +1003,9 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 | normalizer_ir::local::LocalIr::ProjectedUnionCount { .. } | normalizer_ir::local::LocalIr::SqlWrite(_) | normalizer_ir::local::LocalIr::Relation(_) | normalizer_ir::local::LocalIr::Decimal(_)) => {}
             S::VarDecl { java_type, initializer: Some(init), .. }
                 if host_collection_allocation(java_type, init) => {}
+            S::VarDecl { java_type, initializer: Some(init), .. }
+                if generic_product::instantiated(catch_admission.program, java_type).is_some() =>
+                    expr(init, at, calls)?,
             S::VarDecl {
                 java_type,
                 initializer: None,
@@ -1162,6 +1177,11 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
                 expr(arg, at, calls)?;
             }
             calls.push((SourceCall::Constructor(owner.clone()), args.len()));
+        }
+        E::New { java_type: JavaType::Generic(_, _), args } => {
+            // The typed pass binds this source constructor with its actual
+            // type arguments; no host or raw generic is dispatched here.
+            for arg in args { expr(arg, at, calls)?; }
         }
         E::ArrayInitializer { element_type, elements } if java_int(element_type) => {
             for element in elements {
