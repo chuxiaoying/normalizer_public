@@ -181,7 +181,6 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
             || (!profile_pair_can_skip_proof_check(c, expr)
                 && (relation_count_nonzero_implies_exists(c, expr)
                     || literal_equality_implies_literal_inequality(c, expr)
-                    || positive_heap_ref_equality_implies_inequality(c, expr)
                     || or_all_branches_imply(c, expr)))
     }) {
         return true;
@@ -675,11 +674,7 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
             continue;
         }
         // 互补检测：x || NOT(x) → true.
-        // Also cover implication-shaped tautology: if A => B then !A || B = true.
-        if out.iter().any(|e| {
-            !profile_pair_can_skip_proof_check(e, item)
-                && (is_complement(e, item) || or_implication_tautology(e, item))
-        }) {
+        if out.iter().any(|e| !profile_pair_can_skip_proof_check(e, item) && is_complement(e, item)) {
             return Some(builder::lit_bool(true));
         }
         // A single pure value cannot equal two distinct exact integers.
@@ -734,23 +729,6 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
                 return Some(builder::lit_bool(true));
             }
         }
-        // 排中律通用形式：X ∨ Not(X) = true，其中 X = a∨b∨...∨c
-        // 如果 item = Not(E) 且 E flatten_or 的所有子项都已在 out 中出现，则 tautology
-        if let ExprKind::UnaryOp {
-            op: UnaryOpKind::Not,
-            operand,
-        } = item.kind()
-        {
-            let inner_disjuncts = flatten_or(operand);
-            if inner_disjuncts.len() >= 2
-                && inner_disjuncts.iter().all(|d| out.iter().any(|o| o == d))
-            {
-                return Some(builder::lit_bool(true));
-            }
-        }
-        // 反向：out 里某个 Not(E) 的 E 被当前 flat 剩余项覆盖 —— 简化为对称检测
-        // 检查 out 里 Not(E) vs 新 item：如果 E flatten_or 含当前 item 及之前项，累加
-        // （这一步暂不做，等测试反馈）
         out.push(item.clone());
     }
 
@@ -779,32 +757,10 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
     if out.len() == 1 {
         return Some(out.into_iter().next().unwrap());
     }
-    // Recheck complements created by factoring, resolution, or interval absorption.
-    let mut out2: Vec<Expr> = Vec::with_capacity(out.len());
-    for item in &out {
-        if let ExprKind::Lit(Lit::Bool(true)) = item.kind() {
-            return Some(builder::lit_bool(true));
-        }
-        if let ExprKind::Lit(Lit::Bool(false)) = item.kind() {
-            continue;
-        }
-        if out2.iter().any(|e| e == item) {
-            continue;
-        }
-        if out2.iter().any(|e| {
-            !profile_pair_can_skip_proof_check(e, item)
-                && (is_complement(e, item) || or_implication_tautology(e, item))
-        }) {
-            return Some(builder::lit_bool(true));
-        }
-        out2.push(item.clone());
-    }
-    let out = out2;
-    if out.is_empty() {
-        return Some(builder::lit_bool(false));
-    }
-    if out.len() == 1 {
-        return Some(out.into_iter().next().unwrap());
+    // Resolution can emit true directly; every ordinary factor already
+    // went through the first pass and is handled by shared OR absorption.
+    if out.iter().any(|item| item.as_bool() == Some(true)) {
+        return Some(builder::lit_bool(true));
     }
 
     let out = sort_commutative(out, ctx);
@@ -1235,53 +1191,14 @@ fn heap_ref_eq_ne_comparison(expr: &Expr) -> Option<(BinOpKind, Expr, i64)> {
     None
 }
 
-/// Positive HeapRef equality implies inequality with a different positive HeapRef,
-/// and also implies non-null.
-///
-/// `x == HeapRef(a)` (a>0) implies `x != HeapRef(b)` (b>0, b!=a)
-/// because positive HeapRefs represent distinct Java object identities (enum constants,
-/// singletons, fresh allocations).
-///
-/// `x == HeapRef(a)` (a>0) also implies `x != null`
-/// because positive HeapRefs are guaranteed non-null Java objects.
-fn positive_heap_ref_equality_implies_inequality(left: &Expr, right: &Expr) -> bool {
-    let Some((left_op, left_subject, left_id)) = heap_ref_eq_ne_comparison(left) else {
-        return false;
-    };
-    if left_op != BinOpKind::Eq || left_id <= 0 {
-        return false;
-    }
-    // Case 1: right is Ne(same_subject, different_positive_HeapRef)
-    if let Some((right_op, right_subject, right_id)) = heap_ref_eq_ne_comparison(right) {
-        if right_op == BinOpKind::Ne
-            && right_id > 0
-            && right_subject == left_subject
-            && right_id != left_id
-        {
-            return true;
-        }
-    }
-    // Case 2: right is Ne(same_subject, null) - positive HeapRef implies non-null
-    if let Some(non_null_subject) = null_comparison_subject(right, BinOpKind::Ne) {
-        if non_null_subject == left_subject {
-            return true;
-        }
-    }
-    false
-}
-
-/// If `or_expr` is an OR where every branch implies `target` via HeapRef identity rules,
-/// then the OR as a whole implies `target`.
-/// E.g. `(x == HeapRef(A) || x == HeapRef(B))` implies `x != null` and `x != HeapRef(C)`.
+/// Lift an already-proven leaf implication over every alternative of an OR.
 fn or_all_branches_imply(or_expr: &Expr, target: &Expr) -> bool {
     let disjuncts = flatten_or(or_expr);
     if disjuncts.len() <= 1 {
         return false;
     }
     disjuncts.iter().all(|d| {
-        d == target
-            || literal_equality_implies_literal_inequality(d, target)
-            || positive_heap_ref_equality_implies_inequality(d, target)
+        d == target || literal_equality_implies_literal_inequality(d, target)
     })
 }
 

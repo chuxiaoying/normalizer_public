@@ -6,36 +6,6 @@ pub(super) fn conjunction_implies(conjs_left: &[Expr], conjs_right: &[Expr]) -> 
     conjs_right.iter().all(|right| expr_is_true_under_and_context(right, conjs_left))
 }
 
-// Callers already exclude unrelated pairs before applying OR proof rules.
-pub(super) fn or_implication_tautology(left: &Expr, right: &Expr) -> bool {
-    if relation_cardinality_exhaustive(left, right) {
-        return true;
-    }
-
-    // If A => B is a proven relation/cardinality fact, then (!A || B) is true.
-    // Keep this OR-only: the dual AND contradiction is directional (A && !B),
-    // so this must not be folded into the symmetric `is_complement` helper.
-    if let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand,
-    } = left.kind()
-    {
-        if relation_count_nonzero_implies_exists(operand, right) {
-            return true;
-        }
-    }
-    if let ExprKind::UnaryOp {
-        op: UnaryOpKind::Not,
-        operand,
-    } = right.kind()
-    {
-        if relation_count_nonzero_implies_exists(operand, left) {
-            return true;
-        }
-    }
-    false
-}
-
 pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bool {
     if left == right || left.as_bool().is_some() || right.as_bool().is_some() {
         return false;
@@ -49,28 +19,6 @@ pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bo
 pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> bool {
     exists_and_count_zero_same_relation(left, right)
         || exists_and_count_zero_same_relation(right, left)
-}
-
-pub(super) fn relation_cardinality_exhaustive(left: &Expr, right: &Expr) -> bool {
-    relation_count_nonzero_or_zero_same_relation(left, right)
-        || relation_count_nonzero_or_zero_same_relation(right, left)
-        || exists_and_count_zero_same_relation(left, right)
-        || exists_and_count_zero_same_relation(right, left)
-        || relation_exists_or_not_exists_same_relation(left, right)
-        || relation_exists_or_not_exists_same_relation(right, left)
-}
-
-pub(super) fn relation_count_nonzero_or_zero_same_relation(
-    nonzero_expr: &Expr,
-    zero_expr: &Expr,
-) -> bool {
-    let Some(nonzero_relation) = relation_count_nonzero_relation(nonzero_expr) else {
-        return false;
-    };
-    let Some(zero_relation) = relation_count_zero_relation(zero_expr) else {
-        return false;
-    };
-    relation_cardinality_input_matches(nonzero_relation, zero_relation)
 }
 
 fn exists_and_count_zero_same_relation(
