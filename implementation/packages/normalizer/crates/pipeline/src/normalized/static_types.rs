@@ -146,17 +146,12 @@ impl Admission<'_> {
                     }
                     B::Eq | B::Ne | B::Lt | B::Le | B::Gt | B::Ge => Kind::Bool,
                     B::Add if left == Kind::Text || right == Kind::Text => Kind::Text,
-                    B::BitAnd | B::BitOr | B::BitXor if left == Kind::Bool && right == Kind::Bool => Kind::Bool,
                     _ if left == Kind::Number && right == Kind::Number => Kind::Number,
                     _ => Kind::Unresolved,
                 }
             }
-            E::Assign { target, value } => {
-                let to = self.expression(target, scope)?;
-                let from = self.expression(value, scope)?;
-                self.assignment(target, to, from)?;
-                to
-            }
+            // Structural source admission rejects expression-level assignment.
+            E::Assign { .. } => Kind::Unresolved,
             E::UnaryOp { op, operand } => {
                 let kind = self.expression(operand, scope)?;
                 if *op == U::Not {
