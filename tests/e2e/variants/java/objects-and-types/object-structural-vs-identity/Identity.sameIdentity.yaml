@@ -153,6 +153,11 @@
     value: NOT (replace)
 - name: a-null-replacement-uses-the-original-input-nullability
   edits:
+  - from: class Box {
+    to: |-
+      import normalizer.intrinsics.N;
+
+      class Box {
   - from: static boolean sameIdentity(Box left, Box right)
     to: static boolean sameIdentity(@N.Nullable Box left, Box right, boolean replace)
   - from: return left == right;
@@ -298,6 +303,11 @@
     value: chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)
 - name: independent-guards-selecting-distinct-allocations-only-match-on-the-original
   edits:
+  - from: class Box {
+    to: |-
+      import normalizer.intrinsics.N;
+
+      class Box {
   - from: static boolean sameIdentity(Box left, Box right)
     to: static boolean sameIdentity(@N.Nullable Box prior, boolean p, boolean q)
   - from: return left == right;
@@ -322,6 +332,11 @@
     value: NOT (p) AND NOT (q)
 - name: independent-guards-selecting-the-same-allocation-match-on-both-diagonals
   edits:
+  - from: class Box {
+    to: |-
+      import normalizer.intrinsics.N;
+
+      class Box {
   - from: static boolean sameIdentity(Box left, Box right)
     to: static boolean sameIdentity(@N.Nullable Box prior, boolean p, boolean q)
   - from: return left == right;
@@ -361,6 +376,11 @@
     value: 'true'
 - name: null-first-equality-keeps-the-borrowed-nullability
   edits:
+  - from: class Box {
+    to: |-
+      import normalizer.intrinsics.N;
+
+      class Box {
   - from: static boolean sameIdentity(Box left, Box right)
     to: static boolean sameIdentity(@N.Nullable Box left, Box right)
   - from: return left == right;
@@ -377,6 +397,11 @@
     value: left == null
 - name: null-second-inequality-keeps-the-borrowed-nullability
   edits:
+  - from: class Box {
+    to: |-
+      import normalizer.intrinsics.N;
+
+      class Box {
   - from: static boolean sameIdentity(Box left, Box right)
     to: static boolean sameIdentity(@N.Nullable Box left, Box right)
   - from: return left == right;
