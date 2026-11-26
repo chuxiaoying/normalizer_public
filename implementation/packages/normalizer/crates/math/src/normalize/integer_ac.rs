@@ -15,7 +15,8 @@ fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
     match value.kind() {
         ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
             primitive_type == "integer" && ctx.temporal_is_total(*binding_id),
-        ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_)) => true,
+        ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_))
+        | ExprKind::RowValue { acquired_integer: true, .. } => true,
         ExprKind::SymVar {
             origin:
                 SymVarOrigin::Parameter {

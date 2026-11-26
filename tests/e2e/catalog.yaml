@@ -259,4 +259,7 @@ groups:
       scene: frontend-vo-production
       entries:
       - onLoad
+  java/collections-and-expression-simplification:
+    composition-map-arithmetic:
+    - RowArithmetic.sum
 pending: []

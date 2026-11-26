@@ -1,0 +1,11 @@
+- name: literal-offset-cancels-each-row
+  edits:
+    - from: (value + extra) - extra
+      to: (value + 1) - 1
+- name: preserve-one-extra-unit-per-row
+  edits:
+    - from: (value + extra) - extra
+      to: (value + 3) - 2
+  expect:
+    - path: [R]
+      value: COALESCE(SUM(SELECT value + 1 FROM values), 0)

@@ -132,7 +132,8 @@ fn canonical_order_key_uncached(expr: &Expr, ctx: &dyn SortContext) -> String {
 fn subject_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     match expr.kind() {
         ExprKind::SymVar { origin } => sym_origin_subject_key(origin, ctx),
-        ExprKind::RowValue { alias } => format!("04|row|{alias}"),
+        ExprKind::RowValue { alias, acquired_integer: true } => format!("00|array-row|{alias}"),
+        ExprKind::RowValue { alias, acquired_integer: false } => format!("04|row|{alias}"),
         ExprKind::HeapRef(id) => heap_subject_key(*id, ctx),
         ExprKind::Lit(lit) => literal_subject_key(lit),
         ExprKind::RelationAggregate {
@@ -426,7 +427,7 @@ fn structural_key(expr: &Expr, ctx: &dyn SortContext) -> String {
             };
             key_node("sym", vec![sym_origin_subject_key(origin, ctx), primitive_type.clone()])
         }
-        ExprKind::RowValue { alias } => format!("row:{alias}"),
+        ExprKind::RowValue { alias, acquired_integer } => format!("row:{acquired_integer}:{alias}"),
         ExprKind::HeapRef(id) => format!("heap:{}", heap_subject_key(*id, ctx)),
         ExprKind::UnaryOp { op, operand } => {
             format!("unary:{op:?}({})", structural_key(operand, ctx))

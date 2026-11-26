@@ -309,9 +309,12 @@ pub fn heap_ref(id: i64) -> Expr {
 /// parameters.  The alias is still indexed as a relation-row variable so RCL
 /// predicate splitting keeps it inside the relation.
 pub fn row_value<T: Into<String>>(alias: T) -> Expr {
-    Expr::new(ExprKind::RowValue {
-        alias: alias.into(),
-    })
+    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: false })
+}
+
+/// A member acquired from a non-null exact-integer input array.
+pub fn acquired_integer_row<T: Into<String>>(alias: T) -> Expr {
+    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: true })
 }
 
 // =============================================================================

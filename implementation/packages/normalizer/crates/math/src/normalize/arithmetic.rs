@@ -76,7 +76,9 @@ fn simplify_identity(expr: &Expr) -> Option<Expr> {
                 if left == right {
                     return Some(crate::builder::lit_int(0));
                 }
-                if let Some(value) = remove_additive_term(left, right) {
+                if let Some(value) = remove_additive_term(left, right)
+                    .or_else(|| combine_acquired_row_literals(left, right))
+                {
                     return Some(value);
                 }
             }
@@ -108,6 +110,28 @@ fn remove_additive_term(sum: &Expr, term: &Expr) -> Option<Expr> {
         return Some(crate::builder::add(rest, right.clone()));
     }
     remove_additive_term(right, term).map(|rest| crate::builder::add(left.clone(), rest))
+}
+
+// The exact row subject stays inside the same ordered query. Combine
+// acquired literal offsets without lifting the row out of its scope.
+fn combine_acquired_row_literals(left: &Expr, right: &Expr) -> Option<Expr> {
+    let (BinOpKind::Add, base, left_literal) = left.as_binop()? else { return None; };
+    let right = right.as_lit()?.as_integer()?;
+    let left = left_literal.as_lit()?.as_integer()?;
+    let mut has_acquired_row = false;
+    base.walk(&mut |node| {
+        has_acquired_row |= matches!(node.kind(), ExprKind::RowValue { acquired_integer: true, .. });
+    });
+    if !has_acquired_row { return None; }
+    let rest = left - right;
+    use num_traits::{Signed, Zero};
+    if rest.is_zero() {
+        Some(base.clone())
+    } else if rest.is_negative() {
+        Some(crate::builder::sub(base.clone(), crate::builder::lit_integer(-rest)))
+    } else {
+        Some(crate::builder::add(base.clone(), crate::builder::lit_integer(rest)))
+    }
 }
 
 fn is_lit_int_one(expr: &Expr) -> bool {

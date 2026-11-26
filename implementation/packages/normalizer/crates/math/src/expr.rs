@@ -134,7 +134,7 @@ pub(crate) enum ExprKind {
     /// primitive type.  It denotes the current row value/path inside a Relation
     /// Calculus predicate or projection, e.g. `$e_0.item` rendered as SQL alias
     /// `p` under relation formatting scope.
-    RowValue { alias: String },
+    RowValue { alias: String, acquired_integer: bool },
 
     /// 调用签名由 FuncKey 唯一决定。
     Call { key: FuncKey, args: Vec<Expr> },
@@ -190,7 +190,8 @@ impl PartialEq for ExprKind {
             (Lit(a), Lit(b)) => a == b,
             (SymVar { origin: a }, SymVar { origin: b }) => a == b,
             (HeapRef(a), HeapRef(b)) => a == b,
-            (RowValue { alias: a }, RowValue { alias: b }) => a == b,
+            (RowValue { alias: a, acquired_integer: left },
+                RowValue { alias: b, acquired_integer: right }) => a == b && left == right,
             (
                 Call {
                     key: k1,
@@ -256,7 +257,10 @@ impl Hash for ExprKind {
             Lit(v) => v.hash(state),
             SymVar { origin } => origin.hash(state),
             HeapRef(id) => id.hash(state),
-            RowValue { alias } => alias.hash(state),
+            RowValue { alias, acquired_integer } => {
+                alias.hash(state);
+                acquired_integer.hash(state);
+            }
             Call {
                 key,
                 args,
@@ -336,7 +340,7 @@ impl Expr {
     /// 如果是 Relation row value atom，返回 row alias/path；否则 None。
     pub fn as_row_value(&self) -> Option<&str> {
         match self.0.as_ref() {
-            ExprKind::RowValue { alias } => Some(alias.as_str()),
+            ExprKind::RowValue { alias, .. } => Some(alias.as_str()),
             _ => None,
         }
     }
@@ -676,7 +680,7 @@ impl ExprProfile {
             ExprKind::Lit(_) => Self::leaf(),
             ExprKind::SymVar { origin } => Self::sym_var(origin),
             ExprKind::HeapRef(_) => Self::heap_ref(),
-            ExprKind::RowValue { alias } => Self::row_value(alias),
+            ExprKind::RowValue { alias, .. } => Self::row_value(alias),
             ExprKind::Call {
                 args, ..
             } => {
@@ -758,9 +762,10 @@ fn structural_hash_from_kind(kind: &ExprKind) -> u64 {
             2u8.hash(&mut h);
             id.hash(&mut h);
         }
-        RowValue { alias } => {
+        RowValue { alias, acquired_integer } => {
             11u8.hash(&mut h);
             alias.hash(&mut h);
+            acquired_integer.hash(&mut h);
         }
         Call {
             key,

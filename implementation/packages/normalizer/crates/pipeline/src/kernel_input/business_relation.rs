@@ -415,7 +415,7 @@ impl Engine<'_> {
                 };
                 Rows {
                     input: RelationExpr::base(name, "value"),
-                    fields: BTreeMap::from([(String::new(), Value::Term(Ty::Integer, b::row_value("value")))]),
+                    fields: BTreeMap::from([(String::new(), Value::Term(Ty::Integer, b::acquired_integer_row("value")))]),
                     ordering: vec![],
                 }
             }

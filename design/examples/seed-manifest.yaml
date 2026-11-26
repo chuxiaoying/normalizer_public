@@ -120,3 +120,4 @@ seeds:
   collection-reduce: { kind: topic, topic: collections, related: [expression-simplification] }
   collection-order-and-duplicates: { kind: topic, topic: collections, related: [] }
   collection-nested: { kind: topic, topic: collections, related: [loops-and-termination] }
+  composition-map-arithmetic: { kind: composition, topic: collections-and-expression-simplification, related: [collections, expression-simplification] }
