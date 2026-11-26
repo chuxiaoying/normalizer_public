@@ -421,7 +421,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             if ports.get(&format!("{}.{target}", caller.full_name())).is_some_and(|port| port.params.len() == arity) {
                 continue;
             }
-            if crate::normalized_text::source_intrinsic(caller, &target, arity) {
+            if crate::normalized_text::source_intrinsic(caller, &target, arity).is_some() {
                 continue;
             }
             if let Some((local, member)) = target.split_once('.') {

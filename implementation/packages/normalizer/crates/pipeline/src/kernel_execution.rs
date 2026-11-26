@@ -704,10 +704,10 @@ impl Engine<'_> {
                     .iter()
                     .map(|a| self.java_expr(a, id, env, path.clone()))
                     .collect::<Result<_>>()?;
-                if self
+                if let Some(intrinsic) = self
                     .program
                     .find_class(id.rsplit_once('.').unwrap().0)
-                    .is_some_and(|caller| {
+                    .and_then(|caller| {
                         crate::normalized_text::source_intrinsic(caller, &callee, vs.len())
                     })
                 {
@@ -718,16 +718,16 @@ impl Engine<'_> {
                         "text intrinsic requires text arguments",
                     )?;
                     let value = vs[0].scalar()?;
-                    let expr = match method.as_str() {
-                        "trim" => crate::normalized_text::trim(value),
-                        "defaultIfBlank" => b::normal_return_case_when(vec![
+                    use crate::normalized_text::SourceIntrinsic;
+                    let expr = match intrinsic {
+                        SourceIntrinsic::Trim => crate::normalized_text::trim(value),
+                        SourceIntrinsic::DefaultIfBlank => b::normal_return_case_when(vec![
                             (
                                 crate::normalized_text::is_blank(value.clone()),
                                 vs[1].scalar()?,
                             ),
                             (b::lit_bool(true), value),
                         ]),
-                        _ => unreachable!(),
                     };
                     return Ok(Value::Term(Ty::Text, math::normalize(expr)));
                 }

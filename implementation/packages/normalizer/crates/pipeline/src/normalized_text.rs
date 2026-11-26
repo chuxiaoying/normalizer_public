@@ -3,9 +3,24 @@ use math::{builder as b, Expr, Lit, Primitive};
 pub const KEY: &str = "normalized.text.is_blank_java17";
 pub(crate) const SOURCE_IMPORT: &str = "normalizer.intrinsics.NormalizedText";
 pub(crate) const TRIM_KEY: &str = "normalized.text.trim_utf16";
-pub(crate) fn source_intrinsic(class: &simulator_parser::JavaClass, target: &str, arity: usize) -> bool {
-    class.imports().iter().any(|import| import == SOURCE_IMPORT)
-        && matches!((target,arity), ("NormalizedText.trim",1) | ("NormalizedText.defaultIfBlank",2))
+pub(crate) enum SourceIntrinsic {
+    Trim,
+    DefaultIfBlank,
+}
+
+pub(crate) fn source_intrinsic(
+    class: &simulator_parser::JavaClass,
+    target: &str,
+    arity: usize,
+) -> Option<SourceIntrinsic> {
+    if !class.imports().iter().any(|import| import == SOURCE_IMPORT) {
+        return None;
+    }
+    match (target, arity) {
+        ("NormalizedText.trim", 1) => Some(SourceIntrinsic::Trim),
+        ("NormalizedText.defaultIfBlank", 2) => Some(SourceIntrinsic::DefaultIfBlank),
+        _ => None,
+    }
 }
 
 pub fn trim(value: Expr) -> Expr {
