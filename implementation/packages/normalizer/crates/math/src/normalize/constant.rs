@@ -109,3 +109,18 @@ fn fold_unary(op: UnaryOpKind, v: &Lit) -> Option<Expr> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod literal_boolean_fold_tests {
+    use super::*;
+
+    #[test]
+    fn literal_or_is_true_for_either_position_without_source_short_circuiting() {
+        for (left, right, expected) in [
+            (true, false, true), (false, true, true), (false, false, false),
+        ] {
+            assert_eq!(fold(&builder::or(builder::lit_bool(left), builder::lit_bool(right))),
+                builder::lit_bool(expected));
+        }
+    }
+}

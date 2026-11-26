@@ -193,3 +193,16 @@ pub fn display_literal(value: BigInt, scale: u32) -> String {
     if negative { digits.insert(0, '-'); }
     digits
 }
+
+#[cfg(test)]
+mod exact_negation_tests {
+    use super::*;
+
+    #[test]
+    fn symbolic_and_literal_exact_negation_preserve_their_value_domain() {
+        let input = b::param("amount", crate::ScalarSymbolType::ExactDecimal);
+        assert_eq!(negate(input.clone()), b::neg(input));
+        let fractional = literal(BigInt::from(125), 2);
+        assert_eq!(negate(fractional), literal(BigInt::from(-125), 2));
+    }
+}

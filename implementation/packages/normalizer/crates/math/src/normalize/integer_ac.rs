@@ -170,3 +170,30 @@ fn combine_constant_offset(difference: &Expr, addition: &Expr) -> Option<Expr> {
         std::cmp::Ordering::Greater => b::add(base.clone(), b::lit_integer(offset)),
     })
 }
+
+#[cfg(test)]
+mod temporal_integer_evidence_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    struct AvailableTemporals(BTreeMap<u64, usize>);
+
+    impl SortContext for AvailableTemporals {
+        fn heap_display_name(&self, _: i64) -> Option<String> { None }
+        fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { Some(&self.0) }
+        fn temporal_is_total(&self, id: u64) -> bool { self.0.contains_key(&id) }
+    }
+
+    #[test]
+    fn temporal_value_type_does_not_follow_from_a_published_alias() {
+        let named = AvailableTemporals(BTreeMap::from([(1, 0)]));
+        let integer = b::integer_temporal_result(1);
+        let record = b::record_temporal_result(1);
+
+        assert!(total_with_temporals(&integer, &named));
+        assert!(exact_business_integer(&integer, &named));
+        assert!(!total_with_temporals(&record, &named));
+        assert!(!exact_business_integer(&record, &named));
+        assert!(!total_with_temporals(&integer, &crate::DefaultSortContext));
+    }
+}

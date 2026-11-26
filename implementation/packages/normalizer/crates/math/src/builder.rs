@@ -1227,3 +1227,68 @@ mod coverage_proof_tests {
         assert!(!conditions_have_direct_complement_pair(&[p, not(q)]));
     }
 }
+
+#[cfg(test)]
+mod symbolic_proof_boundary_tests {
+    use super::*;
+
+    fn flag(name: &str) -> Expr {
+        param(name, ScalarSymbolType::Boolean)
+    }
+
+    #[test]
+    fn expression_and_atom_proof_ceilings_decline_without_inventing_facts() {
+        let p = flag("sizeGuard");
+        let mut large = p.clone();
+        while large.size() <= MAX_TRUTH_TABLE_INPUT_SIZE {
+            large = and(large.clone(), large);
+        }
+        // Logically p OR !p, but this proof must not copy an oversized tree.
+        assert!(!conditions_cover_all(&[large.clone(), not(large.clone())]));
+        // Logically !p does not imply an independent Boolean. Negation keeps
+        // the exact-fact shortcut from walking the exponentially shared tree.
+        assert!(!path_implies(&not(large), &flag("independentLargeTarget")));
+
+        let many: Vec<Expr> = (0..17)
+            .map(|index| param(format!("atom{index}"), ScalarSymbolType::Boolean))
+            .collect();
+        assert!(matches!(
+            boolean_truth_table_within_size_limit(&many),
+            TruthTableCoverage::Unknown
+        ));
+        assert!(matches!(
+            boolean_truth_table_within_size_limit(&[p.clone(), not(p)]),
+            TruthTableCoverage::CoversAll
+        ));
+    }
+
+    #[test]
+    fn nested_case_coverage_cache_preserves_the_exact_subjects_and_result() {
+        let p = flag("cacheP");
+        let q = flag("cacheQ");
+        let r = flag("cacheR");
+        let nested = case_when(vec![(p.clone(), q.clone())], r.clone());
+        let covered = canonicalize_coverage_conditions(vec![nested.clone(), not(nested.clone())]);
+        assert!(conditions_cover_all(&covered));
+        assert_eq!(conditions_cover_cache_get(&covered), Some(true));
+
+        let different = canonicalize_coverage_conditions(vec![
+            nested.clone(), not(case_when(vec![(p, r)], q)),
+        ]);
+        // p=true, q=false, r=true refutes coverage of this different pair.
+        assert!(!conditions_cover_all(&different));
+        assert_eq!(conditions_cover_cache_get(&different), Some(false));
+        assert_eq!(conditions_cover_cache_get(&covered), Some(true));
+    }
+
+    #[test]
+    fn a_conditional_atom_is_not_an_independent_countermodel_variable() {
+        let p = flag("select");
+        let q = flag("other");
+        let conditional = case_when(vec![(p.clone(), lit_int(1))], lit_int(2));
+        assert!(boolean_conditions_have_independent_model(&[p, q.clone()]));
+        assert!(!boolean_conditions_have_independent_model(&[
+            eq(conditional, lit_int(1)), q,
+        ]));
+    }
+}

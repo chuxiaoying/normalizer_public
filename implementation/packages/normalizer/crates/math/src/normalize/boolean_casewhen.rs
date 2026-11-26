@@ -122,3 +122,33 @@ pub(crate) fn is_boolean_expr(expr: &Expr) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod nested_boolean_domain_tests {
+    use super::*;
+    use crate::builder as b;
+    use crate::domains::relation::{relation_exists, RelationExpr};
+
+    #[test]
+    fn only_complete_non_observing_boolean_cases_expand() {
+        let flag = |name| b::param(name, crate::ScalarSymbolType::Boolean);
+        let p = flag("p");
+        let q = flag("q");
+        let r = flag("r");
+        let inner = b::case_when(vec![(q.clone(), b::lit_bool(true))], r.clone());
+        assert!(is_boolean_expr(&inner));
+
+        let total = b::case_when(vec![(p.clone(), inner)], b::lit_bool(false));
+        let expected = crate::normalize(b::and(p.clone(), b::or(q.clone(), r)));
+        assert_eq!(crate::normalize(simplify(&total)), expected);
+
+        let partial = b::normal_return_case_when(vec![], (q, b::lit_bool(true)));
+        let observing = b::case_when(vec![
+            (p, relation_exists(RelationExpr::base("offers", "offer"))),
+        ], b::lit_bool(false));
+        for protected in [partial, observing] {
+            assert!(!is_boolean_expr(&protected));
+            assert_eq!(simplify(&protected), protected);
+        }
+    }
+}

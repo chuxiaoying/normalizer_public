@@ -157,3 +157,61 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
     }
     Some((out, default))
 }
+
+#[cfg(test)]
+mod domain_boundary_tests {
+    use super::*;
+    use crate::ScalarSymbolType;
+
+    fn integer(name: &str) -> Expr {
+        b::param(name, ScalarSymbolType::Integer)
+    }
+
+    #[test]
+    fn scalar_domain_certificate_distinguishes_paths_from_direct_parameters() {
+        let x = integer("x");
+        for name in ["order.quantity", "$e_0.quantity"] {
+            assert!(!is_input_integer(&integer(name)));
+        }
+        assert!(is_input_integer(&x));
+        assert!(!is_input_integer(&b::param("fraction", ScalarSymbolType::ExactDecimal)));
+    }
+
+    #[test]
+    fn small_partition_requires_a_subject_and_refuses_overweight_unions() {
+        let x = integer("x");
+        let zero = b::lit_int(0);
+        let mut below = b::lt(x.clone(), zero.clone());
+        let at = b::eq(x.clone(), zero.clone());
+        let above = b::gt(x, zero);
+        assert!(exhaustive_union(&[below.clone(), at.clone(), above.clone()]));
+        while below.size() <= 64 {
+            below = b::and(below.clone(), below);
+        }
+        assert!(!exhaustive_union(&[below, at, above]));
+        // An all-Boolean union belongs to ordinary Boolean folding, not
+        // the exact single-Integer-subject interval proof.
+        assert!(!exhaustive_union(&[
+            b::lit_bool(false), b::lit_bool(true), b::lit_bool(false),
+        ]));
+    }
+
+    #[test]
+    fn integer_partition_respects_nested_values_and_masked_payloads() {
+        let x = integer("x");
+        let first = b::le(x.clone(), b::lit_int(0));
+        let masked = b::le(x.clone(), b::lit_int(-1));
+        let branches = [
+            (first.clone(), b::lit_int(10)),
+            (masked.clone(), b::lit_int(20)),
+            (b::lit_bool(true), b::lit_int(30)),
+        ];
+        assert_eq!(case_ranges(&branches), Some((vec![(first.clone(), b::lit_int(10))], b::lit_int(30))));
+
+        let p = b::param("nested", ScalarSymbolType::Boolean);
+        let nested = b::case_when(vec![(p, b::lit_int(10))], b::lit_int(11));
+        assert!(case_ranges(&[
+            (first, nested), (masked, b::lit_int(20)), (b::lit_bool(true), b::lit_int(30)),
+        ]).is_none());
+    }
+}

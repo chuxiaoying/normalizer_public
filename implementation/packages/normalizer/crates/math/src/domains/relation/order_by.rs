@@ -40,3 +40,30 @@ pub fn order_value_components(value: &Expr) -> Option<(&RelationExpr, &[Expr])> 
     }
     Some((source.as_relation()?, keys))
 }
+
+#[cfg(test)]
+mod ordered_source_shape_tests {
+    use super::*;
+    use crate::domains::primitive::registry::FuncSemantics;
+
+    #[test]
+    fn composite_vector_call_shape_is_not_itself_an_ordering_certificate() {
+        let rows = RelationExpr::base("rows", "row");
+        let first = b::acquired_integer_row("row");
+        let second = b::lit_int(3);
+        let ordered = order_by(rows.clone(), first.clone(), [second.clone()].into_iter());
+        let (source, keys) = order_components(&ordered).expect("order_by result");
+        assert_eq!(source, &rows);
+        assert_eq!(keys, &[first.clone(), second]);
+
+        let generic = crate::register_func(
+            "test.relation.opaque_selection",
+            vec![Primitive::Composite, Primitive::Number],
+            Some(Primitive::Composite),
+            FuncSemantics::pure_function(),
+        );
+        let value = b::call(generic, vec![relation_expr(rows), first]);
+        let opaque = RelationExpr::vector(value, "opaque");
+        assert!(order_components(&opaque).is_none());
+    }
+}
