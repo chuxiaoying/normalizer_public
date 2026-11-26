@@ -63,3 +63,12 @@
   - kind=PREPROCESS_REQUIRED
   - location=BillReport.countAccounts
   - initializer for result requires number, got source sequence<number>
+
+- name: projected-union-rejects-an-unbound-source
+  edits:
+    - { from: 'pending.accountId, posted.accountId', to: 'pending.accountId, undeclared.accountId' }
+  reject: ['[NORM-PROJECT]', 'projected union needs a declared table row source']
+- name: projected-union-does-not-discard-an-existing-source-filter
+  edits:
+    - { from: 'posted = from posted_bill as q yield', to: 'posted = from posted_bill as q where q.account_id > 0 yield' }
+  reject: ['[NORM-PROJECT]', 'projected union needs direct table rows without filters']

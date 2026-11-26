@@ -106,3 +106,12 @@
     - {from: 'a.id == accountId and b.status == "OPEN"', to: 'a.id == accountId and b.status == "OPEN" and false'}
   expect:
     - {path: [R], value: '0'}
+
+- name: join-does-not-infer-an-unbound-right-source-from-its-alias
+  edits:
+    - { from: 'join bills as b on', to: 'join undeclared as b on' }
+  reject: ['[NORM-PROJECT]', 'join requires two typed table bindings']
+- name: join-does-not-discard-an-existing-filter-on-its-right-source
+  edits:
+    - { from: 'bills = from bill as row yield', to: 'bills = from bill as row where row.account_id > 0 yield' }
+  reject: ['[NORM-PROJECT]', 'join count currently requires unfiltered table declarations']
