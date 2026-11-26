@@ -1094,9 +1094,7 @@ impl<'a> Parser<'a> {
     }
 
     fn read_string_literal(&mut self) -> Result<String, ParseError> {
-        if !self.eat_char(b'"') {
-            return Err(self.err("expected string literal"));
-        }
+        self.pos += 1; // try_parse_literal has already matched the opening quote.
         let mut out = String::new();
         loop {
             if self.peek() == Some(b'"') {
@@ -1108,7 +1106,8 @@ impl<'a> Parser<'a> {
     }
 
     fn read_char_literal(&mut self) -> Result<char, ParseError> {
-        if !self.eat_char(b'\'') || self.peek() == Some(b'\'') {
+        self.pos += 1; // try_parse_literal has already matched the opening quote.
+        if self.peek() == Some(b'\'') {
             return Err(self.err("expected one Java character"));
         }
         let value = self.read_literal_unit()?;
