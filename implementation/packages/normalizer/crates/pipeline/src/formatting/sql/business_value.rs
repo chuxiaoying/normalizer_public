@@ -32,8 +32,7 @@ fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<R
                 None => part.as_row_value().is_some_and(|row| row == alias)
                     || part.as_lit().is_some() || part.as_binop().is_some()
                     || part.as_unary_op().is_some()
-                    || part.as_case_when().is_some_and(|branches|
-                        branches.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true))),
+                    || part.as_total_case_when().is_some(),
             };
         });
         if closed {
@@ -86,13 +85,10 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
 
 // The mathematical CASE already selected its arms. In a minimum/maximum,
 // display the test with its selected operand first, so WHEN and THEN agree.
-pub(super) fn format_selection(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> Option<String> {
-    let [(guard, selected), (fallback, other)] = branches else {
+pub(super) fn format_selection(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {
+    let ([(guard, selected)], other) = expr.as_total_case_when()? else {
         return None;
     };
-    if fallback.as_bool() != Some(true) {
-        return None;
-    }
     let op = math::case_orientation::selection_comparison(guard, selected, other)?;
     if !matches!(op, math::BinOpKind::Lt | math::BinOpKind::Gt) {
         return None;

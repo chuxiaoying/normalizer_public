@@ -188,10 +188,10 @@ fn preferred_complement_for_shape(
 /// callers that must preserve CASE laziness while sharing the published
 /// domain policy and ordering key.
 pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
-    let [(condition, yes), (fallback, no)] = expression.as_case_when()? else {
+    let ([(condition, yes)], no) = expression.as_total_case_when()? else {
         return None;
     };
-    if fallback.as_bool() != Some(true) || yes.as_case_when().is_some() || no.as_case_when().is_some() {
+    if yes.as_case_when().is_some() || no.as_case_when().is_some() {
         return None;
     }
     if let Some(op) = selection_comparison(condition, yes, no) {

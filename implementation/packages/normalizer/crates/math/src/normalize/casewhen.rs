@@ -988,12 +988,9 @@ fn is_not_of(cond: &Expr, expected_inner: &Expr) -> bool {
 // default on the empty path, is a single lazy FirstValue at the join.
 fn select_first_default(expr: &Expr) -> Option<Expr> {
     use crate::domains::relation::{order_components, relation_exists, relation_first_value};
-    let [(guard, yes), (tail, no)] = expr.as_case_when()? else {
+    let ([(guard, yes)], no) = expr.as_total_case_when()? else {
         return None;
     };
-    if tail.as_bool() != Some(true) {
-        return None;
-    }
     for (value, default, invert) in [(yes, no, false), (no, yes, true)] {
         let Some((crate::RelationAggregateKind::FirstValue, ordered, Some(select), Some(null))) =
             value.as_relation_aggregate()

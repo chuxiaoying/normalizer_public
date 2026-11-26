@@ -242,6 +242,11 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return format!("{l} {token} {r}");
     }
     if let Some(branches) = expr.as_case_when() {
+        if ctx.business_inputs.is_some() {
+            if let Some(selection) = business_value::format_selection(expr, ctx) {
+                return selection;
+            }
+        }
         return format_case_when(branches, ctx);
     }
     if expr.as_relation().is_some() || expr.as_relation_aggregate().is_some() {
@@ -410,11 +415,6 @@ fn format_binop_child_with_precedence(
 
 fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     let business = ctx.business_inputs.is_some();
-    if business {
-        if let Some(selection) = business_value::format_selection(branches, ctx) {
-            return selection;
-        }
-    }
     let mut parts = vec!["CASE".to_string()];
     for (guard, value) in branches {
         let value = format_expr_with_ctx(value, ctx);

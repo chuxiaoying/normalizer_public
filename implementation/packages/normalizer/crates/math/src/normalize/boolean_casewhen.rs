@@ -54,42 +54,34 @@ use super::logical_chain::{rebuild_and, rebuild_or};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 
 pub(crate) fn simplify(expr: &Expr) -> Expr {
-    let ExprKind::CaseWhen { branches } = expr.kind() else {
-        return expr.clone();
-    };
-
     // Only a complete Boolean value can become a total OR expression. A
     // partial CASE must remain undefined outside its selected domain.
-    if branches
-        .last()
-        .is_none_or(|(condition, _)| condition.as_bool() != Some(true))
-        || !branches.iter().all(|(_, v)| is_boolean_expr(v))
-    {
+    let Some((arms, fallback)) = expr.as_total_case_when() else {
+        return expr.clone();
+    };
+    if !arms.iter().all(|(_, value)| is_boolean_expr(value)) || !is_boolean_expr(fallback) {
         return expr.clone();
     }
 
     // 展开为 OR-of-AND：每个 branch 生成一个 AND 项 (path_cond AND value)
     // 其中 path_cond = 前面 branches.cond 全部 NOT 后 AND 当前 cond（若 cond 是 true，省略当前 cond）
-    let mut or_terms: Vec<Expr> = Vec::with_capacity(branches.len());
+    let mut or_terms: Vec<Expr> = Vec::with_capacity(arms.len() + 1);
     let mut accumulated_negation: Vec<Expr> = Vec::new();
 
-    for (cond, value) in branches.iter() {
-        let is_true_cond = matches!(cond.kind(), ExprKind::Lit(Lit::Bool(true)));
-
+    for (guard, value) in arms.iter().map(|(guard, value)| (Some(guard), value))
+        .chain(std::iter::once((None, fallback)))
+    {
+        let guard = guard.filter(|guard| guard.as_bool() != Some(true));
         let mut conjuncts: Vec<Expr> = accumulated_negation.clone();
-        if !is_true_cond {
-            conjuncts.push(cond.clone());
+        if let Some(guard) = guard {
+            conjuncts.push(guard.clone());
         }
         conjuncts.push(value.clone());
+        or_terms.push(rebuild_and(&conjuncts));
 
-        let and_term = rebuild_and(&conjuncts);
-        or_terms.push(and_term);
-
-        // 遇到 true cond（默认分支），后续不会走到，break
-        if is_true_cond {
-            break;
-        }
-        accumulated_negation.push(crate::builder::not(cond.clone()));
+        // An earlier TRUE arm masks every later arm, including the fallback.
+        let Some(guard) = guard else { break; };
+        accumulated_negation.push(crate::builder::not(guard.clone()));
     }
 
     let expanded = rebuild_or(&or_terms);
@@ -101,7 +93,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     // path implication / CaseWhen first-match / 后续局部投影在上下文中化简。
     // 典型场景是 catch 变量由多条 throw path 组成，随后 equals/getter 把
     // code CaseWhen 当 boolean condition 消费；无条件 DNF 会把 throw-domain 摊爆。
-    if branches.len() >= 4 && expanded.size() > expr.size() {
+    if arms.len() >= 3 && expanded.size() > expr.size() {
         return expr.clone();
     }
 
@@ -127,12 +119,9 @@ pub(crate) fn is_boolean_expr(expr: &Expr) -> bool {
         // Relation aggregates are lazy observations over a source domain. A
         // CASE selecting one of them must remain a CASE so branch selection
         // does not become eager AND/OR evaluation on an unselected relation.
-        ExprKind::CaseWhen { branches } => {
-            branches
-                .last()
-                .is_some_and(|(c, _)| c.as_bool() == Some(true))
-                && branches.iter().all(|(_, v)| is_boolean_expr(v))
-        }
+        ExprKind::CaseWhen { .. } => expr.as_total_case_when().is_some_and(|(arms, fallback)| {
+            arms.iter().all(|(_, value)| is_boolean_expr(value)) && is_boolean_expr(fallback)
+        }),
         _ => false,
     }
 }
