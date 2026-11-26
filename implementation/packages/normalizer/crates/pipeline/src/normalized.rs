@@ -813,6 +813,28 @@ mod source_declaration_contracts {
     use simulator_parser::{parse, ParseOptions};
 
     #[test]
+    fn numeric_array_admission_does_not_prove_boolean_element_arithmetic() {
+        let array = |component: &str| JavaType::Array(Box::new(JavaType::Primitive(component.into())));
+        assert!(numeric_array(&array("int")));
+        assert!(numeric_array(&array("long")));
+        assert!(!numeric_array(&array("boolean")));
+    }
+
+    #[test]
+    fn qualified_and_short_object_fields_remain_opaque_reference_layouts() {
+        let program = parse(
+            "class Holder { Object shortName; java.lang.Object fullName; Child child; } class Child { int value; }",
+            "Holder.java",
+            &ParseOptions::default(),
+        ).unwrap();
+        let layouts = source_layouts(&program).unwrap();
+        let holder = &layouts["Holder"];
+        for name in ["shortName", "fullName", "child"] {
+            assert_eq!(holder[name], "ref?");
+        }
+    }
+
+    #[test]
     fn ordinary_interface_eligibility_does_not_assume_every_interface_is_a_contract() {
         for (source, expected) in [
             ("interface Shape { int size(); }", true),
