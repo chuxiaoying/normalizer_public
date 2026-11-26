@@ -1434,14 +1434,7 @@ fn is_pure_boolean_propositional_expr(expr: &Expr) -> bool {
             && is_pure_boolean_propositional_expr(left)
             && is_pure_boolean_propositional_expr(right);
     }
-    matches!(
-        expr.kind(),
-        ExprKind::SymVar {
-            origin: SymVarOrigin::Parameter { primitive_type, .. }
-                | SymVarOrigin::External { primitive_type, .. }
-                | SymVarOrigin::Temporal { primitive_type, .. },
-        } if primitive_type == "boolean"
-    )
+    expr.as_sym_var().is_some_and(|origin| origin.primitive_type() == "boolean")
 }
 
 fn comparison_atom_key(left: &Expr, right: &Expr) -> String {

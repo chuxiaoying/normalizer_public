@@ -114,29 +114,13 @@ pub(crate) fn is_boolean_expr(expr: &Expr) -> bool {
     }
     match expr.kind() {
         ExprKind::Lit(Lit::Bool(_)) => true,
-        ExprKind::BinOp { op, .. } => matches!(
-            op,
-            BinOpKind::Eq
-                | BinOpKind::Ne
-                | BinOpKind::Lt
-                | BinOpKind::Le
-                | BinOpKind::Gt
-                | BinOpKind::Ge
-                | BinOpKind::And
-                | BinOpKind::Or
-        ),
+        ExprKind::BinOp { op, .. } =>
+            matches!(op, BinOpKind::And | BinOpKind::Or) || op.swapped_comparison().is_some(),
         ExprKind::UnaryOp {
             op: UnaryOpKind::Not,
             ..
         } => true,
-        ExprKind::SymVar { origin } => {
-            let ty = match origin {
-                crate::SymVarOrigin::Parameter { primitive_type, .. }
-                | crate::SymVarOrigin::External { primitive_type, .. }
-                | crate::SymVarOrigin::Temporal { primitive_type, .. } => primitive_type.as_str(),
-            };
-            ty == "boolean"
-        }
+        ExprKind::SymVar { origin } => origin.primitive_type() == "boolean",
         ExprKind::Call { key, .. } =>
             crate::domains::primitive::registry::func_return_type(*key)
                 == Some(crate::Primitive::Boolean),

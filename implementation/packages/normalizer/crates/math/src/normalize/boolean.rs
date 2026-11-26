@@ -58,26 +58,13 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
 pub(crate) fn total_boolean_value(expr: &Expr) -> bool {
     match expr.kind() {
         ExprKind::Lit(Lit::Bool(_)) => true,
-        ExprKind::SymVar {
-            origin:
-                SymVarOrigin::Parameter { primitive_type, .. }
-                | SymVarOrigin::External { primitive_type, .. }
-                | SymVarOrigin::Temporal { primitive_type, .. },
-        } => primitive_type == "boolean",
+        ExprKind::SymVar { origin } => origin.primitive_type() == "boolean",
         ExprKind::BinOp {
             op: BinOpKind::And | BinOpKind::Or,
             left,
             right,
         } => total_boolean_value(left) && total_boolean_value(right),
-        ExprKind::BinOp { op, .. } => matches!(
-            op,
-            BinOpKind::Eq
-                | BinOpKind::Ne
-                | BinOpKind::Lt
-                | BinOpKind::Le
-                | BinOpKind::Gt
-                | BinOpKind::Ge
-        ),
+        ExprKind::BinOp { op, .. } => op.swapped_comparison().is_some(),
         ExprKind::UnaryOp {
             op: UnaryOpKind::Not,
             operand,
