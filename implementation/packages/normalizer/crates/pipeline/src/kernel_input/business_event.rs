@@ -99,6 +99,7 @@ pub(super) fn observations(
     let mut tables = result.source_tables.clone();
     let mut sql_exceptions = BTreeSet::new();
     let mut temporal_receipts = BTreeMap::new();
+    let mut total_port_receipts = BTreeSet::new();
     let mut external_payloads = Vec::new();
     let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>, temporals: Option<&BTreeMap<u64, usize>>| -> Result<()> {
         let mut closed = true;
@@ -181,10 +182,11 @@ pub(super) fn observations(
                         external_payloads.push((class, payload, domain));
                     }
                 }
-                if !result.temporal_definitions.is_empty() && event.guard.as_bool() == Some(true)
-                    && spec.returns == Ty::Integer && !spec.throwing()
-                {
-                    temporal_receipts.insert(binding_id, output.clone());
+                if event.guard.as_bool() == Some(true) && !spec.throwing() {
+                    total_port_receipts.insert(binding_id);
+                    if !result.temporal_definitions.is_empty() && spec.returns == Ty::Integer {
+                        temporal_receipts.insert(binding_id, output.clone());
+                    }
                 }
                 if spec.returns != Ty::Unit {
                     let value = spec.tagged_value(response)?;
@@ -316,7 +318,23 @@ pub(super) fn observations(
         })
         .collect();
     validate_ids(&returned, &issued, Some(temporal_names))?;
-    let returned = if temporal_names.is_empty() {
+    // Only the settled event ledger owns public receipt ordinals. When a
+    // typed integer projection shares R with a renumbered receipt, thread
+    // that ledger into the existing context-aware normalization. If the
+    // ordinals did not move, the online expression already used the same key.
+    let mut reads_total_integer_field = false;
+    let mut reads_renumbered_receipt = false;
+    if temporal_names.is_empty() {
+        returned.walk(&mut |value| {
+            if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
+                reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
+                    && total_port_receipts.contains(binding_id);
+                reads_renumbered_receipt |= issued.contains(binding_id)
+                    && u64::try_from(ctx.e_slot(*binding_id)).ok() != Some(*binding_id);
+            }
+        });
+    }
+    let returned = if temporal_names.is_empty() && !(reads_total_integer_field && reads_renumbered_receipt) {
         returned
     } else {
         let external_names = ctx.published_external_names();
