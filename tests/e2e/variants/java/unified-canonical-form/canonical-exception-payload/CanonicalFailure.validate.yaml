@@ -12,6 +12,15 @@
     - 1
     - payload
     value: 'null'
+- name: fully-qualified-runtime-exception-is-the-same-declared-throw
+  edits:
+    - { from: 'RuntimeException("alpha")', to: 'java.lang.RuntimeException("alpha")' }
+    - { from: 'RuntimeException();', to: 'java.lang.RuntimeException();' }
+- name: fully-qualified-null-text-constructor-keeps-its-payload
+  edits:
+    - { from: 'RuntimeException("alpha")', to: 'java.lang.RuntimeException((java.lang.String) null)' }
+  expect:
+    - { path: [throws, 1, payload], value: 'null' }
 - name: equal-payloads-can-share-their-effective-domain
   edits:
   - from: RuntimeException("zeta")

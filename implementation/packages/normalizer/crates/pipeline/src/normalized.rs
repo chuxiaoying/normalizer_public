@@ -520,7 +520,7 @@ pub(crate) enum RuntimeThrowMessage<'a> {
 
 pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
     let E::New { java_type: JavaType::Class(class), args } = e else { return None; };
-    if class != "RuntimeException" { return None; }
+    if !matches!(class.as_str(), "RuntimeException" | RUNTIME_EXCEPTION) { return None; }
     match args.as_slice() {
         [] => Some(RuntimeThrowMessage::Absent),
         [E::Lit(JavaLit::Str(text))] => Some(RuntimeThrowMessage::Text(text)),
