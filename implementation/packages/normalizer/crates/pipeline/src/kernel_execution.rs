@@ -667,8 +667,16 @@ impl Engine<'_> {
             }
             J::ArrayInitializer { element_type, elements } => {
                 self.budget()?;
-                let path = self.normal_path(path);
-                Ok(Some(self.evaluate_local_array_initializer(element_type, elements, id, env, path)?.length()))
+                need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
+                // The initializer still runs before .length. Its element
+                // values are never observed, so no constant carrier is needed.
+                for element in elements {
+                    let active = self.normal_path(path.clone());
+                    if active.as_bool() == Some(false) { break; }
+                    let value = self.java_expr(element, id, env, active)?;
+                    need(value.ty() == Ty::Integer, "expected Java int for local array")?;
+                }
+                Ok(Some(elements.len() as i64))
             }
             J::ArrayAllocation { element_type, length } => {
                 self.budget()?;

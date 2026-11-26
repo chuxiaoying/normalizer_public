@@ -42,3 +42,20 @@
   reject:
   - '[NORM-PROJECT]'
   - Java array element type differs from the declared array
+- name: direct-length-of-inline-empty-initializer
+  edits:
+    - { from: 'int[] values = new int[3];', to: '' }
+    - { from: 'values.length * 10 + values[0]', to: '(new int[]{}).length' }
+  expect:
+    - { path: [R], value: '0' }
+- name: direct-length-of-inline-multi-element-initializer
+  edits:
+    - { from: 'int[] values = new int[3];', to: '' }
+    - { from: 'values.length * 10 + values[0]', to: '(new int[]{2, 7, 11}).length' }
+  expect:
+    - { path: [R], value: '3' }
+- name: direct-length-keeps-static-int-element-admission
+  edits:
+    - { from: 'int[] values = new int[3];', to: '' }
+    - { from: 'values.length * 10 + values[0]', to: '(new int[]{true}).length' }
+  reject: ['[NORM-SOURCE-TYPE]', 'array initializer requires number, got bool']

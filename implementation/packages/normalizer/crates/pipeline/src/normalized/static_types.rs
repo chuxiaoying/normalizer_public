@@ -236,7 +236,8 @@ impl Admission<'_> {
             }
             E::ArrayInitializer { element_type, elements } => {
                 for element in elements {
-                    self.expression(element, scope)?;
+                    let actual = self.expression(element, scope)?;
+                    self.compatible(Kind::declared(element_type), actual, "array initializer")?;
                     self.check_assignment_narrowing(Some(element_type), element, scope, "array initializer")?;
                 }
                 Kind::Sequence

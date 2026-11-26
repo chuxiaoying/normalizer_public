@@ -77,3 +77,34 @@
     - { path: [R], value: '23' }
     - { path: [S], absent: true }
     - { path: [throws], absent: true }
+
+- name: inline-length-stops-after-first-failing-initializer-element
+  edits:
+    - { from: '(new int[]{2, 7})[-1]', to: '(new int[]{(new int[]{2})[1], (new int[-1]).length}).length' }
+
+- name: swapping-failing-initializer-elements-changes-first-exception
+  edits:
+    - { from: '(new int[]{2, 7})[-1]', to: '(new int[]{(new int[-1]).length, (new int[]{2})[1]}).length' }
+  expect:
+    - { path: [throws, 0, type], value: java.lang.NegativeArraySizeException }
+
+- name: inline-length-preserves-ordered-effects-and-conditional-element-completion
+  edits:
+    - from: 'class CanonicalArray {'
+      to: |-
+        interface InlineProbe { int read(int value); }
+        class CanonicalArray {
+            @normalizer.annotations.External private final InlineProbe probe;
+            CanonicalArray(InlineProbe probe) { this.probe = probe; }
+    - { from: 'static int guarded', to: 'int guarded' }
+    - from: |-
+        if (fail) return (new int[]{2, 7})[-1];
+                return 7;
+      to: 'try { return (new int[]{probe.read(10), fail ? (new int[]{2})[1] : 5, probe.read(30)}).length; } catch (ArrayIndexOutOfBoundsException ignored) { return 42; }'
+  expect:
+    - { path: [R], value: 'CASE WHEN fail THEN 42 ELSE 3 END' }
+    - path: [S]
+      value:
+        - call: { external: probe.read, args: ['10'], returns: number, result: $e_0 }
+        - call: { external: probe.read, args: ['30'], returns: number, result: $e_1, when: 'NOT (fail)' }
+    - { path: [throws], absent: true }
