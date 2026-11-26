@@ -624,7 +624,6 @@ fn collapse_two_branch_boolean_identity(branches: &[(Expr, Expr)]) -> Option<Exp
     }
 
     let first_is_false = first_value.as_bool() == Some(false);
-    let first_is_true = first_value.as_bool() == Some(true);
     let second_is_false = second_value.as_bool() == Some(false);
     let second_is_true = second_value.as_bool() == Some(true);
 
@@ -643,12 +642,6 @@ fn collapse_two_branch_boolean_identity(branches: &[(Expr, Expr)]) -> Option<Exp
     }
     if first_is_false && second_is_true && super::boolean::total_boolean_value(first_cond) {
         return Some(crate::builder::not(first_cond.clone()));
-    }
-    if first_is_true && first_cond == second_value && second_is_false {
-        return Some(second_value.clone());
-    }
-    if first_is_false && first_cond == second_value && second_is_true {
-        return Some(crate::builder::not(second_value.clone()));
     }
     None
 }
@@ -935,11 +928,6 @@ fn dead_branch_by_identical_prev_cond(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         out.push((cond.clone(), value.clone()));
     }
 
-    // 防御：若消除后为空（不该发生，但保底），退回原 branches
-    if out.is_empty() {
-        return (branches.to_vec(), false);
-    }
-
     (out, changed)
 }
 
@@ -953,10 +941,6 @@ fn dead_branch_by_covered_prev_conds(branches: &[(Expr, Expr)]) -> (Vec<(Expr, E
             continue;
         }
         out.push((cond.clone(), value.clone()));
-    }
-
-    if out.is_empty() {
-        return (branches.to_vec(), false);
     }
 
     (out, changed)

@@ -89,28 +89,24 @@ fn check_ordered_contradiction(existing: ConstraintBound, new: ConstraintBound) 
         Gt(a) => match new {
             Lt(b) => b <= a, // x > a && x < b: 矛盾当 b <= a  (e.g. x>4 && x<4, x>4 && x<3)
             Le(b) => b <= a, // x > a && x <= b: 矛盾当 b <= a (e.g. x>4 && x<=4)
-            Eq(b) => b <= a, // x > a && x == b: 矛盾当 b <= a (e.g. x>4 && x==4, x>4 && x==3)
             _ => false,
         },
         // existing: subject >= a
         Ge(a) => match new {
             Lt(b) => b <= a, // x >= a && x < b: 矛盾当 b <= a (e.g. x>=4 && x<4)
             Le(b) => b < a,  // x >= a && x <= b: 矛盾当 b < a (e.g. x>=4 && x<=3)
-            Eq(b) => b < a,  // x >= a && x == b: 矛盾当 b < a (e.g. x>=4 && x==3)
             _ => false,
         },
         // existing: subject < a
         Lt(a) => match new {
             Gt(b) => b >= a, // x < a && x > b: 矛盾当 b >= a (e.g. x<4 && x>4, x<4 && x>5)
             Ge(b) => b >= a, // x < a && x >= b: 矛盾当 b >= a (e.g. x<4 && x>=4)
-            Eq(b) => b >= a, // x < a && x == b: 矛盾当 b >= a (e.g. x<4 && x==4)
             _ => false,
         },
         // existing: subject <= a
         Le(a) => match new {
             Gt(b) => b >= a, // x <= a && x > b: 矛盾当 b >= a (e.g. x<=4 && x>4)
             Ge(b) => b > a,  // x <= a && x >= b: 矛盾当 b > a (e.g. x<=4 && x>=5)
-            Eq(b) => b > a,  // x <= a && x == b: 矛盾当 b > a (e.g. x<=4 && x==5)
             _ => false,
         },
         // existing: subject == a
@@ -234,19 +230,6 @@ pub(crate) fn expr_implied_by_linear_context(expr: &Expr, context: &[Expr]) -> b
         }
     }
 
-    // For AND expressions: if ALL conjuncts are implied, the whole AND is true
-    if let ExprKind::BinOp {
-        op: BinOpKind::And,
-        left,
-        right,
-    } = expr.kind()
-    {
-        if expr_implied_by_linear_context(left, context)
-            && expr_implied_by_linear_context(right, context)
-        {
-            return true;
-        }
-    }
-
+    // The Boolean proof caller checks every leaf of a conjunction here.
     false
 }

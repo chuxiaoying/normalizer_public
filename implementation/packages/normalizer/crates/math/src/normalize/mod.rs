@@ -400,8 +400,8 @@ fn emit_summary(
     crate::profile::json_event(
         "math.normalize.root",
         &[
-            ("phase", "normalize".to_string().quote_json()),
-            ("rule", "fixed_point".to_string().quote_json()),
+            ("phase", crate::profile::json_string("normalize")),
+            ("rule", crate::profile::json_string("fixed_point")),
             ("input_size", input_size.to_string()),
             ("input_depth", input_depth.to_string()),
             ("output_size", output.size().to_string()),
@@ -456,39 +456,19 @@ fn emit_summary(
                 budget
                     .last_skip
                     .or(budget.exhausted)
-                    .map_or_else(|| "null".to_string(), |kind| kind.to_string().quote_json()),
+                    .map_or_else(|| "null".to_string(), |kind| crate::profile::json_string(&kind.to_string())),
             ),
             (
                 "skip_reason",
                 if budget.budget_skips == 0 {
                     "null".to_string()
                 } else {
-                    "budget_exhausted".to_string().quote_json()
+                    crate::profile::json_string("budget_exhausted")
                 },
             ),
             ("peak_intermediate_size", budget.peak_nodes.to_string()),
         ],
     );
-}
-
-trait JsonValue {
-    fn quote_json(self) -> String;
-}
-
-impl JsonValue for String {
-    fn quote_json(self) -> String {
-        let mut value = String::with_capacity(self.len() + 2);
-        value.push('"');
-        for ch in self.chars() {
-            match ch {
-                '"' => value.push_str("\\\""),
-                '\\' => value.push_str("\\\\"),
-                _ => value.push(ch),
-            }
-        }
-        value.push('"');
-        value
-    }
 }
 
 /// 归一化 / 化简（便捷版，使用 DefaultSortContext）。

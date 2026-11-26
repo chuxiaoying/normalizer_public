@@ -98,11 +98,6 @@ fn symbolic_equation(
     args: &[Expr],
     reducer: &std::sync::Arc<dyn Fn(crate::FuncKey, &[Expr]) -> Option<Expr> + Send + Sync>,
 ) -> Option<Expr> {
-    assert_eq!(
-        args.len(),
-        crate::domains::primitive::registry::func_arity(key),
-        "[MATH-SYMBOLIC-CONTRACT] argument arity changed"
-    );
     // Boolean and nullable text have complete scalar result sorts. Number
     // does not encode source word width, and composite/ref equations need a
     // separate type-preserving contract before admission.
