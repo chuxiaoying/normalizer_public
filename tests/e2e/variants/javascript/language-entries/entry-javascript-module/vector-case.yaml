@@ -74,3 +74,14 @@
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.length <= 0 ? 11 : 7'
+
+- name: readonly-vector-length-compared-to-explicit-positive-zero
+  edits:
+  - from: 'values.length > 0 ? 7 : 11'
+    to: 'values.length > +0 ? 7 : 11'
+
+- name: a-method-arity-is-not-the-readonly-vector-length
+  edits:
+  - from: 'values.length > 0 ? 7 : 11'
+    to: 'values.map.length > 0 ? 7 : 11'
+  reject: ['[NORM-JS-MODULE]', 'length requires a direct declared non-null readonly Vector']
