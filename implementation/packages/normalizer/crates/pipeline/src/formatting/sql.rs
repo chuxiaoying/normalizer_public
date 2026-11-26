@@ -253,13 +253,8 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
             let position = format_expr_with_ctx(position, ctx);
             return format!("{}[{position}].{field}", array_name(root, ctx));
         }
-        if matches!(math::domains::completion::output_name(&registered_name), "completion.is_throw" | "completion.payload") {
-            if let [response, class] = args {
-                if let Some(math::Lit::Str(name)) = class.as_lit() {
-                    return format!("{}({}, {name})", math::domains::completion::output_name(&registered_name),
-                        format_expr_with_ctx(response, ctx));
-                }
-            }
+        if let Some((operation, response, class)) = math::domains::completion::class_observation(&registered_name, args) {
+            return format!("{operation}({}, {class})", format_expr_with_ctx(response, ctx));
         }
         let display = match registered_name.as_str() {
             crate::normalized_text::TRIM_KEY => Some("TRIM"),

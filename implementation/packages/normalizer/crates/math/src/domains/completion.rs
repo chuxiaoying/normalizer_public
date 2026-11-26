@@ -18,6 +18,18 @@ pub fn output_name(name: &str) -> &str {
         _ => name,
     }
 }
+/// The class-bearing completion operations share the same checked operand shape.
+pub fn class_observation<'a>(registered_name: &str, args: &'a [Expr]) -> Option<(&'static str, &'a Expr, &'a str)> {
+    let operation = match output_name(registered_name) {
+        "completion.is_throw" => "completion.is_throw",
+        "completion.payload" => "completion.payload",
+        _ => return None,
+    };
+    let [receipt, class] = args else { return None; };
+    let crate::Lit::Str(class) = class.as_lit()? else { return None; };
+    Some((operation, receipt, class))
+}
+
 fn typed(
     name: &str,
     args: Vec<Expr>,
