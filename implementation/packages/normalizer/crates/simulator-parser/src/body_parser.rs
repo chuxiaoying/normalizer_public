@@ -390,7 +390,7 @@ impl<'a> Parser<'a> {
         }) else {
             return Ok(None);
         };
-        self.require_local_receiver_name(&var_name)?;
+        self.require_local_binding_name(&var_name)?;
         let iterable = self.parse_expression()?;
         self.require_delimiter(b')', "expected ')' after for-each")?;
         Ok(Some((var_type, var_name, iterable)))
@@ -417,7 +417,7 @@ impl<'a> Parser<'a> {
             self.eat_keyword("final");
             let java_type = parse_type(self).ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource type"))?;
             let name = self.read_ident().ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource binding"))?;
-            self.require_local_receiver_name(&name)?;
+            self.require_local_binding_name(&name)?;
             self.require_delimiter(b'=', "[JAVA-RESOURCE] expected one initialized local resource")?;
             let initializer = self.parse_expression()?;
             self.eat_char(b';');
@@ -447,7 +447,7 @@ impl<'a> Parser<'a> {
             let var_name = self
                 .read_ident()
                 .ok_or_else(|| self.err("expected catch var name"))?;
-            self.require_local_receiver_name(&var_name)?;
+            self.require_local_binding_name(&var_name)?;
             self.require_delimiter(b')', "expected ')' after catch clause")?;
             let body = self.parse_braced_statements()?;
             catches.push(CatchClause {
@@ -514,9 +514,9 @@ impl<'a> Parser<'a> {
             .transpose()
     }
 
-    fn require_local_receiver_name(&self, name: &str) -> Result<(), ParseError> {
-        if name == "this" {
-            return Err(self.err("[JAVA-RESERVED-LOCAL-NAME] this cannot declare a local binding"));
+    fn require_local_binding_name(&self, name: &str) -> Result<(), ParseError> {
+        if super::parser::is_reserved_identifier(name) {
+            return Err(self.err(&format!("[JAVA-RESERVED-LOCAL-NAME] {name} cannot declare a local binding")));
         }
         Ok(())
     }
@@ -553,7 +553,7 @@ impl<'a> Parser<'a> {
         if nullable_count == 1 && matches!(ty, JavaType::Primitive(_)) {
             return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] nullable local requires a reference type"));
         }
-        self.require_local_receiver_name(&name)?;
+        self.require_local_binding_name(&name)?;
         let init = self.parse_optional_initializer(&ty)?;
         self.skip_ws();
 
@@ -564,7 +564,7 @@ impl<'a> Parser<'a> {
             let n2 = self
                 .read_ident()
                 .ok_or_else(|| self.err("expected var name in multi-decl"))?;
-            self.require_local_receiver_name(&n2)?;
+            self.require_local_binding_name(&n2)?;
             self.skip_ws();
             let ty2 = parse_array_type_suffix(self, base_ty.clone())
                 .ok_or_else(|| self.err("expected ']' in array declarator"))?;

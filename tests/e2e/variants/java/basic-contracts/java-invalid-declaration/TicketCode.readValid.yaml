@@ -467,3 +467,12 @@
   expect:
     - {path: [entry, returns], value: text}
     - {path: [R], value: '"LEFTright"'}
+
+- name: an-unused-helper-cannot-name-a-local-after-a-reserved-word
+  edits:
+    - {from: 'class TicketCode {', to: 'class TicketCode { static int unused() { int return = 1; return 0; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-LOCAL-NAME]', 'return cannot declare a local binding']
+- name: the-second-declarator-cannot-use-a-reserved-word-either
+  edits:
+    - {from: 'return value;', to: 'int ok = 1, switch = 2; return value;' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-LOCAL-NAME]', 'switch cannot declare a local binding']

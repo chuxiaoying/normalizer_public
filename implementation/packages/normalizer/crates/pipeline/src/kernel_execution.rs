@@ -509,10 +509,6 @@ impl<'a> Engine<'a> {
                     initializer: Some(expr),
                     ..
                 } => {
-                    need(
-                        !simulator_parser::is_reserved_identifier(name),
-                        "reserved Java local name; rename during preprocessing",
-                    )?;
                     need(!env.contains_key(name), "duplicate local")?;
                     if crate::normalized::host_collection_allocation(java_type, expr) {
                         crate::preprocess::out_of_source(self.selected_entry.id, "java.util.ArrayList.<init>");
