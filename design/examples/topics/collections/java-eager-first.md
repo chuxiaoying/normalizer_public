@@ -24,15 +24,17 @@ class Batch {
 
 ## AI 预处理结果
 
-在 `Row.ticket` 上用 `@Nullable` 声明该字段可空。局部有序投影替换 ids 的分配和填充，依次读取每一行的 ticket.id，遇到空引用立即抛出 NPE，成功时 ids 为完整的有序数列。保留原 return。数组资源耗尽在本例观察范围之外。
+在 `Row.ticket` 上用 `@N.Nullable` 声明该字段可空。局部有序投影替换 ids 的分配和填充，依次读取每一行的 ticket.id，遇到空引用立即抛出 NPE，成功时 ids 为完整的有序数列。保留原 return。数组资源耗尽在本例观察范围之外。
 
 ```diff
 --- a/src/Batch.java
 +++ b/src/Batch.java
-@@ -1,9 +1,11 @@
+@@ -1,9 +1,13 @@
++import normalizer.intrinsics.N;
++
  class Ticket { int id; }
 -class Row { Ticket ticket; }
-+class Row { @normalizer.annotations.Nullable Ticket ticket; }
++class Row { @N.Nullable Ticket ticket; }
  class Batch {
      static int firstId(Row[] rows) {
 -        int[] ids = new int[rows.length];
@@ -59,7 +61,6 @@ P:
   parameters:
     rows: { position: 0, type: 'Row[]' }
 R: FIRST(r.ticket.id FROM rows AS r)
-S: []
 throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(rows) == 0' }
   - { type: java.lang.NullPointerException, when: 'EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)' }

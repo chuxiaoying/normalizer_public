@@ -1,38 +1,27 @@
-# Hello World：无法闭合的 JDK 调用必须拒绝
+# Hello World：无法闭合的 native 调用必须拒绝
 
 ## 设计意图
 
-检验无法解释的实际 JDK 调用不被猜成纯函数或端口。源码不闭合时明确拒绝且无 PERS；若预处理给出可独立证明的等价源码，或声明合法 S，则是不同合同。
+区分合法声明与实际不可分析的调用。源码不闭合时明确拒绝且无 PERS；没有真实外部边界证据，不能把未知实现标成端口。
 
 ## 输入原始代码
 
-入口直接调用 JDK 的 `Integer.toString`。调用的实现位于当前业务源码之外，源码没有提供可供 Normalizer 执行的函数体或外部合同。
+入口调用项目内声明的 native 方法。只知道它收一个整数并返回文本；没有方法体、标准操作定义或可验证的外部完成合同。
 
 ```java
 class UnsupportedBoundary {
     static String format(int value) {
-        return Integer.toString(value);
+        return runtimeFormat(value);
     }
+
+    static native String runtimeFormat(int value);
 }
 ```
 
 ## AI 预处理结果
 
-**拒绝。** AI 不把 JDK 内部实现抄进业务工程，也不把结果猜成固定文本。应补充可执行的业务函数体或明确的外部调用合同后再进入 Normalizer。
-
-```text
-PREPROCESS_REQUIRED
-
-format:
-  call: Integer.toString(value)
-  reason: JDK implementation is outside the current source boundary
-  required: a closed function body or an explicit external contract
-```
+**拒绝。** 指出 `UnsupportedBoundary.runtimeFormat(int)` 缺少实现或外部合同；不复用看似同名的标准函数、不假设默认文本，也不把回执伪造为入口参数。
 
 ## 归一化最终结果
 
-未生成 PERS。CLI 必须保留 `PREPROCESS_REQUIRED` 诊断并指出 `Integer.toString/1`，不能用空实现、默认值或伪造输入继续归一化。
-
-**预处理要点**：Out-of-source 是输入闭合问题，AI 应报告缺口；工程不按 JDK 方法名写特判，也不吞掉不可观察的计算。
-
-**PERS 验收要点**：未证明的外部实现不能伪装成业务结果，拒绝本身也是可回归的边界合同。
+未生成 PERS。如果把原输入直接交给 Normalizer，执行到无定义调用时报告带源码位置的 `Panic: not-support`，而不输出一份普通业务异常或 S。这与「有可验证合同的真实外部端口」不同。

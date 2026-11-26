@@ -54,10 +54,11 @@ AI 将 Mapper 查询和未知次数的首项循环分别交付为关系语义，
 ```diff
 --- a/src/First.java
 +++ b/src/First.java
-@@ -1,36 +1,23 @@
+@@ -1,36 +1,25 @@
 -import java.util.List;
 -import org.apache.ibatis.annotations.Select;
--
++import normalizer.intrinsics.N;
+
  class First {
 -    private final BillMapper billMapper;
 -
@@ -80,7 +81,7 @@ AI 将 Mapper 查询和未知次数的首项循环分别交付为关系语义，
 +               where b.account_id == accountId
 +               yield { amount: b.amount }
 +        */
-+        BillRow match;
++        @N.Nullable BillRow match;
 +        /* @normalizer-ir
 +           match = first from rows as row
 +               where row.amount > 0

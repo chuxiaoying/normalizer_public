@@ -22,25 +22,7 @@ class OtherPrice {
 
 ## AI 预处理结果
 
-两个同名方法分属不同类型。为了让源文件边界也成为独立测试维度，把完整的 OtherPrice 声明原样移到同目录文件，不改入口、方法体或所属类型，不删未使用的方法，也不引入端口。
-
-```diff
---- a/src/Catalog.java
-+++ b/src/Catalog.java
-@@ -4,6 +4,3 @@
- class Price {
-     static int price() { return 12; }
- }
--class OtherPrice {
--    static int price() { return 99; }
--}
---- /dev/null
-+++ b/src/OtherPrice.java
-@@ -0,0 +1,3 @@
-+class OtherPrice {
-+    static int price() { return 99; }
-+}
-```
+**原样通过。** 两个同名方法分属不同类型，源码足以确定调用。不为制造测试维度而移动声明或重写方法。
 
 ## 归一化最终结果
 
@@ -56,8 +38,33 @@ R: '12'
 | 只把调用所属类型换成 OtherPrice | 改为 99，不能按方法名合并 |
 | 同一文件或不同文件的两个顶层声明具有相同类型名 | 不能选取先读到的实现；拒绝且无 PERS |
 | 同一类型声明两个同名嵌套类型，即使入口不用它们 | 不是两个可独立绑定的类型；拒绝且无 PERS |
-| 所选 Class.method 新增有不同签名的同名方法 | 现行源码入口没有签名选择信息，须拒绝，不使用声明顺序推断。这不是 Java 语言禁用重载 |
+| 所选 Class.method 新增有不同签名的同名方法 | 未说明签名时拒绝歧义，不使用声明顺序推断；补上工程相对路径和原生参数类型后可精确选择。这不是 Java 语言禁用重载 |
 | 所选入口被改名、旧入口不存在 | 拒绝且无 PERS，不退回其他同名方法 |
 | 声明存在但实际调用的源码缺失 | 比名义歧义更晚的阶段；按[无源码合同](java-unsupported-source-boundary.md)和[非法声明、未执行 native 对照](java-invalid-declaration.md)，到达非法无源码时内核 Panic，不造 S |
 
 同一类型内的两个字段也必须能唯一声明；未使用类型中的 `int code; int code;` 是非法 Java，不能只因为不会执行到就选其中一个，也不输出 PERS。
+
+## 只改变文件布局的独立对照
+
+这个对照修改的是生产输入布局，不是 AI 预处理。把 `OtherPrice` 的完整声明放进同目录文件，所选入口与绑定不变，仍返回 `12`。
+
+```diff
+--- a/src/Catalog.java
++++ b/src/Catalog.java
+@@ -1,9 +1,6 @@
+ class Catalog {
+     static int price() { return Price.price(); }
+ }
+ class Price {
+     static int price() { return 12; }
+ }
+-class OtherPrice {
+-    static int price() { return 99; }
+-}
+--- /dev/null
++++ b/src/OtherPrice.java
+@@ -0,0 +1,3 @@
++class OtherPrice {
++    static int price() { return 99; }
++}
+```

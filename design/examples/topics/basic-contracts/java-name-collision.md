@@ -24,23 +24,29 @@ class QuotaService {
 
 ## AI 预处理结果
 
-本例约定把入口已有的 `QuotaService.quota` 作为业务状态观察。预处理在该字段的声明上加一次 `@EntryState`。同类型的形参 `quota` 仍是普通输入，方法中的两次读取沿用原 Java 写法。
+本例约定把入口已有的 `QuotaService.quota` 作为业务状态观察。规范源码明确装配 `QuotaService.INSTANCE`，并在其字段声明上添加 `@N.EntryState`。初始化用于装配；标记字段取的是调用开始时的已有值，不把其字段值固定为初始化值。同类型的形参 `quota` 仍是普通输入，方法中的两次读取沿用原 Java 写法。
 
 ```diff
 --- a/src/QuotaService.java
 +++ b/src/QuotaService.java
-@@ -1,8 +1,11 @@
-+import normalizer.annotations.EntryState;
+@@ -1,11 +1,16 @@
++import normalizer.intrinsics.N;
 +
  class Quota {
      short units;
  }
 
  class QuotaService {
-+    @EntryState
-     Quota quota;
+-    Quota quota;
++    static final QuotaService INSTANCE = new QuotaService();
++
++    @N.EntryState
++    Quota quota = new Quota();
 
      int difference(Quota quota, short adjustment) {
+         return quota.units - this.quota.units + adjustment;
+     }
+ }
 ```
 
 **预处理要点**：业务状态必须主动标记。类型、字段名和 `this` 都不能自动决定状态边界；标记一次即可让原生代码继续承担实际读写。
@@ -56,7 +62,7 @@ types:
       units: number
 
 entry:
-  function: src/QuotaService.java#QuotaService.difference
+  function: src/QuotaService.java#QuotaService.INSTANCE.difference
   returns: number
 
 P:
@@ -71,7 +77,7 @@ P:
 E:
   quota:
     kind: state
-    source: src/QuotaService.java#QuotaService.quota
+    source: src/QuotaService.java#QuotaService.INSTANCE.quota
     type: Quota
 
 R: adjustment + (P.quota.units - E.quota.units)

@@ -66,7 +66,6 @@ P:
   parameters:
     values: { position: 0, type: 'number[]' }
 R: FIRST(value FROM values)
-S: []
 throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
 ```

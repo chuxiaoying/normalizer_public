@@ -13,8 +13,10 @@
 入口允许文本参数为空，并把这个可空性作为入口合同的一部分。入口返回是否为空的判断结果。
 
 ```java
+import normalizer.intrinsics.N;
+
 class OptionalText {
-    static boolean isMissing(@normalizer.annotations.Nullable String value) {
+    static boolean isMissing(@N.Nullable String value) {
         return value == null;
     }
 }

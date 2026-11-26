@@ -26,13 +26,33 @@ class LexicalScope {
 
 ## AI 预处理结果
 
-**原样通过。** 两个 `branch` 分属不重叠的分支，`tally` 读取局部绑定而不是同名字段，不增加 E。反例中的重叠声明应保留源码定位并在入口拒绝。
+只显式装配原入口的接收对象，使其能由类名找到；不改写方法体。两个 `branch` 分属不重叠的分支，`tally` 读取局部绑定而不是同名字段，不增加 E。反例中的重叠声明应保留源码定位并在入口拒绝。
+
+```diff
+--- a/src/LexicalScope.java
++++ b/src/LexicalScope.java
+@@ -1,13 +1,14 @@
+ class LexicalScope {
++    static final LexicalScope INSTANCE = new LexicalScope();
+     int tally;
+     int read(boolean choose, int input) {
+         int tally = input;
+         if (choose) {
+             int branch = tally + 1;
+             return branch;
+         } else {
+             int branch = tally + 2;
+             return branch;
+         }
+     }
+ }
+```
 
 ## 归一化最终结果
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/LexicalScope.java#LexicalScope.read, returns: number }
+entry: { function: src/LexicalScope.java#LexicalScope.INSTANCE.read, returns: number }
 P:
   parameters:
     choose: { position: 0, type: bool }
