@@ -80,7 +80,6 @@ P:
   parameters:
     fail: { position: 0, type: bool }
 R: '7'
-S: []
 throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'fail' }
 ```

@@ -25,16 +25,27 @@ class CycleState {
 ```diff
 --- a/src/CycleState.java
 +++ b/src/CycleState.java
-@@ -1,5 +1,7 @@
-+import normalizer.annotations.EntryState;
+@@ -1,5 +1,17 @@
++import normalizer.intrinsics.N;
 +
  class Node { Node next; int value; }
  class CycleState {
--    Node root;
-+    @EntryState Node root;
++    @N.EntryState
+     Node root;
      int read() { return root.next.value; }
  }
++
++class Beans {
++    static final CycleState ENTRY = new CycleState();
++    static final Node ROOT = new Node();
++    static {
++        ROOT.next = ROOT;
++        ENTRY.root = ROOT;
++    }
++}
 ```
+
+已装配实例由 `Beans.ENTRY` 定位。初始化只是装配，不替换这次入口分析时已声明的状态快照。
 
 ## 归一化最终结果
 
@@ -42,9 +53,9 @@ class CycleState {
 schema: normalizer.pers/1
 types:
   Node: { fields: { next: Node, value: number } }
-entry: { function: src/CycleState.java#CycleState.read, returns: number }
+entry: { function: src/CycleState.java#Beans.ENTRY.read, returns: number }
 P: { parameters: {} }
-E: { root: { kind: state, source: 'src/CycleState.java#CycleState.root', type: Node } }
+E: { root: { kind: state, source: 'src/CycleState.java#Beans.ENTRY.root', type: Node } }
 R: root.next.value
 ```
 

@@ -27,15 +27,28 @@ class Ledger {
 ```diff
 --- a/src/Ledger.java
 +++ b/src/Ledger.java
-@@ -1,2 +1,5 @@
-+import normalizer.annotations.EntryState;
+@@ -1,9 +1,16 @@
++import normalizer.intrinsics.N;
 +
  class Ledger {
-+    @EntryState
++    @N.EntryState
      int balance;
+
+     int delta(int amount) {
+         int before = balance;
+         balance = balance + amount;
+         return balance - before;
+     }
+ }
++
++class Beans {
++    static final Ledger ENTRY = new Ledger();
++}
 ```
 
-预处理只标记已有状态，保留读取、写入和返回顺序。
+预处理标记已有状态并显式装配接收者，保留读取、写入和返回顺序。
+
+已装配实例由 `Beans.ENTRY` 定位。初始化只是装配，不替换这次入口分析时已声明的状态快照。
 
 ## 归一化最终结果
 
@@ -43,7 +56,7 @@ class Ledger {
 schema: normalizer.pers/1
 
 entry:
-  function: src/Ledger.java#Ledger.delta
+  function: src/Ledger.java#Beans.ENTRY.delta
   returns: number
 
 P:
@@ -53,7 +66,7 @@ P:
 E:
   balance:
     kind: state
-    source: src/Ledger.java#Ledger.balance
+    source: src/Ledger.java#Beans.ENTRY.balance
     type: number
 
 S:
@@ -70,7 +83,7 @@ R: amount
 
 ## 两条分支的写入与无写入路径
 
-初始额度为 9 时，传入 `(5, true)` 写入 5 并返回 5；传入 `(0, true)` 不写入，仍返回 9；传入 `(5, false)` 写入并返回 2。预处理只标记已有的额度状态，不能替无写入路径造一次写入。
+初始额度为 9 时，传入 `(5, true)` 写入 5 并返回 5；传入 `(0, true)` 不写入，仍返回 9；传入 `(5, false)` 写入并返回 2。预处理标记已有的额度状态并装配接收者，不能替无写入路径造一次写入。
 
 ```java
 class RouteQuota { int units; }
@@ -90,18 +103,34 @@ class StoreRoute {
 ```diff
 --- a/src/StoreRoute.java
 +++ b/src/StoreRoute.java
-@@ -1,4 +1,6 @@
-+import normalizer.annotations.EntryState;
+@@ -1,12 +1,22 @@
++import normalizer.intrinsics.N;
++
  class RouteQuota { int units; }
  class StoreRoute {
-+    @EntryState
++    @N.EntryState
      RouteQuota quota;
      int next(int units, boolean replace) {
+         if (replace) {
+             if (units > 0) quota.units = units;
+         } else {
+             quota.units = 2;
+         }
+         return quota.units;
+     }
+ }
++
++class Beans {
++    static final StoreRoute ENTRY = new StoreRoute();
++    static {
++        ENTRY.quota = new RouteQuota();
++    }
++}
 ```
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/StoreRoute.java#StoreRoute.next, returns: number }
+entry: { function: src/StoreRoute.java#Beans.ENTRY.next, returns: number }
 types:
   RouteQuota: { fields: { units: number } }
 P:
@@ -109,7 +138,7 @@ P:
     units: { position: 0, type: number }
     replace: { position: 1, type: bool }
 E:
-  quota: { kind: state, source: src/StoreRoute.java#StoreRoute.quota, type: RouteQuota }
+  quota: { kind: state, source: src/StoreRoute.java#Beans.ENTRY.quota, type: RouteQuota }
 S:
   - write: { target: quota.units, value: units, when: replace and units > 0 }
   - write: { target: quota.units, value: '2', when: NOT (replace) }

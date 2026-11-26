@@ -13,21 +13,25 @@
 `Counter.value` 是入口已有的可变状态。方法只读取它并加一，实例方法本身和 `this` 不自动声明状态。
 
 ```java
-import normalizer.annotations.EntryState;
+import normalizer.intrinsics.N;
 
 class Counter {
-    @EntryState
+    @N.EntryState
     int value;
 
     int read() {
         return this.value + 1;
     }
 }
+
+class Beans {
+    static final Counter ENTRY = new Counter();
+}
 ```
 
 ## AI 预处理结果
 
-**原样通过。** 状态身份已经由 Normalizer 自身的 `@EntryState` 标记交付。AI 不把实例方法改写成静态函数，也不额外生成 receiver 参数。
+**原样通过。** 状态身份已由 `@N.EntryState` 标记交付，入口从已装配的 `Beans.ENTRY` 取得对应实例。AI 不把实例方法改写成静态函数，也不额外生成 receiver 参数。
 
 **预处理要点**：状态边界由显式标记建立。没有标记时，字段、`this` 和类型名都不能让工程猜测系统状态；已经有标记时，预处理不再改写宿主语言结构。
 
@@ -37,7 +41,7 @@ class Counter {
 schema: normalizer.pers/1
 
 entry:
-  function: src/Counter.java#Counter.read
+  function: src/Counter.java#Beans.ENTRY.read
   returns: number
 
 P:
@@ -46,7 +50,7 @@ P:
 E:
   value:
     kind: state
-    source: src/Counter.java#Counter.value
+    source: src/Counter.java#Beans.ENTRY.value
     type: number
 
 R: value + 1
@@ -57,14 +61,22 @@ R: value + 1
 ## 两条已取得的状态字段按公开路径排序
 
 ```java
-import normalizer.annotations.EntryState;
+import normalizer.intrinsics.N;
 class Quota { int units; }
 class Counter {
-    @EntryState Quota zebra;
-    @EntryState Quota amber;
+    @N.EntryState Quota zebra;
+    @N.EntryState Quota amber;
 
     int readPair() {
         return zebra.units + amber.units;
+    }
+}
+
+class Beans {
+    static final Counter ENTRY = new Counter();
+    static {
+        ENTRY.zebra = new Quota();
+        ENTRY.amber = new Quota();
     }
 }
 ```
@@ -75,11 +87,11 @@ class Counter {
 schema: normalizer.pers/1
 types:
   Quota: { fields: { units: number } }
-entry: { function: src/Counter.java#Counter.readPair, returns: number }
+entry: { function: src/Counter.java#Beans.ENTRY.readPair, returns: number }
 P:
   parameters: {}
 E:
-  zebra: { kind: state, source: src/Counter.java#Counter.zebra, type: Quota }
-  amber: { kind: state, source: src/Counter.java#Counter.amber, type: Quota }
+  zebra: { kind: state, source: src/Counter.java#Beans.ENTRY.zebra, type: Quota }
+  amber: { kind: state, source: src/Counter.java#Beans.ENTRY.amber, type: Quota }
 R: amber.units + zebra.units
 ```

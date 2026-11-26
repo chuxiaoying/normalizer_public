@@ -33,15 +33,34 @@ class Counter {
 ```diff
 --- a/src/Counter.java
 +++ b/src/Counter.java
-@@ -1,2 +1,5 @@
-+import normalizer.annotations.EntryState;
+@@ -1,17 +1,24 @@
++import normalizer.intrinsics.N;
 +
  class Counter {
-+    @EntryState
++    @N.EntryState
      int value;
+
+     int increment() {
+         value = value + 1;
+         return value;
+     }
+
+     int read() {
+         return value;
+     }
+
+     int incrementThenRead() {
+         increment();
+         return read();
+     }
+ }
++
++class Beans {
++    static final Counter ENTRY = new Counter();
++}
 ```
 
-预处理只标记状态根，保留两个入口的原生方法体。
+预处理标记状态根并显式装配共享接收者；三个入口和内部调用的原生方法体不变。
 
 ## `increment` 的归一化最终结果
 
@@ -49,7 +68,7 @@ class Counter {
 schema: normalizer.pers/1
 
 entry:
-  function: src/Counter.java#Counter.increment
+  function: src/Counter.java#Beans.ENTRY.increment
   returns: number
 
 P:
@@ -58,7 +77,7 @@ P:
 E:
   value:
     kind: state
-    source: src/Counter.java#Counter.value
+    source: src/Counter.java#Beans.ENTRY.value
     type: number
 
 S:
@@ -75,7 +94,7 @@ R: value + 1
 schema: normalizer.pers/1
 
 entry:
-  function: src/Counter.java#Counter.read
+  function: src/Counter.java#Beans.ENTRY.read
   returns: number
 
 P:
@@ -84,7 +103,7 @@ P:
 E:
   value:
     kind: state
-    source: src/Counter.java#Counter.value
+    source: src/Counter.java#Beans.ENTRY.value
     type: number
 
 R: value
@@ -99,10 +118,10 @@ R: value
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/Counter.java#Counter.incrementThenRead, returns: number }
+entry: { function: src/Counter.java#Beans.ENTRY.incrementThenRead, returns: number }
 P: { parameters: {} }
 E:
-  value: { kind: state, source: 'src/Counter.java#Counter.value', type: number }
+  value: { kind: state, source: 'src/Counter.java#Beans.ENTRY.value', type: number }
 S:
   - write: { target: value, value: value + 1 }
 R: value + 1

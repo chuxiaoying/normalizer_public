@@ -40,20 +40,22 @@ R: |-
   END
 ```
 
-在精确整数域，`count <= 0` 与 `count > 0` 覆盖整域且互斥，所以反转条件同时换两臂不改变结果。按[普通整数计数规则](../../../secondary/完整二分%20CASE%20怎么选方向.md#精确计数的非正正二分)，唯一代表把正值放在 THEN、零放在 ELSE。把左、右操作数对换时也必须同步改比较符号。若阈值变为 `1`，当 `count = 1` 时结果改变，不能与本例合并。
+在精确整数域，`count <= 0` 与 `count > 0` 覆盖整域且互斥，所以反转条件同时换两臂不改变结果。按[完整二分 CASE 选向](../../../secondary/完整二分%20CASE%20怎么选方向.md)，唯一代表把正值放在 THEN、零放在 ELSE。把左、右操作数对换时也必须同步改比较符号。若阈值变为 `1`，当 `count = 1` 时结果改变，不能与本例合并。
 
-## 0／1 指示器和其他数值结果不是同一规则
+## 0／1 结果不改变守卫的选向
 
 ```java
+import normalizer.intrinsics.N;
+
 class CanonicalCount {
-    static int present(@normalizer.annotations.Nullable String label) {
+    static int present(@N.Nullable String label) {
         if (label == null) return 0;
         return 1;
     }
 }
 ```
 
-**原样通过。** 两臂恰好为 0／1，因此发布成“具备条件时为 1”的指示器。若把 1 改成 2，便回到普通 CASE 的结构顺序，空值相等条件在前。该规则只改数学取向，不重新求值标签。
+**原样通过。** `label` 已取得，`== null` 和 `!= null` 互补，且两臂都是已经定义的数值。按同一比较基准选 `==`，不因为结果恰是 0／1 开特例。若把 1 改成 2，仍用同一方向，只改变非空分支的结果。该规则不重新求值标签。
 
 ```yaml
 schema: normalizer.pers/1
@@ -63,9 +65,9 @@ P:
     label: { position: 0, type: 'text?' }
 R: |-
   CASE
-    WHEN label != null THEN 1
-    ELSE 0
+    WHEN label == null THEN 0
+    ELSE 1
   END
 ```
 
-内核额外对照 `n > 0 ? n : 0`、`n > 0 ? other : 0`、`n > 0 ? n : null` 与不同边界。只有第一式同时满足「主值就是被比较的数」和「未取正值时以零兜底」的特定方向规则；其余可能有独立合法结果，不能复用该方向证据。
+另用 `n > 0 ? other : 0`、`n > 0 ? n : null` 与不同阈值对照，确保选向只规范守卫，不用分支返回值的内容反推条件或消去相异的结果。

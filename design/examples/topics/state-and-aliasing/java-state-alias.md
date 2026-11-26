@@ -23,22 +23,34 @@ class Account {
 
 ## AI 预处理结果
 
-在 `Account.quota` 上用 `@EntryState` 标记状态，在形参 `observer` 上用 `@Nullable` 声明允许传入空值。方法体保留先写入额度、再解引用的顺序。
+在 `Account.quota` 上用 `@N.EntryState` 标记状态，在形参 `observer` 上用 `@N.Nullable` 声明允许传入空值。方法体保留先写入额度、再解引用的顺序。
 
 ```diff
 --- a/src/Account.java
 +++ b/src/Account.java
-@@ -1,5 +1,8 @@
-+import normalizer.annotations.EntryState;
+@@ -1,8 +1,18 @@
++import normalizer.intrinsics.N;
 +
  class Quota { int units; }
  class Account {
-+    @EntryState
++    @N.EntryState
      Quota quota;
 -    int reset(Quota observer) {
-+    int reset(@normalizer.annotations.Nullable Quota observer) {
++    int reset(@N.Nullable Quota observer) {
          quota.units = 7;
+         return observer.units;
+     }
+ }
++
++class Beans {
++    static final Account ENTRY = new Account();
++    static {
++        ENTRY.quota = new Quota();
++    }
++}
 ```
+
+已装配实例由 `Beans.ENTRY` 定位。初始化只是装配，不替换这次入口分析时已声明的状态快照。
 
 ## 归一化最终结果
 
@@ -49,13 +61,13 @@ types:
   Quota:
     fields: { units: number }
 entry:
-  function: src/Account.java#Account.reset
+  function: src/Account.java#Beans.ENTRY.reset
   returns: number
 P:
   parameters:
     observer: { position: 0, type: 'Quota?' }
 E:
-  quota: { kind: state, source: src/Account.java#Account.quota, type: Quota }
+  quota: { kind: state, source: src/Account.java#Beans.ENTRY.quota, type: Quota }
 S:
   - write: { target: quota.units, value: '7' }
 R: |-

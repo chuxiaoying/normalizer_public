@@ -35,8 +35,7 @@ class TaskBatch {
 +++ b/src/TaskBatch.java
 @@ -1,13 +1,17 @@
 -import java.util.ArrayDeque;
--record Task(int id) {}
-+class Task { int id; }
+ record Task(int id) {}
  class TaskBatch {
      static boolean complete(Task[] opened, Task[] closed) {
 -        var stack = new ArrayDeque<Task>();
@@ -62,7 +61,7 @@ class TaskBatch {
  }
 ```
 
-预处理把仅观察 id 的记录换成保留同名字段的名义载体，不改动数组位置、重复元素或字段值。局部 IR 表达两段有序折叠。每步按列出的顺序检查异常，正常时才交付下一栈；空栈已先被拦截。错配前的临时栈不会逃出本方法。[已有复合状态合同](../../../../implementation/contracts/normalized-state.md)
+预处理保留原记录和 id 的绑定，不改动数组位置、重复元素或字段值。局部 IR 表达两段有序折叠。每步按列出的顺序检查异常，正常时才交付下一栈；空栈已先被拦截。错配前的临时栈不会逃出本方法。[已有复合状态合同](../../../../implementation/contracts/normalized-state.md)
 
 ## 归一化最终结果
 
@@ -77,7 +76,6 @@ P:
     opened: { position: 0, type: 'Task[]' }
     closed: { position: 1, type: 'Task[]' }
 R: LENGTH(closed) == LENGTH(opened)
-S: []
 throws:
   - type: java.lang.IllegalArgumentException
     when: LENGTH(closed) > LENGTH(opened) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE closed[i].id != opened[LENGTH(opened) - 1 - i].id)

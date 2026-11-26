@@ -27,12 +27,12 @@ interface BillReport {
 
 ## AI 预处理结果
 
-保留入口标识和结果类型。将仅声明查询的 mapper 接口改成闭合的规范载体，分别以已声明的非空整数行读取两表；再交付按 account_id 投影的去重并集计数。对非空列，COUNT(DISTINCT column) 在 UNION 后计数与原查询相同，这不是整张账单去重。没有绑定参数、写入或其他可观察的数据库效果。
+保留入口标识和结果类型。将仅声明查询的 mapper 接口改成闭合的规范载体，分别以已声明的非空整数行数组读取两表；再交付按 account_id 投影的去重并集计数。对非空列，COUNT(DISTINCT column) 在 UNION 后计数与原查询相同，这不是整张账单去重。没有绑定参数、写入或其他可观察的数据库效果。
 
 ```diff
 --- a/src/BillReport.java
 +++ b/src/BillReport.java
-@@ -1,12 +1,13 @@
+@@ -1,12 +1,12 @@
 -import org.apache.ibatis.annotations.Select;
 -interface BillReport {
 -    @Select("""
@@ -44,13 +44,12 @@ interface BillReport {
 -        ) AS all_bills
 -        """)
 -    long countAccounts();
-+import java.util.List;
 +class AccountRow { int accountId; }
 +class BillReport {
 +    static long countAccounts() {
-+        List<AccountRow> pending;
++        AccountRow[] pending;
 +        /* @normalizer-ir pending = from pending_bill as p yield {accountId: p.account_id} */
-+        List<AccountRow> posted;
++        AccountRow[] posted;
 +        /* @normalizer-ir posted = from posted_bill as q yield {accountId: q.account_id} */
 +        long count;
 +        /* @normalizer-ir count = count distinct union pending.accountId, posted.accountId */
