@@ -1298,3 +1298,36 @@ pub fn call(key: FuncKey, args: Vec<Expr>) -> Expr {
 pub fn array_lit(elements: Vec<Expr>) -> Expr {
     Expr::new(ExprKind::ArrayLit(elements))
 }
+
+#[cfg(test)]
+mod coverage_proof_tests {
+    use super::*;
+
+    #[test]
+    fn jointly_exhaustive_integer_guards_need_integer_reasoning() {
+        let x = param("x", ScalarSymbolType::Integer);
+        let y = param("y", ScalarSymbolType::Integer);
+        let zero = lit_int(0);
+        let below = lt(x.clone(), zero.clone());
+        let at = eq(x.clone(), zero.clone());
+        let above = gt(x, zero.clone());
+
+        assert!(matches!(
+            boolean_truth_table_within_size_limit(&[below.clone(), at.clone(), above.clone()]),
+            TruthTableCoverage::Unknown
+        ));
+        assert!(conditions_cover_all(&[below.clone(), at.clone(), above]));
+        // x=1, y=0 is a counterexample once the upper guard changes subject.
+        assert!(!conditions_cover_all(&[below, at, gt(y, zero)]));
+    }
+
+    #[test]
+    fn direct_complement_pair_is_recognized_in_both_orders() {
+        let p = param("p", ScalarSymbolType::Boolean);
+        let q = param("q", ScalarSymbolType::Boolean);
+
+        assert!(conditions_have_direct_complement_pair(&[p.clone(), not(p.clone())]));
+        assert!(conditions_have_direct_complement_pair(&[not(p.clone()), p.clone()]));
+        assert!(!conditions_have_direct_complement_pair(&[p, not(q)]));
+    }
+}

@@ -216,3 +216,44 @@ fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
 fn is_lit_int_zero(expr: &Expr) -> bool {
     matches!(expr.kind(), ExprKind::Lit(Lit::Int(0)))
 }
+
+#[cfg(test)]
+mod reference_comparison_tests {
+    use super::*;
+    use crate::builder as b;
+
+    #[test]
+    fn heap_reference_tag_does_not_prove_borrowed_nullness_or_freshness() {
+        let borrowed = b::heap_ref(-3);
+        let fresh = b::heap_ref(2);
+        let null = b::lit_null();
+
+        for (op, when_different) in [(BinOpKind::Eq, false), (BinOpKind::Ne, true)] {
+            let compare = |left, right| b::binop_public(op, left, right);
+            let canonical_borrowed = compare(borrowed.clone(), null.clone());
+            assert_eq!(
+                simplify_reference_comparison(&compare(null.clone(), borrowed.clone())),
+                Some(canonical_borrowed.clone())
+            );
+            assert_eq!(simplify_reference_comparison(&canonical_borrowed), None);
+
+            let distinct = Some(b::lit_bool(when_different));
+            assert_eq!(
+                simplify_reference_comparison(&compare(null.clone(), fresh.clone())),
+                distinct
+            );
+            assert_eq!(
+                simplify_reference_comparison(&compare(fresh.clone(), null.clone())),
+                distinct
+            );
+            assert_eq!(
+                simplify_reference_comparison(&compare(fresh.clone(), borrowed.clone())),
+                None
+            );
+            assert_eq!(
+                simplify_reference_comparison(&compare(borrowed.clone(), fresh.clone())),
+                None
+            );
+        }
+    }
+}

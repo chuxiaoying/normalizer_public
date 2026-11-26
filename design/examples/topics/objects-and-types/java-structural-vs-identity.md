@@ -130,3 +130,9 @@ P:
     amber: { position: 3, type: Box }
 R: amber == blue AND yellow == zebra
 ```
+
+### null、局部分配与借入引用的对照
+
+新对象和 null 比较时，等号为假、不等号为真；把 null 放左边或右边不改变结果。可空入口引用则不能折成常量，`null == left` 规范成 `left == null`，`left != null` 保留反向判断。这些源码对照不新增 S 或异常。
+
+源码执行器有完整的分配来源，往往在把值交给 math 前就能判定身份。内部引用比较单测另固定原始操作数的顺序，并验证仅凭一个正 ID 和一个借入负 ID 不为 math 提供两次新分配的证据。
