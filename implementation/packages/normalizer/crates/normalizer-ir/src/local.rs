@@ -102,11 +102,6 @@ impl<'a> Tokens<'a> {
         let Some(rest) = self.rest().strip_prefix(token) else {
             return false;
         };
-        if token.ends_with(|c: char| c.is_ascii_alphabetic())
-            && rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-        {
-            return false;
-        }
         self.source = rest;
         true
     }

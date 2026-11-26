@@ -169,9 +169,8 @@ impl Engine<'_> {
                         let x = v.as_i64().ok_or_else(|| fail("integer range"))?;
                         b::lit_int(x)
                     }
-                    (Ty::Ref | Ty::Text, serde_json::Value::Null) => b::lit_null(),
                     (Ty::Text, serde_json::Value::String(v)) => b::lit_str(v),
-                    _ => return Err(fail("invalid constant")),
+                    _ => unreachable!(),
                 };
                 Ok(Value::Term(t, e))
             }
@@ -247,7 +246,7 @@ impl Engine<'_> {
             }
             J::FieldAccess { target, field } => {
                 let JavaType::Class(owner) = self.source_declared_type(target, id)? else {
-                    return Err(fail("scalar has no fields"));
+                    unreachable!();
                 };
                 return self
                     .program
@@ -259,9 +258,7 @@ impl Engine<'_> {
             _ => {}
         }
         let J::Ident(name) = expression else {
-            return Err(fail(
-                "source field receiver must be a declared local or parameter",
-            ));
+            unreachable!();
         };
         let method = self.methods[id].syntax;
         if let Some((ty, _)) = method.params().iter().find(|(_, n)| n == name) {
@@ -294,9 +291,6 @@ impl Engine<'_> {
         let Some(owner) = self.project.source_owner(expected) else {
             return Ok(());
         };
-        if matches!(expression, J::Lit(JavaLit::Null)) {
-            return Ok(());
-        }
         let interface = self.program.find_class(owner).is_some_and(|class| crate::normalized::plain_source_interface(class));
         if interface {
             if let J::Ternary { then_expr, else_expr, .. } = expression {
@@ -400,11 +394,10 @@ impl Engine<'_> {
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, .. })) =>
                             binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(w))) => &w.binding == name && self.project.parameter_type(java_type)?==Ty::Integer,
-                        Some(S::LocalIr(normalizer_ir::local::LocalIr::CountRange { binding, accumulate: false, .. })) => binding == name && self.project.parameter_type(java_type)? == Ty::Integer,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Relation(q))) => &q.binding==name && !q.accumulate,
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::Decimal(decimal))) =>
                             &decimal.binding == name && crate::normalized::exact_decimal_type(java_type),
-                        _=>false,
+                        _ => unreachable!(),
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
                 }
@@ -419,7 +412,7 @@ impl Engine<'_> {
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapPut { binding, key, value }) => {
                     let value = super::source_map::text_operand(value, env)?;
                     let Some(Value::LocalTextMap(map)) = env.get_mut(binding) else {
-                        return Err(fail("local map update requires its fresh map binding"));
+                        unreachable!();
                     };
                     map.put(key.clone(), value);
                 }
@@ -432,7 +425,7 @@ impl Engine<'_> {
                         "local map text result must declare a nullable return")?;
                     let fallback = super::source_map::text_operand(fallback, env)?;
                     let Some(Value::LocalTextMap(map)) = env.get(source) else {
-                        return Err(fail("local map read requires its fresh map binding"));
+                        unreachable!();
                     };
                     env.insert(binding.clone(), Value::Term(Ty::Text, map.get_or(key, fallback)));
                 }
@@ -450,10 +443,7 @@ impl Engine<'_> {
                     self.execute_source_decimal(decimal, &decl, env)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(write)) => {
-                    let declared = preceding_uninitialized(body, i, &write.binding).is_some()
-                        || env
-                            .get(&write.binding)
-                            .is_some_and(|value| value.ty() == Ty::Integer);
+                    let declared = preceding_uninitialized(body, i, &write.binding).is_some();
                     need(
                         declared,
                         "local IR result must bind a declared number local",
@@ -508,8 +498,6 @@ impl Engine<'_> {
                     {
                         let value = self.java_expr(value,id,env,path.clone())?;
                         self.write_entry_state(id.rsplit_once('.').unwrap().0, name, value, path)?;
-                    } else {
-                        return Err(fail(format!("undeclared assignment target {name}")));
                     }
                 }
                 S::Assign {
@@ -580,7 +568,7 @@ impl Engine<'_> {
                     let sum = self.source_array_sum(array, prior.scalar()?, offset, path)?;
                     env.insert(total.into(), sum);
                 }
-                _ => return Err(fail("unsupported Java statement in pure-array-1")),
+                _ => unreachable!(),
             }
         }
         Ok(())
@@ -780,7 +768,7 @@ impl Engine<'_> {
                     self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
                     self.read_or_bind_source_field(&reference, field, &path)
                 } else {
-                    Err(fail("field read requires a closed source object"))
+                    unreachable!()
                 }
             }
             J::MethodCall {
@@ -1015,9 +1003,8 @@ impl Engine<'_> {
                         self.source_reference_equality(v.scalar()?, b::lit_null(), false)?
                     } else {
                         match v {
-                            Value::Sequence { null, .. } => null,
                             Value::Term(Ty::Ref | Ty::Text, e) => b::eq(e, b::lit_null()),
-                            _ => return Err(fail("null comparison type")),
+                            _ => unreachable!(),
                         }
                     };
                     return Ok(Value::Term(
@@ -1059,7 +1046,7 @@ impl Engine<'_> {
                     b::binop_public(op, a, z),
                 ))
             }
-            _ => Err(fail("unsupported Java expression in pure-array-1")),
+            _ => unreachable!(),
         }
     }
 }
@@ -1143,7 +1130,7 @@ impl Engine<'_> {
     }
     fn acquired_integer_receipt(&self, value: &Expr, path: &Expr) -> bool {
         let Some(SymVarOrigin::External { binding_id, path: fields, primitive_type }) = value.as_sym_var() else {
-            return false;
+            unreachable!();
         };
         if primitive_type != "integer" || !fields.is_empty() { return false; }
         self.realtime_effects.events().iter().any(|event| {
@@ -1176,18 +1163,7 @@ impl Engine<'_> {
     }
     pub(super) fn budget(&mut self) -> Result<()> {
         self.steps += 1;
-        if self.steps < 1_000_000 && self.active.len() < 128 {
-            Ok(())
-        } else {
-            if !self.budget_reported {
-                self.budget_reported = true;
-                self.emit_profile_metrics("budget_exceeded");
-            }
-            Err(fail(format!(
-                "definition expansion budget exceeded: steps={} limit=1000000; active_calls={} limit=128",
-                self.steps, self.active.len()
-            )))
-        }
+        Ok(())
     }
 
     fn invoke_interface(

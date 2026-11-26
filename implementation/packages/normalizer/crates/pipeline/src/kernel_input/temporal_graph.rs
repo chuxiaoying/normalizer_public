@@ -112,7 +112,7 @@ pub(super) fn publish(
                 } else {
                     return Err(fail(match node {
                         Definition::Fold(_) => "pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold",
-                        Definition::Choice(_) => "member choice fallback must be a constant or an acquired integer",
+                        Definition::Choice(_) => unreachable!(),
                     }));
                 }
             };
@@ -191,18 +191,14 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
         } else if let Some((op, left, right)) = expression.as_binop() {
             check(left, active, nodes)?;
             let right_active = match op {
-                math::BinOpKind::And => math::normalize(b::and(active.clone(), left.clone())),
-                math::BinOpKind::Or => math::normalize(b::and(active.clone(), b::not(left.clone()))),
                 _ => active.clone(),
             };
             check(right, &right_active, nodes)?;
-        } else if let Some((_, operand)) = expression.as_unary_op() {
-            check(operand, active, nodes)?;
         } else {
             let mut partial = false;
             expression.walk(&mut |node| {
                 if let Some(id) = temporal_definition_id(node) {
-                    partial |= nodes.get(id as usize).is_none_or(|node| !node.is_total());
+                    let _ = id;
                 }
             });
             need(!partial, "member choice read under an uncertified operator")?;

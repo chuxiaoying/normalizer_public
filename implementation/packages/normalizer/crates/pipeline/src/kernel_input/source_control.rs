@@ -207,9 +207,6 @@ impl Engine<'_> {
                 path.clone(),
                 self.realtime_completion.continuing_guard(),
             ));
-            if active.as_bool() == Some(false) {
-                break;
-            }
             let counter = b::lit_integer(header.start + index * header.step);
             locals.insert(
                 header.counter.into(),

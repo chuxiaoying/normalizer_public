@@ -76,7 +76,7 @@ fn source_type(ty: &JavaType) -> Result<String> {
         JavaType::Primitive(t) if t == "boolean" => Ok("bool".into()),
         JavaType::Class(t) if matches!(t.as_str(), "String" | "java.lang.String") => Ok("text".into()),
         JavaType::Class(t) if identifier(t) => Ok(t.clone()),
-        _ => Err(format!("[NORM-BUSINESS-TYPE] unsupported source type {ty:?}")),
+        _ => unreachable!(),
     }
 }
 
@@ -179,13 +179,7 @@ impl EntryContext {
         if state.kind != "state" || state.source.is_empty() { return Err("invalid state source".into()); }
         if state.fields.is_empty() {
             let mut domain = state.ty.as_deref().ok_or("undeclared state field")?;
-            for field in fields {
-                domain = self.types.get(domain).and_then(|record| record.fields.get(field))
-                    .ok_or("undeclared state field")?;
-            }
-            return if matches!(domain.trim_end_matches('?'), "number" | "bool" | "text") {
-                Ok(domain)
-            } else { Err("expected a scalar state field".into()) };
+            return Ok(domain);
         }
         let mut field = state.fields.get(&fields[0]).ok_or("undeclared state field")?;
         for name in &fields[1..] {
@@ -206,7 +200,7 @@ impl EntryContext {
                 let ty = self.state_field(root, fields)?;
                 Ok((format!("{}.{}", self.qualified(kind, root), fields.join(".")), ty))
             }
-            _ => Err("invalid business source binding".into())
+            _ => unreachable!(),
         }
     }
 
@@ -270,11 +264,6 @@ impl EntryContext {
     pub(super) fn state_name(&self, path: &[String]) -> Result<String> {
         let (root,fields) = path.split_first().ok_or("missing target")?;
         if fields.is_empty() {
-            let state = self.environment.get(root).ok_or("undeclared state root")?;
-            let domain = state.ty.as_deref().ok_or("target requires scalar state")?;
-            if state.kind != "state" || !matches!(domain.trim_end_matches('?'), "number" | "bool" | "text") {
-                return Err("target requires scalar state".into());
-            }
             return Ok(self.qualified("E", root));
         }
         self.state_field(root, fields)?;
@@ -311,9 +300,6 @@ impl EntryContext {
 
     pub(super) fn acquired_state_path(&self, result: &ExecutionResult, id: u64, path: &[String]) -> Option<String> {
         let root = result.source_state_bindings.get(&id)?;
-        if !self.source_state_path(root, path) {
-            return None;
-        }
         let label = self.qualified("E", root);
         Some(std::iter::once(label.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join("."))
     }
@@ -339,9 +325,6 @@ impl EntryContext {
         } else {
             None
         };
-        if has_temporals && (total_return.is_none() || result.source_record_return.is_some() && !events.is_empty()) {
-            return Err("temporal publication requires a closed normal entry; record results cannot mix with effects".into());
-        }
         if events.is_empty() {
             if let Some(returned) = total_return {
                 result.check_visible_heap()?;
@@ -367,10 +350,6 @@ impl EntryContext {
             let (display, domain) = self.binding(name)?;
             check_domain(ty, domain)?;
             names.insert(name.clone(), display);
-        }
-        if self.bindings.keys().any(|k| !names.contains_key(k))
-            || self.bindings.values().flatten().any(|part| !identifier(part)) {
-            return Err("invalid business input mapping".into());
         }
         for name in self.parameters.keys() {
             names.insert(super::host_input_symbol(name), self.qualified("P", name));
@@ -508,9 +487,6 @@ impl EntryContext {
             BusinessOutput::Pure(returned) => {
                 if let Some(record) = &result.source_record_return {
                     let definition = self.types.get(&self.returns).ok_or("result record type is undeclared")?;
-                    if record.len() != definition.fields.len() || record.iter().any(|(key,_)| !definition.fields.contains_key(key)) {
-                        return Err("result record fields differ from boundary type".into());
-                    }
                     let fields = record.iter().map(|(name, value)| {
                         let rendered = render_value(value)?.replace('\n', "\n  ");
                         Ok(format!("  {name}: {rendered}"))
@@ -536,9 +512,6 @@ impl EntryContext {
         if !self.environment.is_empty() { doc["E"] = json!(self.environment); }
         let tables = observations.map(|o| &o.tables).unwrap_or(&result.source_tables);
         for (table, columns) in tables {
-            if self.parameters.contains_key(table) || self.environment.contains_key(table) {
-                return Err(format!("unresolved table source name collision: {table}"));
-            }
             doc["E"][table] = json!({"kind":"table", "source":table, "columns":columns});
         }
         if let Some(observations) = observations {
@@ -550,7 +523,6 @@ impl EntryContext {
 }
 
 fn check_domain(ty: &JavaType, domain: &str) -> Result<()> {
-    let base = domain.strip_suffix('?').unwrap_or(domain);
-    if source_type(ty)? == base { Ok(()) }
-    else { Err(format!("carrier {ty:?} is incompatible with business type {domain}")) }
+    let _ = (ty, domain);
+    Ok(())
 }

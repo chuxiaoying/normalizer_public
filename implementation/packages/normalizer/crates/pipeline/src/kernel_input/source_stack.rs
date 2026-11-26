@@ -13,7 +13,7 @@ impl Engine<'_> {
             S::LocalIr(LocalIr::Stack(Action::IsEmpty { stack: tested, binding })),
             ..
         ] = statements else {
-            return Err(fail("local stack requires contiguous push, guarded pop and typed emptiness observation"));
+            unreachable!();
         };
         need(
             stack == popped && stack == tested && name == binding
@@ -25,7 +25,7 @@ impl Engine<'_> {
         need(exception == "IllegalArgumentException", "local stack uses the same supported type-only exception for both guards")?;
         let root_of = |local: &str| -> Result<(String, &str)> {
             let Some(Value::Sequence { item: Ty::Ref, name, .. }) = env.get(local)
-                else { return Err(fail("local stack requires bound record arrays")); };
+                else { unreachable!() };
             let owner = self.source_relations.record_inputs.get(name)
                 .ok_or_else(|| fail("local stack array needs a declared entry origin"))?;
             need(!self.source_array_writes.contains_key(name), "local stack arrays are read-only acquired inputs")?;

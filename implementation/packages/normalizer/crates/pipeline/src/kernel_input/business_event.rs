@@ -31,11 +31,8 @@ pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String 
                 render(left, rank, ctx),
                 render(right, rank, ctx)
             );
-            return if rank < parent {
-                format!("({group})")
-            } else {
-                group
-            };
+            let _ = parent;
+            group
         }
         crate::format_expr_with_ctx(expr, ctx)
     }

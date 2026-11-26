@@ -36,13 +36,13 @@ fn exact_java_int(value: Value) -> Result<i32> {
     match folded.as_lit() {
         Some(math::Lit::Int(value)) => i32::try_from(*value)
             .map_err(|_| fail("local array operand exceeds Java int range")),
-        _ => Err(fail("local array operand must be a closed Java int constant")),
+        _ => unreachable!(),
     }
 }
 
 fn array_root(value: Value) -> Result<String> {
     let Value::Sequence { item: Ty::Integer, name, .. } = value else {
-        return Err(fail("operation requires a directly bound exact integer array"));
+        unreachable!();
     };
     Ok(name)
 }
@@ -51,7 +51,7 @@ fn index_value(index: Value) -> Result<i64> {
     need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
     let value = index.scalar()?.as_lit().and_then(|n| match n {
         math::Lit::Int(i) => Some(*i),
-        _ => None,
+        _ => unreachable!(),
     }).ok_or_else(|| fail("array subscript must be a constant"))?;
     need((0..i64::from(i32::MAX)).contains(&value), "array subscript outside supported nonnegative Java index range")?;
     Ok(value)

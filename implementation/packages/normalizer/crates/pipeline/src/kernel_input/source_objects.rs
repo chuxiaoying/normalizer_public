@@ -40,7 +40,7 @@ impl SourceObjects {
 
     pub(super) fn borrowed_parameter(&self, reference: &Expr) -> Option<(&str, &str)> {
         let (owner, Origin::Parameter { path, .. }) = self.objects.get(&reference.as_heap_ref()?)? else {
-            return None;
+            unreachable!();
         };
         Some((owner, path))
     }
@@ -191,9 +191,8 @@ impl Engine<'_> {
         for field in class.fields() {
             let default = match self.project.parameter_type(field.java_type())? {
                 Ty::Integer => b::lit_int(0),
-                Ty::Bool => b::lit_bool(false),
                 Ty::Ref | Ty::Text => b::lit_null(),
-                _ => return Err(fail("unsupported source field initializer")),
+                _ => unreachable!(),
             };
             self.realtime_store
                 .store_guarded(path.clone(), r.clone(), field.name(), default);
@@ -241,9 +240,6 @@ impl Engine<'_> {
             }
         };
         let key = (id, name.to_owned());
-        if let Some(child) = self.source_objects.borrowed_fields.get(&key) {
-            return Ok(Value::Term(Ty::Ref, b::heap_ref(*child)));
-        }
         let child_ref = self.heap.new_path_object().id();
         self.source_objects.objects.insert(child_ref, (child_owner.to_owned(), child));
         self.source_objects.borrowed_fields.insert(key, child_ref);
@@ -370,11 +366,6 @@ impl Engine<'_> {
         let right_partition = self.source_objects.has_complete_identity_partition(&right);
         if left_partition && right_partition {
             let mut names = self.source_objects.compared_parameters.clone();
-            for (identity, binding) in &self.source_objects.compared_states {
-                if let Some(root) = self.source_objects.state_bindings.get(binding) {
-                    names.insert(*identity, format!("E.{root}"));
-                }
-            }
             let order = crate::canonical_names::CanonicalNames {
                 heap: &names, external: None, total_temporals: None, temporals: None,
             };
@@ -436,14 +427,6 @@ impl Engine<'_> {
         if a == b {
             return Ok(());
         }
-        if [a, b].into_iter().any(|expr| {
-            expr.as_heap_ref()
-                .is_some_and(|id| self.source_relations.first_rows.contains_key(&id))
-        }) {
-            return Err(fail(
-                "selected row identity comparison requires an alias contract",
-            ));
-        }
         let origin = |e: &Expr| {
             e.as_heap_ref()
                 .and_then(|id| self.source_objects.objects.get(&id))
@@ -466,9 +449,7 @@ impl Engine<'_> {
                 }
                 Ok(())
             }
-            _ => Err(fail(
-                "borrowed identity comparison requires an alias contract",
-            )),
+            _ => unreachable!(),
         }
     }
 
@@ -477,7 +458,7 @@ impl Engine<'_> {
     ) -> Result<()> {
         let Some(id) = root.as_heap_ref() else { return Ok(()); };
         let Some((owner, Origin::Allocation)) = self.source_objects.objects.get(&id)
-            else { return Ok(()); };
+            else { unreachable!() };
         if completed.contains(&id) { return Ok(()); }
         if !active.insert(id) {
             return Err(format!("[NORM-CYCLIC-CONTENT-EXIT] kind=ABORT location={} problem=cyclic content at the return boundary",
@@ -538,8 +519,6 @@ fn scalar_origin_type(ty: &Ty) -> Result<ScalarSymbolType> {
         Ty::Integer => Ok(ScalarSymbolType::Integer),
         Ty::Bool => Ok(ScalarSymbolType::Boolean),
         Ty::Text => Ok(ScalarSymbolType::Text),
-        _ => Err(fail(
-            "source scalar origin requires a declared scalar field",
-        )),
+        _ => unreachable!(),
     }
 }

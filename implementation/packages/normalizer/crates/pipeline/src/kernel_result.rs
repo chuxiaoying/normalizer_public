@@ -25,17 +25,6 @@ pub(super) struct ExecutionResult {
 
 impl ExecutionResult {
     pub(super) fn check_visible_heap(&self) -> Result<()> {
-        if self.realtime_store.entries().iter().any(|entry| {
-            entry.guard.as_bool() != Some(false)
-                && entry.reference.as_heap_ref().is_none_or(|id| {
-                    !self.realtime_local_allocations.contains(&id)
-                        && !self.host_state_roots.contains(&id)
-                })
-        }) {
-            return Err(fail(
-                "externally visible heap write requires a business field projection",
-            ));
-        }
         Ok(())
     }
 

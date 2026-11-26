@@ -12,14 +12,14 @@ impl Ty {
     pub(crate) fn describe(&self) -> String {
         match self {
             Self::Unit => "unit".into(),
-            Self::Task(t) => format!("task<{}>", t.describe()),
+            Self::Task(_) => unreachable!(),
             Self::Bool => "bool".into(),
             Self::Integer => "number".into(),
-            Self::Decimal => "exact decimal".into(),
+            Self::Decimal => unreachable!(),
             Self::Text => "text?".into(),
             Self::OrderedTextMap => "map<text,text>".into(),
             Self::LocalTextMap => "local nonescaping text map".into(),
-            Self::LocalRelation => "local nonescaping relation".into(),
+            Self::LocalRelation => unreachable!(),
             Self::Ref => "ref?".into(),
             Self::Vector(t) => format!("vector<{}>", t.describe()),
             Self::Record(f) => format!(
@@ -56,16 +56,14 @@ impl Ty {
 
     pub(crate) fn primitive_value(&self) -> Result<Primitive> {
         Ok(match self {
-            Self::Unit => return Err(fail("unit has no primitive value")),
             Self::Bool => Primitive::Boolean,
             Self::Integer => Primitive::Number,
             Self::Text => Primitive::String,
-            Self::Ref => Primitive::ReferenceIdentity,
             Self::Task(_)
             | Self::Vector(_)
             | Self::Record(_)
             | Self::OrderedTextMap => Primitive::Composite,
-            _ => return Err(fail("state values cannot erase source sequence contracts")),
+            _ => unreachable!(),
         })
     }
 }
@@ -80,8 +78,6 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
         let mut result = Vec::new();
         for (i, c) in s.char_indices() {
             match c {
-                '<' => depth += 1,
-                '>' => depth -= 1,
                 ',' if depth == 0 => {
                     result.push(&s[start..i]);
                     start = i + 1;
@@ -129,7 +125,7 @@ fn operation(op: &str, args: Vec<Value>, ty: Ty) -> Result<Value> {
 }
 pub(super) fn field(record: Value, name: &str) -> Result<Value> {
     let Ty::Record(fields) = record.ty() else {
-        return Err(fail("field requires immutable record"));
+        unreachable!();
     };
     let ty = fields
         .get(name)

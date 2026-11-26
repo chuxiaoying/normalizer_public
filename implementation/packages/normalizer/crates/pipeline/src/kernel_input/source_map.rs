@@ -27,7 +27,7 @@ pub(super) fn text_operand(operand: &MapText, env: &Env) -> Result<Expr> {
         MapText::Literal(text) => Ok(b::lit_str(text)),
         MapText::Local(name) => {
             let Some(Value::Term(Ty::Text, value)) = env.get(name) else {
-                return Err(fail("local map operand must bind acquired text"));
+                unreachable!();
             };
             Ok(value.clone())
         }

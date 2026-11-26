@@ -191,9 +191,7 @@ impl Project {
                 match p.argument_observation.as_str() {
                     "immutable_value" =>
                         need(ty.port_value(), "immutable port values cannot contain object references or source sequences"),
-                    "reference_value" =>
-                        need(ty.state_value(), "reference port values require closed state types; source sequences must be explicit heap fields"),
-                    _ => Err(fail("unsupported port observation contract")),
+                    _ => unreachable!(),
                 }
             };
             let returns = p.returns.resolve()?;
@@ -370,8 +368,7 @@ impl Engine<'_> {
         let ty = match domain {
             "bool" => Ty::Bool,
             "number" => Ty::Integer,
-            "text" => Ty::Text,
-            _ => return Err(fail(format!("unsupported host input type: {domain}"))),
+            _ => unreachable!(),
         };
         // P represents the entry snapshot, not a fresh host observation.
         // Reading it again aliases the same symbol even after an await.
@@ -391,9 +388,6 @@ impl Engine<'_> {
                 entry_path.clone(),
                 self.realtime_completion.continuing_guard(),
             ));
-            if self.action_path.as_bool() == Some(false) {
-                break;
-            }
             self.budget()?;
             match action {
                 Action::LocalIr { query } => {
@@ -415,8 +409,7 @@ impl Engine<'_> {
                     let expected = match domain {
                         "number" => Ty::Integer,
                         "bool" => Ty::Bool,
-                        "text" => Ty::Text,
-                        _ => return Err(fail("unsupported state field type")),
+                        _ => unreachable!(),
                     };
                     let value = self.action_value(value, env)?;
                     need(value.ty() == expected, "incompatible state write value")?;
@@ -425,9 +418,6 @@ impl Engine<'_> {
                         self.action_path.clone(),
                         self.realtime_completion.continuing_guard(),
                     ));
-                    if guard.as_bool() == Some(false) {
-                        continue;
-                    }
                     // Adapter state writes have no readable heap identity; S owns them.
                     self.realtime_effects.write_state(guard, target, value);
                 }

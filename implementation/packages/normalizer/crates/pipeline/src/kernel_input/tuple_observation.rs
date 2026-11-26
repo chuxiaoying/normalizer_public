@@ -35,9 +35,6 @@ impl Engine<'_> {
                 let value = self.node(cond, &mut env.clone(), path.clone())?;
                 need(value.ty() == Ty::Bool, "tuple branch requires Boolean")?;
                 let condition = self.condition_under_path(value.scalar()?, &path);
-                if let Some(taken) = condition.as_bool() {
-                    return self.observe_tuple(if taken { yes } else { no }, observations, body, env, path);
-                }
                 let a = self.observe_tuple(yes, observations, body, env, b::and(path.clone(), condition.clone()))?;
                 let z = self.observe_tuple(no, observations, body, env, b::and(path, b::not(condition.clone())))?;
                 self.choose(condition, a, z)
@@ -54,7 +51,7 @@ impl Engine<'_> {
                             let flag = match items.get(*index) {
                                 None | Some(Slot::Undefined) => false,
                                 Some(Slot::Record { fields }) => fields.get(field).copied().unwrap_or(false),
-                                _ => return Err(fail("optional tuple receiver is not a record")),
+                                _ => unreachable!(),
                             };
                             (name, Value::Term(Ty::Bool, b::lit_bool(flag)))
                         }

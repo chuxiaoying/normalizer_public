@@ -8,7 +8,6 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
         Node::Const { .. } | Node::Var { .. } => true,
         Node::Field { value, .. } | Node::Not { value } => expression_is_closed(value),
         Node::Add { left, right }
-        | Node::Subtract { left, right }
         | Node::Gt { left, right }
         | Node::Eq { left, right } => expression_is_closed(left) && expression_is_closed(right),
         Node::If {
@@ -18,7 +17,7 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
         } => [cond, then, otherwise]
             .into_iter()
             .all(|node| expression_is_closed(node)),
-        _ => false,
+        _ => unreachable!(),
     }
 }
 
@@ -46,7 +45,7 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
                     tail,
                 )) = steps.split_first()
                 else {
-                    return Err(fail("entry contains an outstanding task"));
+                    unreachable!();
                 };
                 need(
                     name == awaited,
@@ -54,7 +53,7 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
                 )?;
                 steps = tail;
             }
-            _ => return Err(fail("unclosed operation in settled entry")),
+            _ => unreachable!(),
         }
     }
     Ok(())
@@ -109,7 +108,7 @@ impl Engine<'_> {
         )?;
         let task = self.action_value(task, env)?;
         let Ty::Task(ty) = task.ty() else {
-            return Err(fail("task_wait requires task<T>"));
+            unreachable!();
         };
         let handle = task.scalar()?;
         let Some(SymVarOrigin::Temporal { binding_id, .. }) = handle.as_sym_var() else {

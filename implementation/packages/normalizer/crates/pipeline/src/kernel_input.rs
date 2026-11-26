@@ -82,7 +82,7 @@ impl Ty {
             "ref?" => Self::Ref,
             "text?" => Self::Text,
             "map<text,text>" => Self::OrderedTextMap,
-            _ => return Err(fail(format!("unsupported type {s}"))),
+            _ => unreachable!(),
         })
     }
 
@@ -148,7 +148,7 @@ impl Value {
     fn scalar(&self) -> Result<Expr> {
         match self {
             Self::Term(_, e) | Self::IntegerFloor { value: e, .. } => Ok(e.clone()),
-            _ => Err(fail("expected scalar")),
+            _ => unreachable!(),
         }
     }
 }
@@ -836,7 +836,7 @@ fn integer_definition_id(expr: &Expr) -> Option<u64> {
 
 fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) -> Result<Value> {
     Ok(match t {
-        Ty::Unit => Value::Term(Ty::Unit, b::lit_null()),
+        Ty::Unit => unreachable!(),
         Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) => Value::Term(
             t.clone(),
             math::domains::composite::apply(
@@ -864,7 +864,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
         Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),
         Ty::Text => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Text)),
         Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
-            return Err(fail("this value type has no input symbol contract")),
+            unreachable!(),
     })
 }
 type Env = BTreeMap<String, Value>;

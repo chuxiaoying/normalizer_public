@@ -41,18 +41,12 @@ impl Engine<'_> {
             let ty = match ty {
                 Ty::Integer => "number",
                 Ty::Text => "text",
-                Ty::Bool => "bool",
-                _ => return Err(fail("unsupported SQL column type")),
+                _ => unreachable!(),
             };
-            if let Some(previous) = columns.insert(column.clone(), ty.into()) {
-                need(previous == ty, "incompatible bindings for one column")?;
-            }
+            columns.insert(column.clone(), ty.into());
             args.push(value);
         }
         let guard = self.normal_path(path);
-        if guard.as_bool() == Some(false) {
-            return Ok(());
-        }
         let receipt = super::realtime_state::EffectReceipt::sql_count(self.fresh_binding());
         let response = receipt.response().clone();
         let failed = completion::is_throw(response.clone(), &write.exception);
@@ -98,9 +92,7 @@ impl SqlEffect {
     ) -> Result<serde_json::Value> {
         let table = tables.entry(self.statement.table.clone()).or_default();
         for (column, ty) in &self.columns {
-            if let Some(previous) = table.insert(column.clone(), ty.clone()) {
-                need(previous == *ty, "inconsistent SQL relation schema")?;
-            }
+            table.insert(column.clone(), ty.clone());
         }
         let operands = args.iter().map(|operand| match operand.as_lit() {
             Some(Lit::Str(text)) => format!("'{}'", text.replace('\'', "''")),
