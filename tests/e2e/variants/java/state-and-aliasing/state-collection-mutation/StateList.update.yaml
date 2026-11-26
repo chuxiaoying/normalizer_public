@@ -33,3 +33,28 @@
       value: next + 1
     - path: [throws, 0, when]
       value: LENGTH(values) <= 1
+- name: simple-assignment-rhs-failure-precedes-the-bounds-check
+  edits:
+    - from: 'values[0] = next;'
+      to: 'values[0] = 3 / 0;'
+  expect:
+    - path: [R]
+      value: '⊥'
+    - path: [S]
+      value: []
+    - path: [throws]
+      value:
+        - { type: java.lang.ArithmeticException, when: 'true' }
+- name: compound-assignment-checks-bounds-before-the-rhs
+  edits:
+    - from: 'values[0] = next;'
+      to: 'values[0] += 3 / 0;'
+  expect:
+    - path: [R]
+      value: '⊥'
+    - path: [S]
+      value: []
+    - path: [throws]
+      value:
+        - { type: java.lang.ArithmeticException, when: 'LENGTH(values) > 0' }
+        - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
