@@ -237,7 +237,7 @@ impl Admission<'_> {
             E::ArrayInitializer { element_type, elements } => {
                 for element in elements {
                     self.expression(element, scope)?;
-                    self.reject_long_narrowing(Some(element_type), element, scope, "array initializer")?;
+                    self.check_assignment_narrowing(Some(element_type), element, scope, "array initializer")?;
                 }
                 Kind::Sequence
             }
@@ -368,12 +368,34 @@ impl Admission<'_> {
         }
     }
 
-    fn reject_long_narrowing(&self, expected: Option<&JavaType>, value: &E, scope: &Scope, label: &str) -> Result<(), String> {
+    // Only literal expressions and their unary signs are proved here.
+    // Wrapping is Java compile-time evidence, never business execution.
+    fn signed_int_literal(expr: &E) -> Option<i32> {
+        match expr {
+            E::Lit(JavaLit::Int(value)) => Some(*value),
+            E::Lit(JavaLit::Char(value)) => Some(i32::from(*value)),
+            E::UnaryOp { op: U::Neg, operand } => Self::signed_int_literal(operand).map(i32::wrapping_neg),
+            _ => None,
+        }
+    }
+
+    fn check_assignment_narrowing(&self, expected: Option<&JavaType>, value: &E, scope: &Scope, label: &str) -> Result<(), String> {
         if expected.and_then(IntegerWidth::declared) == Some(IntegerWidth::IntFamily)
             && self.integer_width(value, scope) == Some(IntegerWidth::Long)
         {
             return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
                 "{label} cannot implicitly narrow a long expression")));
+        }
+        if let (Some(JavaType::Primitive(name)), Some(literal)) = (expected, Self::signed_int_literal(value)) {
+            let fits = match name.as_str() {
+                "byte" => i8::try_from(literal).is_ok(),
+                "short" => i16::try_from(literal).is_ok(),
+                _ => true,
+            };
+            if !fits {
+                return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                    "{label}: integral literal {literal} is outside the Java {name} range")));
+            }
         }
         Ok(())
     }
@@ -400,7 +422,7 @@ impl Admission<'_> {
             _ => "assignment".into(),
         };
         if !is_compound {
-            self.reject_long_narrowing(self.declared_type(target, scope).as_ref(), value, scope, &label)?;
+            self.check_assignment_narrowing(self.declared_type(target, scope).as_ref(), value, scope, &label)?;
         }
         self.compatible(expected, actual, &label)
     }
@@ -423,7 +445,7 @@ impl Admission<'_> {
                     if let Some(value) = initializer {
                         let actual = self.expression_in_context(value, scope, self.root_object_target(java_type))?;
                         let label = format!("initializer for {name}");
-                        self.reject_long_narrowing(Some(java_type), value, scope, &label)?;
+                        self.check_assignment_narrowing(Some(java_type), value, scope, &label)?;
                         self.compatible(Kind::declared(java_type), actual, &label)?;
                     }
                     scope.insert(name.clone(), Binding {
@@ -436,7 +458,7 @@ impl Admission<'_> {
                 S::Return(Some(value)) => {
                     let return_type = self.method.return_type();
                     let actual = self.expression_in_context(value, scope, self.root_object_target(return_type))?;
-                    self.reject_long_narrowing(Some(return_type), value, scope, "return")?;
+                    self.check_assignment_narrowing(Some(return_type), value, scope, "return")?;
                     self.compatible(Kind::declared(return_type), actual, "return")?;
                 }
                 S::If { cond, then_block, else_block } => {

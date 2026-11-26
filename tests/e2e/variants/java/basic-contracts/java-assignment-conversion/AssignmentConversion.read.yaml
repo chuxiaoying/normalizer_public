@@ -41,3 +41,50 @@
     - { from: 'value += 99L;', to: 'for (int i = 1; i < 4; i++) value += i;' }
   expect:
     - { path: [R], value: '105' }
+- name: a-representable-char-literal-can-initialize-a-byte
+  edits:
+    - { from: 'int value = 99;', to: "byte value = 'A';" }
+    - { from: 'value += 99L;', to: '' }
+  expect:
+    - { path: [R], value: '65' }
+- name: a-char-literal-outside-the-byte-range-is-invalid
+  edits:
+    - { from: 'int value = 99;', to: "byte value = 'é';" }
+  reject: ['[NORM-SOURCE-TYPE]', 'initializer for value', 'integral literal 233 is outside the Java byte range']
+- name: a-direct-int-literal-one-past-the-byte-max-is-invalid
+  edits:
+    - { from: 'int value = 99;', to: 'byte value = 128;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'initializer for value', 'integral literal 128 is outside the Java byte range']
+- name: short-assignment-accepts-the-signed-minimum
+  edits:
+    - { from: 'int value = 99;', to: 'short value = 0;' }
+    - { from: 'value += 99L;', to: 'value = -32768;' }
+  expect:
+    - { path: [R], value: '-32768' }
+- name: short-assignment-rejects-one-below-the-signed-minimum
+  edits:
+    - { from: 'int value = 99;', to: 'short value = 0;' }
+    - { from: 'value += 99L;', to: 'value = -32769;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'assignment to value', 'integral literal -32769 is outside the Java short range']
+- name: byte-return-accepts-the-signed-minimum
+  edits:
+    - { from: 'static int read()', to: 'static byte read()' }
+    - { from: 'return value;', to: 'return -128;' }
+  expect:
+    - { path: [R], value: '-128' }
+- name: byte-return-rejects-one-below-the-signed-minimum
+  edits:
+    - { from: 'static int read()', to: 'static byte read()' }
+    - { from: 'return value;', to: 'return -129;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'return: integral literal -129 is outside the Java byte range']
+- name: short-return-accepts-the-signed-maximum
+  edits:
+    - { from: 'static int read()', to: 'static short read()' }
+    - { from: 'return value;', to: 'return 32767;' }
+  expect:
+    - { path: [R], value: '32767' }
+- name: short-return-rejects-one-past-the-signed-maximum
+  edits:
+    - { from: 'static int read()', to: 'static short read()' }
+    - { from: 'return value;', to: 'return 32768;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'return: integral literal 32768 is outside the Java short range']
