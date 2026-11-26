@@ -212,6 +212,11 @@ function compileScalar(sf, fn, file, entry, physicalPath, fail, typed) {
     if (expr.op === 'signed-number' && Number.isSafeInteger(expr.value)) {
       return {type: 'number', node: internal('const', {type: 'number', value: expr.value})};
     }
+    if (expr.op === 'boolean-not') {
+      const operand = expression(expr.operand);
+      if (operand.type !== 'bool') fail('logical negation in a standalone value requires a Boolean');
+      return {type: 'bool', node: internal('not', {value: operand.node})};
+    }
     if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
       const [type, operator, swap, negate] = numericOperators[expr.operator];
       const left = expression(expr.left), right = expression(expr.right);

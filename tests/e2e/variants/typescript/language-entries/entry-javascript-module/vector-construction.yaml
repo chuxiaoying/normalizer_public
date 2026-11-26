@@ -111,3 +111,14 @@
   expect:
   - path: [R]
     value: CASE WHEN enabled THEN [left, fixed] ELSE [right] END
+
+- name: two-differing-slots-retain-one-shared-vector-selection
+  edits:
+    - {from: '[enabled ? left : right, fixed]', to: 'enabled ? [left, fixed] : [right, left]'}
+  expect:
+    - {path: [R], value: 'CASE WHEN enabled THEN [left, fixed] ELSE [right, left] END'}
+- name: complementary-slot-guards-select-the-same-two-vector-values
+  edits:
+    - {from: '[enabled ? left : right, fixed]', to: '[enabled ? left : right, !enabled ? right : fixed]'}
+  expect:
+    - {path: [R], value: 'CASE WHEN enabled THEN [left, fixed] ELSE [right, right] END'}

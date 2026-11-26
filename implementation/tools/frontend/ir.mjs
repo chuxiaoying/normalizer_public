@@ -51,6 +51,9 @@ function expr(node, sf) {
     const value = Number(node.operand.text);
     return { op: 'signed-number', value: node.operator === ts.SyntaxKind.MinusToken ? -value : value };
   }
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+    return { op: 'boolean-not', operand: expr(node.operand, sf) };
+  }
   if (node.kind === ts.SyntaxKind.NullKeyword) return { op: 'literal', type: 'null', value: null };
   if (ts.isIdentifier(node)) return { op: 'var', name: node.text };
   if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {

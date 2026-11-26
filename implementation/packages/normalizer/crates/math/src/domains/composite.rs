@@ -325,6 +325,25 @@ mod tests {
     use crate::ScalarSymbolType;
 
     #[test]
+    fn complementary_raw_guards_share_one_vector_choice_but_independent_guards_do_not() {
+        let p = b::param("p", ScalarSymbolType::Boolean);
+        let q = b::param("q", ScalarSymbolType::Boolean);
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let y = b::param("y", ScalarSymbolType::Integer);
+        let x1 = b::add(x.clone(), b::lit_int(1));
+        let x2 = b::add(x, b::lit_int(2));
+        let first = b::case_when(vec![(p.clone(), x1.clone())], y.clone());
+        let complementary = b::case_when(vec![(b::not(p.clone()), y.clone())], x2.clone());
+        let expected = b::case_when(vec![(p, b::array_lit(vec![x1, x2.clone()]))],
+            b::array_lit(vec![y.clone(), y.clone()]));
+        assert_eq!(number_vector(vec![first.clone(), complementary]), expected);
+
+        let independent = b::case_when(vec![(q, y)], x2);
+        let elements = vec![first, independent];
+        assert_eq!(number_vector(elements.clone()).as_array_lit(), Some(elements.as_slice()));
+    }
+
+    #[test]
     fn typed_receipts_do_not_certify_vector_choice_factoring() {
         let guard = b::param("ready", ScalarSymbolType::Boolean);
         let receipt = b::sym_e(0, ScalarSymbolType::Integer);
