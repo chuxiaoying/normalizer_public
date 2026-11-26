@@ -87,40 +87,39 @@ function leadingParameterCall(fn, params) {
 
 function mapEntries(node, names) {
   node = unwrap(node);
-  if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression)
-      || node.expression.text !== 'Map' || node.arguments?.length !== 1) {
-    fail('readonly Map requires one built-in Map construction');
+  const argument = ts.isNewExpression(node) && ts.isIdentifier(node.expression)
+    && node.expression.text === 'Map' && node.arguments?.length === 1 && unwrap(node.arguments[0]);
+  if (!argument || !ts.isArrayLiteralExpression(argument)) {
+    fail('readonly Map requires one built-in Map construction with literal entry assembly');
   }
-  const rows = unwrap(node.arguments[0]);
-  if (!ts.isArrayLiteralExpression(rows)) fail('readonly Map requires literal entry assembly');
   const seen = new Set();
-  return rows.elements.map(row => {
+  return argument.elements.map(row => {
     const candidate = ts.isSpreadElement(row) && unwrap(row.expression);
-    if (!candidate || !ts.isConditionalExpression(candidate)) fail('readonly Map requires explicitly null-guarded entries');
-    const cond = unwrap(candidate.condition);
-    if (!ts.isBinaryExpression(cond)
-        || ![ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(cond.operatorToken.kind)) {
-      fail('readonly Map requires an exact null guard');
+    const conditional = candidate && ts.isConditionalExpression(candidate);
+    const cond = conditional && unwrap(candidate.condition);
+    const operator = cond && ts.isBinaryExpression(cond) && cond.operatorToken.kind;
+    const nullFirst = operator === ts.SyntaxKind.EqualsEqualsEqualsToken;
+    const empty = conditional && unwrap(nullFirst ? candidate.whenTrue : candidate.whenFalse);
+    const present = conditional && unwrap(nullFirst ? candidate.whenFalse : candidate.whenTrue);
+    const entry = present && ts.isArrayLiteralExpression(present) && present.elements.length === 1
+      && unwrap(present.elements[0]);
+    if ((!nullFirst && operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken)
+        || !empty || !ts.isArrayLiteralExpression(empty) || empty.elements.length
+        || !entry || !ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2
+        || !ts.isStringLiteral(entry.elements[0])) {
+      fail('readonly Map requires explicitly null-guarded literal text entries');
     }
-    const left = unwrap(cond.left), right = unwrap(cond.right);
-    const subject = left.kind === ts.SyntaxKind.NullKeyword ? right
-      : right.kind === ts.SyntaxKind.NullKeyword ? left : null;
-    const nullFirst = cond.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
-    const empty = unwrap(nullFirst ? candidate.whenTrue : candidate.whenFalse);
-    const present = unwrap(nullFirst ? candidate.whenFalse : candidate.whenTrue);
-    if (!ts.isArrayLiteralExpression(empty) || empty.elements.length || !ts.isArrayLiteralExpression(present)
-        || present.elements.length !== 1) fail('readonly Map requires omission only in the null branch');
-    const entry = unwrap(present.elements[0]);
-    if (!ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2 || !ts.isStringLiteral(entry.elements[0])) {
-      fail('readonly Map requires literal text keys');
-    }
+    const operands = [unwrap(cond.left), unwrap(cond.right)];
+    const nullIndex = operands.findIndex((operand) => operand.kind === ts.SyntaxKind.NullKeyword);
+    const subject = operands[1 - nullIndex];
     const [key, raw] = entry.elements;
     const value = unwrap(raw);
-    if (!subject || !ts.isIdentifier(subject) || !ts.isIdentifier(value) || value.text !== subject.text
-        || names.get(value.text)?.type !== 'text?') fail('readonly Map requires each null guard to protect the inserted value');
+    const input = ts.isIdentifier(value) ? names.get(value.text) : undefined;
+    if (!subject || !ts.isIdentifier(subject) || !input || value.text !== subject.text || input.type !== 'text?')
+      fail('readonly Map requires each null guard to protect the inserted value');
     if (seen.has(key.text)) fail('readonly Map requires unique literal keys');
     seen.add(key.text);
-    return {key: key.text, input: names.get(value.text).name};
+    return {key: key.text, input: input.name};
   });
 }
 

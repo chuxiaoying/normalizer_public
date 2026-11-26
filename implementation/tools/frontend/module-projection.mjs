@@ -9,7 +9,22 @@ function fail(detail) {
   throw new Error(`SCENARIO_MODULE_INPUT: ${detail}`);
 }
 
-export function literalShape(node) {
+const stateScalarTypes = new Map([
+  [ts.SyntaxKind.NumericLiteral, 'number'], [ts.SyntaxKind.StringLiteral, 'text'],
+  [ts.SyntaxKind.TrueKeyword, 'bool'], [ts.SyntaxKind.FalseKeyword, 'bool'],
+]);
+
+export function singleAnnotatedBinding(statement, message, reject = fail) {
+  const declarations = statement.declarationList.declarations;
+  if (declarations.length !== 1 || !ts.isIdentifier(declarations[0].name)) reject(message);
+  return declarations[0];
+}
+
+export function stateBinding(decl, name, originPath, page) {
+  return { source: `${originPath}#${page}.${name}`, fields: literalShape(decl.initializer) };
+}
+
+function literalShape(node) {
   if (node && ts.isObjectLiteralExpression(node)) {
     return Object.fromEntries(node.properties.map(property => {
       if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) {
@@ -18,10 +33,7 @@ export function literalShape(node) {
       return [property.name.text, literalShape(property.initializer)];
     }));
   }
-  if (node && ts.isNumericLiteral(node)) return 'number';
-  if (node && ts.isStringLiteral(node)) return 'text';
-  if (node && [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(node.kind)) return 'bool';
-  fail('state field requires a plain scalar or record initializer');
+  return stateScalarTypes.get(node?.kind) ?? fail('state field requires a plain scalar or record initializer');
 }
 
 export function readModuleProjection(modulePath, source, entryName, originPath) {
@@ -30,13 +42,10 @@ export function readModuleProjection(modulePath, source, entryName, originPath) 
   const page = basename(originPath, extname(originPath));
   for (const statement of sf.statements) {
     if (!ts.isVariableStatement(statement) || !ts.getJSDocTags(statement).some(tag => tag.tagName.text === 'entryState')) continue;
-    const declarations = statement.declarationList.declarations;
-    if (declarations.length !== 1 || !ts.isIdentifier(declarations[0].name)) fail('@entryState must mark one named binding');
-    const name = declarations[0].name.text;
-    const declared = ts.getJSDocType(statement) || ts.getJSDocType(declarations[0]);
-    if (declared) fail('@entryState projection requires a plain literal shape');
-    const fields = literalShape(declarations[0].initializer);
-    states.set(name, { source: `${originPath}#${page}.${name}`, fields });
+    const decl = singleAnnotatedBinding(statement, '@entryState must mark one named binding');
+    if (ts.getJSDocType(statement) || ts.getJSDocType(decl)) fail('@entryState projection requires a plain literal shape');
+    const name = decl.name.text;
+    states.set(name, stateBinding(decl, name, originPath, page));
   }
   const fn = sf.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === entryName);
   const statements = fn?.body?.statements;

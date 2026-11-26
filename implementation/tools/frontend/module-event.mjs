@@ -2,7 +2,7 @@
 // completion of the request it waits for. Host slots are read when encountered.
 import ts from 'typescript';
 import { basename, extname } from 'node:path';
-import { literalShape } from './module-projection.mjs';
+import { singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
 import { parsePlainModule, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
@@ -68,21 +68,9 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     if (flags.size && ts.isVariableStatement(statement)) hostDeclarations.push([statement, flags]);
   }
   for (const [st, flags] of hostDeclarations) {
-    if (
-      st.declarationList.declarations.length !== 1 ||
-      !ts.isIdentifier(st.declarationList.declarations[0].name)
-    ) {
-      fail('a host declaration must mark one named binding');
-    }
-    const dec = st.declarationList.declarations[0];
+    const dec = singleAnnotatedBinding(st, 'a host declaration must mark one named binding', fail);
     const root = dec.name.getText();
-    if (flags.has('entryState')) {
-      states[root] = {
-        kind: 'state',
-        source: `${originPath}#${page}.${root}`,
-        fields: literalShape(dec.initializer),
-      };
-    }
+    if (flags.has('entryState')) states[root] = { kind: 'state', ...stateBinding(dec, root, originPath, page) };
     if (flags.has('entryInputs') || flags.has('external')) {
       const record = ts.getJSDocType(st) || ts.getJSDocType(dec);
       if (!record || !ts.isTypeLiteralNode(record) || record.members.some((item) =>
@@ -172,12 +160,9 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       const end = st ? st.getStart(sf) : block.end - 1;
       for (let source of directives.after(before, end)) {
         const binding = /^([A-Za-z_$][\w$]*)\s*(\+=|=(?!=))/.exec(source);
-        if (!binding) fail('local IR requires a named assignment');
-        const [, name, operator] = binding;
-        if (!locals.get(name))
-          fail(`local IR requires a writable local ${name} in this block`);
-        if (uninitialized && (name !== uninitialized || operator !== '='))
-          fail(`local IR must initialize ${uninitialized}`);
+        const [, name, operator] = binding ?? [];
+        if (!locals.get(name) || uninitialized && (name !== uninitialized || operator !== '='))
+          fail('local IR requires a writable local assignment in this block and must initialize any pending binding');
         // Host observations execute at the directive's original location.
         source = source.replace(
           /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\b/g,
