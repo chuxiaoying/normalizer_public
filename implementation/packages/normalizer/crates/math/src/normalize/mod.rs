@@ -133,53 +133,36 @@ thread_local! {
     static ACTIVE_BUDGET: RefCell<Option<NormalizeBudget>> = RefCell::new(None);
 }
 
-struct BudgetScope {
-    armed: bool,
-}
+struct BudgetScope;
 
 impl BudgetScope {
     fn install(budget: NormalizeBudget) -> Self {
         ACTIVE_BUDGET.with(|slot| slot.replace(Some(budget)));
-        Self { armed: true }
-    }
-
-    fn take(mut self) -> NormalizeBudget {
-        self.armed = false;
-        ACTIVE_BUDGET.with(|slot| {
-            slot.replace(None)
-                .expect("normalization budget scope missing")
-        })
+        Self
     }
 }
 
 impl Drop for BudgetScope {
     fn drop(&mut self) {
-        if self.armed {
-            ACTIVE_BUDGET.with(|slot| {
-                slot.replace(None);
-            });
-        }
+        ACTIVE_BUDGET.with(|slot| { slot.replace(None); });
+        ACTIVE_BUDGET_ABORT.with(|slot| { slot.replace(None); });
     }
 }
 
-pub(crate) fn consume_proof_budget(amount: usize, input_nodes: usize) -> bool {
-    ACTIVE_BUDGET.with(|budget| {
-        let mut slot = budget.borrow_mut();
-        let Some(budget) = slot.as_mut() else {
-            return true;
-        };
-        budget.consume(BudgetKind::ProofNodes, amount, input_nodes)
+fn consume_budget(kind: BudgetKind, amount: usize, observed_nodes: impl FnOnce() -> usize) -> bool {
+    ACTIVE_BUDGET.with(|slot| {
+        slot.borrow_mut().as_mut().is_none_or(|budget| {
+            budget.consume(kind, amount, observed_nodes())
+        })
     })
 }
 
+pub(crate) fn consume_proof_budget(amount: usize, input_nodes: usize) -> bool {
+    consume_budget(BudgetKind::ProofNodes, amount, || input_nodes)
+}
+
 pub(crate) fn consume_candidate_budget(amount: usize, output_nodes: usize) -> bool {
-    ACTIVE_BUDGET.with(|budget| {
-        let mut slot = budget.borrow_mut();
-        let Some(budget) = slot.as_mut() else {
-            return true;
-        };
-        budget.consume(BudgetKind::CandidateNodes, amount, output_nodes)
-    })
+    consume_budget(BudgetKind::CandidateNodes, amount, || output_nodes)
 }
 
 fn budget_snapshot() -> Option<NormalizeBudget> {
@@ -209,14 +192,11 @@ where
         // This outer budget owns the profile run. Nested calls reuse both.
         let run_scope = crate::profile::begin_run();
         let scope = BudgetScope::install(NormalizeBudget::default());
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
-        let budget = scope.take();
+        let result = run();
+        let budget = budget_snapshot().expect("normalization budget scope missing");
         let deferred_error = ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow_mut().take());
+        drop(scope);
         drop(run_scope);
-        let result = match result {
-            Ok(result) => result,
-            Err(payload) => std::panic::resume_unwind(payload),
-        };
         if let Some(error) = deferred_error {
             return Err(error);
         }
@@ -304,14 +284,9 @@ fn normalize_with_impl(
     // earlier iterations are not rebuilt/re-simplified again in later iterations.
     let memo = RefCell::new(HashMap::new());
     let mut current = expr;
+    let mut converged = None;
     for iteration in 0..iteration_limit {
-        let step_allowed = ACTIVE_BUDGET.with(|budget| {
-            budget
-                .borrow_mut()
-                .as_mut()
-                .is_none_or(|budget| budget.consume(BudgetKind::Steps, 1, current.size()))
-        });
-        if !step_allowed {
+        if !consume_budget(BudgetKind::Steps, 1, || current.size()) {
             let budget = budget_snapshot().expect("active normalization budget missing");
             return Err(NormalizationLimit {
                 iterations: iteration,
@@ -322,30 +297,8 @@ fn normalize_with_impl(
         }
         let next = simplify_once_memo(&current, ctx, &memo, use_default_simplify_once_cache);
         if next == current {
-            if let Some(start) = profile_start {
-                crate::profile::event_elapsed_if_slow(
-                    "math.normalize",
-                    &format!(
-                        "iterations={} input_size={} input_depth={} output_size={} output_depth={}",
-                        iteration + 1,
-                        input_size.unwrap_or(0),
-                        input_depth.unwrap_or(0),
-                        current.size(),
-                        current.depth()
-                    ),
-                    start,
-                );
-            }
-            emit_summary(
-                input_size.unwrap_or(0),
-                input_depth.unwrap_or(0),
-                &current,
-                iteration + 1,
-                profile_start.map(|start| start.elapsed().as_micros()),
-                cache_counts_before,
-                evictions_before,
-            );
-            return Ok(current);
+            converged = Some(iteration + 1);
+            break;
         }
         ACTIVE_BUDGET.with(|budget| {
             if let Some(budget) = budget.borrow_mut().as_mut() {
@@ -355,10 +308,11 @@ fn normalize_with_impl(
         current = next;
     }
     if let Some(start) = profile_start {
+        let iterations = converged.map_or_else(|| "max".to_owned(), |n| n.to_string());
         crate::profile::event_elapsed_if_slow(
             "math.normalize",
             &format!(
-                "iterations=max input_size={} input_depth={} output_size={} output_depth={}",
+                "iterations={iterations} input_size={} input_depth={} output_size={} output_depth={}",
                 input_size.unwrap_or(0),
                 input_depth.unwrap_or(0),
                 current.size(),
@@ -371,11 +325,14 @@ fn normalize_with_impl(
         input_size.unwrap_or(0),
         input_depth.unwrap_or(0),
         &current,
-        iteration_limit,
+        converged.unwrap_or(iteration_limit),
         profile_start.map(|start| start.elapsed().as_micros()),
         cache_counts_before,
         evictions_before,
     );
+    if converged.is_some() {
+        return Ok(current);
+    }
     Err(NormalizationLimit {
         iterations: iteration_limit,
         remaining_size: current.size(),
@@ -536,15 +493,7 @@ pub fn normalize(expr: Expr) -> Expr {
             panic!("{error}");
         }
     };
-    let cache_weight = key.size().saturating_add(out.size());
-    if cache_weight <= crate::profile::cache_entry_limit() {
-        DEFAULT_NORMALIZE_CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            crate::cache::insert_bounded(&mut cache, key, out.clone(), crate::cache::DEFAULT_KEY_LIMIT, "normalize");
-        });
-    } else {
-        crate::profile::cache_admission_skip("normalize", cache_weight);
-    }
+    admit_cache(&DEFAULT_NORMALIZE_CACHE, "normalize", key, &out);
     out
 }
 
@@ -636,7 +585,7 @@ fn simplify_once_memo(
     let _ = consume_candidate_budget(out.size(), out.size());
     memo.borrow_mut().insert(key.clone(), out.clone());
     if use_default_simplify_once_cache {
-        default_simplify_once_cache_insert(key, &out);
+        admit_cache(&DEFAULT_SIMPLIFY_ONCE_CACHE, "simplify_once", key, &out);
     }
     out
 }
@@ -645,15 +594,19 @@ fn default_simplify_once_cache_get(key: &Expr) -> Option<Expr> {
     DEFAULT_SIMPLIFY_ONCE_CACHE.with(|cache| cache.borrow().get(key).cloned())
 }
 
-fn default_simplify_once_cache_insert(key: Expr, output: &Expr) {
-    let cache_weight = key.size().saturating_add(output.size());
-    if cache_weight > crate::profile::cache_entry_limit() {
-        crate::profile::cache_admission_skip("simplify_once", cache_weight);
+fn admit_cache(
+    cache: &'static std::thread::LocalKey<RefCell<HashMap<Expr, Expr>>>,
+    kind: &'static str,
+    key: Expr,
+    output: &Expr,
+) {
+    let weight = key.size().saturating_add(output.size());
+    if weight > crate::profile::cache_entry_limit() {
+        crate::profile::cache_admission_skip(kind, weight);
         return;
     }
-    DEFAULT_SIMPLIFY_ONCE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        crate::cache::insert_bounded(&mut cache, key, output.clone(), crate::cache::DEFAULT_KEY_LIMIT, "simplify_once");
+    cache.with(|slot| {
+        crate::cache::insert_bounded(&mut slot.borrow_mut(), key, output.clone(), crate::cache::DEFAULT_KEY_LIMIT, kind);
     });
 }
 
