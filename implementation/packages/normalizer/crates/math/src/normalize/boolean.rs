@@ -371,10 +371,7 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }
         // A row alias does not change whether the same relation is empty.
         // The same complement used by OR coverage also refutes conjunctions.
-        if out.iter().any(|existing| {
-            relation_exists_or_not_exists_same_relation(existing, item)
-                || relation_exists_or_not_exists_same_relation(item, existing)
-        }) {
+        if out.iter().any(|existing| relation_exists_complements(existing, item)) {
             return Some(builder::lit_bool(false));
         }
         // The context proof checks direct complements and exact Count/Exists

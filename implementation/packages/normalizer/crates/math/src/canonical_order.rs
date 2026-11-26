@@ -347,15 +347,10 @@ fn payload_key(expr: &Expr, ctx: &dyn SortContext) -> String {
 fn structural_key(expr: &Expr, ctx: &dyn SortContext) -> String {
     match expr.kind() {
         ExprKind::Lit(lit) => format!("lit:{}", literal_payload_key(lit)),
-        ExprKind::SymVar { origin } => {
-            use crate::symvar::SymVarOrigin::*;
-            let primitive_type = match origin {
-                Parameter { primitive_type, .. }
-                | External { primitive_type, .. }
-                | Temporal { primitive_type, .. } => primitive_type,
-            };
-            key_node("sym", vec![sym_origin_subject_key(origin, ctx), primitive_type.clone()])
-        }
+        ExprKind::SymVar { origin } => key_node(
+            "sym",
+            vec![sym_origin_subject_key(origin, ctx), origin.primitive_type().to_owned()],
+        ),
         ExprKind::RowValue { alias, acquired_integer } => format!("row:{acquired_integer}:{alias}"),
         ExprKind::HeapRef(id) => format!("heap:{}", heap_subject_key(*id, ctx)),
         ExprKind::UnaryOp { op, operand } => {

@@ -647,7 +647,7 @@ impl Loaded {
             let java_types: Vec<_> = m
                 .params()
                 .iter()
-                .map(|(t, _)| java_type_text(t))
+                .map(|(t, _)| java_parameter_type_text(t))
                 .collect::<Result<_>>()?;
             need(
                 signature == format!("{})", java_types.join(",")),
@@ -771,12 +771,11 @@ fn identifier(s: &str) -> bool {
             .enumerate()
             .all(|(i, c)| c == b'_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
 }
-fn java_type_text(t: &JavaType) -> Result<String> {
+fn java_parameter_type_text(t: &JavaType) -> Result<String> {
     match t {
-        JavaType::Void => Ok("void".to_string()),
         JavaType::Primitive(n) => Ok(n.clone()),
         JavaType::Class(n) if identifier(n) || n == "java.lang.Object" => Ok(n.clone()),
-        JavaType::Array(t) => Ok(format!("{}[]", java_type_text(t)?)),
+        JavaType::Array(t) => Ok(format!("{}[]", java_parameter_type_text(t)?)),
         _ => Err(fail("unsupported signature type")),
     }
 }

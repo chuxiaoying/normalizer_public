@@ -19,34 +19,26 @@ pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bo
 }
 
 pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> bool {
-    exists_and_count_zero_same_relation(left, right)
-        || exists_and_count_zero_same_relation(right, left)
+    exists_with_opposite(left, right, relation_count_zero_relation)
 }
 
-fn exists_and_count_zero_same_relation(
-    exists_expr: &Expr,
-    zero_expr: &Expr,
-) -> bool {
-    let Some(exists_relation) = relation_exists_true_relation(exists_expr) else {
-        return false;
-    };
-    let Some(zero_relation) = relation_count_zero_relation(zero_expr) else {
-        return false;
-    };
-    relation_cardinality_input_matches(exists_relation, zero_relation)
+pub(super) fn relation_exists_complements(left: &Expr, right: &Expr) -> bool {
+    exists_with_opposite(left, right, relation_not_exists_true_relation)
 }
 
-pub(super) fn relation_exists_or_not_exists_same_relation(
-    exists_expr: &Expr,
-    not_exists_expr: &Expr,
+fn exists_with_opposite(
+    left: &Expr, right: &Expr, opposite: fn(&Expr) -> Option<&RelationExpr>,
 ) -> bool {
-    let Some(exists_relation) = relation_exists_true_relation(exists_expr) else {
+    // Neither a count comparison nor a negated Exists is itself a positive
+    // Exists. If both sides are positive, neither orientation can succeed.
+    let (exists_relation, other) = if let Some(relation) = relation_exists_true_relation(left) {
+        (relation, right)
+    } else if let Some(relation) = relation_exists_true_relation(right) {
+        (relation, left)
+    } else {
         return false;
     };
-    let Some(not_exists_relation) = relation_not_exists_true_relation(not_exists_expr) else {
-        return false;
-    };
-    relation_cardinality_input_matches(exists_relation, not_exists_relation)
+    opposite(other).is_some_and(|relation| relation_cardinality_input_matches(exists_relation, relation))
 }
 
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {

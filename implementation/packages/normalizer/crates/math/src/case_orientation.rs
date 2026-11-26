@@ -3,7 +3,7 @@
 //! This only chooses between `(condition, yes, no)` and its complemented,
 //! swapped form. It neither evaluates an arm nor expands CASE into AND/OR.
 use crate::{
-    expr::{BinOpKind, ExprKind},
+    expr::BinOpKind,
     sort_context::SortContext,
     symvar::SymVarOrigin,
     Expr, Lit,
@@ -17,17 +17,7 @@ fn is_integer_zero(value: &Expr) -> bool {
 }
 
 fn has_integer_evidence(value: &Expr) -> bool {
-    match value.kind() {
-        ExprKind::SymVar { origin } => match origin {
-            SymVarOrigin::Parameter { primitive_type, .. }
-            | SymVarOrigin::External { primitive_type, .. }
-            | SymVarOrigin::Temporal { primitive_type, .. } => matches!(
-                primitive_type.as_str(),
-                "integer"
-            ),
-        },
-        _ => false,
-    }
+    value.as_sym_var().is_some_and(|origin| origin.primitive_type() == "integer")
 }
 
 fn is_positive_subject(value: &Expr) -> Option<&Expr> {
@@ -73,6 +63,10 @@ pub fn ordered_number_selection(
     context: &dyn SortContext,
 ) -> Option<Expr> {
     let op = selection_comparison(condition, yes, no)?;
+    Some(order_selection(op, yes, no, context))
+}
+
+fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortContext) -> Expr {
     // Keep literal defaults in ELSE, then minimize the cost of the value
     // repeated in WHEN and THEN. Stable semantic ordering breaks equal costs.
     let cost = |v: &Expr| (v.as_lit().is_some(), v.size());
@@ -86,10 +80,10 @@ pub fn ordered_number_selection(
         crate::builder::gt
     };
     let guard = crate::normalize_with(cmp(first.clone(), second.clone()), context);
-    Some(crate::builder::case_when(vec![
+    crate::builder::case_when(vec![
         (guard, first.clone()),
         (crate::builder::lit_bool(true), second.clone()),
-    ]))
+    ])
 }
 
 fn has_total_number_selection_evidence(value: &Expr) -> bool {
@@ -162,6 +156,18 @@ pub fn preferred_complement(
     if yes.as_case_when().is_some() || no.as_case_when().is_some() {
         return None;
     }
+    preferred_complement_for_shape(condition, yes, no, context, || {
+        selection_comparison(condition, yes, no).is_some()
+    })
+}
+
+fn preferred_complement_for_shape(
+    condition: &Expr,
+    yes: &Expr,
+    no: &Expr,
+    context: &dyn SortContext,
+    is_selection: impl FnOnce() -> bool,
+) -> Option<Expr> {
     let complement = crate::normalize_with(crate::builder::not(condition.clone()), context);
     // Complexity is a candidate constraint, never a sorting preference.
     let negate = |left: &Expr, right: &Expr| {
@@ -174,25 +180,10 @@ pub fn preferred_complement(
     {
         return None;
     }
-    prefer_complement(condition, &complement, yes, no, context).then_some(complement)
-}
-
-/// Compare an already canonical complement supplied by a certified local
-/// domain. The caller proves complementary guards in that SAME domain; this
-/// function only reuses the common structural direction, never normalizes CASE.
-fn prefer_complement(
-    condition: &Expr,
-    complement: &Expr,
-    yes: &Expr,
-    no: &Expr,
-    context: &dyn SortContext,
-) -> bool {
-    // Selecting one of the compared values has its own canonicalization
-    // below. Preserve an untyped choice rather than assuming a total order.
-    if selection_comparison(condition, yes, no).is_some() {
-        return false;
-    }
-    candidate_precedes(complement, no, yes, condition, yes, no, context)
+    // A typed selection has a separate direction. Keep complement
+    // normalization before this rejection, as in the signed host path.
+    (!is_selection() && candidate_precedes(&complement, no, yes, condition, yes, no, context))
+        .then_some(complement)
 }
 
 /// Return the canonical representative when a total binary CASE should use
@@ -200,28 +191,23 @@ fn prefer_complement(
 /// callers that must preserve CASE laziness while sharing the published
 /// domain policy and ordering key.
 pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
-    let branches = expression.as_case_when()?;
-    if branches.len() != 2
-        || branches[1].0.as_bool() != Some(true)
-        || branches
-            .iter()
-            .any(|(_, value)| value.as_case_when().is_some())
-    {
+    let [(condition, yes), (fallback, no)] = expression.as_case_when()? else {
+        return None;
+    };
+    if fallback.as_bool() != Some(true) || yes.as_case_when().is_some() || no.as_case_when().is_some() {
         return None;
     }
-    let (condition, yes) = &branches[0];
-    let no = &branches[1].1;
-    if selection_comparison(condition, yes, no).is_some() {
+    if let Some(op) = selection_comparison(condition, yes, no) {
         if !has_total_number_selection_evidence(yes) || !has_total_number_selection_evidence(no) {
             return None;
         }
-        let canonical = ordered_number_selection(condition, yes, no, context)?;
+        let canonical = order_selection(op, yes, no, context);
         return (canonical != *expression).then_some(canonical);
     }
-    let complement = preferred_complement(&branches[0].0, &branches[0].1, &branches[1].1, context)?;
+    let complement = preferred_complement_for_shape(condition, yes, no, context, || false)?;
     Some(crate::builder::case_when(vec![
-        (complement, branches[1].1.clone()),
-        (crate::builder::lit_bool(true), branches[0].1.clone()),
+        (complement, no.clone()),
+        (crate::builder::lit_bool(true), yes.clone()),
     ]))
 }
 

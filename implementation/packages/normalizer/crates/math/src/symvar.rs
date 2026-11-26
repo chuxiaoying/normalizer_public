@@ -55,3 +55,13 @@ pub enum SymVarOrigin {
         primitive_type: String,
     },
 }
+
+impl SymVarOrigin {
+    pub(crate) fn primitive_type(&self) -> &str {
+        match self {
+            Self::Parameter { primitive_type, .. }
+            | Self::External { primitive_type, .. }
+            | Self::Temporal { primitive_type, .. } => primitive_type,
+        }
+    }
+}
