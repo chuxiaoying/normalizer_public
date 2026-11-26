@@ -8,6 +8,7 @@ enum Origin {
     Parameter { path: String, nullable: bool },
     State { binding: u64, path: Vec<String> },
     Allocation,
+    EntryReceiver,
 }
 
 enum BorrowedRoot<'a> {
@@ -27,6 +28,7 @@ fn borrowed_root(origin: &Origin) -> Option<BorrowedRoot<'_>> {
 pub(super) struct SourceObjects {
     objects: BTreeMap<i64, (String, Origin)>,
     states: BTreeMap<(String, String), Expr>,
+    entry_receiver: Option<i64>,
     borrowed_fields: BTreeMap<(i64, String), i64>,
     pub(super) state_bindings: BTreeMap<u64, String>,
     pub(super) compared_parameters: BTreeMap<i64, String>,
@@ -52,8 +54,8 @@ impl SourceObjects {
             value.as_heap_ref().and_then(|id| self.objects.get(&id)).map(|(_, origin)| origin)
         };
         matches!((origin(left), origin(right)),
-            (Some(Origin::Allocation), Some(Origin::Parameter { .. } | Origin::State { .. }))
-            | (Some(Origin::Parameter { .. } | Origin::State { .. }), Some(Origin::Allocation)))
+            (Some(Origin::Allocation), Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::EntryReceiver))
+            | (Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::EntryReceiver), Some(Origin::Allocation)))
     }
 
     fn knows_identity(&self, value: &Expr) -> bool {
@@ -96,6 +98,18 @@ impl Engine<'_> {
         } else {
             symbolic(name, ty, &mut self.heap, Some(declared))
         }
+    }
+
+    /// The certified invocation's live This is one acquired identity, not a
+    /// new object or a copy of its business state.
+    pub(super) fn source_entry_receiver_value(&mut self, owner: &str) -> Value {
+        let id = if let Some(id) = self.source_objects.entry_receiver { id } else {
+            let id = self.heap.new_path_object().id();
+            self.source_objects.objects.insert(id, (owner.into(), Origin::EntryReceiver));
+            self.source_objects.entry_receiver = Some(id);
+            id
+        };
+        Value::Term(Ty::Ref, b::heap_ref(id))
     }
 
     pub(super) fn is_entry_state(&self, owner: &str, name: &str) -> bool {
@@ -231,6 +245,9 @@ impl Engine<'_> {
         let (id, owner, origin) = reference.as_heap_ref()
             .and_then(|id| self.source_objects.objects.get(&id).map(|(owner, origin)| (id, owner, origin)))
             .ok_or_else(|| fail("unknown source receiver"))?;
+        if matches!(origin, Origin::EntryReceiver) {
+            return self.read_entry_state(&owner.clone(), name, path);
+        }
         let Some((class, field, child_owner)) = self.program.find_class(owner)
             .and_then(|class| class.fields().iter().find(|field| field.name() == name)
                 .and_then(|field| self.project.source_owner(field.java_type()).map(|child| (class, field, child))))
@@ -239,6 +256,7 @@ impl Engine<'_> {
             "ordinary object field read has no nullable member acquisition proof")?;
         let child = match origin {
             Origin::Allocation => return self.read_source_field_on_path(reference, name, path),
+            Origin::EntryReceiver => unreachable!("live receiver dispatched to entry state"),
             Origin::Parameter { path: root, .. } => Origin::Parameter {
                 path: format!("{root}.{name}"),
                 // A nullable child declaration was rejected above; root
@@ -318,6 +336,7 @@ impl Engine<'_> {
             .ok_or_else(|| fail("unknown source field"))?;
         let ty = self.project.parameter_type(field.java_type())?;
         let expr = match origin {
+            Origin::EntryReceiver => return Err(fail("live receiver must acquire declared state")),
             Origin::Allocation => self
                 .realtime_store
                 .read_on_path(reference, name, path)
@@ -344,6 +363,9 @@ impl Engine<'_> {
             .as_heap_ref()
             .ok_or_else(|| fail("unresolved source receiver"))?;
         let (owner, origin) = &self.source_objects.objects[&id];
+        if matches!(origin, Origin::EntryReceiver) {
+            return self.write_entry_state(&owner.clone(), field, value, path);
+        }
         let state = match origin {
             Origin::Allocation => None,
             Origin::State { binding, path } if path.is_empty() => {

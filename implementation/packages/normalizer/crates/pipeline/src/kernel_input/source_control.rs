@@ -264,6 +264,7 @@ impl Engine<'_> {
 
     pub(super) fn execute_source_try(
         &mut self,
+        resource: Option<&S>,
         body: &[S],
         catches: &[CatchClause],
         finally: Option<&[S]>,
@@ -274,7 +275,36 @@ impl Engine<'_> {
         let parent = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
 
         let prior_realtime_throws = self.realtime_throws.len();
-        self.source_steps(body, id, &mut env.clone(), path.clone())?;
+        let mut locals = env.clone();
+        let closing = if let Some(resource) = resource {
+            let (binding, close) = crate::normalized::closed_resource_binding(self.program, resource)
+                .ok_or_else(|| fail("try-with-resources needs a closed source allocation and close method"))?;
+            self.source_steps(std::slice::from_ref(resource), id, &mut locals, path.clone())?;
+            let close_path = self.normal_path(path.clone());
+            if close_path.as_bool() == Some(false) { None } else {
+                let value = locals.get(binding).ok_or_else(|| fail("resource binding not initialized"))?.clone();
+                Some((close, value, close_path))
+            }
+        } else { None };
+        self.source_steps(body, id, &mut locals, path.clone())?;
+        if let Some((close, resource, close_path)) = closing {
+            let protected_completion = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
+            // The protected completion already owns constructor/body
+            // failures. They are pending during close, not close failures
+            // that could erase this newly entered unwind path.
+            self.realtime_throws.truncate(prior_realtime_throws);
+            // An acquired resource closes on every body completion, even
+            // when a return or throw is pending. The currently admitted
+            // source slice must prove close itself cannot throw.
+            self.java_call_on(&close, Vec::new(), close_path.clone(), Some(resource))?;
+            if self.realtime_completion.clone().alternatives().iter().any(|alternative|
+                matches!(alternative.outcome, CompletionOutcome::Throw { .. })
+                    && math::normalize(b::and(close_path.clone(), alternative.guard.clone())).as_bool() != Some(false))
+            {
+                return Err(fail("close with a possible failure requires suppressed-exception semantics"));
+            }
+            self.realtime_completion = protected_completion;
+        }
         let mut pending = self.realtime_completion.clone().alternatives();
 
         self.realtime_throws.truncate(prior_realtime_throws);

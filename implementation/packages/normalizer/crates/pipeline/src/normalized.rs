@@ -126,6 +126,57 @@ pub(crate) fn source_layouts(
     source_layouts_with_receiver(program, None)
 }
 
+fn builtin_resource_interface(program: &JavaProgram, interface: &str) -> bool {
+    interface == "java.lang.AutoCloseable"
+        || (interface == "AutoCloseable" && program.find_class(interface).is_none())
+}
+
+fn closed_resource_close(program: &JavaProgram, class: &JavaClass) -> Option<String> {
+    if !class.interfaces().iter().any(|interface| builtin_resource_interface(program, interface)) {
+        return None;
+    }
+    let (index, method) = class.methods().iter().enumerate()
+        .find(|(_, method)| method.name() == "close" && method.arity() == 0)?;
+    if !method.is_public() || method.is_static() || !method.throws().is_empty()
+        || *method.return_type() != JavaType::Void || method.body().is_none() {
+        return None;
+    }
+    Some(method_key(class, index, method))
+}
+
+fn resource_blank_final(class: &JavaClass, field: &simulator_parser::ast::JavaField) -> bool {
+    if field.has_initializer() { return false; }
+    let mut all = class.methods().iter().filter(|method| method.is_constructor());
+    let Some(constructor) = all.next() else { return false };
+    if all.next().is_some() { return false; }
+    // A single simple constructor must definitely initialize this field.
+    // The static checker also rejects later writes to the final field.
+    constructor.body().is_some_and(|body| {
+        let mut count = 0;
+        for stmt in body {
+            let S::Assign { target: E::FieldAccess { target, field: assigned }, value: E::Ident(parameter),
+                is_compound: false } = stmt else { return false; };
+            if !matches!(target.as_ref(), E::Ident(name) if name == "this")
+                || !constructor.params().iter().any(|(ty, name)| name == parameter
+                    && class.fields().iter().any(|f| f.name() == assigned && f.java_type() == ty)) {
+                return false;
+            }
+            count += usize::from(assigned == field.name());
+        }
+        count == 1
+    })
+}
+
+pub(crate) fn closed_resource_binding<'a>(
+    program: &JavaProgram, resource: &'a S,
+) -> Option<(&'a str, String)> {
+    let S::VarDecl { name, java_type: JavaType::Class(owner), initializer:
+        Some(E::New { java_type: JavaType::Class(allocation), .. }), .. } = resource else { return None; };
+    if owner != allocation { return None; }
+    let class = program.find_class(owner)?;
+    Some((name, closed_resource_close(program, class)?))
+}
+
 fn source_layouts_with_receiver(
     program: &JavaProgram,
     receiver: Option<(&str, &BTreeSet<String>)>,
@@ -161,6 +212,7 @@ fn source_layouts_with_receiver(
             let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || source_nullable_field(class, field);
             if field.is_static()
                 || field.is_final()
+                    && !(closed_resource_close(program, class).is_some() && resource_blank_final(class, field))
                 || field.initializer().is_some_and(|value|
                     entry_state(class, field) || closed_field_initializer(field.java_type(), value).is_none())
                 || !annotation_ok
@@ -525,6 +577,9 @@ pub(crate) fn validate_with_receiver(
             return Err(error("NORM-DUPLICATE-CLASS", &name));
         }
         if c.interfaces().iter().any(|interface| {
+            if builtin_resource_interface(program, interface) {
+                return closed_resource_close(program, c).is_none();
+            }
             program.find_class(interface).is_none_or(|declaration| {
                 !plain_source_interface(declaration)
                     || declaration.methods().iter().any(|required| {
@@ -602,6 +657,10 @@ pub(crate) fn validate_with_receiver(
         let mut targets = Vec::new();
         for (call, arity) in calls {
             let (target_owner, target_member) = match call {
+                SourceCall::Resolved(key) => {
+                    targets.push(key);
+                    continue;
+                }
                 SourceCall::Method { owner, member } => (owner, member),
                 SourceCall::Constructor(owner) => {
                     let class = program
@@ -690,6 +749,7 @@ pub(crate) fn validate_with_receiver(
 }
 
 enum SourceCall {
+    Resolved(String),
     Method { owner: String, member: String },
     Constructor(String),
 }
@@ -769,8 +829,19 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 }
                 statements(body, at, calls, catch_admission, inside_finally)?;
             }
-            S::Try { body, catches, finally_block } => {
-                validate_protected_try(body, catches, finally_block.as_deref(), at)?;
+            S::Try { resource, body, catches, finally_block } => {
+                if let Some(resource) = resource {
+                    let (_, close) = closed_resource_binding(catch_admission.program, resource)
+                        .ok_or_else(|| error("NORM-RESOURCE-CLOSURE", at))?;
+                    statements(std::slice::from_ref(resource.as_ref()), at, calls, catch_admission, inside_finally)?;
+                    calls.push((SourceCall::Resolved(close), 0));
+                    if catches.is_empty() && !protected_return(body) && !continuing_try_body(body) {
+                        return Err(error("NORM-CATCH-BODY", at));
+                    }
+                }
+                if resource.is_none() || !catches.is_empty() {
+                    validate_protected_try(body, catches, finally_block.as_deref(), at)?;
+                }
                 statements(body, at, calls, catch_admission, inside_finally)?;
                 let mut prior_types: Vec<String> = Vec::new();
                 for handler in catches {

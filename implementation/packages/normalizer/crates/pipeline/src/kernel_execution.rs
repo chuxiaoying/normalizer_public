@@ -282,9 +282,9 @@ impl<'a> Engine<'a> {
                 } if local == name => Some(java_type.clone()),
                 _ => None,
             }).or_else(|| {
-                if method.is_static() || !self.is_entry_state(owner, name) { return None; }
+                if method.is_static() { return None; }
                 self.program.find_class(owner)?.fields().iter()
-                    .find(|field| field.name() == name).map(|field| field.java_type().clone())
+                    .find(|field| !field.is_static() && field.name() == name).map(|field| field.java_type().clone())
             })
             .ok_or_else(|| fail("source receiver declaration missing"))
     }
@@ -333,6 +333,11 @@ impl<'a> Engine<'a> {
             return Ok(Value::Term(self.methods[id].returns.clone(),result));
         }
         if self.methods[id].syntax.is_constructor() { return Ok(Value::Term(Ty::Unit,b::lit_null())); }
+        if self.methods[id].returns == Ty::Unit {
+            self.realtime_completion = self.realtime_completion.replace_continue(
+                realtime_state::Completion::Return(b::lit_null()));
+            return Ok(Value::Term(Ty::Unit, b::lit_null()));
+        }
         if terminal.as_ref().is_some_and(|exits| exits.is_always_throwing()) {
             // No expression can observe this carrier; the completion records
             // the actual exit and enclosing catches consume that completion.
@@ -595,8 +600,8 @@ impl<'a> Engine<'a> {
                         self.execute_fixed_for(header,body,id,env,path)?;
                     }
                 }
-                S::Try {body,catches,finally_block} => {
-                    self.execute_source_try(body,catches,finally_block.as_deref(),id,env,path)?;
+                S::Try {resource,body,catches,finally_block} => {
+                    self.execute_source_try(resource.as_deref(),body,catches,finally_block.as_deref(),id,env,path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
                     let java_type = preceding_uninitialized(body, i, binding)
@@ -794,8 +799,20 @@ impl<'a> Engine<'a> {
             J::Ident(n) => {
                 if let Some(value) = env.get(n) { return Ok(value.clone()); }
                 let owner = id.rsplit_once('.').unwrap().0;
+                if n == "this" && !self.methods[id].syntax.is_static() && self.selected_entry.is_some_and(|entry|
+                    !entry.syntax.is_static() && entry.id.rsplit_once('.').is_some_and(|(selected, _)| selected == owner))
+                {
+                    return Ok(self.source_entry_receiver_value(owner));
+                }
                 if !self.methods[id].syntax.is_static() && !env.contains_key("this") && self.is_entry_state(owner, n) {
                     return self.read_entry_state(owner, n, &path);
+                }
+                if let Some(receiver) = env.get("this") {
+                    if self.program.find_class(owner).is_some_and(|class| class.fields().iter()
+                        .any(|field| !field.is_static() && field.name() == n))
+                    {
+                        return self.read_or_bind_source_field(&receiver.scalar()?, n, &path);
+                    }
                 }
                 Err(fail(format!("undefined Java variable {n}")))
             }

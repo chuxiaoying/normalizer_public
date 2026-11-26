@@ -409,9 +409,17 @@ impl<'a> Parser<'a> {
 
     fn parse_try(&mut self) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
-        if self.peek() == Some(b'(') {
-            return Err(self.err("try-with-resources is not supported in normalized Java"));
-        }
+        let resource = if self.eat_char(b'(') {
+            self.eat_keyword("final");
+            let java_type = parse_type(self).ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource type"))?;
+            let name = self.read_ident().ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource binding"))?;
+            self.require_local_receiver_name(&name)?;
+            self.require_delimiter(b'=', "[JAVA-RESOURCE] expected one initialized local resource")?;
+            let initializer = self.parse_expression()?;
+            self.eat_char(b';');
+            self.require_delimiter(b')', "[JAVA-RESOURCE] expected ')' after the local resource")?;
+            Some(Box::new(JavaStatement::VarDecl { java_type, name, initializer: Some(initializer), is_final: true }))
+        } else { None };
         let try_body = self.parse_braced_statements()?;
 
         let mut catches = Vec::new();
@@ -453,7 +461,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(JavaStatement::Try {
-            body: try_body,
+            resource, body: try_body,
             catches,
             finally_block: finally,
         })

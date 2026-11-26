@@ -508,6 +508,18 @@ impl Admission<'_> {
     }
 
     fn check_writable(&self, target: &E, scope: &Scope) -> Result<(), String> {
+        if let E::FieldAccess { target: value, field } = target {
+            if let Some(JavaType::Class(owner)) = self.declared_type(value, scope) {
+                if let Some(declaration) = self.program.find_class(&owner) {
+                    if declaration.fields().iter().any(|f| f.name() == field && f.is_final())
+                        && !(self.method.is_constructor() && declaration.full_name() == self.class.full_name()
+                            && matches!(value.as_ref(), E::Ident(name) if name == "this"))
+                    {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("cannot update final field {field}")));
+                    }
+                }
+            }
+        }
         if let E::Ident(name) = target {
             if scope.get(name).is_some_and(|binding| binding.initialized_final) {
                 return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
@@ -658,8 +670,12 @@ impl Admission<'_> {
                     }
                     self.block(default, &mut scope.clone())?;
                 }
-                S::Try { body, catches, finally_block } => {
-                    self.block(body, &mut scope.clone())?;
+                S::Try { resource, body, catches, finally_block } => {
+                    let mut body_scope = scope.clone();
+                    if let Some(resource) = resource {
+                        self.block(std::slice::from_ref(resource.as_ref()), &mut body_scope)?;
+                    }
+                    self.block(body, &mut body_scope)?;
                     for handler in catches {
                         let mut handler_scope = scope.clone();
                         self.check_local_name(handler.var_name(), scope)?;

@@ -150,6 +150,7 @@ pub struct JavaMethod {
     pub(crate) return_type: JavaType,
     pub(crate) is_static: bool,
     pub(crate) is_constructor: bool,
+    pub(crate) is_public: bool,
     pub(crate) is_native: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) body: Option<Vec<JavaStatement>>,
@@ -176,6 +177,8 @@ impl JavaMethod {
     pub fn is_static(&self) -> bool {
         self.is_static
     }
+    pub fn is_public(&self) -> bool { self.is_public }
+
     pub fn is_constructor(&self) -> bool {
         self.is_constructor
     }
@@ -287,6 +290,7 @@ pub enum JavaStatement {
 
     /// try-catch-finally
     Try {
+        resource: Option<Box<JavaStatement>>,
         body: Vec<JavaStatement>,
         catches: Vec<CatchClause>,
         finally_block: Option<Vec<JavaStatement>>,

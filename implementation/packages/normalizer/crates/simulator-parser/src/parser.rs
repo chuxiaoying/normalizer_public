@@ -546,14 +546,16 @@ fn parse_class_body(
         let mut is_static = false;
         let mut is_final = false;
         let mut is_native = false;
+        let mut is_public = false;
         let mut native_modifier_conflict = false;
         let mut synchronized_at = None;
         loop {
             p.skip_ws();
-            if p.eat_keyword("public")
-                || p.eat_keyword("private")
-                || p.eat_keyword("protected")
-            {
+            if p.eat_keyword("public") {
+                is_public = true;
+                continue;
+            }
+            if p.eat_keyword("private") || p.eat_keyword("protected") {
                 continue;
             }
             let modifier_at = p.pos;
@@ -680,6 +682,7 @@ fn parse_class_body(
                     return_type: JavaType::Void,
                     is_static: false,
                     is_constructor: true,
+                    is_public,
                     is_native: false,
                     annotations: annotations.clone(),
                     body,
@@ -755,6 +758,7 @@ fn parse_class_body(
                 return_type: java_type,
                 is_static,
                 is_constructor: false,
+                is_public,
                 is_native,
                 annotations,
                 body,
