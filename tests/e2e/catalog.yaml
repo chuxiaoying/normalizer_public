@@ -249,14 +249,14 @@ groups:
     - CanonicalChecks.remainder
     expr-associative-commutative-normal-form:
     - Order.total
-  javascript/language-entries:
+  typescript/language-entries:
     entry-async-await:
-    - async-total.js#total
+    - total.ts#total
     entry-javascript-module:
-    - total.js#total
-    - vector-case.js#choose
-    - vector-construction.js#pair
-    - ordered-map.js#labels
+    - total.ts#total
+    - vector-case.ts#choose
+    - vector-construction.ts#pair
+    - ordered-map.ts#labels
   typescript/collections:
     typescript-tuple-slots:
     - receipt.ts#traceCount

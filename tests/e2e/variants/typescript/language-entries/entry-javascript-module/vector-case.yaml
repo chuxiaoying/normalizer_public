@@ -8,15 +8,15 @@
     to: '0 < values.length ? 7 : 11'
 - name: nullable-vector-is-not-a-certified-length
   edits:
-  - from: '{ReadonlyArray<number>}'
-    to: '{ReadonlyArray<number>|null}'
+  - from: 'values: readonly number[]'
+    to: 'values: readonly number[] | null'
   reject:
-  - '[NORM-JS-MODULE]'
+  - '[NORM-TS-MODULE]'
   - expected declared business scalar or non-null readonly Vector for values
 - name: readonly-declaration-whitespace-does-not-change-the-type
   edits:
-  - from: '{ReadonlyArray<number>}'
-    to: '{ReadonlyArray< number >}'
+  - from: 'values: readonly number[]'
+    to: 'values: ReadonlyArray< number >'
 - name: another-length-threshold-keeps-one-item-in-the-empty-arm
   edits:
   - from: 'values.length > 0 ? 7 : 11'
@@ -24,7 +24,7 @@
   expect:
   - path:
     - R
-    value: "CASE\n  WHEN LENGTH(values) <= 1 THEN 11\n  ELSE 7\nEND"
+    value: "CASE\n  WHEN LENGTH(values) > 1 THEN 7\n  ELSE 11\nEND"
 - name: a-negative-length-comparison-is-provably-false
   edits:
   - from: 'values.length > 0 ? 7 : 11'
@@ -35,8 +35,8 @@
     value: '11'
 - name: ordinary-business-number-does-not-acquire-the-natural-domain
   edits:
-  - from: '{ReadonlyArray<number>}'
-    to: '{number}'
+  - from: 'values: readonly number[]'
+    to: 'values: number'
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values > 0 ? 7 : 11'
   expect:
@@ -48,46 +48,49 @@
     value: number
   - path:
     - R
-    value: "CASE\n  WHEN values <= 0 THEN 11\n  ELSE 7\nEND"
+    value: "CASE\n  WHEN values > 0 THEN 7\n  ELSE 11\nEND"
 - name: mutable-array-is-not-a-closed-readonly-vector
   edits:
-  - from: '{ReadonlyArray<number>}'
-    to: '{Array<number>}'
+  - from: 'values: readonly number[]'
+    to: 'values: number[]'
   reject:
-  - '[NORM-JS-MODULE]'
+  - '[NORM-TS-MODULE]'
   - expected declared business scalar or non-null readonly Vector for values
 - name: readonly-vector-length-is-at-least-zero
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.length >= 0 ? 7 : 11'
   expect:
-  - path: [R]
+  - path:
+    - R
     value: '7'
 - name: readonly-vector-length-cannot-equal-negative-one
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.length !== -1 ? 7 : 11'
   expect:
-  - path: [R]
+  - path:
+    - R
     value: '7'
 - name: readonly-vector-length-at-most-zero-means-exactly-empty
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.length <= 0 ? 11 : 7'
-
 - name: readonly-vector-length-compared-to-explicit-positive-zero
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.length > +0 ? 7 : 11'
-
 - name: a-method-arity-is-not-the-readonly-vector-length
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.map.length > 0 ? 7 : 11'
-  reject: ['[NORM-JS-MODULE]', 'length requires a direct declared non-null readonly Vector']
-
+  reject:
+  - '[NORM-TS-MODULE]'
+  - length requires a direct declared non-null readonly Vector
 - name: a-computed-element-read-cannot-certify-vector-length
   edits:
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values[values.length].length > 0 ? 7 : 11'
-  reject: ['[NORM-JS-MODULE]', 'unsupported standalone scalar operation opaque']
+  reject:
+  - '[NORM-TS-MODULE]'
+  - unsupported standalone scalar operation opaque
