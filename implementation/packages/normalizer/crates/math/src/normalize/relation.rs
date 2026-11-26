@@ -115,3 +115,26 @@ fn relation_profile_size(relation: &RelationExpr) -> usize {
         RelationExpr::Union(branches) => 1 + branches.iter().map(relation_profile_size).sum::<usize>(),
     }
 }
+
+#[cfg(test)]
+mod typed_count_bound_tests {
+    use super::*;
+    use crate::domains::relation::{relation_count, relation_count_nonnull, relation_first_value};
+    use crate::BinOpKind;
+
+    #[test]
+    fn only_bare_count_is_evidence_for_a_relation_cardinality_bound() {
+        let relation = RelationExpr::base("offers", "offer");
+        let row = builder::row_value("offer");
+        let zero = builder::lit_int(0);
+        let count = relation_count(relation.clone());
+        let comparison = builder::lt(zero.clone(), count);
+        assert_eq!(relation_count_bound(&comparison), Some((BinOpKind::Gt, &relation, 0)));
+
+        let first = relation_first_value(relation.clone(), row.clone(), builder::lit_int(5));
+        let nonnull = relation_count_nonnull(relation, row);
+        for value in [first, nonnull] {
+            assert!(relation_count_bound(&builder::gt(value, zero.clone())).is_none());
+        }
+    }
+}

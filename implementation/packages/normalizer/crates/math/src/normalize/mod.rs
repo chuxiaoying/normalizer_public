@@ -437,3 +437,49 @@ pub(crate) fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortCont
     let e = casewhen::simplify(&e, ctx);
     e
 }
+
+#[cfg(test)]
+mod resource_gate_tests {
+    use super::*;
+    use crate::builder as b;
+
+    #[test]
+    fn failed_nested_work_cannot_be_published_as_a_completed_normal_form() {
+        let input = b::add(
+            b::param("nestedBudgetInput", crate::ScalarSymbolType::Integer),
+            b::lit_int(0),
+        );
+        let later = b::add(
+            b::param("nestedBudgetLater", crate::ScalarSymbolType::Integer),
+            b::lit_int(0),
+        );
+        let result = run_with_budget(|| {
+            ACTIVE_BUDGET.with(|slot| {
+                slot.borrow_mut().as_mut().expect("root budget").max_steps = 0;
+            });
+            assert_eq!(normalize(input.clone()), input);
+            assert_eq!(normalize(later.clone()), later);
+            Ok(b::lit_int(7))
+        });
+        let error = result.expect_err("outer scope must propagate nested exhaustion");
+        assert_eq!(error.budget_kind, Some(BudgetKind::Steps));
+        assert!(error.to_string().contains("no canonical result was produced"));
+    }
+
+    #[test]
+    fn fixed_point_iteration_limit_is_distinct_from_work_budget_exhaustion() {
+        let x = b::param("limitedInput", crate::ScalarSymbolType::Integer);
+        let expression = b::add(x.clone(), b::lit_int(0));
+        let result = run_with_budget(|| {
+            ACTIVE_BUDGET.with(|slot| {
+                slot.borrow_mut().as_mut().expect("root budget").max_steps = 8;
+            });
+            normalize_with_impl(expression, &crate::DefaultSortContext, false, 1)
+        });
+        let error = result.expect_err("one rewrite is not a fixed point");
+        assert_eq!(error.iterations, 1);
+        assert_eq!(error.remaining_size, x.size());
+        assert_eq!(error.budget_kind, None);
+        assert!(error.to_string().contains("iteration budget exhausted"));
+    }
+}

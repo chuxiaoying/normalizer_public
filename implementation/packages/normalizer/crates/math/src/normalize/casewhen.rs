@@ -479,7 +479,9 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     }
 
 
-    if groups.len() >= branches.len() || groups.iter().all(|(_, domains)| domains.len() == 1) {
+    // Each input contributes to at most one nonempty group. Without
+    // a repeated payload, grouping cannot eliminate an arm.
+    if groups.iter().all(|(_, domains)| domains.len() == 1) {
         return (branches.to_vec(), false);
     }
 
@@ -735,5 +737,61 @@ mod first_match_domain_tests {
             (b::not(p), b::lit_int(20)),
             (b::lit_bool(true), b::lit_int(30)),
         ]);
+    }
+}
+
+#[cfg(test)]
+mod typed_branch_witness_tests {
+    use super::*;
+    use crate::{builder as b, ScalarSymbolType};
+
+    #[test]
+    fn integer_point_substitution_descends_only_through_exact_arithmetic() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let point = b::lit_int(2);
+        let general = b::add(b::mul(x.clone(), b::lit_int(2)), b::lit_int(3));
+        let guard = b::eq(x, point);
+
+        let case = |n| vec![(guard.clone(), b::lit_int(n)), (b::lit_bool(true), general.clone())];
+        assert_eq!(redundant_integer_point_arm(&case(7)), Some(general.clone()));
+        assert_eq!(redundant_integer_point_arm(&case(8)), None);
+    }
+
+    #[test]
+    fn grouped_partial_case_still_has_no_explicit_completion_fallback() {
+        let flag = |name| b::param(name, ScalarSymbolType::Boolean);
+        let p = flag("p");
+        let q = flag("q");
+        let r = flag("r");
+        let branches = [
+            (b::and(p.clone(), q.clone()), b::lit_int(10)),
+            (r, b::lit_int(20)),
+            (b::and(p, b::not(q)), b::lit_int(10)),
+        ];
+
+        let (grouped, changed) = group_same_value_effective_domains(&branches);
+        assert!(changed);
+        assert_eq!(grouped.len(), 2);
+        assert_eq!(grouped[0].1, b::lit_int(10));
+        assert_eq!(grouped[1].1, b::lit_int(20));
+        assert!(grouped.iter().all(|(guard, _)| guard.as_bool() != Some(true)));
+    }
+
+    #[test]
+    fn first_value_fallback_requires_existence_of_the_same_relation() {
+        use crate::domains::relation::{relation_exists, relation_first_value, RelationExpr};
+
+        let offers = RelationExpr::base("offers", "offer");
+        let unrelated = RelationExpr::base("bids", "bid");
+        let row = b::row_value("offer");
+        let first = relation_first_value(offers.clone(), row.clone(), b::lit_null());
+        let fallback = b::lit_int(41);
+        let conditional = |guard| b::case_when(vec![(guard, first.clone())], fallback.clone());
+
+        assert_eq!(
+            select_first_default(&conditional(relation_exists(offers.clone()))),
+            Some(relation_first_value(offers, row, fallback.clone()))
+        );
+        assert_eq!(select_first_default(&conditional(relation_exists(unrelated))), None);
     }
 }

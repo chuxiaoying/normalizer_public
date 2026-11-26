@@ -257,3 +257,38 @@ mod reference_comparison_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod acquired_offset_tests {
+    use super::*;
+    use crate::{builder as b, ScalarSymbolType};
+
+    #[test]
+    fn local_offset_combination_requires_an_acquired_row() {
+        let row = b::acquired_integer_row("row");
+        let five = b::lit_int(5);
+        let three = b::lit_int(3);
+        assert_eq!(
+            combine_acquired_row_literals(&b::add(row.clone(), five.clone()), &three),
+            Some(b::add(row, b::lit_int(2)))
+        );
+        for unrelated in [b::row_value("row"), b::param("x", ScalarSymbolType::Integer)] {
+            assert_eq!(combine_acquired_row_literals(&b::add(unrelated, five.clone()), &three), None);
+        }
+    }
+
+    #[test]
+    fn non_additive_operands_are_not_treated_as_positive_offsets() {
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let one = b::lit_int(1);
+
+        assert_eq!(
+            simplify_same_subject_offset_comparison(&b::gt(b::add(x.clone(), one.clone()), x.clone())),
+            Some(b::lit_bool(true))
+        );
+        assert_eq!(
+            simplify_same_subject_offset_comparison(&b::gt(b::sub(x.clone(), one), x)),
+            None
+        );
+    }
+}
