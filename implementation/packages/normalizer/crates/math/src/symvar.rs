@@ -24,6 +24,7 @@
 pub enum ScalarSymbolType {
     Integer,
     ExactDecimal,
+    CalendarDate,
     Boolean,
     Text,
 }
@@ -35,6 +36,7 @@ impl ScalarSymbolType {
             Self::ExactDecimal => crate::domains::decimal::VALUE_TAG,
             Self::Boolean => "boolean",
             Self::Text => "text",
+            Self::CalendarDate => "date",
         }
     }
 }

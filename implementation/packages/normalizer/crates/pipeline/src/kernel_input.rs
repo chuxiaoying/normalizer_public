@@ -57,6 +57,7 @@ pub(crate) enum Ty {
     Bool,
     Integer,
     Decimal,
+    CalendarDate,
     Ref,
     Text,
     Seq(Box<Ty>),
@@ -377,6 +378,7 @@ impl Project {
             if matches!(t, JavaType::Class(name) if name == "java.lang.String") {
                 return Ok(Ty::Text);
             }
+            if crate::normalized::calendar_date_type(t) { return Ok(Ty::CalendarDate); }
             if crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t) {
                 return Ok(Ty::Decimal);
             }
@@ -910,6 +912,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
         Ty::Bool => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Boolean)),
         Ty::Integer => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Integer)),
         Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),
+        Ty::CalendarDate => Value::Term(t.clone(), b::param(name, ScalarSymbolType::CalendarDate)),
         Ty::Text => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Text)),
         Ty::Unit | Ty::Task(_) | Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
             return Err(fail("this value type has no input symbol contract")),

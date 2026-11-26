@@ -18,4 +18,5 @@ pub use formatting::sql::{
 pub use stages::load::parse_source_directory;
 
 
+mod normalized_decimal;
 pub mod normalized_text;

@@ -16,7 +16,7 @@ impl Ty {
             Self::OrderedTextMap | Self::Ref => state,
             Self::Vector(t) => t.value_allowed(boundary),
             Self::Record(fields) => fields.values().all(|field| field.value_allowed(boundary)),
-            Self::Task(_) | Self::Decimal | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
+            Self::Task(_) | Self::Decimal | Self::CalendarDate | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
         }
     }
 

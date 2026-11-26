@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    Number, Float, Double, DecimalCarrier, Bool, Text, Null, Sequence, Ref, Unresolved,
+    Number, Float, Double, DecimalCarrier, CalendarDate, Bool, Text, Null, Sequence, Ref, Unresolved,
 }
 impl Kind {
     fn declared(ty: &JavaType) -> Self {
@@ -16,6 +16,7 @@ impl Kind {
             JavaType::Primitive(name) if name == "double" => Self::Double,
             JavaType::Primitive(_) => Self::Number,
             t if super::exact_decimal_type(t) => Self::DecimalCarrier,
+            t if super::calendar_date_type(t) => Self::CalendarDate,
             JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String") => Self::Text,
             JavaType::Array(_) => Self::Sequence,
             JavaType::Class(_) | JavaType::Generic(..) => Self::Ref,
@@ -29,6 +30,7 @@ impl Kind {
             Self::Float => "float",
             Self::Double => "double",
             Self::Bool => "bool",
+            Self::CalendarDate => "date",
             Self::Sequence => "source sequence<number>",
             _ => "source value",
         }
@@ -222,6 +224,23 @@ impl Admission<'_> {
                 if let Some(E::Ident(receiver)) = target.as_deref() {
                     if self.binding(receiver, scope).is_none() {
                         let callee = format!("{receiver}.{method}");
+                        use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
+                        if let Some(intrinsic) = decimal_intrinsic(self.program, self.class, &callee) {
+                            let bad = || self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                                "{callee} requires exact decimal operands; N.round also requires a nonnegative integer literal scale and an explicit N midpoint mode"));
+                            let operands = match (intrinsic, args.as_slice()) {
+                                (DecimalIntrinsic::Multiply, [_, _]) => &args[..],
+                                (DecimalIntrinsic::Round, [_, scale, mode])
+                                    if round_rule(scale, mode).is_some() => &args[..1],
+                                _ => return Err(bad()),
+                            };
+                            for operand in operands {
+                                if self.expression(operand, scope)? != Kind::DecimalCarrier {
+                                    return Err(bad());
+                                }
+                            }
+                            return Ok(Kind::DecimalCarrier);
+                        }
                         if crate::normalized_text::source_intrinsic(
                             self.program, self.class, &callee, args.len(),
                         ).is_some() {
@@ -269,6 +288,10 @@ impl Admission<'_> {
             E::BinOp { op, left, right } => {
                 let left = self.expression(left, scope)?;
                 let right = self.expression(right, scope)?;
+                if left == Kind::CalendarDate || right == Kind::CalendarDate {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                        "the calendar-date carrier is a business value; no Java binary operation is admitted for it"));
+                }
                 let carrier = left == Kind::DecimalCarrier || right == Kind::DecimalCarrier;
                 let text_concat = *op == B::Add && (left == Kind::Text || right == Kind::Text);
                 if carrier && !text_concat

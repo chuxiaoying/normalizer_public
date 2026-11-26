@@ -64,9 +64,11 @@ pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignme
         t.end("trailing decimal round input")?;
         return Ok(Some(Assignment { binding: binding.into(), value, round: Some((scale, mode)) }));
     }
-    let Ok(name) = t.name() else { return Ok(None) };
-    if !t.rest().is_empty() { return Ok(None); }
-    Ok(Some(Assignment { binding: binding.into(), value: Decimal::Local(name), round: None }))
+    let mut value = Tokens { source: t.source };
+    let Ok(parsed) = decimal(&mut value) else { return Ok(None) };
+    if !value.rest().is_empty() { return Ok(None); }
+    *t = value;
+    Ok(Some(Assignment { binding: binding.into(), value: parsed, round: None }))
 }
 
 #[cfg(test)]

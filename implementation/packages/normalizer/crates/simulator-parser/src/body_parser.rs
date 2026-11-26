@@ -15,10 +15,12 @@ pub(crate) fn parse_method_body_text(
     surrogates: Surrogates<'_>,
     static_context: bool,
     official_n: bool,
+    imports: &[String],
 ) -> Result<Vec<JavaStatement>, ParseError> {
     let mut p = Parser::new(body_text, file).with_surrogates(surrogates);
     p.static_context = static_context;
     p.official_n = official_n;
+    p.imports.extend_from_slice(imports);
     p.parse_statements_until_end()
 }
 
@@ -41,7 +43,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let body_at = self.pos + 1;
         let text = self.skip_balanced_braces()?;
-        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context, self.official_n).map_err(|error| self.rebase_slice(body_at, error))
+        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context, self.official_n, &self.imports).map_err(|error| self.rebase_slice(body_at, error))
     }
 
     /// Return the last statement from this source position. A local declaration

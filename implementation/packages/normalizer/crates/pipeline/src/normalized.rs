@@ -35,6 +35,10 @@ pub(crate) fn exact_decimal_type(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Class(name) if name == "java.math.BigDecimal")
 }
 
+pub(crate) fn calendar_date_type(ty: &JavaType) -> bool {
+    matches!(ty, JavaType::Class(name) if name == "java.time.LocalDate")
+}
+
 pub(crate) fn numeric_array(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Array(item) if integral(item))
 }
@@ -190,6 +194,14 @@ fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
     if counterfeit_namespace || declared_n && program.classes().iter().any(imports_official_n) {
         return Err(error("NORM-INTRINSIC-SHADOW", N_IMPORT));
     }
+    for (qualified, alias) in [("java.math.BigDecimal", "BigDecimal"), ("java.time.LocalDate", "LocalDate")] {
+        if program.classes().iter().any(|class| class.simple_name() == qualified)
+            || (program.classes().iter().any(|class| class.simple_name().rsplit('.').next() == Some(alias))
+                && program.classes().iter().any(|class| class.imports().iter().any(|name| name == qualified)))
+        {
+            return Err(error("NORM-INTRINSIC-SHADOW", qualified));
+        }
+    }
     Ok(())
 }
 
@@ -254,7 +266,7 @@ pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> b
     class.imports().iter().all(|name| {
         matches!(
             name.as_str(),
-            source_ports::IMPORT | ENTRY_STATE | NULLABLE | N_IMPORT | "java.util.List" | crate::normalized_text::SOURCE_IMPORT
+            source_ports::IMPORT | ENTRY_STATE | NULLABLE | N_IMPORT | "java.util.List" | "java.math.BigDecimal" | "java.time.LocalDate" | crate::normalized_text::SOURCE_IMPORT
         )
     })
 }
@@ -441,7 +453,7 @@ pub(crate) fn validate_with_receiver(
     let ports = source_ports::declarations(program, &exceptions)?;
     let is_port_interface = |name: &str| ports.values().any(|port| port.interface == name);
     let supported = |ty: &JavaType| {
-        scalar(ty) || native_decimal_type(ty) || exact_decimal_type(ty) || matches!(ty, JavaType::Array(item) if integral(item) || declared_reference(item, &layouts) || matches!(item.as_ref(), JavaType::Array(scalar) if integral(scalar))) || declared_reference(ty, &layouts)
+        scalar(ty) || native_decimal_type(ty) || exact_decimal_type(ty) || calendar_date_type(ty) || matches!(ty, JavaType::Array(item) if integral(item) || declared_reference(item, &layouts) || matches!(item.as_ref(), JavaType::Array(scalar) if integral(scalar))) || declared_reference(ty, &layouts)
             || matches!(ty, JavaType::Class(name) if is_port_interface(name))
     };
     let mut methods = BTreeMap::new();
@@ -540,7 +552,8 @@ pub(crate) fn validate_with_receiver(
                 continue;
             }
             if !m.params().iter().any(|(_, parameter)| parameter == &target_owner)
-                && crate::normalized_text::source_intrinsic(program, owner, &target, arity).is_some() {
+                && (crate::normalized_text::source_intrinsic(program, owner, &target, arity).is_some()
+                    || crate::normalized_decimal::decimal_intrinsic(program, owner, &target).is_some()) {
                 continue;
             }
             // Calls already have their declaring name and member. Preserve

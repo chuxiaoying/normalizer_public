@@ -384,7 +384,19 @@ impl<'a> Engine<'a> {
                     initializer: None,
                     ..
                 } => {
-                    let initializes = body.get(i + 1).and_then(|stmt| LocalIrInitializer::for_binding(stmt, name));
+                    let initializes = body.get(i + 1)
+                        .and_then(|stmt| LocalIrInitializer::for_binding(stmt, name))
+                        .or_else(|| {
+                            // Exact values may declare several consecutive locals and
+                            // then bind them in a consecutive directive block. Do not
+                            // look past ordinary execution or a different IR family.
+                            if !crate::normalized::exact_decimal_type(java_type) { return None; }
+                            body[i + 1..].iter()
+                                .skip_while(|stmt| matches!(stmt, S::VarDecl { java_type, initializer: None, .. }
+                                    if crate::normalized::exact_decimal_type(java_type)))
+                                .take_while(|stmt| matches!(stmt, S::LocalIr(normalizer_ir::local::LocalIr::Decimal(_))))
+                                .find_map(|stmt| LocalIrInitializer::for_binding(stmt, name))
+                        });
                     let binds = match initializes {
                         Some(LocalIrInitializer::TextMap) => super::source_map::declared_map(java_type),
                         Some(LocalIrInitializer::NullableText) => super::source_map::declared_text(java_type),
@@ -868,6 +880,28 @@ impl<'a> Engine<'a> {
                     for ((expected, _), actual) in declaration.syntax.params().iter().zip(args) {
                         self.source_reference_assignment(expected, actual, id)?;
                     }
+                }
+                use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
+                if let Some(intrinsic) = self.program.find_class(id.rsplit_once('.').unwrap().0)
+                    .and_then(|caller| decimal_intrinsic(self.program, caller, &callee))
+                {
+                    let mut operand = |expr| {
+                        let value = self.java_expr(expr, id, env, path.clone())?;
+                        need(value.ty() == Ty::Decimal, "standard decimal operation requires exact decimal operands")?;
+                        value.scalar()
+                    };
+                    use math::domains::decimal;
+                    let result = match (intrinsic, args.as_slice()) {
+                        (DecimalIntrinsic::Multiply, [left, right]) =>
+                            decimal::multiply(operand(left)?, operand(right)?),
+                        (DecimalIntrinsic::Round, [value, scale, mode]) => {
+                            let (scale, mode) = round_rule(scale, mode)
+                                .ok_or_else(|| fail("N.round requires a scale and explicit mode"))?;
+                            decimal::round(operand(value)?, scale, mode)
+                        }
+                        _ => return Err(fail("invalid standard decimal operation")),
+                    };
+                    return Ok(Value::Term(Ty::Decimal, math::normalize(result)));
                 }
                 let vs: Vec<_> = args
                     .iter()

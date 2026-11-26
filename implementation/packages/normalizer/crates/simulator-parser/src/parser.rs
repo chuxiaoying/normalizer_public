@@ -533,7 +533,7 @@ fn parse_class_body(
         && !class.imports.iter().any(|name| {
             name != "normalizer.intrinsics.N" && name.rsplit('.').next() == Some("N")
         });
-
+    p.imports.clone_from(&class.imports);
 
     loop {
         p.skip_ws();
@@ -633,7 +633,7 @@ fn parse_class_body(
             let body_at = p.pos + 1;
             let text = p.skip_balanced_braces()?;
             let body = crate::body_parser::parse_method_body_text(
-                text, file, p.surrogates.subspan(body_at), true, p.official_n,
+                text, file, p.surrogates.subspan(body_at), true, p.official_n, &p.imports,
             ).map_err(|error| p.rebase_slice(body_at, error))?;
             class.static_initializers.push((class.fields.len(), body));
             continue;
@@ -667,6 +667,7 @@ fn parse_class_body(
                         p.surrogates.subspan(body_at),
                         false,
                         p.official_n,
+                        &p.imports,
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
                     return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
@@ -740,6 +741,7 @@ fn parse_class_body(
                     p.surrogates.subspan(body_at),
                     is_static,
                     p.official_n,
+                    &p.imports,
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {
                 p.require_semicolon("bodyless method declaration")?;
@@ -831,6 +833,13 @@ fn parse_type_atom(p: &mut Parser, allow_diamond: bool) -> Option<JavaType> {
     }
 
     let name = p.read_qualified_ident()?;
+    let name = match name.as_str() {
+        "BigDecimal" if p.imports.iter().any(|import| import == "java.math.BigDecimal") =>
+            "java.math.BigDecimal".into(),
+        "LocalDate" if p.imports.iter().any(|import| import == "java.time.LocalDate") =>
+            "java.time.LocalDate".into(),
+        _ => name,
+    };
     if !p.eat_char(b'<') {
         return Some(JavaType::Class(name));
     }
