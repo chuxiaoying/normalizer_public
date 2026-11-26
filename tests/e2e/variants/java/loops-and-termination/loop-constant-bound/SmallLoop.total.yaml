@@ -102,3 +102,27 @@
     - {from: 'for (int i = 0; i < 3; i++) sum += i;', to: 'for (i = 0; i < 3; i++) { sum += i; if (i == 1) return 10 * i + sum; }'}
   expect:
     - {path: [R], value: '11'}
+
+- name: reversed-inclusive-ascending-comparison-keeps-the-last-iteration
+  edits:
+    - {from: 'int i = 0; i < 3; i++', to: 'int i = 0; 3 >= i; i++'}
+  expect:
+    - {path: [R], value: '6'}
+
+- name: reversed-strict-descending-comparison-keeps-the-first-iteration
+  edits:
+    - {from: 'int i = 0; i < 3; i++', to: 'int i = 2; 0 < i; i--'}
+
+- name: terminal-return-does-not-spend-budget-on-unreachable-iterations
+  edits:
+    - from: 'for (int i = 0; i < 3; i++) sum += i;'
+      to: 'for (int i = 0; i < 2147483647; i++) { return 5; }'
+  expect:
+    - {path: [R], value: '5'}
+
+- name: a-conditional-write-to-the-induction-variable-needs-a-different-proof
+  edits:
+    - {from: 'int sum = 0;', to: 'int i = 0; int sum = 0;'}
+    - from: 'for (int i = 0; i < 3; i++) sum += i;'
+      to: 'for (i = 0; i < 3; i++) { if (i == 1) i = 2; sum += i; }'
+  reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'body must preserve proven induction counter i']
