@@ -21,8 +21,9 @@ impl PortSpec {
                 }),
         ))
     }
-    /// Await observes a tagged completion even for a callback declaring no rejection.
-    pub(super) fn awaited_value(&self, response: &Expr) -> super::Result<Expr> {
+    /// A settled await and a possibly throwing source call share the tagged
+    /// completion projection. Unit has no value to extract.
+    pub(super) fn tagged_value(&self, response: &Expr) -> super::Result<Expr> {
         if self.returns == Ty::Unit {
             return Ok(b::lit_null());
         }
@@ -32,18 +33,10 @@ impl PortSpec {
         ))
     }
     pub fn normal_value(&self, response: &Expr) -> Expr {
-        if self.returns == Ty::Unit {
-            return b::lit_null();
-        }
-        if !self.throwing() {
+        if self.returns != Ty::Unit && !self.throwing() {
             return response.clone();
         }
-        completion::value(
-            response.clone(),
-            self.returns
-                .primitive_value()
-                .expect("certified closed response type"),
-        )
+        self.tagged_value(response).expect("certified closed response type")
     }
     pub fn throw_variants(&self, response: &Expr) -> Vec<(String, Expr, Option<Expr>)> {
         self.exceptions

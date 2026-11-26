@@ -77,7 +77,7 @@ impl Engine<'_> {
         for (class, guard, payload) in spec.throw_variants(&response) {
             outcome = outcome.replace_continue_with_throw(guard, class, payload);
         }
-        Ok(outcome.replace_continue(Completion::Return(spec.awaited_value(&response)?)))
+        Ok(outcome.replace_continue(Completion::Return(spec.tagged_value(&response)?)))
     }
 
     pub(super) fn task_invoke(

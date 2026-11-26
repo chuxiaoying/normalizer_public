@@ -191,7 +191,7 @@ pub(super) fn observations(
                     temporal_receipts.insert(binding_id, output.clone());
                 }
                 if spec.returns != Ty::Unit {
-                    let value = spec.awaited_value(response)?;
+                    let value = spec.tagged_value(response)?;
                     ctx.display_business_value(value, output.clone());
                 }
                 let normal = spec.normal_condition(response);
