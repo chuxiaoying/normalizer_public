@@ -699,7 +699,7 @@ pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)>
         value: E::BinOp { op: B::Add, left, right },
         ..
     }] = body else { return None; };
-    if item == total { return None; }
+    if item == total.as_str() { return None; }
     let names = |expression: &E, expected: &str|
         matches!(expression, E::Ident(name) if name == expected);
     let element = if names(left, total) {
@@ -715,7 +715,7 @@ pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)>
         E::BinOp { op: B::Add, left, right } if names(right, item) => integer_token(left),
         _ => None,
     }?;
-    Some((total, offset))
+    Some((total.as_str(), offset))
 }
 
 fn integer_token(e: &E) -> Option<i64> {
