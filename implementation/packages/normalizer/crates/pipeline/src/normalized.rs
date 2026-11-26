@@ -188,14 +188,6 @@ fn local_interface_receiver<'a>(
     specialized_interface(program, declared)
 }
 
-/// Source layouts retain declaring owners. Primitive DTO fields follow the
-/// business numeric domain and the existing Object carrier remains opaque.
-pub(crate) fn source_layouts(
-    program: &JavaProgram,
-) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
-    source_layouts_with_receiver(program, None)
-}
-
 fn builtin_resource_interface(program: &JavaProgram, interface: &str) -> bool {
     interface == "java.lang.AutoCloseable"
         || (interface == "AutoCloseable" && program.find_class(interface).is_none())
@@ -247,7 +239,9 @@ pub(crate) fn closed_resource_binding<'a>(
     Some((name, closed_resource_close(program, class)?))
 }
 
-fn source_layouts_with_receiver(
+/// Source layouts retain declaring owners. Primitive DTO fields follow the
+/// business numeric domain and the existing Object carrier remains opaque.
+pub(crate) fn source_layouts(
     program: &JavaProgram,
     receiver: Option<(&str, &BTreeSet<String>)>,
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
@@ -312,9 +306,8 @@ fn source_layouts_with_receiver(
                 }
                 _ => return Err(error("NORM-FIELD-DECLARATION", &class.full_name())),
             };
-            if fields.insert(field.name().into(), ty.into()).is_some() {
-                return Err(error("NORM-FIELD-DECLARATION", &class.full_name()));
-            }
+            // Every field name was checked before any of the admission paths above.
+            fields.insert(field.name().into(), ty.into());
         }
         layouts.insert(class.full_name(), fields);
     }
@@ -628,16 +621,12 @@ fn same_parameters(left: &JavaMethod, right: &JavaMethod) -> bool {
 }
 
 /// Validate every supplied method, including unused helpers.
-pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvidence, String> {
-    validate_with_receiver(program, entry, None, None)
-}
-
 pub(crate) fn validate_with_receiver(
     program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>, locator: Option<&str>,
 ) -> Result<SourceEvidence, String> {
     validate_official_namespace(program)?;
     let exceptions = source_exceptions(program)?;
-    let layouts = source_layouts_with_receiver(program, receiver)?;
+    let layouts = source_layouts(program, receiver)?;
     let ports = source_ports::declarations(program, &exceptions)?;
     if receiver.is_some() {
         external_polling::validate_entry(program, entry, locator.unwrap_or(entry), &ports)?;
@@ -1273,7 +1262,7 @@ mod source_declaration_contracts {
             }
         "#;
         let program = parse(source, "Entry.java", &ParseOptions::default()).unwrap();
-        let evidence = validate(&program, "Entry.trim").ok().expect("official binding");
+        let evidence = validate_with_receiver(&program, "Entry.trim", None, None).ok().expect("official binding");
         assert!(evidence.nullable_entry_parameters.contains("raw"));
         let class = program.find_class("Entry").unwrap();
         assert!(entry_state(class, &class.fields()[0]));
@@ -1281,13 +1270,13 @@ mod source_declaration_contracts {
 
         let shadowed = format!("{source} class N {{ static String trim(String raw) {{ return raw; }} }}");
         let program = parse(&shadowed, "Entry.java", &ParseOptions::default()).unwrap();
-        assert!(validate(&program, "Entry.trim").err().unwrap().contains("NORM-INTRINSIC-SHADOW"));
+        assert!(validate_with_receiver(&program, "Entry.trim", None, None).err().unwrap().contains("NORM-INTRINSIC-SHADOW"));
 
         let unbound = parse(
             "class Entry { @N.EntryState int prior; static int read() { return 0; } }",
             "Entry.java", &ParseOptions::default(),
         ).unwrap();
-        assert!(validate(&unbound, "Entry.read").is_err());
+        assert!(validate_with_receiver(&unbound, "Entry.read", None, None).is_err());
     }
 
     #[test]
@@ -1317,8 +1306,8 @@ mod source_declaration_contracts {
             }}");
             parse(&source, "Entry.java", &ParseOptions::default()).unwrap()
         };
-        assert!(validate(&project(""), "Entry.build").is_ok());
-        let error = validate(&project("7"), "Entry.build").err()
+        assert!(validate_with_receiver(&project(""), "Entry.build", None, None).is_ok());
+        let error = validate_with_receiver(&project("7"), "Entry.build", None, None).err()
             .expect("an implicit constructor never accepts a supplied argument");
         assert_eq!(
             error.lines().next(),
@@ -1365,7 +1354,7 @@ mod source_declaration_contracts {
             "Holder.java",
             &ParseOptions::default(),
         ).unwrap();
-        let layouts = source_layouts(&program).unwrap();
+        let layouts = source_layouts(&program, None).unwrap();
         let holder = &layouts["Holder"];
         for name in ["shortName", "fullName", "child"] {
             assert_eq!(holder[name], "ref?");

@@ -429,7 +429,7 @@ mod rectangular_proof_contract {
             "Grid.java",
             &ParseOptions::default(),
         ).unwrap();
-        let error = super::super::validate(&program, "Grid.count").err()
+        let error = super::super::validate_with_receiver(&program, "Grid.count", None, None).err()
             .expect("overlapping local declarations are illegal Java");
         assert!(error.contains("[NORM-SOURCE-NAME]") && error.contains("duplicate local declaration i"));
     }

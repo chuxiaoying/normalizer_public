@@ -324,7 +324,7 @@ mod assembly_constructor_contract {
             int read() { return 0; }
           }";
         let program = parse(source, "Entry.java", &ParseOptions::default()).unwrap();
-        let result = crate::normalized::source_layouts(&program);
+        let result = crate::normalized::source_layouts(&program, None);
         let error = result.expect_err("an invalid canonical constructor cannot produce acquired state");
         assert!(error.contains("[NORM-FIELD-DECLARATION]"), "{error}");
     }

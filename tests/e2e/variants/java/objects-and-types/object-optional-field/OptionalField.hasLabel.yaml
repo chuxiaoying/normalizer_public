@@ -72,3 +72,14 @@
       {
         label: ""
       }
+
+- name: fresh-fields-observe-boolean-and-narrow-integer-initializers
+  edits:
+    - {from: 'String label;', to: 'String label; boolean enabled = true; byte debit = -128; short credit = 32767;'}
+    - from: 'return profile.label == null ? 0 : 1;'
+      to: 'Profile fresh = new Profile(); return fresh.enabled && fresh.label == null ? fresh.debit + fresh.credit : 0;'
+  expect:
+    - {path: [types, Profile, fields, enabled], add: bool}
+    - {path: [types, Profile, fields, debit], add: number}
+    - {path: [types, Profile, fields, credit], add: number}
+    - {path: [R], value: '32639'}
