@@ -3,10 +3,10 @@
 //! during substitution. Partial values and word arithmetic stay opaque.
 use crate::{builder as b, BinOpKind, Expr, SymVarOrigin, UnaryOpKind};
 use num_bigint::BigInt;
-use num_traits::{One, Zero};
+use num_traits::{One, Signed, Zero};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 struct Equation {
     coefficients: BTreeMap<String, BigInt>,
     constant: BigInt,
@@ -61,6 +61,59 @@ impl Equation {
     }
 }
 
+// Divide both sides by a nonzero common factor and fix the leading
+// sign. This identifies equal integer solution sets without selecting
+// particular values for free inputs.
+fn primitive(mut equation: Equation) -> Equation {
+    let mut factor = equation.constant.abs();
+    for coefficient in equation.coefficients.values() {
+        let mut term = coefficient.abs();
+        while !term.is_zero() {
+            let remainder = &factor % &term;
+            factor = term;
+            term = remainder;
+        }
+    }
+    if equation.coefficients.values().next().is_some_and(Signed::is_negative) {
+        factor = -factor;
+    }
+    if !factor.is_zero() && !factor.is_one() {
+        equation.constant /= &factor;
+        for coefficient in equation.coefficients.values_mut() {
+            *coefficient /= &factor;
+        }
+    }
+    equation
+}
+
+fn predicate(equation: &Equation) -> Option<Expr> {
+    let left = equation.coefficients.iter().map(|(name, coefficient)| {
+        let input = b::param(name, "integer");
+        if coefficient.is_one() { input } else { b::mul(b::lit_integer(coefficient.clone()), input) }
+    }).reduce(b::add)?;
+    Some(b::eq(left, b::lit_integer(-&equation.constant)))
+}
+
+fn remove_repeated_classes(equations: Vec<Equation>, conjuncts: &[Expr]) -> Option<Expr> {
+    let mut classes: Vec<(Equation, usize, bool)> = Vec::new();
+    for (index, equation) in equations.into_iter().enumerate() {
+        let equation = primitive(equation);
+        if let Some((_, _, repeated)) = classes.iter_mut().find(|(e, _, _)| *e == equation) {
+            *repeated = true;
+        } else {
+            classes.push((equation, index, false));
+        }
+    }
+    if classes.len() == conjuncts.len() { return None; }
+    classes.into_iter().map(|(equation, index, repeated)| {
+        if repeated {
+            predicate(&equation).unwrap_or_else(|| conjuncts[index].clone())
+        } else {
+            conjuncts[index].clone()
+        }
+    }).reduce(b::and)
+}
+
 pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
     // Keep online elimination bounded. Larger or underdetermined systems
     // retain their exact predicates; the budget never changes their meaning.
@@ -80,6 +133,10 @@ pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
         variables.extend(equation.coefficients.keys().cloned());
         equations.push(equation);
     }
+    solve_full_rank(&equations, variables).or_else(|| remove_repeated_classes(equations, conjuncts))
+}
+
+fn solve_full_rank(equations: &[Equation], variables: BTreeSet<String>) -> Option<Expr> {
     let n = variables.len();
     if n == 0 || n > equations.len() || equations.iter().all(|eq| eq.coefficients.len() < 2) {
         return None;
@@ -91,7 +148,7 @@ pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
             variables
                 .iter()
                 .map(|v| eq.coefficients.get(v).cloned().unwrap_or_default())
-                .chain([-eq.constant])
+                .chain([-&eq.constant])
                 .collect()
         })
         .collect();

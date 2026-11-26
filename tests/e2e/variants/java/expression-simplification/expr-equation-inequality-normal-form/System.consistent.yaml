@@ -12,3 +12,11 @@
   expect:
     - path: [R]
       value: limit > target AND target == value + 1
+
+- name: proportional-equations-have-one-integer-solution-domain
+  edits:
+    - from: return value + 1 == target && target <= limit;
+      to: return value + target == 10 && 2 * (value + target) == 20;
+  expect:
+    - path: [R]
+      value: target + value == 10
