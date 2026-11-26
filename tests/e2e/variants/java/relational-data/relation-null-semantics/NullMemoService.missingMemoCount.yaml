@@ -139,3 +139,75 @@
     - {from: 'return count;', to: 'return 1 + count == 0 ? 7 : 11;'}
   expect:
     - {path: [R], value: '11'}
+
+- name: nonnegative-count-keeps-less-than-three
+  edits:
+    - {from: 'static int missingMemoCount(', to: 'static boolean missingMemoCount('}
+    - {from: 'return count;', to: 'return count < 3;'}
+  expect:
+    - {path: [entry, returns], value: bool}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NULL
+          ),
+          0
+        ) < 3
+
+- name: nonnegative-count-keeps-greater-than-three
+  edits:
+    - {from: 'static int missingMemoCount(', to: 'static boolean missingMemoCount('}
+    - {from: 'return count;', to: 'return count > 3;'}
+  expect:
+    - {path: [entry, returns], value: bool}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NULL
+          ),
+          0
+        ) > 3
+
+- name: nonnegative-count-keeps-at-least-three
+  edits:
+    - {from: 'static int missingMemoCount(', to: 'static boolean missingMemoCount('}
+    - {from: 'return count;', to: 'return count >= 3;'}
+  expect:
+    - {path: [entry, returns], value: bool}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NULL
+          ),
+          0
+        ) >= 3
+
+- name: nonnegative-count-keeps-reversed-less-than-three
+  edits:
+    - {from: 'static int missingMemoCount(', to: 'static boolean missingMemoCount('}
+    - {from: 'return count;', to: 'return 3 > count;'}
+  expect:
+    - {path: [entry, returns], value: bool}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.memo IS NULL
+          ),
+          0
+        ) < 3
