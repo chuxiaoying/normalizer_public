@@ -118,6 +118,32 @@ fn override_matches(interface: &simulator_parser::JavaMethod, concrete: &simulat
         && interface.params().iter().map(|(ty, _)| ty).eq(concrete.params().iter().map(|(ty, _)| ty))
 }
 
+pub(crate) fn source_record_accessor<'a>(
+    class: &'a JavaClass, member: &str, arity: usize, selected_content: bool,
+) -> Option<&'a JavaType> {
+    if arity != 0 { return None; }
+    let field = class.fields().iter().find(|field| !field.is_static() && field.name() == member)?;
+    if class.is_record() { return Some(field.java_type()); }
+    if !selected_content { return None; }
+    let method = class.methods().iter().find(|m| m.name() == member && m.arity() == 0
+        && !m.is_static() && m.return_type() == field.java_type())?;
+    let [S::Return(Some(E::Ident(returned)))] = method.body()? else { return None; };
+    (returned == field.name()).then(|| field.java_type())
+}
+
+fn source_record_local(program: &JavaProgram, method: &JavaMethod, local: &str, member: &str, arity: usize) -> bool {
+    let declared = method.params().iter().find(|(_, name)| name == local).map(|(ty, _)| ty)
+        .or_else(|| method.body()?.iter().find_map(|statement| match statement {
+            S::VarDecl { java_type, name, .. } if name == local => Some(java_type),
+            _ => None,
+        }));
+    let Some(JavaType::Class(owner)) = declared else { return false; };
+    let selected = method.body().is_some_and(|body| body.iter().any(|statement|
+        matches!(statement, S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. }) if binding == local)));
+    program.find_class(owner).is_some_and(|class|
+        source_record_accessor(class, member, arity, selected).is_some())
+}
+
 fn local_interface_receiver<'a>(
     program: &'a JavaProgram, method: &simulator_parser::JavaMethod, local: &str,
 ) -> Option<&'a simulator_parser::JavaClass> {
@@ -688,7 +714,10 @@ pub(crate) fn validate_with_receiver(
                         .find_class(&owner)
                         .ok_or_else(|| error("NORM-UNBOUND-CALL", &owner))?;
                     if class.is_record() {
-                        return Err(error("NORM-RECORD-CONSTRUCTOR", &format!("{id} -> {owner}")));
+                        if arity != class.fields().len() {
+                            return Err(error("NORM-RECORD-CONSTRUCTOR", &format!("{id} -> {owner}")));
+                        }
+                        continue;
                     }
                     if !class.methods().iter().any(|m| m.is_constructor()) && arity == 0 {
                         continue;
@@ -714,6 +743,7 @@ pub(crate) fn validate_with_receiver(
                 Some((local, nested)) => (local, Cow::Owned(format!("{nested}.{target_member}"))),
                 None => (target_owner.as_str(), Cow::Borrowed(target_member.as_str())),
             };
+            if source_record_local(program, m, local, member.as_ref(), arity) { continue; }
             if let Some(interface) = local_interface_receiver(program, m, local) {
                 if interface.methods().iter().filter(|method| method.name() == member.as_ref() && method.arity() == arity).count() != 1 {
                     return Err(error("NORM-UNBOUND-CALL", &format!("{id} -> {target}/{arity}")));

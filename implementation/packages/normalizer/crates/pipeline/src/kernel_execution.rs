@@ -918,6 +918,14 @@ impl<'a> Engine<'a> {
                 if let Some(J::Ident(local)) = target.as_deref() {
                     if let Some(receiver) = env.get(local) {
                         if let JavaType::Class(interface) = self.source_declared_type(&J::Ident(local.clone()), id)? {
+                            if self.program.find_class(&interface).is_some_and(|class|
+                                crate::normalized::source_record_accessor(class, method, args.len(),
+                                    matches!(receiver.ty(), Ty::Record(_))).is_some())
+                            {
+                                return self.java_expr(&J::FieldAccess {
+                                    target: Box::new(J::Ident(local.clone())), field: method.clone(),
+                                }, id, env, path);
+                            }
                             if self.program.find_class(&interface).is_some_and(crate::normalized::plain_source_interface) {
                                 let receiver = receiver.scalar()?;
                                 let values = args.iter().map(|arg| self.java_expr(arg, id, env, path.clone()))

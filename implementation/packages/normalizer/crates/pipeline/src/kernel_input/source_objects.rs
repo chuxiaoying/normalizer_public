@@ -202,6 +202,16 @@ impl Engine<'_> {
         self.source_objects
             .objects
             .insert(reference.id(), (owner.into(), Origin::Allocation));
+        if class.is_record() {
+            need(args.len() == class.fields().len(), "native record constructor arity")?;
+            for (field, value) in class.fields().iter().zip(args) {
+                let ty = self.project.parameter_type(field.java_type())?;
+                let scalar = value.scalar()?;
+                need(value.ty() == ty || ty == Ty::Text && scalar.is_null(), "native record component type mismatch")?;
+                self.realtime_store.store_guarded(path.clone(), r.clone(), field.name(), scalar);
+            }
+            return Ok(Value::Term(Ty::Ref, r));
+        }
         for field in class.fields().iter().filter(|field| !field.is_static()) {
             let default = match self.project.parameter_type(field.java_type())? {
                 Ty::Integer => b::lit_int(0),

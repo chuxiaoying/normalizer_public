@@ -194,9 +194,16 @@ impl Admission<'_> {
                 let JavaType::Array(element) = self.declared_type(target, scope)? else { return None };
                 Some(*element)
             }
-            E::MethodCall { target, method, args } => self
-                .method(target.as_deref(), method, args.len(), scope)
-                .map(|m| m.return_type().clone()),
+            E::MethodCall { target, method, args } => {
+                if let Some(target) = target.as_deref() {
+                    if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
+                        if let Some(ty) = self.program.find_class(&owner).and_then(|class|
+                            super::source_record_accessor(class, method, args.len(), false))
+                        { return Some(ty.clone()); }
+                    }
+                }
+                self.method(target.as_deref(), method, args.len(), scope).map(|m| m.return_type().clone())
+            }
             _ => None,
         }
     }
@@ -303,8 +310,19 @@ impl Admission<'_> {
                 }
                 declared()
             }
-            E::New { args, .. } => {
-                for arg in args { self.expression(arg, scope)?; }
+            E::New { java_type, args } => {
+                let record = match java_type {
+                    JavaType::Class(name) => self.program.find_class(name).filter(|class| class.is_record()),
+                    _ => None,
+                };
+                for (index, arg) in args.iter().enumerate() {
+                    let actual = self.expression(arg, scope)?;
+                    if let Some(field) = record.and_then(|class| class.fields().get(index)) {
+                        let label = format!("record component {}", field.name());
+                        self.check_assignment_narrowing(Some(field.java_type()), arg, scope, &label)?;
+                        self.compatible(Kind::declared(field.java_type()), actual, &label)?;
+                    }
+                }
                 declared()
             }
             E::ArrayInitializer { element_type, elements } => {
