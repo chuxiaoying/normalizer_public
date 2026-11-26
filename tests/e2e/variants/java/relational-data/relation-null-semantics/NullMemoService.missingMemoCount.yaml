@@ -84,3 +84,29 @@
           ),
           0
         ) >= 0
+
+- name: a-local-alias-of-a-request-field-still-belongs-to-the-request
+  edits:
+    - from: 'class NullMemoService {'
+      to: |-
+        class MemoFilter { int accountId; }
+        class NullMemoService {
+    - from: 'static int missingMemoCount(int accountId) {'
+      to: |-
+        static int missingMemoCount(MemoFilter request) {
+                int accountId = request.accountId;
+  expect:
+    - path: [P, parameters]
+      value:
+        request: {position: 0, type: MemoFilter}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == request.accountId
+              AND bill.memo IS NULL
+          ),
+          0
+        )
