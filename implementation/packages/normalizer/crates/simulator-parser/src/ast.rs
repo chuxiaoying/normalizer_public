@@ -48,6 +48,7 @@ pub struct JavaClass {
     /// bindings cannot be admitted to the closed source contract.
     pub(crate) has_unbound_imports: bool,
     pub(crate) simple_name: String,
+    pub(crate) type_parameters: Vec<String>,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) fields: Vec<JavaField>,
     pub(crate) static_initializers: Vec<(usize, Vec<JavaStatement>)>,
@@ -59,6 +60,8 @@ pub struct JavaClass {
 }
 
 impl JavaClass {
+
+    pub fn type_parameters(&self) -> &[String] { &self.type_parameters }
 
     pub fn source_file(&self) -> Option<&str> {
         self.source_file.as_deref()
@@ -143,6 +146,7 @@ impl JavaField {
 /// `body` 为 `None` 表示没有 Java 方法体。
 #[derive(Debug, Clone)]
 pub struct JavaMethod {
+    pub(crate) type_parameters: Vec<String>,
     pub(crate) name: String,
     pub(crate) params: Vec<(JavaType, String)>,
     pub(crate) param_annotations: std::collections::BTreeMap<String, Vec<AnnotationRef>>,
@@ -157,6 +161,8 @@ pub struct JavaMethod {
 }
 
 impl JavaMethod {
+    pub fn type_parameters(&self) -> &[String] { &self.type_parameters }
+
     pub fn is_native(&self) -> bool { self.is_native }
 
     pub fn name(&self) -> &str {

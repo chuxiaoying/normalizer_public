@@ -359,12 +359,20 @@ impl<'a> Parser<'a> {
         Ok((supertype, interfaces))
     }
 
-    fn require_closed_declaration(&mut self) -> Result<(), ParseError> {
-        self.skip_ws();
-        if self.peek() == Some(b'<') {
-            return Err(self.err("[JAVA-TYPE-PARAMETERS] generic declarations require explicit preprocessing"));
+    fn parse_type_parameters(&mut self) -> Result<Vec<String>, ParseError> {
+        if !self.eat_char(b'<') { return Ok(Vec::new()); }
+        let mut parameters = Vec::new();
+        loop {
+            let name_at = self.pos;
+            let name = self.read_ident().filter(|name| !is_reserved_identifier(name))
+                .ok_or_else(|| self.err_at(name_at, "[JAVA-TYPE-PARAMETERS] expected a parameter name"))?;
+            if parameters.contains(&name) {
+                return Err(self.err_at(name_at, "[JAVA-TYPE-PARAMETERS] duplicate type parameter"));
+            }
+            parameters.push(name);
+            if self.eat_char(b'>') { return Ok(parameters); }
+            self.require_delimiter(b',', "[JAVA-TYPE-PARAMETERS] expected ',' or '>' after unbounded type parameter")?;
         }
-        Ok(())
     }
 
     pub(crate) fn read_annotations(&mut self) -> Result<Vec<AnnotationRef>, ParseError> {
@@ -461,7 +469,7 @@ impl<'a> Parser<'a> {
             .read_ident()
             .ok_or_else(|| self.err("expected class name"))?;
 
-        self.require_closed_declaration()?;
+        let type_parameters = self.parse_type_parameters()?;
 
         let (supertype, interfaces) = self.parse_class_hierarchy(is_interface)?;
 
@@ -474,7 +482,7 @@ impl<'a> Parser<'a> {
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
             simple_name,
-
+            type_parameters,
             annotations,
             fields: Vec::new(),
             static_initializers: Vec::new(),
@@ -596,7 +604,7 @@ fn parse_class_body(
             let nested_simple = p
                 .read_ident()
                 .ok_or_else(|| p.err("expected nested class name"))?;
-            p.require_closed_declaration()?;
+            let type_parameters = p.parse_type_parameters()?;
 
             let (nested_supertype, nested_interfaces) =
                 p.parse_class_hierarchy(nested_is_interface)?;
@@ -609,6 +617,7 @@ fn parse_class_body(
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
+                type_parameters,
                 annotations: annotations.clone(),
                 fields: Vec::new(),
                 static_initializers: Vec::new(),
@@ -675,6 +684,7 @@ fn parse_class_body(
                     return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
                 };
                 class.methods.push(JavaMethod {
+                    type_parameters: Vec::new(),
                     throws,
                     name: first,
                     params,
@@ -693,7 +703,7 @@ fn parse_class_body(
         }
 
         p.pos = save;
-        p.require_closed_declaration()?;
+        let type_parameters = p.parse_type_parameters()?;
         let java_type = match parse_type(&mut p) {
             Some(t) => t,
             None => {
@@ -751,6 +761,7 @@ fn parse_class_body(
                 None
             };
             class.methods.push(JavaMethod {
+                type_parameters,
                 throws,
                 name: member_name,
                 params,
@@ -765,6 +776,9 @@ fn parse_class_body(
             });
 
         } else {
+            if !type_parameters.is_empty() {
+                return Err(p.err("[JAVA-TYPE-PARAMETERS] type parameters require a method declaration"));
+            }
             if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] field cannot be native")); }
             if is_reserved_identifier(&member_name) {
                 return Err(p.err_at(member_at, "[JAVA-RESERVED-FIELD-NAME] reserved keyword used as a Java field name"));
