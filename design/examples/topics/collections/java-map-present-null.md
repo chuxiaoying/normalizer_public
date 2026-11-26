@@ -25,25 +25,28 @@ class Caption {
 
 ## AI 预处理结果
 
-保留方法、if 和 return，并显式声明返回值可空。将局部 HashMap 的构造、put、getOrDefault 在原处绑定为“空映射”“按键覆盖”“按键是否存在取值”。最后一步对存在的键返回原值（含 null），对缺键返回 fallback。这里使用普通可变 HashMap，只有常量字符串键，临时对象不会逃逸。
+保留方法、if 和 return，并显式声明返回值可空。将局部 HashMap 的构造、put、getOrDefault 在原处绑定为“空映射”“按键覆盖”“按键是否存在取值”。最后一步对存在的键返回原值（含 null），对缺键返回 fallback。原程序使用的可变 HashMap 不进入分析副本。局部 `CaptionMap` 是工程内声明的载体，只通过这三条关系指令使用；键和值域由 `value.map_empty(text, text?)` 明确给出。临时映射不逃逸。
 
 ```diff
 --- a/src/Caption.java
 +++ b/src/Caption.java
-@@ -1,8 +1,13 @@
+@@ -1,8 +1,16 @@
 -import java.util.HashMap;
++import normalizer.intrinsics.N;
++
++class CaptionMap {}
  class Caption {
-+    @normalizer.annotations.Nullable
++    @N.Nullable
      static String select(boolean cleared, String fallback) {
 -        HashMap<String,String> captions = new HashMap<>();
 -        if (cleared) captions.put("main", null);
 -        return captions.getOrDefault("main", fallback);
-+        java.util.HashMap<String,String> captions;
++        CaptionMap captions;
 +        /* @normalizer-ir captions = value.map_empty(text, text?) */
 +        if (cleared) {
 +            /* @normalizer-ir captions = value.map_put(captions, "main", null) */
 +        }
-+        String selected;
++        @N.Nullable String selected;
 +        /* @normalizer-ir selected = value.map_get_or(captions, "main", fallback) */
 +        return selected;
      }
@@ -64,18 +67,18 @@ P:
     fallback: { position: 1, type: text }
 R: |-
   CASE
-    WHEN NOT (cleared) THEN fallback
-    ELSE null
+    WHEN cleared THEN null
+    ELSE fallback
   END
 ```
 
 **判别例**　fallback 为“应付”时，cleared 为真返回 null，为假返回“应付”。把查表改成 COALESCE 会在第一种输入上出错。
 
 
-此完整二分 CASE 按统一正则规范把 null 放在 ELSE，条件同时取反；cleared 为真仍返回 null。当前已验收的是局部、不会逃逸的文本映射。分支汇合先计算键是否存在，再选择该键的实际载荷，不能用载荷是否为 null 推断键不存在。Java 别名、动态键及映射对象身份不在此入口的合同内。
+完整二分 CASE 以已取得的布尔参数 `cleared` 为基准；不因某一臂是 null 而反转。这里只讨论局部、不会逃逸的文本映射。分支汇合先计算键是否存在，再选择该键的实际载荷，不能用载荷是否为 null 推断键不存在。Java 别名、动态键及映射对象身份不在此入口的合同内。
 
 **键的转义对照**　类型化局部 IR 用双引号文本写键；`\\` 保留反斜杠，`\"` 保留双引号。写入和读取同一个键 `"team\\West\"A"` 时，仍区分“键存在且值为 null”和“键不存在”。查找时去掉键中的反斜杠应返回 fallback；`\q` 不是此局部 IR 支持的转义，应拒绝，不能当作字面 q 继续归约。
 
 **两个分支都写入**　清空分支令 `main → null`、`left → "pending"`，另一分支令 `main → "queued"`、`right → "confirmed"`。对 `main`，两个分支均有该键，不能读到默认文本；只在一个分支写入的键，在另一个分支才读取默认文本。局部变量名与同名文字也不互换：写入变量 `caption` 保存已取得的值，写入字面量 `"caption"` 保存这七个字符。
 
-局部文本 Map 的具体声明是 `java.util.HashMap<String,String>`，两个 `String` 都允许写成 `java.lang.String`。换成不同的容器、数字键或数字值时，不能仍套用同一个局部文本扩展。
+不能仅凭载体类名判定映射语义。未给出关系声明的载体、非文本键或非文本值都不能直接沿用此局部扩展。

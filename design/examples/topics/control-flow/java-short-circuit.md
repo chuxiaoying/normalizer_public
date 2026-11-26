@@ -20,7 +20,7 @@ class Guard {
 
 ## AI 预处理结果
 
-**原样通过。** Java 的短路条件是当前 parser 可处理的原生控制表达。
+**原样通过。** Java 的短路条件是原生控制表达，不为预处理改写。
 
 ## 归一化最终结果
 
@@ -52,10 +52,12 @@ R: active AND value > 0
 如果 active 为 false，不应调用 probe；仅验收返回 false 无法区分“未调用”和“调用后仍返回 false”。本例端口约定正常返回数值。
 
 ```java
-import normalizer.annotations.External;
+import normalizer.intrinsics.N;
 
 class GuardWithProbe {
-    @External
+    static final GuardWithProbe INSTANCE = new GuardWithProbe(new Probe());
+
+    @N.External
     private final Probe probe;
 
     GuardWithProbe(Probe probe) { this.probe = probe; }
@@ -65,18 +67,18 @@ class GuardWithProbe {
     }
 }
 
-interface Probe { int read(int value); }
+class Probe { native int read(int value); }
 ```
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/GuardWithProbe.java#GuardWithProbe.allowed, returns: bool }
+entry: { function: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.allowed, returns: bool }
 P:
   parameters:
     active: { position: 0, type: bool }
     value: { position: 1, type: number }
 S:
-  - call: { external: probe.read, args: [value], returns: number, result: $e_0, when: active }
+  - call: { external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read, args: [value], returns: number, result: $e_0, when: active }
 R: CASE WHEN active THEN $e_0 > 0 ELSE false END
 ```
 

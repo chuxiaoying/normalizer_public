@@ -35,22 +35,42 @@ interface ScoreClient {
 
 ## AI 预处理结果
 
-AI 只在外部端口和已有状态声明处增加 Normalizer 自身的标记。try、catch、finally、两条返回路径和状态写入保持 Java 原生结构。
+规范源码显式装配原接收者，在其外部端口和已有状态声明处增加 Normalizer 标记。端口保留签名与声明异常，不在本地伪造返回。try、catch、finally、两条返回路径和状态写入保持 Java 原生结构。
 
 ```diff
 --- a/src/FinallyService.java
 +++ b/src/FinallyService.java
-@@ -1,1 +1,4 @@
-+import normalizer.annotations.EntryState;
-+import normalizer.annotations.External;
+@@ -1,22 +1,28 @@
++import normalizer.intrinsics.N;
 +
  class RemoteError extends RuntimeException {}
-@@ -3,3 +6,5 @@
+
  class FinallyService {
-+    @External
++    static final FinallyService INSTANCE = new FinallyService(new ScoreClient());
++
++    @N.External
      private final ScoreClient client;
-+    @EntryState
++    @N.EntryState
      int attempts;
+
+     FinallyService(ScoreClient client) { this.client = client; }
+
+     int read(int accountId) {
+         try {
+             return client.fetch(accountId);
+         } catch (RemoteError ignored) {
+             return 0;
+         } finally {
+             attempts = attempts + 1;
+         }
+     }
+ }
+
+-interface ScoreClient {
+-    int fetch(int accountId) throws RemoteError;
++class ScoreClient {
++    native int fetch(int accountId) throws RemoteError;
+ }
 ```
 
 **预处理要点**：预处理补充边界身份，不能把 finally 提前合并进正常返回，也不能把异常路径当成普通默认值。最终顺序由统一执行内核表达。
@@ -61,7 +81,7 @@ AI 只在外部端口和已有状态声明处增加 Normalizer 自身的标记�
 schema: normalizer.pers/1
 
 entry:
-  function: src/FinallyService.java#FinallyService.read
+  function: src/FinallyService.java#FinallyService.INSTANCE.read
   returns: number
 
 P:
@@ -73,12 +93,12 @@ P:
 E:
   attempts:
     kind: state
-    source: src/FinallyService.java#FinallyService.attempts
+    source: src/FinallyService.java#FinallyService.INSTANCE.attempts
     type: number
 
 S:
   - call:
-      external: client.fetch
+      external: src/FinallyService.java#FinallyService.INSTANCE.client.fetch
       args:
         - accountId
       returns: number
@@ -117,6 +137,6 @@ R: |-
 
 捕获类型即使出现在未被调用的方法里，或写在已经匹配的处理器之后，也必须在入口核验。后面的处理器若重复捕获同一个类型（包括简名与限定名的不同写法），或其类型已经被前面的父类处理器覆盖，源码不能通过编译，入口拒绝。反过来，先捕获子类再放父类是合法的；实际收到的子类异常仍进入第一个处理器。
 
-这些对照不扩大到任意 Java 异常对象或嵌套处理器的执行范围。 按[已发布的源码合同](../../../../implementation/contracts/normalized-source-contract.md)，finally 末尾显式抛出目前只接收源码声明的无参、无载荷异常；带字符串载荷的 RuntimeException 是合法 Java，但不属于该终端 finally 子集，不能退回按一般 throw 执行。
+这些对照不要求假定未声明的异常域或载荷。若 finally 实际抛出有载荷的异常，类型、发生条件和可观察载荷都属于该终态；不能为了套用无载荷示例而丢掉文本，或回退到被覆盖的原异常。
 
 若 finally 中的返回守卫恒假，它不会覆盖任何待完成结果；原调用和一次写入不变。若 finally 按账户条件在两个分支都显式返回，它则覆盖所有原完成结果，R 只取决于该条件，原调用、写入顺序及次数仍保持。

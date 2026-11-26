@@ -55,20 +55,29 @@ R: |-
 
 ## 被重复的聚合本身包含完整 CASE
 
-```java
-class CaseReuse {
-    static int square(int[] values, boolean enabled, int extra) {
-        int offset = enabled ? extra : 0;
-        int total;
-        /* @normalizer-ir
-           total = sum from values as value yield value + offset
-        */
-        return total * total;
-    }
-}
+源码按数组顺序累加。数组长度来自输入，预处理把这段可完整表达的累加交给局部关系指令，保留初值、行表达式和后续的平方，不能预先计算总和。
+
+```diff
+--- a/src/CaseReuse.java
++++ b/src/CaseReuse.java
+@@ -1,10 +1,10 @@
+ class CaseReuse {
+     static int square(int[] values, boolean enabled, int extra) {
+         int offset = enabled ? extra : 0;
+-        int total = 0;
+-        for (int value : values) {
+-            total += value + offset;
+-        }
++        int total;
++        /* @normalizer-ir
++           total = sum from values as value yield value + offset
++        */
+         return total * total;
+     }
+ }
 ```
 
-**原样通过。** 相同聚合是乘法的两个已取得操作数，查询只依赖入口数组、行绑定和已取得的标量参数。CASE 在被绑定的表达式里面而不在外层保护域。在这个 R 内提取能减少重复结构，也不改变取得范围，因此必须提取一次。若只返回一次总和，或者偏移改为不含 CASE 的普通入参，则不能提取。
+相同聚合是乘法的两个已取得操作数，查询只依赖入口数组、行绑定和已取得的标量参数。CASE 在被绑定的表达式里面而不在外层保护域。在这个 R 内提取能减少重复结构，也不改变取得范围，因此必须提取一次。若只返回一次总和，或者偏移改为不含 CASE 的普通入参，则不能提取。
 
 ```yaml
 schema: normalizer.pers/1
@@ -85,4 +94,4 @@ R: |-
 
 若两次引用只出现在外层返回 guard 的某一臂，不能为提取 LET 把计算移到 guard 之外。
 
-即使同一个聚合已有两处直接引用，只要第三处在 CASE 的条件域内，全局替换仍会跨越这个域。共享绑定只能替换同一安全域里的引用；在没有局部绑定的情况下，这个混合表达式保留三个内联引用。
+即使同一个聚合已有两处直接引用，只要第三处在 CASE 的条件域内，全局替换仍会跨越这个域。共享绑定只能替换同一安全域里的引用。本例没有定义分支内的局部绑定表示，三个引用都必须保留内联。

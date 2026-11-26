@@ -1,20 +1,22 @@
-# Hello World：异常路径未闭合时拒绝归一化
+# Hello World：原生异常进入对应的 catch
 
 ## 设计意图
 
-检验可能进入异常的源码若没有交付闭合处理规则，必须明确拒绝。真正已证不可达的异常与实际可能发生的异常不同；不能把后者显示为普通返回。
+检验正常路径、能命中处理器的异常路径与真正逃逸的异常路径各自保留。不能在预处理阶段跳过 throw 或 catch。
 
 ## 输入原始代码
 
 入口在负数输入时显式抛出异常，并在入口内捕获后返回 fallback。正常路径和异常路径都是业务行为。
 
 ```java
+class NegativeValue extends RuntimeException {}
+
 class Guarded {
     static int read(int value) {
         try {
-            if (value < 0) throw new IllegalArgumentException();
+            if (value < 0) throw new NegativeValue();
             return value;
-        } catch (IllegalArgumentException ignored) {
+        } catch (NegativeValue ignored) {
             return 0;
         }
     }
@@ -23,20 +25,15 @@ class Guarded {
 
 ## AI 预处理结果
 
-**拒绝。** 当前规范输入不能闭合这条原生 `throw/catch` 路径。AI 不把异常改成普通返回值，也不删除 catch 来换取可解析输入。
-
-```text
-PREPROCESS_REQUIRED
-
-read:
-  path: value < 0 -> IllegalArgumentException -> catch fallback
-  required: an explicit exception-path contract accepted by the parser
-```
+**原样通过。** 项目内异常和处理器都有完整定义。只有内核实际执行到负数分支时才抛出，再按原有顺序选中 catch；不能用条件返回代替分析源码中的原生异常行为。
 
 ## 归一化最终结果
 
-未生成 PERS。CLI 保留非零退出和 `PREPROCESS_REQUIRED` 诊断。
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/Guarded.java#Guarded.read, returns: number }
+P: { parameters: { value: { position: 0, type: number } } }
+R: CASE WHEN value < 0 THEN 0 ELSE value END
+```
 
-**预处理要点**：异常路径是可观察业务行为，AI 不能用看似等价的条件返回代替它。
-
-**PERS 验收要点**：未闭合的正常／异常路径不能被伪造成单一 R，缺口应进入可回归的准入边界。
+负数路径抛出的异常已在入口内部捕获，不进入顶层 `throws`，R 上只留下这条路径正常返回的 0；0 和正数返回原值。若不捕获该异常，负数域须记到 `throws`，不能同时宣称这条路径在 R 中返回 0。

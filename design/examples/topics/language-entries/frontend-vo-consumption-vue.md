@@ -34,14 +34,14 @@ const arrears = reactive({
 
 ## AI 预处理结果
 
-两个模板绑定各提取为一个无参函数，`@componentProp` 保留它在源模板中的位置。下列模块描述单个页面实例：setup 创建一次 `arrears`，以后每次渲染都从这个实例已有的状态求值。
+两个模板绑定各提取为一个无参函数，`@N componentProp` 保留它在源模板中的位置；PERS 的入口是分析模块中实际可调用的导出函数，而不是模板位置。下列模块描述单个页面实例：setup 创建一次 `arrears`，以后每次渲染都从这个实例已有的状态求值。
 
 ```diff
-diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.mjs
+diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
 rename from src/ArrearsPage.vue
-rename to src/ArrearsPage.mjs
+rename to src/ArrearsPage.ts
 --- a/src/ArrearsPage.vue
-+++ b/src/ArrearsPage.mjs
++++ b/src/ArrearsPage.ts
 @@ -1,17 +1,15 @@
 -<template>
 -  <PayableCard
@@ -56,22 +56,22 @@ rename to src/ArrearsPage.mjs
 -import PayableCard from './PayableCard.vue'
 -
 -const arrears = reactive({
-+/** @entryState */
++/** @N entryState */
 +const arrears = {
    status: { ready: false, loading: false },
    summary: { payable: 0 }
 -})
 -</script>
++};
++
++/** @N componentProp PayableCard#balance.amount */
++export function amount(): number {
++  return arrears.status.ready ? arrears.summary.payable : 0;
 +}
 +
-+/** @componentProp PayableCard#balance.amount */
-+export function amount() {
-+  return arrears.status.ready ? arrears.summary.payable : 0
-+}
-+
-+/** @componentProp PayableCard#balance.caption */
-+export function caption() {
-+  return arrears.status.loading ? '加载中' : '应付金额'
++/** @N componentProp PayableCard#balance.caption */
++export function caption(): string {
++  return arrears.status.loading ? "加载中" : "应付金额";
 +}
 ```
 
@@ -86,14 +86,14 @@ rename to src/ArrearsPage.mjs
 ```yaml
 schema: normalizer.pers/1
 entry:
-  function: src/ArrearsPage.vue#PayableCard#balance.amount
+  function: src/ArrearsPage.ts#amount
   returns: number
 P:
   parameters: {}
 E:
   arrears:
     kind: state
-    source: src/ArrearsPage.vue#ArrearsPage.arrears
+    source: src/ArrearsPage.ts#arrears
     fields:
       status: { ready: bool }
       summary: { payable: number }
@@ -106,14 +106,14 @@ R: |-
 ```yaml
 schema: normalizer.pers/1
 entry:
-  function: src/ArrearsPage.vue#PayableCard#balance.caption
+  function: src/ArrearsPage.ts#caption
   returns: text
 P:
   parameters: {}
 E:
   arrears:
     kind: state
-    source: src/ArrearsPage.vue#ArrearsPage.arrears
+    source: src/ArrearsPage.ts#arrears
     fields:
       status: { loading: bool }
 R: |-

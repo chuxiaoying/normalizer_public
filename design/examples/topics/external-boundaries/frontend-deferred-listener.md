@@ -4,7 +4,7 @@
 
 对比登记回调、条件派发与重复派发。单纯储存回调不发通知；真分支才触发有序 S，两次命中仍是两次回执，未经声明的实际调用不能当成外部端口。同步零参 void 派发通过声明的所有者和方法绑定；同时改方法声明和调用，只更改通知端点，不改登记、派发域或回执次序。
 
-此准备入口只接收不逃逸的零参登记回调和单一条件派发。运行时文本不会按 JavaScript 真值规则冒充业务布尔条件；带其他外部效果的 else 也不能被该单分支形式悄悄丢掉。
+本例的基线是不逃逸的零参登记回调和单一条件派发。派生场景若增加闭合可见的 else 动作，仍按原分支记录，不把合法的双分支限制成单分支。派发条件取业务布尔值；来自原生文本真值转换的输入必须证明并显式交付同义布尔条件，不能猜它的类型或含义。
 
 [本主题](README.md)
 
@@ -29,16 +29,26 @@ export function handle(deliver: boolean): void {
 
 ## AI 预处理结果
 
-保留 listen、闭包和条件调用，只在 audit 和 notices 的声明上分别标记 @external。源码保证 listen 已给 pending 赋值，然后才检查 deliver。回调体在实际调用点进入分析。
+保留 listen、闭包和条件调用，只在 audit 和 notices 的声明上分别标记 `/** @N external */`。源码保证 listen 已给 pending 赋值，然后才检查 deliver。回调体在实际调用点进入分析。
 
 ```diff
 --- a/src/handler.ts
 +++ b/src/handler.ts
-@@ -1,2 +1,4 @@
-+/** @external */
+@@ -1,12 +1,14 @@
++/** @N external */
  declare const audit: { registered(): void }
-+/** @external */
++/** @N external */
  declare const notices: { notify(): void }
+
+ export function handle(deliver: boolean): void {
+     let pending: (() => string) | undefined
+     function listen(callback: () => string) {
+         pending = callback
+         audit.registered()
+     }
+     listen(() => { notices.notify(); return "callback-only" })
+     if (deliver) pending!()
+ }
 ```
 
 ## 归一化最终结果
@@ -49,8 +59,8 @@ schema: normalizer.pers/1
 entry: { function: src/handler.ts#handle, returns: void }
 P: { parameters: { deliver: { position: 0, type: bool } } }
 S:
-  - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
-  - call: { external: notices.notify, args: [], returns: void, result: $e_1, when: deliver }
+  - call: { external: src/handler.ts#audit.registered, args: [], returns: void, result: $e_0 }
+  - call: { external: src/handler.ts#notices.notify, args: [], returns: void, result: $e_1, when: deliver }
 R: void
 ```
 
@@ -64,4 +74,4 @@ R: void
 
 调用时点决定何时产生 S，但不改变回调里每个名字所指的对象。若登记函数把自己的回调形参也命名为 notices，定义在入口里的箭头函数仍读取入口可见的外部 notices；登记函数自己直接访问 notices 则读取它的形参。入口自己的局部绑定也可能遮蔽同名外部对象。只有调用接收者确实绑定到带合同的外部声明才产生该端口的 S；同名并不等于同一声明。对照检验延后派发、登记时立即调用回调和登记函数自己调用未被遮蔽的 audit。
 
-登记也靠绑定身份，而不是变量拼写：左值必须是入口中实际持有回调的槽，右值必须是登记函数的回调形参。若登记函数的形参也叫 pending，函数里的 pending = pending 只改写该形参，不会登记入口回调。对本入口而言，未登记就执行派发不能被当作成功的登记与通知；准备态分析应报告未建立登记，而不是生成凭空的外部回执。这不限制 JavaScript 本身允许同名形参或对其赋值。
+登记也靠绑定身份，而不是变量拼写：左值必须是入口中实际持有回调的槽，右值必须是登记函数的回调形参。若登记函数的形参也叫 pending，函数里的 pending = pending 只改写该形参，不会登记入口回调。未登记时有两种边界：能证明槽仍是 undefined，且源码在 deliver 为真时强行调用它，则只有这条路径抛出 TypeError，保留此前确实发生的登记审计，不产生通知或通知回执；若闭合证据不足以确定回调绑定和状态，才报告分析失败，不能虚构任何回执。这不限制 TypeScript 本身允许同名形参或对其赋值。

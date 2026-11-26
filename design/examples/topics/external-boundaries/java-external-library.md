@@ -23,25 +23,30 @@ class LabelService {
 
 ## AI 预处理结果
 
-预处理替换导入与两次调用的目标，并在允许空值的 raw 参数上保留输入合同。fallback 按普通文本的非空默认规则处理。
+预处理替换导入与两次调用的目标，并在允许空值的 raw 参数上保留输入合同。fallback 按普通文本的非空默认规则处理。入口从 `Beans.ENTRY` 定位已装配的接收者。
 
 ```diff
 --- a/src/LabelService.java
 +++ b/src/LabelService.java
-@@ -1,9 +1,9 @@
+@@ -1,10 +1,14 @@
 -import org.apache.commons.lang3.StringUtils;
-+import normalizer.intrinsics.NormalizedText;
++import normalizer.intrinsics.N;
 
  class LabelService {
 -    String normalizeLabel(String raw, String fallback) {
-+    String normalizeLabel(@normalizer.annotations.Nullable String raw, String fallback) {
 -        return StringUtils.defaultIfBlank(
 -            StringUtils.trim(raw),
-+        return NormalizedText.defaultIfBlank(
-+            NormalizedText.trim(raw),
++    String normalizeLabel(@N.Nullable String raw, String fallback) {
++        return N.defaultIfBlank(
++            N.trim(raw),
              fallback
          );
      }
+ }
++
++class Beans {
++    static final LabelService ENTRY = new LabelService();
++}
 ```
 
 本例的两处调用绑定到以下文本操作。
@@ -63,7 +68,7 @@ class LabelService {
 schema: normalizer.pers/1
 
 entry:
-  function: src/LabelService.java#LabelService.normalizeLabel
+  function: src/LabelService.java#Beans.ENTRY.normalizeLabel
   returns: text
 
 P:
@@ -86,6 +91,6 @@ R: |-
 
 **PERS 验收要点**：最终表达应呈现文本操作的业务含义，字符遍历与编码结构留在操作合同内；公共文本语义仍须覆盖完整原始字符域，不能用更简短的公式掩盖孤立代理项。
 
-**空值守卫对照**　将内层换为原始 `raw`，再显式写成 `raw == null ? fallback : NormalizedText.defaultIfBlank(raw, fallback)`。注册的空白谓词自身已经覆盖 null，因此 R 是 `CASE WHEN blank(raw) THEN fallback ELSE raw END`。非空但属于空白的文本仍返回 fallback；非空白文本仍保留原值。无需额外识别旧 Java 库实现里的空值写法。
+**空值守卫对照**　将内层换为原始 `raw`，再显式写成 `raw == null ? fallback : N.defaultIfBlank(raw, fallback)`。注册的空白谓词自身已经覆盖 null，因此 R 是 `CASE WHEN blank(raw) THEN fallback ELSE raw END`。非空但属于空白的文本仍返回 fallback；非空白文本仍保留原值。无需额外识别旧 Java 库实现里的空值写法。
 
-直接给纯文本内建操作传 `null` 与经 `trim(null)` 取得的空值同属文本语义：第一实参为空时选备用文本。如果第一实参是非空白常量，第二实参即使是 `null`，也不会成为可观察的返回值。两种情况都不生成 S。
+直接给纯文本内建操作传 `null` 与经 `trim(null)` 取得的空值同属文本语义：第一实参为空时选备用文本。后备值按本入口约定非空，不用一个永远不选中的值绕过类型检查。两种情况都不生成 S。

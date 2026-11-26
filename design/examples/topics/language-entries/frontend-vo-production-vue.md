@@ -4,7 +4,7 @@
 
 变化轴是事件入参、跨 await 的读取、条件调用和有序状态写入。today 取自入口且两次读取相同；回执、可变状态和宿主不同入口的字段不能借用这条不变量。
 
-准备模块的声明不是装饰：普通说明注释不改变宿主契约或 PERS；等待端口必须声明闭合的 Promise 元素和拒绝类型，宿主 P 槽必须是具名必填字段。关系动作只能给当前块中可写的局部变量赋值，不能改写 const。无效准备输入在模拟执行前拒绝，不发布部分 PERS。
+分析交付的声明不是装饰：普通说明注释不改变源合同或 PERS。等待端口必须有闭合的正常返回和失败合同；本次调用的两个业务输入是具名必填形参。关系动作只能给当前块中可写的局部变量赋值，不能改写 const。无效准备输入在模拟执行前拒绝，不发布部分 PERS。
 
 ## 输入原始代码
 
@@ -103,15 +103,15 @@ onMounted(() => onLoad())
 
 ## AI 预处理结果
 
-以下 diff 的输入是上面完整的 `ArrearsPage.vue`，输出是普通 ECMAScript 模块 `ArrearsPage.mjs`。保留已有的 `onLoad()` 并导出，去掉入口外的模板和生命周期注册。原 TypeScript 声明用 JSDoc 表达，JavaScript 解析器可以直接读取整个模块。
+以下 diff 的输入是上面完整的 `ArrearsPage.vue`，输出是严格 TypeScript 分析模块 `ArrearsPage.ts`。导出 `onLoad`，将宿主本次交付的账户和日期写成类型明确的形参；去掉本次入口之外的模板和生命周期注册。
 
 ```diff
-diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.mjs
+diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
 rename from src/ArrearsPage.vue
-rename to src/ArrearsPage.mjs
+rename to src/ArrearsPage.ts
 --- a/src/ArrearsPage.vue
-+++ b/src/ArrearsPage.mjs
-@@ -1,32 +1,24 @@
++++ b/src/ArrearsPage.ts
+@@ -1,88 +1,74 @@
 -<template>
 -  <section v-if="arrears.status.ready">
 -    <strong>{{ arrears.summary.payable }}</strong>
@@ -119,48 +119,36 @@ rename to src/ArrearsPage.mjs
 -  <p v-else-if="arrears.status.loading">Loading</p>
 -  <p v-else-if="arrears.status.failed">Failed</p>
 -</template>
-+/**
-+ * @typedef {object} BillRow
-+ * @property {number} accountId
-+ * @property {number} dueDate
-+ * @property {number} amount
-+ * @property {number} waivedAmount
-+ * @property {number} priority
-+ */
-
+-
 -<script setup lang="ts">
 -import { onMounted, reactive } from "vue"
 -
--type BillRow = {
--  accountId: number
--  dueDate: number
--  amount: number
--  waivedAmount: number
--  priority: number
--}
--
--type Profile = {
--  accountId: number
--  minPriority: number
--  quota: number
--}
-+/**
-+ * @typedef {object} Profile
-+ * @property {number} accountId
-+ * @property {number} minPriority
-+ * @property {number} quota
-+ */
+ type BillRow = {
+   accountId: number
+   dueDate: number
+   amount: number
+   waivedAmount: number
+   priority: number
+ }
+
+ type Profile = {
+   accountId: number
+   minPriority: number
+   quota: number
+ }
 
  class ProfileFetchError extends Error {}
  class BillQueryError extends Error {}
 
 -const arrears = reactive({
-+/** @entryState */
++/** @N entryState */
 +const arrears = {
    loadedAccountId: 0,
    status: {
      loading: false,
-@@ -36,27 +28,39 @@
+     ready: false,
+     failed: false,
+   },
    summary: {
      payable: 0,
    },
@@ -170,55 +158,34 @@ rename to src/ArrearsPage.mjs
 -  accountId: number
 -  today: number
 -}>()
--
--interface ProfileClient {
--  /** rejects with ProfileFetchError */
--  fetchProfile(accountId: number): Promise<Profile>
++}
+
+ interface ProfileClient {
+   /** rejects with ProfileFetchError */
+   fetchProfile(accountId: number): Promise<Profile>
  }
 
--interface ArrearsClient {
--  /** rejects with BillQueryError */
--  queryOpenBills(accountId: number): Promise<BillRow[]>
--}
-+/**
-+ * @entryInputs
-+ * @type {{ accountId: number, today: number }}
-+ */
-+let props
+ interface ArrearsClient {
+   /** rejects with BillQueryError */
+   queryOpenBills(accountId: number): Promise<BillRow[]>
+ }
 
--declare const profileClient: ProfileClient
--declare const arrearsClient: ArrearsClient
-+/**
-+ * @callback FetchProfile
-+ * @param {number} accountId
-+ * @returns {Promise<Profile>}
-+ * @rejects {ProfileFetchError}
-+ */
-+/**
-+ * @callback QueryOpenBills
-+ * @param {number} accountId
-+ * @returns {Promise<BillRow[]>}
-+ * @rejects {BillQueryError}
-+ */
++/** @N external */
+ declare const profileClient: ProfileClient
++/** @N external */
+ declare const arrearsClient: ArrearsClient
 
 -async function onLoad() {
-+/**
-+ * @external
-+ * @type {{ fetchProfile: FetchProfile }}
-+ */
-+let profileClient
-+/**
-+ * @external
-+ * @type {{ queryOpenBills: QueryOpenBills }}
-+ */
-+let arrearsClient
-+
-+export async function onLoad() {
-   const todayAtEntry = props.today
-   arrears.loadedAccountId = props.accountId
+-  const todayAtEntry = props.today
+-  arrears.loadedAccountId = props.accountId
++export async function onLoad(accountId: number, today: number): Promise<void> {
++  const todayAtEntry = today
++  arrears.loadedAccountId = accountId
    arrears.status.loading = true
-@@ -65,12 +69,16 @@
-     const profile = await profileClient.fetchProfile(props.accountId)
+
+   try {
+-    const profile = await profileClient.fetchProfile(props.accountId)
++    const profile = await profileClient.fetchProfile(accountId)
      const rows = await arrearsClient.queryOpenBills(profile.accountId)
 
 -    const total = rows
@@ -227,8 +194,7 @@ rename to src/ArrearsPage.mjs
 -      .map(row => row.amount - row.waivedAmount)
 -      .filter(netAmount => netAmount > 0)
 -      .reduce((sum, netAmount) => sum + netAmount, 0)
-+    /** @type {number} */
-+    let total
++    let total: number
 +    /* @normalizer-ir
 +       total = sum from rows as row
 +         where row.dueDate <= todayAtEntry
@@ -240,7 +206,11 @@ rename to src/ArrearsPage.mjs
 
      arrears.status.loading = false
      arrears.summary.payable = total > profile.quota ? profile.quota : total
-@@ -82,7 +90,3 @@
+     arrears.status.ready = true
+   } catch (error) {
+     arrears.status.loading = false
+     arrears.status.failed = true
+     arrears.status.ready = false
      throw error
    }
  }
@@ -250,9 +220,9 @@ rename to src/ArrearsPage.mjs
 -</script>
 ```
 
-`@entryState` 标明 `arrears` 是当前实例已创建的状态。`@entryInputs` 标明 props 来自宿主，`accountId` 在第一次等待前用于记录账户和请求资料。`today` 是本次调用的不变量，源码在首次等待前将它读入 `todayAtEntry`，等待后筛选只读这个局部值。两个 `@external` 声明给出各自的返回值和拒绝类型。
+`@N entryState` 标明 `arrears` 属于已创建的页面实例。本次入口开始时，宿主交付账户和日期；形参 `accountId` 和 `today` 是本次调用的 P。源码在首次等待前把日期存入 `todayAtEntry`，等待后的筛选只读该局部值。若原入口在等待后重新观察可变的宿主状态，不能把那次观察提前或当作同一个 P。
 
-若等待前把 `props.today` 存入局部变量，等待后同时用该变量和 `props.today` 筛选，两者引用同一个 P，不产生新的观察槽或不同日期条件。宿主状态若真的可变，不得用 `@entryInputs` 冒充调用不变量。
+两个 `@N external` 声明标记实际端口。源场景已有闭合的完成合同：`profileClient.fetchProfile` 成功返回 `Profile`、失败为 `ProfileFetchError`；`arrearsClient.queryOpenBills` 成功返回 `BillRow[]`、失败为 `BillQueryError`。交付时须同端口绑定携带这份已核实的失败合同；仅凭 TypeScript 的 `Promise<T>` 签名不能推知拒绝类型，普通说明注释也不是推断规则。
 
 惰性条件的任一分支也可以引用这类调用不变量。归一化结果只选择真实分支的值：两个分支若引用同一个 P，结果就是该入参本身；等待后的直接读取与等待前保存的局部别名等价。读取 P 不产生新的 E 或 S，也不改变写入、调用和等待的顺序。该式只对已声明为调用不变量的 P 成立，不允许提前观察可变状态、外部回执或执行分支中的外部调用。
 
@@ -264,7 +234,7 @@ rename to src/ArrearsPage.mjs
 
 ## 归一化最终结果
 
-以下为 `onLoad` 的目标 PERS。JSDoc 将金额、日期和账户编号声明为 `number`，这些字段在最终 PERS 中保留同一数值类型。P 保留 `@entryInputs` 声明的两个宿主输入，`position` 表示其声明顺序；`accountId` 是首次等待前读取的账户；`today` 是本次调用绑定的业务输入，等待前后相同。新日期只能作为下一次调用的输入。这里的约定不适用于可变的宿主状态或外部观察。`$e_0` 与 `$e_1` 分别绑定本例两个端口返回的业务值。
+以下为 `onLoad` 的目标 PERS。严格 TypeScript 将金额、日期和账户编号声明为 `number`，这些字段在 PERS 中保留同一数值类型。P 保留导出函数的两个形参，`position` 表示签名顺序；`accountId` 是首次等待前读取的账户；`today` 是本次调用绑定的业务输入，等待前后相同。新日期只能作为下一次调用的输入。这里的约定不适用于可变的宿主状态或外部观察。`$e_0` 与 `$e_1` 分别绑定本例两个端口返回的业务值。
 
 ~~~yaml
 schema: normalizer.pers/1
@@ -284,7 +254,7 @@ types:
       priority: number
 
 entry:
-  function: src/ArrearsPage.vue#onLoad
+  function: src/ArrearsPage.ts#onLoad
   returns: void
 
 P:
@@ -299,7 +269,7 @@ P:
 E:
   arrears:
     kind: state
-    source: src/ArrearsPage.vue#ArrearsPage.arrears
+    source: src/ArrearsPage.ts#arrears
     fields:
       loadedAccountId: number
       status:
@@ -319,14 +289,14 @@ S:
       value: true
 
   - call:
-      external: profileClient.fetchProfile
+      external: src/ArrearsPage.ts#profileClient.fetchProfile
       args:
         - accountId
       returns: Profile
       result: $e_0
 
   - call:
-      external: arrearsClient.queryOpenBills
+      external: src/ArrearsPage.ts#arrearsClient.queryOpenBills
       args:
         - $e_0.accountId
       returns: BillRow[]
