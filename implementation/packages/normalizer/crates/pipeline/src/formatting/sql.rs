@@ -297,14 +297,9 @@ fn array_cardinality_name(expr: &Expr, expected: RelationAggregateKind) -> Optio
     use RelationAggregateKind::{Count, Exists};
     match (expected, expr.as_relation_aggregate()?) {
         (Count, (Count, Base { name, .. }, None, None)) => Some(name),
-        (Exists, (Exists, Base { name, .. }, select, None))
-            if unfiltered_exists_projection(select) => Some(name),
+        (Exists, (Exists, Base { name, .. }, _, None)) => Some(name),
         _ => None,
     }
-}
-
-fn unfiltered_exists_projection(select: Option<&Expr>) -> bool {
-    select.is_none_or(|value| value.as_bool() == Some(true))
 }
 
 fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<String> {
@@ -361,8 +356,7 @@ fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<S
     let array = array_name(name, ctx).to_owned();
     match (kind, select, default) {
         (Count, None, None) => Some(format!("LENGTH({array})")),
-        (Exists, select, None) if unfiltered_exists_projection(select) =>
-            Some(format!("LENGTH({array}) > 0")),
+        (Exists, _, None) => Some(format!("LENGTH({array}) > 0")),
         (NthValue, Some(index), default) if default.is_none_or(Expr::is_null) =>
             Some(format!("{array}[{}]", format_expr_with_ctx(index, ctx))),
         _ => None,

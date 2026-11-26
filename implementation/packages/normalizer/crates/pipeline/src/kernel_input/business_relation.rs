@@ -854,7 +854,7 @@ pub(super) fn is_table_expression(
                 || correlated_array_relation(relation).is_some_and(|pair|
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str())))),
             FirstValue => value.is_some() && table_source(relation),
-            Exists => value.is_none_or(|v| v.as_bool() == Some(true)) && table_source(relation),
+            Exists => table_source(relation),
             Count => (value.is_none() && projected_union_columns(relation).is_some_and(|branches|
                 branches.iter().all(|(name, column)| tables.get(*name)
                     .and_then(|columns| columns.get(*column)).is_some_and(|ty| ty == "number"))))

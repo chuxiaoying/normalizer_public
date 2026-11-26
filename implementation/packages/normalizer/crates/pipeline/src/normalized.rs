@@ -45,7 +45,6 @@ fn scalar(t: &JavaType) -> bool {
 pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> bool {
     class.is_interface()
         && class.fields().is_empty()
-        && class.supertype().is_none()
         && class.interfaces().is_empty()
         && !class.methods().is_empty()
         && class.methods().iter().all(|method| !method.is_static() && !method.is_constructor()

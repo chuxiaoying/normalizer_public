@@ -452,7 +452,7 @@ impl<'a> Parser<'a> {
     fn parse_assignment(&mut self) -> Result<JavaExpr, ParseError> {
         let target = self.parse_ternary()?;
         self.skip_ws();
-        if self.peek() == Some(b'=') && self.peek_at(1) != Some(b'=') {
+        if self.peek() == Some(b'=') {
             self.pos += 1;
             let value = self.parse_assignment()?;
             return Ok(JavaExpr::Assign {

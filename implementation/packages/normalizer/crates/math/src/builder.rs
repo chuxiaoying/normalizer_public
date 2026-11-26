@@ -764,7 +764,8 @@ fn proof_inputs_may_interact(left: &Expr, right: &Expr) -> bool {
 }
 
 fn proof_can_skip_as_unrelated(left: &Expr, right: &Expr) -> bool {
-    if left.as_bool().is_some() || right.as_bool().is_some() {
+    // The caller has already ruled out a literal active guard.
+    if right.as_bool().is_some() {
         return false;
     }
     !proof_inputs_may_interact(left, right)

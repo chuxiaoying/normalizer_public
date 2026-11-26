@@ -25,7 +25,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
         },
     );
     let gate_skipped = flatten_size > 32_768 || flatten_depth > 16;
-    let output = simplify_impl(expr, ctx);
+    let output = simplify_impl(expr, branches, ctx);
     if let Some(start) = start {
         let skip_reason = if gate_skipped {
             Some("flatten_cost_gate")
@@ -53,190 +53,188 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
     output
 }
 
-fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
-    if let ExprKind::CaseWhen { branches } = expr.kind() {
-        if let Some(value) = redundant_integer_point_arm(branches) {
-            return value;
+fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext) -> Expr {
+    if let Some(value) = redundant_integer_point_arm(branches) {
+        return value;
+    }
+    // An exhaustive binary partition may be complemented only together
+    // with swapping its values. Use the shared predicate ordering so source
+    // branch order cannot choose two different normal forms.
+    if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(expr, ctx) {
+        return oriented;
+    }
+
+    // -1. 嵌套 CaseWhen 展平（最优先）：
+    //    若 branch value 是 CaseWhen，按笛卡尔积展开为多个 branch：
+    //    (outer_cond, CaseWhen[(ic1, v1), ..., (true, vn)])
+    //    → (outer_cond && ic1, v1), ..., (outer_cond && true, vn) = (outer_cond, vn)
+    //
+    //    语义依据：CaseWhen 按序匹配；外层 cond 为真时进入内层再按序匹配，
+    //    等价于把外层 cond 与每个内层 cond AND 起来作为独立 branch。
+    //
+    //    展开后产生的重复 AND 项（如 `a && a`）由 boolean 多元 dedupe 吃掉；
+    //    冗余 path-guard 由 strip_redundant_path_guards 剥除；
+    //    不动点迭代保证下一轮继续化简。
+    // Flattening a value CASE duplicates its outer guard for every inner
+    // arm. Keep the nested form once the complete branch tree is large;
+    // this preserves first-match semantics and avoids exponential rebuilds
+    // during fold substitution. Small trees retain the canonical flat form.
+    // The cost gate must cover the proof-heavy CaseWhen rules below as
+    // well as nested-value flattening.  A large branch payload can make
+    // first-match domain construction and coverage proofs repeatedly
+    // rebuild tens of thousands of nodes even when no rewrite is found.
+    // Keeping the immutable CaseWhen is semantics-preserving and lets
+    // the caller's resource budget remain available for the surrounding
+    // expression.  Small cases retain the full canonicalization rules.
+    let (flattened_branches, flatten_changed) = flatten_nested_value_branches(branches);
+    let branches_ref: &[(Expr, Expr)] = if flatten_changed {
+        &flattened_branches
+    } else {
+        branches
+    };
+
+    if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
+        // Normalize guards before comparison to avoid commuting AND terms
+        // forever between this rule and the normal boolean ordering.
+        let arms = ranged
+            .into_iter()
+            .map(|(c, v)| (crate::normalize_with(c, ctx), v))
+            .collect();
+        // A certified complete integer partition is already in its
+        // terminal domain form. Later prior-failure stripping must not
+        // remove bounds that this partition would restore next iteration.
+        return crate::builder::case_when(arms, fallback);
+    }
+
+    // 0. 路径守卫冗余消除（新增规则）：
+    //    switch-case 语义本身保证：branch[k] 被匹配时，branch[0..k] 的 cond
+    //    全部为 false。因此 branch[k].cond 中任何 AND 项若形如
+    //    NOT(branch[j].cond) (j<k)，都是冗余守卫，可剥除。
+    //
+    // 例：expected `WHEN StringUtil.isBlank(code) THEN "code required"`
+    //    actual   `WHEN StringUtil.isBlank(code) && NOT (StringUtil.isBlank(name)) THEN "code required"`
+    //    剥除 NOT (StringUtil.isBlank(name))，因为 name isBlank 的分支已经在前面被匹配过
+    //
+    // 实现：对每个 branch，把 cond 展平成 AND conjuncts，过滤掉匹配前面任意
+    // branch cond 的 NOT 项，再从剩余 conjuncts 重建 And 链（空→true）。
+    let (guard_stripped, guard_changed) = strip_redundant_path_guards(branches_ref);
+
+    // 0a. OR 分支冗余消除：
+    //    CaseWhen 按序匹配，branch[k] 被检查时所有前序 cond 已失败。
+    //    因此 branch[k].cond 中 OR 项若等于某个前序 cond，该 disjunct 在当前语境下恒 false，
+    //    可以剥除。
+    //
+    //    例：CASE WHEN A THEN v1 WHEN A || B THEN v2 WHEN true THEN v3
+    //       → CASE WHEN A THEN v1 WHEN B THEN v2 WHEN true THEN v3
+    let (or_stripped, or_changed) = strip_prev_disjuncts_from_or_guards(&guard_stripped);
+
+    // 0b. first-match prior-failure 域下的精确互补 guard 剥离：
+    //    CaseWhen 按序匹配，branch[k] 被检查时所有前序 cond 已失败。
+    //    因此前序 `WHEN NOT(A)` 失败后，later branch 中 `A && B` 的
+    //    `A` conjunct 是冗余 guard，可剥为 `B`。
+    //
+    //    注意：这里只做 syntactic exact-complement conjunct stripping，
+    //    不做全域 SAT/implication 化简；否则会把正常返回 guard 过宽吞掉。
+    //    更强的代数律必须单独证明后沉淀到 math，而不是复刻 formatter 兜底。
+    let (domain_simplified, domain_simplified_changed) =
+        simplify_branch_conditions_under_prior_failures(&or_stripped);
+
+    // 0c. 死分支消除（相同 cond 的后续 branch 不可达）：
+    //    若 branch[k].cond 与某 branch[j].cond (j<k) 完全相等，
+    //    则 branch[k] 永远不会被匹配（前面的必先命中），剔除。
+    //
+    //    这是 strip_redundant_path_guards 的自然推广：path-guard 剥的是
+    //    NOT(prev_cond) AND 项；这里剥的是 cond 整体等于某 prev_cond。
+    //
+    //    例：CaseWhen [(c, v1), (c, v2), (true, v3)] → [(c, v1), (true, v3)]
+    //    场景：Map.get 的两分支 return 路径在 merge 时产生 cond 相同但 value
+    //    不同的 branch 序列（CaseWhen flatten 后更常见）。
+    let (same_value_merged, same_value_merged_changed) =
+        merge_adjacent_same_value_branches(&domain_simplified);
+
+    let (same_value_grouped, same_value_grouped_changed) =
+        group_same_value_effective_domains(&same_value_merged);
+
+    // 0d. 覆盖死分支消除：
+    //    CaseWhen 按序匹配，branch[k] 只有在所有前序 cond 都失败时才会被检查。
+    //    若 `cond[k] && !cond[0] && ... && !cond[k-1]` 经 normalize 可证明为 false，
+    //    则 branch[k] 已被前序分支全集覆盖，永远不可达。
+    //
+    //    典型场景：外层 guard 已证明 `value != null`，而 return value 是同一个
+    //    `value` 的 CaseWhen。nested flatten 会生成默认 null 分支；该分支被前面
+    //    非 null value 分支覆盖，应删除，而不是渲染成 `"found:" + null`。
+    let (covered_stripped, covered_changed) = dead_branch_by_covered_prev_conds(&same_value_grouped);
+
+    // Drop false guards and stop after the first explicit default.
+    let mut filtered: Vec<(Expr, Expr)> = Vec::new();
+    for (condition, value) in &covered_stripped {
+        if condition.as_bool() == Some(false) {
+            continue;
         }
-        // An exhaustive binary partition may be complemented only together
-        // with swapping its values. Use the shared predicate ordering so source
-        // branch order cannot choose two different normal forms.
-        if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(expr, ctx) {
-            return oriented;
+        let is_default = condition.as_bool() == Some(true);
+        filtered.push((condition.clone(), value.clone()));
+        if is_default {
+            break;
         }
+    }
 
-        // -1. 嵌套 CaseWhen 展平（最优先）：
-        //    若 branch value 是 CaseWhen，按笛卡尔积展开为多个 branch：
-        //    (outer_cond, CaseWhen[(ic1, v1), ..., (true, vn)])
-        //    → (outer_cond && ic1, v1), ..., (outer_cond && true, vn) = (outer_cond, vn)
-        //
-        //    语义依据：CaseWhen 按序匹配；外层 cond 为真时进入内层再按序匹配，
-        //    等价于把外层 cond 与每个内层 cond AND 起来作为独立 branch。
-        //
-        //    展开后产生的重复 AND 项（如 `a && a`）由 boolean 多元 dedupe 吃掉；
-        //    冗余 path-guard 由 strip_redundant_path_guards 剥除；
-        //    不动点迭代保证下一轮继续化简。
-        // Flattening a value CASE duplicates its outer guard for every inner
-        // arm. Keep the nested form once the complete branch tree is large;
-        // this preserves first-match semantics and avoids exponential rebuilds
-        // during fold substitution. Small trees retain the canonical flat form.
-        // The cost gate must cover the proof-heavy CaseWhen rules below as
-        // well as nested-value flattening.  A large branch payload can make
-        // first-match domain construction and coverage proofs repeatedly
-        // rebuild tens of thousands of nodes even when no rewrite is found.
-        // Keeping the immutable CaseWhen is semantics-preserving and lets
-        // the caller's resource budget remain available for the surrounding
-        // expression.  Small cases retain the full canonicalization rules.
-        let (flattened_branches, flatten_changed) = flatten_nested_value_branches(branches);
-        let branches_ref: &[(Expr, Expr)] = if flatten_changed {
-            &flattened_branches
-        } else {
-            branches
-        };
-
-        if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
-            // Normalize guards before comparison to avoid commuting AND terms
-            // forever between this rule and the normal boolean ordering.
-            let arms = ranged
-                .into_iter()
-                .map(|(c, v)| (crate::normalize_with(c, ctx), v))
-                .collect();
-            // A certified complete integer partition is already in its
-            // terminal domain form. Later prior-failure stripping must not
-            // remove bounds that this partition would restore next iteration.
-            return crate::builder::case_when(arms, fallback);
+    // 3. 如果唯一分支是 (true, v)，退化为 v
+    if filtered.len() == 1 {
+        if let ExprKind::Lit(Lit::Bool(true)) = filtered[0].0.kind() {
+            return filtered[0].1.clone();
         }
+    }
 
-        // 0. 路径守卫冗余消除（新增规则）：
-        //    switch-case 语义本身保证：branch[k] 被匹配时，branch[0..k] 的 cond
-        //    全部为 false。因此 branch[k].cond 中任何 AND 项若形如
-        //    NOT(branch[j].cond) (j<k)，都是冗余守卫，可剥除。
-        //
-        // 例：expected `WHEN StringUtil.isBlank(code) THEN "code required"`
-        //    actual   `WHEN StringUtil.isBlank(code) && NOT (StringUtil.isBlank(name)) THEN "code required"`
-        //    剥除 NOT (StringUtil.isBlank(name))，因为 name isBlank 的分支已经在前面被匹配过
-        //
-        // 实现：对每个 branch，把 cond 展平成 AND conjuncts，过滤掉匹配前面任意
-        // branch cond 的 NOT 项，再从剩余 conjuncts 重建 And 链（空→true）。
-        let (guard_stripped, guard_changed) = strip_redundant_path_guards(branches_ref);
 
-        // 0a. OR 分支冗余消除：
-        //    CaseWhen 按序匹配，branch[k] 被检查时所有前序 cond 已失败。
-        //    因此 branch[k].cond 中 OR 项若等于某个前序 cond，该 disjunct 在当前语境下恒 false，
-        //    可以剥除。
-        //
-        //    例：CASE WHEN A THEN v1 WHEN A || B THEN v2 WHEN true THEN v3
-        //       → CASE WHEN A THEN v1 WHEN B THEN v2 WHEN true THEN v3
-        let (or_stripped, or_changed) = strip_prev_disjuncts_from_or_guards(&guard_stripped);
+    // 3b. Two-value exhaustive CaseWhen canonicalization:
+    //
+    //   CASE
+    //     WHEN A THEN X
+    //     WHEN B THEN Y
+    //     WHEN C THEN X
+    //     WHEN D THEN Y
+    //   END
+    //
+    // If the first-match effective domains cover the whole space, and there
+    // are exactly two payloads, display the more common / explicit else
+    // payload as the default and keep only the other payload's domains:
+    //
+    //   CASE
+    //     WHEN B THEN Y
+    //     WHEN D THEN Y
+    //     WHEN true THEN X
+    //   END
+    //
+    // This is a semantic CaseWhen canonicalization, not a formatter shape
+    // patch: it operates on first-match effective domains and only fires
+    // after math proves exhaustive coverage.
+    if let Some(collapsed) = collapse_two_value_exhaustive_to_default(&filtered) {
+        return collapsed;
+    }
 
-        // 0b. first-match prior-failure 域下的精确互补 guard 剥离：
-        //    CaseWhen 按序匹配，branch[k] 被检查时所有前序 cond 已失败。
-        //    因此前序 `WHEN NOT(A)` 失败后，later branch 中 `A && B` 的
-        //    `A` conjunct 是冗余 guard，可剥为 `B`。
-        //
-        //    注意：这里只做 syntactic exact-complement conjunct stripping，
-        //    不做全域 SAT/implication 化简；否则会把正常返回 guard 过宽吞掉。
-        //    更强的代数律必须单独证明后沉淀到 math，而不是复刻 formatter 兜底。
-        let (domain_simplified, domain_simplified_changed) =
-            simplify_branch_conditions_under_prior_failures(&or_stripped);
+    // 3b. 所有分支值结构相同 → 退化为该值（CaseWhen-MethodCall PR 衍生规则）
+    //
+    // 场景：MethodCall on CaseWhen receiver 分发后，每个 branch 调用同方法可能
+    // 产生相同结果，此时 CaseWhen 包裹无意义，归一化为该值。
 
-        // 0c. 死分支消除（相同 cond 的后续 branch 不可达）：
-        //    若 branch[k].cond 与某 branch[j].cond (j<k) 完全相等，
-        //    则 branch[k] 永远不会被匹配（前面的必先命中），剔除。
-        //
-        //    这是 strip_redundant_path_guards 的自然推广：path-guard 剥的是
-        //    NOT(prev_cond) AND 项；这里剥的是 cond 整体等于某 prev_cond。
-        //
-        //    例：CaseWhen [(c, v1), (c, v2), (true, v3)] → [(c, v1), (true, v3)]
-        //    场景：Map.get 的两分支 return 路径在 merge 时产生 cond 相同但 value
-        //    不同的 branch 序列（CaseWhen flatten 后更常见）。
-        let (same_value_merged, same_value_merged_changed) =
-            merge_adjacent_same_value_branches(&domain_simplified);
-
-        let (same_value_grouped, same_value_grouped_changed) =
-            group_same_value_effective_domains(&same_value_merged);
-
-        // 0d. 覆盖死分支消除：
-        //    CaseWhen 按序匹配，branch[k] 只有在所有前序 cond 都失败时才会被检查。
-        //    若 `cond[k] && !cond[0] && ... && !cond[k-1]` 经 normalize 可证明为 false，
-        //    则 branch[k] 已被前序分支全集覆盖，永远不可达。
-        //
-        //    典型场景：外层 guard 已证明 `value != null`，而 return value 是同一个
-        //    `value` 的 CaseWhen。nested flatten 会生成默认 null 分支；该分支被前面
-        //    非 null value 分支覆盖，应删除，而不是渲染成 `"found:" + null`。
-        let (covered_stripped, covered_changed) = dead_branch_by_covered_prev_conds(&same_value_grouped);
-
-        // Drop false guards and stop after the first explicit default.
-        let mut filtered: Vec<(Expr, Expr)> = Vec::new();
-        for (condition, value) in &covered_stripped {
-            if condition.as_bool() == Some(false) {
-                continue;
-            }
-            let is_default = condition.as_bool() == Some(true);
-            filtered.push((condition.clone(), value.clone()));
-            if is_default {
-                break;
-            }
+    // 4. 如果 flatten / dedup / canonicalize / 过滤 / 截断 / 剥守卫 导致变化，返回新 CaseWhen
+    if flatten_changed
+        || guard_changed
+        || or_changed
+        || domain_simplified_changed
+        || same_value_merged_changed
+        || same_value_grouped_changed
+        || covered_changed
+        || filtered.len() != branches_ref.len()
+        || filtered.len() != domain_simplified.len()
+        || filtered.len() != same_value_grouped.len()
+        || filtered.len() != covered_stripped.len()
+    {
+        if filtered.is_empty() {
+            // 不应该发生（builder 保证至少有 true 分支），防御
+            return expr.clone();
         }
-
-        // 3. 如果唯一分支是 (true, v)，退化为 v
-        if filtered.len() == 1 {
-            if let ExprKind::Lit(Lit::Bool(true)) = filtered[0].0.kind() {
-                return filtered[0].1.clone();
-            }
-        }
-
-
-        // 3b. Two-value exhaustive CaseWhen canonicalization:
-        //
-        //   CASE
-        //     WHEN A THEN X
-        //     WHEN B THEN Y
-        //     WHEN C THEN X
-        //     WHEN D THEN Y
-        //   END
-        //
-        // If the first-match effective domains cover the whole space, and there
-        // are exactly two payloads, display the more common / explicit else
-        // payload as the default and keep only the other payload's domains:
-        //
-        //   CASE
-        //     WHEN B THEN Y
-        //     WHEN D THEN Y
-        //     WHEN true THEN X
-        //   END
-        //
-        // This is a semantic CaseWhen canonicalization, not a formatter shape
-        // patch: it operates on first-match effective domains and only fires
-        // after math proves exhaustive coverage.
-        if let Some(collapsed) = collapse_two_value_exhaustive_to_default(&filtered) {
-            return collapsed;
-        }
-
-        // 3b. 所有分支值结构相同 → 退化为该值（CaseWhen-MethodCall PR 衍生规则）
-        //
-        // 场景：MethodCall on CaseWhen receiver 分发后，每个 branch 调用同方法可能
-        // 产生相同结果，此时 CaseWhen 包裹无意义，归一化为该值。
-
-        // 4. 如果 flatten / dedup / canonicalize / 过滤 / 截断 / 剥守卫 导致变化，返回新 CaseWhen
-        if flatten_changed
-            || guard_changed
-            || or_changed
-            || domain_simplified_changed
-            || same_value_merged_changed
-            || same_value_grouped_changed
-            || covered_changed
-            || filtered.len() != branches_ref.len()
-            || filtered.len() != domain_simplified.len()
-            || filtered.len() != same_value_grouped.len()
-            || filtered.len() != covered_stripped.len()
-        {
-            if filtered.is_empty() {
-                // 不应该发生（builder 保证至少有 true 分支），防御
-                return expr.clone();
-            }
-            return Expr::new(ExprKind::CaseWhen { branches: filtered });
-        }
+        return Expr::new(ExprKind::CaseWhen { branches: filtered });
     }
     expr.clone()
 }
