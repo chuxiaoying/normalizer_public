@@ -37,3 +37,7 @@
         SET closed_amount = amount, status = 'CLOSED'
     - path: [E, payable, columns, account_id]
       absent: true
+- name: omitted-write-alias-binds-the-physical-table-name
+  edits:
+    - { from: 'update payable as p', to: 'update payable' }
+    - { from: 'where p.account_id == accountId', to: 'where payable.account_id == accountId' }
