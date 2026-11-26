@@ -1,10 +1,83 @@
 //! A full-rank conjunction of affine equalities on exact integer inputs has
 //! at most one solution. Eliminate over the integers, then check divisibility
 //! during substitution. Partial values and word arithmetic stay opaque.
-use crate::{builder as b, BinOpKind, Expr, SymVarOrigin};
+use crate::{builder as b, BinOpKind, Expr, SortContext, SymVarOrigin};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Move exact literal offsets in a two-sided affine equality to the
+/// canonical *other* operand. Subject identities and the relation itself do
+/// not change; this is not a solver for an underdetermined equation.
+pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr> {
+    let (op @ (BinOpKind::Eq | BinOpKind::Ne), left, right) = expr.as_binop()? else {
+        return None;
+    };
+    // An opaque receipt or staged observation does not become a total
+    // integer merely because the comparison returns a Boolean.
+    if [left, right].iter().any(|value| value.size() > 256 || value.depth() > 48
+        || !super::integer_ac::total_integer(value))
+    {
+        return None;
+    }
+    let (mut left, mut left_offset) = split_offset(left);
+    let (mut right, mut right_offset) = split_offset(right);
+    let (left_name, right_name) = (direct_integer_input(left)?, direct_integer_input(right)?);
+    if left_offset.is_zero() && right_offset.is_zero() { return None; }
+    if left_name == right_name {
+        return Some(b::lit_bool((left_offset == right_offset) == (op == BinOpKind::Eq)));
+    }
+    if crate::canonical_order_compare(left, right, ctx).is_gt() {
+        std::mem::swap(&mut left, &mut right);
+        std::mem::swap(&mut left_offset, &mut right_offset);
+    }
+
+    let offset = right_offset - left_offset;
+    let adjusted = if offset.is_zero() {
+        right.clone()
+    } else if offset.is_positive() {
+        b::add(right.clone(), b::lit_integer(offset))
+    } else {
+        b::sub(right.clone(), b::lit_integer(-offset))
+    };
+    let result = b::binop_public(op, left.clone(), adjusted);
+    (result != *expr).then_some(result)
+}
+
+fn direct_integer_input(expr: &Expr) -> Option<&str> {
+    match expr.as_sym_var()? {
+        SymVarOrigin::Parameter { name, primitive_type }
+            if primitive_type == "integer"
+                && !name.starts_with('$') && !name.contains(['.', '[', ']']) => Some(name),
+        _ => None,
+    }
+}
+
+fn split_offset(mut value: &Expr) -> (&Expr, BigInt) {
+    let mut offset = BigInt::zero();
+    while let Some((op, left, right)) = value.as_binop() {
+        match op {
+            BinOpKind::Add => {
+                if let Some(n) = right.as_lit().and_then(crate::Lit::as_integer) {
+                    offset += n;
+                    value = left;
+                } else if let Some(n) = left.as_lit().and_then(crate::Lit::as_integer) {
+                    offset += n;
+                    value = right;
+                } else {
+                    break;
+                }
+            }
+            BinOpKind::Sub => {
+                let Some(n) = right.as_lit().and_then(crate::Lit::as_integer) else { break };
+                offset -= n;
+                value = left;
+            }
+            _ => break,
+        }
+    }
+    (value, offset)
+}
 
 #[derive(Default, PartialEq, Eq)]
 struct Equation {
@@ -185,6 +258,26 @@ mod affine_equation_tests {
 
     fn integer(name: &str) -> Expr {
         b::param(name, crate::ScalarSymbolType::Integer)
+    }
+
+    #[test]
+    fn same_exact_offset_relation_has_one_form_without_choosing_values() {
+        let target = integer("target");
+        let value = integer("value");
+        let context = &crate::DefaultSortContext;
+        let result = b::eq(target.clone(), b::sub(value.clone(), b::lit_int(1)));
+        let moved = b::eq(b::add(value.clone(), b::lit_int(1)), b::add(target.clone(), b::lit_int(2)));
+        assert_eq!(isolate_offset(&moved, context), Some(result.clone()));
+        assert_eq!(isolate_offset(&result, context), None);
+        assert_ne!(
+            isolate_offset(&b::eq(b::add(value.clone(), b::lit_int(1)), b::add(target.clone(), b::lit_int(3))), context),
+            Some(result),
+        );
+        let received = b::sym_e(42, crate::ScalarSymbolType::Integer);
+        assert_eq!(
+            isolate_offset(&b::eq(b::add(value, b::lit_int(1)), b::add(received, b::lit_int(2))), context),
+            None,
+        );
     }
 
     #[test]

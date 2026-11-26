@@ -12,3 +12,13 @@
   expect:
     - path: [R]
       value: target == value - 1
+- name: affine-offset-normal-form-survives-reversed-equation
+  edits:
+    - { from: 'return value + 1 == target;', to: 'return target + 2 == 1 + value;' }
+  expect:
+    - { path: [R], value: target == value - 1 }
+- name: affine-offset-normal-form-keeps-a-different-solution-set
+  edits:
+    - { from: 'return value + 1 == target;', to: 'return target + 3 == 1 + value;' }
+  expect:
+    - { path: [R], value: target == value - 2 }
