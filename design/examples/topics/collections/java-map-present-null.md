@@ -65,11 +65,7 @@ P:
   parameters:
     cleared: { position: 0, type: bool }
     fallback: { position: 1, type: text }
-R: |-
-  CASE
-    WHEN cleared THEN null
-    ELSE fallback
-  END
+R: CASE WHEN cleared THEN null ELSE fallback END
 ```
 
 **判别例**　fallback 为“应付”时，cleared 为真返回 null，为假返回“应付”。把查表改成 COALESCE 会在第一种输入上出错。

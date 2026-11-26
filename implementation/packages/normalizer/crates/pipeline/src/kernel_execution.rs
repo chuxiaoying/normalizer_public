@@ -336,6 +336,15 @@ impl<'a> Engine<'a> {
         Err(fail("missing return"))
     }
 
+    // The adjacent map_empty instruction supplies the map domain. A closed
+    // source class is just its nominal carrier; it gives no ordinary Java
+    // operations or aliases access to the map value.
+    fn declared_local_text_map(&self, declaration: &JavaType) -> bool {
+        matches!(declaration, JavaType::Class(name)
+            if self.program.find_class(name).is_some_and(|owner| !owner.is_interface()))
+            || super::source_map::declared_map(declaration)
+    }
+
     pub(super) fn source_steps(&mut self, body: &[S], id: &str, env: &mut Env, entry_path: Expr) -> Result<()> {
         let mut consumed_through = 0;
         for (i, s) in body.iter().enumerate() {
@@ -415,7 +424,7 @@ impl<'a> Engine<'a> {
                                 .find_map(|stmt| LocalIrInitializer::for_binding(stmt, name))
                         });
                     let binds = match initializes {
-                        Some(LocalIrInitializer::TextMap) => super::source_map::declared_map(java_type),
+                        Some(LocalIrInitializer::TextMap) => self.declared_local_text_map(java_type),
                         Some(LocalIrInitializer::NullableText) => super::source_map::declared_text(java_type),
                         Some(LocalIrInitializer::MemberChoice) => self.project.parameter_type(java_type)? == Ty::Integer
                             || self.project.source_owner(java_type).is_some(),
@@ -430,7 +439,7 @@ impl<'a> Engine<'a> {
                     consumed_through = i + self.execute_closed_source_stack(&body[i..], id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding }) => {
-                    need(preceding_uninitialized(body, i, binding).is_some_and(super::source_map::declared_map),
+                    need(preceding_uninitialized(body, i, binding).is_some_and(|ty| self.declared_local_text_map(ty)),
                         "local map requires a fresh typed local declaration")?;
                     env.insert(binding.clone(), Value::LocalTextMap(Default::default()));
                 }

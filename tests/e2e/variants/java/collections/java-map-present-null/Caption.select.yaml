@@ -13,7 +13,7 @@
   expect:
   - path:
     - R
-    value: "CASE\n  WHEN cleared THEN null\n  ELSE \"queued\"\nEND"
+    value: CASE WHEN cleared THEN null ELSE "queued" END
 - name: inserting-into-the-other-branch-keeps-the-absence-distinction
   edits:
   - from: if (cleared) {

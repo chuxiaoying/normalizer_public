@@ -20,3 +20,7 @@ CASE WHEN NOT(p) THEN right ELSE left END
 已取得的普通精确整数中，`count <= 0` 和 `count > 0` 互补。若正计数返回原计数、其余返回零，两种等价输入都归到 `CASE WHEN count > 0 THEN count ELSE 0 END`。不是因为某一臂为零而换方向，而是依据基准比较。不要混入只读 Vector 长度的自然域证明、word 运算或 IEEE 浮点。
 
 `AND` 与其 De Morgan 补 `OR` 在已取得的总布尔条件下可能形成互补方向。先按第八章比较整个值的复杂度；只有同复杂度、同取得域，才用共享结构键在基准候选中裁决。见[总布尔守卫的结构对照](../examples/topics/unified-canonical-form/java-total-boolean-order.md)。
+
+## 单行的二分值写法
+
+完整二分值的守卫若只是一个已绑定、已取得的总布尔符号，且两个标量结果均能各写成一行，序列化为 `CASE WHEN p THEN left ELSE right END`（如第七章的 `draft.ready` 示例）。这项规则只统一打印，不改变条件、取值或分支的取得范围。

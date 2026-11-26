@@ -59,5 +59,7 @@
   - from: return count;
     to: long result = pending; return result;
   reject:
-  - '[NORM-PROJECT]'
-  - local relation requires a typed query, not a Java scalar binding
+  - '[NORM-SOURCE-TYPE]'
+  - kind=PREPROCESS_REQUIRED
+  - location=BillReport.countAccounts
+  - initializer for result requires number, got source sequence<number>
