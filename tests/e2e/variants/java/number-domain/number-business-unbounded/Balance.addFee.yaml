@@ -288,3 +288,21 @@
       to: "return 0e400;"
   expect:
     - { path: [R], value: '0' }
+
+- name: canonical-equivalent-decimal-case-expressions-cancel
+  edits:
+    - from: "static int addFee"
+      to: "static double addFee"
+    - from: "return balance + fee;"
+      to: "return (balance > 0 ? 0.10 : 1.0) - (balance > 0 ? .1 : 1);"
+  expect:
+    - { path: [R], value: '0' }
+
+- name: canonical-integer-and-integral-decimal-share-one-symbolic-expression
+  edits:
+    - from: "static int addFee(int balance"
+      to: "static double addFee(double balance"
+    - from: "return balance + fee;"
+      to: "return (balance + 1.0) - (balance + 1);"
+  expect:
+    - { path: [R], value: '0' }

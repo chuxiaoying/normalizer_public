@@ -53,7 +53,23 @@ fn apply(name: &str, args: Vec<Expr>, types: Vec<Primitive>) -> Expr {
     b::call(key, args)
 }
 
-pub fn literal(value: BigInt, scale: u32) -> Expr {
+pub fn literal(mut value: BigInt, mut scale: u32) -> Expr {
+    // Canonicalize before a value enters CASE, equality or arithmetic. There
+    // is one business number, not separate integer and decimal zero/one.
+    if value.sign() == Sign::NoSign {
+        return b::lit_int(0);
+    }
+    if scale != 0 {
+        let trailing = value.to_str_radix(10).bytes().rev()
+            .take(scale as usize).take_while(|&b| b == b'0').count() as u32;
+        if trailing != 0 {
+            value /= BigInt::from(10).pow(trailing);
+            scale -= trailing;
+        }
+    }
+    if scale == 0 {
+        return b::lit_integer(value);
+    }
     apply(LITERAL, vec![b::lit_integer(value), b::lit_int(i64::from(scale))],
         vec![Primitive::Number, Primitive::Number])
 }
@@ -91,6 +107,11 @@ pub fn negate(value: Expr) -> Expr {
 
 pub fn binary(op: crate::BinOpKind, left: Expr, right: Expr) -> Expr {
     use crate::BinOpKind::*;
+    // The simulator evaluates both operands before reaching this pure rule;
+    // neither a previously recorded effect nor an exceptional path is erased.
+    if op == Sub && left == right {
+        return b::lit_int(0);
+    }
     if let (Some((a, s)), Some((b, t))) = (coefficient(&left), coefficient(&right)) {
         if op == Mul {
             return literal(a * b, s.checked_add(t).expect("decimal scale overflow"));
@@ -114,14 +135,14 @@ pub fn binary(op: crate::BinOpKind, left: Expr, right: Expr) -> Expr {
 }
 
 pub fn multiply(a: Expr, b: Expr) -> Expr {
-    if let (Some(View::Literal(x, s)), Some(View::Literal(y, t))) = (view(&a), view(&b)) {
+    if let (Some((x, s)), Some((y, t))) = (coefficient(&a), coefficient(&b)) {
         return literal(x*y, s.checked_add(t).expect("decimal scale overflow"));
     }
     apply(PRODUCT, vec![a, b], vec![Primitive::Composite, Primitive::Composite])
 }
 
 pub fn round(value: Expr, scale: u32, mode: Mode) -> Expr {
-    if let Some(View::Literal(coefficient, digits)) = view(&value) {
+    if let Some((coefficient, digits)) = coefficient(&value) {
         if scale >= digits {
             return literal(coefficient, digits);
         }
