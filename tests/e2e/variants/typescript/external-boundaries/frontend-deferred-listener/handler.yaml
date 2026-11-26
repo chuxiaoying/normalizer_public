@@ -159,7 +159,49 @@
         - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
         - call: { external: notices.notify, args: [], returns: void, result: $e_1, when: deliver }
         - call: { external: notices.notify, args: [], returns: void, result: $e_2, when: 'NOT (deliver)' }
-- name: negation-does-not-admit-implicit-number-to-boolean-dispatch
+- name: negated-nonzero-literal-is-false-before-ir
   edits:
     - { from: 'if (deliver) pending!()', to: 'if (!1) pending!()' }
-  reject: ['[NORM-TS-MODULE]', 'listener dispatch condition must be a closed Boolean']
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+- name: negated-zero-literal-is-true-before-ir
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!0) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+        - call: { external: notices.notify, args: [], returns: void, result: $e_1 }
+- name: negated-signed-nonzero-literal-is-false-before-ir
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!(-1)) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+- name: negated-hex-zero-literal-is-true-before-ir
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!0x0) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+        - call: { external: notices.notify, args: [], returns: void, result: $e_1 }
+- name: negated-decimal-zero-literal-is-true-before-ir
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (!0.00) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+        - call: { external: notices.notify, args: [], returns: void, result: $e_1 }
+- name: positive-numeric-guard-is-true-with-no-js-rule-in-ir
+  edits:
+    - { from: 'if (deliver) pending!()', to: 'if (1) pending!()' }
+  expect:
+    - path: [S]
+      value:
+        - call: { external: audit.registered, args: [], returns: void, result: $e_0 }
+        - call: { external: notices.notify, args: [], returns: void, result: $e_1 }

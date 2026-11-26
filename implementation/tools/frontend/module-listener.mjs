@@ -112,11 +112,29 @@ export function compileTypedListener(physicalPath, sf, fn) {
     }
   }
   if (!saved) fail('listener callback is not registered in the local slot');
+  function numericTruth(node) {
+    if (ts.isParenthesizedExpression(node)) return numericTruth(node.expression);
+    if (ts.isPrefixUnaryExpression(node)
+        && (node.operator === ts.SyntaxKind.PlusToken || node.operator === ts.SyntaxKind.MinusToken)) {
+      return numericTruth(node.operand); // the sign does not change whether the exact value is zero
+    }
+    if (!ts.isNumericLiteral(node)) return undefined;
+    const spelling = node.getText().replaceAll('_', '');
+    if (/^0[xob]/i.test(spelling)) return /[1-9a-f]/i.test(spelling.slice(2));
+    // No Number conversion: exponent digits do not make a zero significand nonzero.
+    return /[1-9]/.test(spelling.split(/[eE]/, 1)[0]);
+  }
   function gate(node) {
     if (ts.isParenthesizedExpression(node)) return gate(node.expression);
     if (ts.isIdentifier(node) && params.includes(node.text)) return {op: 'var', name: node.text};
     if (is(node, ts.SyntaxKind.TrueKeyword) || is(node, ts.SyntaxKind.FalseKeyword)) return value('bool', is(node, ts.SyntaxKind.TrueKeyword));
-    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) return {op: 'not', value: gate(node.operand)};
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+      const numeric = numericTruth(node.operand);
+      if (numeric !== undefined) return value('bool', !numeric);
+      return {op: 'not', value: gate(node.operand)};
+    }
+    const numeric = numericTruth(node);
+    if (numeric !== undefined) return value('bool', numeric);
     fail('listener dispatch condition must be a closed Boolean');
   }
   function dispatch(st, condition) {
