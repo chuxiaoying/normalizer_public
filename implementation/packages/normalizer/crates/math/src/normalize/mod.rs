@@ -467,6 +467,27 @@ mod resource_gate_tests {
     }
 
     #[test]
+    fn optional_candidate_and_proof_limits_decline_without_marking_the_run_exhausted() {
+        let scope = BudgetScope::install(NormalizeBudget {
+            max_steps: 2,
+            max_candidate_nodes: 1,
+            max_proof_nodes: 1,
+            ..NormalizeBudget::default()
+        });
+
+        for consume in [consume_candidate_budget, consume_proof_budget] {
+            assert!(consume(1, 1));
+            assert!(!consume(1, 2));
+        }
+        assert!(consume_budget(BudgetKind::Steps, 1, || 1));
+        let observed = budget_snapshot().expect("active test budget");
+        assert_eq!(observed.exhausted, None);
+        assert_eq!(observed.peak_nodes, 2);
+        assert_eq!((observed.candidate_nodes, observed.proof_nodes), (1, 1));
+        drop(scope);
+    }
+
+    #[test]
     fn fixed_point_iteration_limit_is_distinct_from_work_budget_exhaustion() {
         let x = b::param("limitedInput", crate::ScalarSymbolType::Integer);
         let expression = b::add(x.clone(), b::lit_int(0));
