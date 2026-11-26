@@ -32,7 +32,6 @@ schema: normalizer.pers/1
 entry: { function: src/CanonicalFailure.java#CanonicalFailure.validate, returns: number }
 P: { parameters: { code: { position: 0, type: number } } }
 R: code
-S: []
 throws:
   - { type: java.lang.RuntimeException, when: 'code == 3' }
   - { type: java.lang.RuntimeException, when: 'code == 1', payload: '"alpha"' }
@@ -46,10 +45,12 @@ throws:
 ## 外部回执只在取得后进入异常 guard
 
 ```java
-import normalizer.annotations.External;
+import normalizer.intrinsics.N;
 
 class GuardedCanonicalFailure {
-    @External
+    static final GuardedCanonicalFailure INSTANCE = new GuardedCanonicalFailure(new Classifier());
+
+    @N.External
     private final Classifier classifier;
 
     GuardedCanonicalFailure(Classifier classifier) {
@@ -66,8 +67,8 @@ class GuardedCanonicalFailure {
     }
 }
 
-interface Classifier {
-    int rank(int code);
+class Classifier {
+    native int rank(int code);
 }
 ```
 
@@ -75,14 +76,14 @@ interface Classifier {
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.validate, returns: number }
+entry: { function: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.validate, returns: number }
 P:
   parameters:
     enabled: { position: 0, type: bool }
     code: { position: 1, type: number }
 R: code
 S:
-  - call: { external: classifier.rank, args: [code], returns: number, result: '$e_0', when: enabled }
+  - call: { external: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.classifier.rank, args: [code], returns: number, result: '$e_0', when: enabled }
 throws:
   - { type: java.lang.RuntimeException, when: 'CASE WHEN enabled THEN $e_0 == 1 ELSE false END', payload: '"alpha"' }
   - { type: java.lang.RuntimeException, when: 'CASE WHEN enabled THEN $e_0 == 2 ELSE false END', payload: '"zeta"' }
@@ -91,12 +92,14 @@ throws:
 ## 外部异常载荷必须来自它自己的回执
 
 ```java
-import normalizer.annotations.External;
+import normalizer.intrinsics.N;
 
-class RemoteFault extends RuntimeException { String payload; }
-interface Rates { int read(int input) throws RemoteFault; }
+class RemoteFault extends RuntimeException { @N.Nullable String payload; }
+class Rates { native int read(int input) throws RemoteFault; }
 class RemotePayload {
-    @External private final Rates rates;
+    static final RemotePayload INSTANCE = new RemotePayload(new Rates());
+
+    @N.External private final Rates rates;
     RemotePayload(Rates rates) { this.rates = rates; }
     int read(int input) { return rates.read(input); }
 }
@@ -106,12 +109,12 @@ class RemotePayload {
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/RemotePayload.java#RemotePayload.read, returns: number }
+entry: { function: src/RemotePayload.java#RemotePayload.INSTANCE.read, returns: number }
 P:
   parameters:
     input: { position: 0, type: number }
 S:
-  - call: { external: rates.read, args: [input], returns: number, result: '$e_0' }
+  - call: { external: src/RemotePayload.java#RemotePayload.INSTANCE.rates.read, args: [input], returns: number, result: '$e_0' }
 R: $e_0
 throws:
   - { type: RemoteFault, when: 'completion.is_throw($e_0, RemoteFault)', payload: 'completion.payload($e_0, RemoteFault)', payload_type: 'text?' }

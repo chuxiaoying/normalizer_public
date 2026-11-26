@@ -58,7 +58,6 @@ schema: normalizer.pers/1
 entry: { function: src/CanonicalQuotient.java#CanonicalQuotient.guarded, returns: number }
 P: { parameters: { fail: { position: 0, type: bool } } }
 R: '7'
-S: []
 throws:
   - { type: java.lang.ArithmeticException, when: fail }
 ```

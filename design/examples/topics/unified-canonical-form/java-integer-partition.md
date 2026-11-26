@@ -36,12 +36,12 @@ P:
 R: |-
   CASE
     WHEN quantity <= -1 THEN 10
-    WHEN quantity <= 5 AND quantity >= 0 THEN 20
+    WHEN quantity <= 5 THEN 20
     ELSE 30
   END
 ```
 
-在整数域，首支是到 -1 为止；第二和第三支的有效域分别为 0 到 2、3 到 5，按相邻整数区间合并，再按结构键排列同一 guard 的两个比较。写成显式的闭区间，或者在每一支把比较两端和运算符一起换边（例如 `5 >= quantity`），都得到同一 PERS。若把前两个可重叠的源码判断调换，负数将先返回 20，10 从此不可达，不能继续用上述结果。
+在整数域，首支是到 -1 为止；第二和第三支的有效域分别为 0 到 2、3 到 5，按相邻整数区间合并。只有知道首支未命中才会检查第二支，那时 `quantity >= 0` 已成立，第二个守卫只保留 `quantity <= 5`。写成显式的闭区间，或者在每一支把比较两端和运算符一起换边（例如 `5 >= quantity`），都得到同一 PERS。若把前两个可重叠的源码判断调换，负数将先返回 20，10 从此不可达，不能继续用上述结果。
 
 另有两条边界验收。若三个分支分别只匹配 -2、0、2，且 -2 与 2 共用结果，必须保留两点的并集；不能填满它们之间的区间。若第一条上界为 `9223372036854775807`、第二条上界再加一，在本项目的业务精确整数域内，第二个有效域只有 `9223372036854775808`；它不回绕，也不能被 Java 的宿主字长误判为空。
 
@@ -63,7 +63,7 @@ class CanonicalQuantity {
 }
 ```
 
-**原样通过。** `R` 只在正常完成域使用；在这个域，`quantity <= 0` 与 `quantity < 0` 等价，零路径由下方的异常单独记录。把正数比较写成 `0 < quantity` 不改变结果。
+**原样通过。** `R` 只在正常完成域使用；保持 `quantity > 0` 的基准方向：正常域内其反面只可能是负数，零路径由下方的异常单独记录。把正数比较写成 `0 < quantity` 不改变结果。
 
 ```yaml
 schema: normalizer.pers/1
@@ -71,10 +71,9 @@ entry: { function: src/CanonicalQuantity.java#CanonicalQuantity.signGuarded, ret
 P: { parameters: { quantity: { position: 0, type: number } } }
 R: |-
   CASE
-    WHEN quantity <= 0 THEN -1
-    ELSE 1
+    WHEN quantity > 0 THEN 1
+    ELSE -1
   END
-S: []
 throws:
   - { type: java.lang.RuntimeException, when: 'quantity == 0', payload: '"zero"' }
 ```

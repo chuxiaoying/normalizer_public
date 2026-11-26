@@ -37,7 +37,7 @@ R: address AND balance AND consent
 
 ## 布尔互补表达式必须选同一个 CASE
 
-两个已取得的整数都为零时选择 10，其他情况选择 20。两个条件均为总值；两种写法都观察相同输入。按[二分 CASE 的结构键](../../../secondary/完整二分%20CASE%20怎么选方向.md)比较 AND 与其 De Morgan 补的 OR，使用 AND 取向；不是由宿主看到一次取反就决定写 OR。
+两个已取得的整数都为零时选择 10，其他情况选择 20。两个条件均为总值；两种写法都观察相同输入。按[统一定形规范](../../../chapters/第八章%20·%20统一定形规范.md)先化简守卫，再以已定形的两个相等比较的合取为基准。它的互补写法只翻转该条件并交换两臂；不能因为某个宿主先写互补条件就把 OR 输出为另一种代表。
 
 ```java
 class CanonicalChecks {
@@ -77,7 +77,7 @@ class CanonicalChecks {
 }
 ```
 
-**原样通过。** 当 a 为假而 b、c 都为真时，先命中 b，应返回 20。不能直接把两个返回 10 的原条件写成 `a OR c`；只有 `b` 失败时第三个条件才有机会命中。合并后的 10 域是 `a OR (NOT b AND c)`，20 的有效域是 `NOT a AND b`，原默认值仍在最后。
+**原样通过。** 当 a 为假而 b、c 都为真时，先命中 b，应返回 20。不能直接把两个返回 10 的原条件写成 `a OR c`；只有 `b` 失败时第三个条件才有机会命中。合并后的 10 域是 `a OR (NOT b AND c)`，20 的有效域是 `NOT a AND b`；进入第二臂已有首臂失配所蕴含的 `NOT a`，规范守卫只写 `b`，原默认值仍在最后。
 
 ```yaml
 schema: normalizer.pers/1
@@ -90,7 +90,7 @@ P:
 R: |-
   CASE
     WHEN a OR NOT (b) AND c THEN 10
-    WHEN NOT (a) AND b THEN 20
+    WHEN b THEN 20
     ELSE 30
   END
 ```

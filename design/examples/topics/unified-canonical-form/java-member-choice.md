@@ -67,10 +67,12 @@ R: '$t_0 + $t_1'
 ## 空候选使用已取得的入口 E 字段
 
 ```java
-import normalizer.annotations.EntryState;
+import normalizer.intrinsics.N;
 class ChoiceBase { int value; }
 class StatePick {
-    @EntryState ChoiceBase seed;
+    static final StatePick INSTANCE = new StatePick();
+
+    @N.EntryState ChoiceBase seed = new ChoiceBase();
     int choose(int[] values, int seed) {
         int fallback = this.seed.value;
         int selected;
@@ -84,15 +86,13 @@ class StatePick {
 
 ```yaml
 schema: normalizer.pers/1
-types:
-  ChoiceBase: { fields: { value: number } }
-entry: { function: src/StatePick.java#StatePick.choose, returns: number }
+entry: { function: src/StatePick.java#StatePick.INSTANCE.choose, returns: number }
 P:
   parameters:
     values: { position: 0, type: 'number[]' }
     seed: { position: 1, type: number }
 E:
-  seed: { kind: state, source: src/StatePick.java#StatePick.seed, type: ChoiceBase }
+  seed: { kind: state, source: src/StatePick.java#StatePick.INSTANCE.seed, fields: { value: number } }
 T:
   - { id: $t_0, op: member_choice, when: 'true', members: values, empty: E.seed.value }
 R: $t_0
@@ -101,10 +101,12 @@ R: $t_0
 ## 空候选复用已经发生的外部整数回执
 
 ```java
-import normalizer.annotations.External;
+import normalizer.intrinsics.N;
 
 class ReceiptPick {
-    @External private final Checkpoints checkpoints;
+    static final ReceiptPick INSTANCE = new ReceiptPick(new Checkpoints());
+
+    @N.External private final Checkpoints checkpoints;
 
     ReceiptPick(Checkpoints checkpoints) { this.checkpoints = checkpoints; }
 
@@ -117,21 +119,21 @@ class ReceiptPick {
     }
 }
 
-interface Checkpoints { int read(int code); }
+class Checkpoints { native int read(int code); }
 ```
 
 **原样通过。** 第一个回执作为第二次真实调用的参数，两次调用都保留。空数组只使用第二个回执作为缺省值，不重发请求，不把候选选择计为外部调用。此处两个端口结果都是无异常、无条件取得的已声明整数；条件调用不由本例自动放行。
 
 ```yaml
 schema: normalizer.pers/1
-entry: { function: src/ReceiptPick.java#ReceiptPick.choose, returns: number }
+entry: { function: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose, returns: number }
 P:
   parameters:
     values: { position: 0, type: 'number[]' }
     code: { position: 1, type: number }
 S:
-  - call: { external: checkpoints.read, args: [code], returns: number, result: '$e_0' }
-  - call: { external: checkpoints.read, args: ['$e_0'], returns: number, result: '$e_1' }
+  - call: { external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read, args: [code], returns: number, result: '$e_0' }
+  - call: { external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read, args: ['$e_0'], returns: number, result: '$e_1' }
 T:
   - { id: $t_0, op: member_choice, when: 'true', members: values, empty: '$e_1' }
 R: $t_0

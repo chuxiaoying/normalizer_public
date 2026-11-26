@@ -11,14 +11,14 @@
 ```java
 class CanonicalFolds {
     static int difference(int[] left, int[] right, int initial) {
-        int leftValue;
-        /* @normalizer-ir
-           leftValue = reduce left from initial as (leftAcc, leftItem) yield leftAcc * 2 + leftItem
-        */
-        int rightValue;
-        /* @normalizer-ir
-           rightValue = reduce right from initial as (rightAcc, rightItem) yield rightAcc * 2 + rightItem
-        */
+        int leftValue = initial;
+        for (int leftItem : left) {
+            leftValue = leftValue * 2 + leftItem;
+        }
+        int rightValue = initial;
+        for (int rightItem : right) {
+            rightValue = rightValue * 2 + rightItem;
+        }
         return leftValue - rightValue;
     }
 }
@@ -26,7 +26,34 @@ class CanonicalFolds {
 
 ## AI 预处理结果
 
-**原样通过。** 局部声明已经明确初值、元素、次序和更新公式。不能改成按样本长度展开，不能把纯定义改为外部事件。
+两个数组的长度来自输入；使用第五章规定的有序递推一次描述每条循环，保留各自的初值、遍历次序与更新关系。不按样本长度展开，也不把纯定义改成外部事件。
+
+```diff
+--- a/src/CanonicalFolds.java
++++ b/src/CanonicalFolds.java
+@@ -1,13 +1,13 @@
+ class CanonicalFolds {
+     static int difference(int[] left, int[] right, int initial) {
+-        int leftValue = initial;
+-        for (int leftItem : left) {
+-            leftValue = leftValue * 2 + leftItem;
+-        }
+-        int rightValue = initial;
+-        for (int rightItem : right) {
+-            rightValue = rightValue * 2 + rightItem;
+-        }
++        int leftValue;
++        /* @normalizer-ir
++           leftValue = reduce left from initial as (leftAcc, leftItem) yield leftAcc * 2 + leftItem
++        */
++        int rightValue;
++        /* @normalizer-ir
++           rightValue = reduce right from initial as (rightAcc, rightItem) yield rightAcc * 2 + rightItem
++        */
+         return leftValue - rightValue;
+     }
+ }
+```
 
 ## 归一化最终结果
 
@@ -48,13 +75,15 @@ R: $t_0 - $t_1
 
 ## 初值依赖已经取得的 E 状态字段
 
-状态字段已经在入口取得，无写入、RPC 或异常。读取名称仍来自 E，而不是伪装成新增参数。将这个明确的依赖保留在 T 的初值中。
+下例展示已经闭合的分析副本。状态字段已经在入口取得，无写入、RPC 或异常。读取名称仍来自 E，而不是伪装成新增参数。将这个明确的依赖保留在 T 的初值中。
 
 ```java
-import normalizer.annotations.EntryState;
+import normalizer.intrinsics.N;
 class Base { int value; }
 class CanonicalFolds {
-    @EntryState Base seed;
+    static final CanonicalFolds INSTANCE = new CanonicalFolds();
+
+    @N.EntryState Base seed = new Base();
     int fromState(int[] values) {
         int initial = seed.value;
         int result;
@@ -70,14 +99,12 @@ class CanonicalFolds {
 
 ```yaml
 schema: normalizer.pers/1
-types:
-  Base: { fields: { value: number } }
-entry: { function: src/CanonicalFolds.java#CanonicalFolds.fromState, returns: number }
+entry: { function: src/CanonicalFolds.java#CanonicalFolds.INSTANCE.fromState, returns: number }
 P:
   parameters:
     values: { position: 0, type: 'number[]' }
 E:
-  seed: { kind: state, source: src/CanonicalFolds.java#CanonicalFolds.seed, type: Base }
+  seed: { kind: state, source: src/CanonicalFolds.java#CanonicalFolds.INSTANCE.seed, fields: { value: number } }
 T:
   - { id: $t_0, op: fold, type: number, source: values, initial: seed.value, accumulator: acc, element: item, body: 'acc * 2 + item' }
 R: $t_0
@@ -85,6 +112,6 @@ R: $t_0
 
 若入口参数也叫 `seed`，初值必须写成 `E.seed.value`，不能捕获同名 P。
 
-数组的私有局部别名不改变公开输入名。若把整个递推放进仅在某个条件成立时调用的函数，当前实现必须明确拒绝，不能把条件定义发布为无条件 T。
+数组的私有局部别名不改变公开输入名。若把整个递推放进仅在某个条件成立时调用的函数，必须保持真实取得域；尚没有可表达这个条件定义的合同就明确拒绝，不能把它发布为无条件 T。
 
 内核单测另对照已发布的精确整数 T 与已发布的整记录 T：名字可用或取得域完整都不改变值域，记录不能作为可交换的整数。没有取得证据的整数 T 同样不能仅按其类型参与消去。
