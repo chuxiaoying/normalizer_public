@@ -134,9 +134,6 @@ impl<'a> Parser<'a> {
     // error to its original source position at every enclosing slice.
     pub(crate) fn rebase_slice(&self, offset: usize, error: ParseError) -> ParseError {
         let ParseError::Syntax { file, line, col, msg } = error;
-        if file != self.file {
-            return ParseError::Syntax { file, line, col, msg };
-        }
         let (start_line, start_col) = self.location(offset);
         ParseError::Syntax {
             file, line: start_line + line - 1,
@@ -229,31 +226,18 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn read_qualified_ident(&mut self) -> Option<String> {
-        self.skip_ws();
-        let first = self.read_ident()?;
-        let mut out = first;
+        let mut out = self.read_ident()?;
         loop {
             let save = self.pos;
-            self.skip_ws();
-            if self.peek() == Some(b'.') {
-                self.pos += 1;
-                self.skip_ws();
-                match self.peek() {
-                    Some(c) if c.is_ascii_alphabetic() || c == b'_' || c == b'$' => {
-                        if let Some(part) = self.read_ident() {
-                            out.push('.');
-                            out.push_str(&part);
-                            continue;
-                        }
-                    }
-                    _ => {}
+            if self.eat_char(b'.') {
+                if let Some(part) = self.read_ident() {
+                    out.push('.');
+                    out.push_str(&part);
+                    continue;
                 }
-                self.pos = save;
-                break;
-            } else {
-                self.pos = save;
-                break;
             }
+            self.pos = save;
+            break;
         }
         Some(out)
     }
@@ -952,7 +936,7 @@ type ParsedParameters = (Vec<(JavaType, String)>, std::collections::BTreeMap<Str
 
 fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
     let invalid = |p: &Parser<'_>, reason: &str| p.err(&format!("[JAVA-PARAMETER] {reason}"));
-    if !p.eat_char(b'(') { return Err(invalid(p, "expected opening parenthesis")); }
+    p.pos += 1; // Both declaration dispatches have matched the opening parenthesis.
     let mut params = Vec::new();
     let mut annotations = std::collections::BTreeMap::new();
     if p.eat_char(b')') { return Ok((params, annotations)); }

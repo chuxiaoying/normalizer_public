@@ -733,10 +733,7 @@ impl<'a> Parser<'a> {
     /// 尝试解析 cast `(Type) expr`。失败返回 None 并回退位置。
     fn try_parse_cast(&mut self) -> Result<Option<JavaExpr>, ParseError> {
         let save = self.pos;
-        if !self.eat_char(b'(') {
-            self.pos = save;
-            return Ok(None);
-        }
+        self.pos += 1; // parse_unary has matched the opening parenthesis.
         self.skip_ws();
         // 保守判定：primitive 关键字后跟 ')'，一定是 cast
         let is_primitive = [
@@ -776,7 +773,6 @@ impl<'a> Parser<'a> {
             self.pos = save;
             return Ok(None);
         }
-        let paren_end = self.pos;
         self.pos += 1;
         self.skip_ws();
         // cast 后必须跟表达式起始字符：ident / lit / ! / ~ / - / + / ( / new
@@ -803,7 +799,6 @@ impl<'a> Parser<'a> {
             self.pos = save;
             return Ok(None);
         }
-        let _ = paren_end;
         let expr = self.parse_unary()?;
         Ok(Some(JavaExpr::Cast {
             target_type: ty,
