@@ -206,3 +206,23 @@ mod exact_negation_tests {
         assert_eq!(negate(fractional), literal(BigInt::from(-125), 2));
     }
 }
+
+#[cfg(test)]
+mod round_projection_tests {
+    use super::*;
+
+    #[test]
+    fn symbolic_round_view_keeps_scale_and_the_explicit_mode() {
+        let amount = b::param("amount", crate::ScalarSymbolType::ExactDecimal);
+        for (scale, mode) in [(0, Mode::HalfUp), (4, Mode::HalfEven)] {
+            let rebuilt = crate::normalize(round(amount.clone(), scale, mode));
+            let Some(View::Round(value, actual_scale, actual_mode)) = view(&rebuilt) else {
+                panic!("typed symbolic ROUND expected");
+            };
+            assert_eq!(value, &amount);
+            assert_eq!(actual_scale, scale);
+            assert_eq!(actual_mode.name(), mode.name());
+        }
+        assert!(matches!(view(&multiply(amount, b::lit_int(3))), Some(View::Multiply(_, _))));
+    }
+}
