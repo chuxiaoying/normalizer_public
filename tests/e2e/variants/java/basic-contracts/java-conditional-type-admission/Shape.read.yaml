@@ -1,0 +1,17 @@
+- name: another-numeric-default-retains-the-condition
+  edits:
+    - { from: 'return choose ? value : 1;', to: 'return choose ? value : 2;' }
+  expect:
+    - { path: [R], value: 'CASE WHEN choose THEN value ELSE 2 END' }
+- name: a-number-and-a-boolean-are-incompatible-branches
+  edits:
+    - { from: 'return choose ? value : 1;', to: 'return choose ? value : true;' }
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'branch result type mismatch: then=number else=bool']
+- name: sequence-in-the-then-arm-is-a-type-error-not-an-internal-panic
+  edits:
+    - { from: 'return choose ? value : 1;', to: 'return choose ? values : 1;' }
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'branch result type mismatch: then=source sequence<number> else=number']
+- name: sequence-in-the-else-arm-keeps-the-actual-error-direction
+  edits:
+    - { from: 'return choose ? value : 1;', to: 'return choose ? 1 : values;' }
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'branch result type mismatch: then=number else=source sequence<number>']

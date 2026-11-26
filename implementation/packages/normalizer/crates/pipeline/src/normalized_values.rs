@@ -25,7 +25,7 @@ impl Ty {
                     .collect::<Vec<_>>()
                     .join(",")
             ),
-            _ => unreachable!("state types checked before description"),
+            Self::Seq(item) => format!("source sequence<{}>", item.describe()),
         }
     }
     pub(super) fn state_value(&self) -> bool {

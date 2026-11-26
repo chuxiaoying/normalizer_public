@@ -20,6 +20,7 @@ java-explicit-rollover: topics/number-domain/java-explicit-rollover.md
 java-independent-choice: topics/collections/java-independent-choice.md
 java-invalid-declaration: topics/basic-contracts/java-invalid-declaration.md
 java-source-name-closure: topics/basic-contracts/java-source-name-closure.md
+java-conditional-type-admission: topics/basic-contracts/java-conditional-type-admission.md
 java-lifo-release: topics/state-and-aliasing/java-lifo-release.md
 java-map-present-null: topics/collections/java-map-present-null.md
 java-state-alias: topics/state-and-aliasing/java-state-alias.md

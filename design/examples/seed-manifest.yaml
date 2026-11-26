@@ -45,6 +45,7 @@ seeds:
   java-independent-choice: { kind: topic, topic: collections, related: [control-flow, objects-and-types] }
   java-invalid-declaration: { kind: basic, topic: basic-contracts, related: [language-entries] }
   java-source-name-closure: { kind: basic, topic: basic-contracts, related: [language-entries] }
+  java-conditional-type-admission: { kind: basic, topic: basic-contracts, related: [control-flow] }
   java-lifo-release: { kind: topic, topic: state-and-aliasing, related: [collections] }
   java-map-present-null: { kind: topic, topic: collections, related: [state-and-aliasing] }
   java-state-alias: { kind: topic, topic: state-and-aliasing, related: [objects-and-types] }
