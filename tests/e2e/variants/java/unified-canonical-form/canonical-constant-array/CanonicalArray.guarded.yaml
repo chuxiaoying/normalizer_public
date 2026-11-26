@@ -80,6 +80,7 @@
     - { path: [throws, 0, type], value: java.lang.NegativeArraySizeException }
 
 - name: inline-length-preserves-ordered-effects-and-conditional-element-completion
+  entry: src/CanonicalArray.java#CanonicalArray.INSTANCE.readGuarded
   edits:
     - { from: 'static int guarded', to: 'int readGuarded' }
     - from: 'class CanonicalArray {'
@@ -90,12 +91,12 @@
             static final CanonicalArray INSTANCE = new CanonicalArray(new InlineProbe());
             @N.External private final InlineProbe probe;
             CanonicalArray(InlineProbe probe) { this.probe = probe; }
-            static int guarded(boolean fail) { return INSTANCE.readGuarded(fail); }
     - from: |-
         if (fail) return (new int[]{2, 7})[-1];
                 return 7;
       to: 'try { return (new int[]{probe.read(10), fail ? (new int[]{2})[1] : 5, probe.read(30)}).length; } catch (ArrayIndexOutOfBoundsException ignored) { return 42; }'
   expect:
+    - { path: [entry, function], value: src/CanonicalArray.java#CanonicalArray.INSTANCE.readGuarded }
     - { path: [R], value: 'CASE WHEN fail THEN 42 ELSE 3 END' }
     - path: [S]
       add:
