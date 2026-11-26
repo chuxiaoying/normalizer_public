@@ -93,3 +93,5 @@ E:
   amber: { kind: state, source: src/Counter.java#Beans.ENTRY.amber, fields: { units: number } }
 R: amber.units + zebra.units
 ```
+
+装配若改为 `new Counter(7)`，且构造器用参数给已声明的 `this.value` 赋值，仍选择同一已装配入口。7 属于启动时的初值，不是每次调用前的值。P 仍为空，E 仍是当次 `Beans.ENTRY.value`，R 为 `value + 1`，本次调用不产生构造器写入。

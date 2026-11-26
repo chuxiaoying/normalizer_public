@@ -47,3 +47,11 @@
   reject:
   - '[NORM-TS-MODULE]'
   - scalar arithmetic and comparison require two business numbers
+
+- name: erased-type-declarations-do-not-create-business-values
+  edits:
+    - from: 'export function total'
+      to: |-
+        type AccountAmount = number;
+        interface AuditShape { amount: AccountAmount }
+        export function total
