@@ -223,11 +223,7 @@ impl<'a> Parser<'a> {
             }
         };
         self.skip_ws();
-        let condition = if self.peek() == Some(b';') {
-            None
-        } else {
-            Some(self.parse_expression()?)
-        };
+        let condition = Some(self.parse_expression()?);
         self.skip_ws();
         self.require_semicolon("for condition")?;
         self.skip_ws();
@@ -285,10 +281,6 @@ impl<'a> Parser<'a> {
 
     fn parse_return(&mut self) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
-        if self.peek() == Some(b';') {
-            self.pos += 1;
-            return Ok(JavaStatement::Return(None));
-        }
         let expr = self.parse_expression()?;
         self.skip_ws();
         self.require_semicolon("return value")?;
@@ -726,18 +718,11 @@ impl<'a> Parser<'a> {
         // continue instead of consuming the operator as a cast operand.
         let is_expr_start = match self.peek() {
             Some(c) if c.is_ascii_alphanumeric() || c == b'_' || c == b'$' => true,
-            Some(b'"') | Some(b'\'') | Some(b'!') | Some(b'~') | Some(b'(') => true,
             _ => false,
         };
         if !is_expr_start {
             self.pos = save;
             return Ok(None);
-        }
-        if let JavaType::Class(name) = &ty {
-            if !name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && !name.contains('.') {
-                self.pos = save;
-                return Ok(None);
-            }
         }
         let expr = self.parse_unary()?;
         Ok(Some(JavaExpr::Cast {

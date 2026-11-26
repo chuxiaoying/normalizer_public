@@ -30,11 +30,8 @@ impl Kind {
             Self::Double => "double",
             Self::DecimalCarrier => "java.math.BigDecimal",
             Self::Bool => "bool",
-            Self::Text => "text",
-            Self::Null => "null",
             Self::Sequence => "source sequence<number>",
-            Self::Ref => "reference",
-            Self::Unresolved => "unresolved type",
+            _ => "source value",
         }
     }
 

@@ -535,14 +535,10 @@ fn parse_class_body(
             break;
         }
 
-        if p.eat_char(b';') {
-            continue;
-        } // Java permits empty member declarations.
         let annotations = p.read_annotations()?;
 
         let mut is_static = false;
         let mut is_final = false;
-        let mut is_volatile = false;
         let mut is_native = false;
         let mut native_modifier_conflict = false;
         let mut synchronized_at = None;
@@ -568,10 +564,6 @@ fn parse_class_body(
             if p.eat_keyword("native") {
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] duplicate native modifier")); }
                 is_native = true;
-                continue;
-            }
-            if p.eat_keyword("volatile") {
-                is_volatile = true;
                 continue;
             }
             if p.eat_keyword("static") {
@@ -702,7 +694,7 @@ fn parse_class_body(
             if is_native && class.is_interface() {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] interface method cannot be native"));
             }
-            if is_native && (native_modifier_conflict || is_volatile) {
+            if is_native && native_modifier_conflict {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] incompatible native method modifier"));
             }
             let (params, param_annotations) = parse_params(&mut p)?;
@@ -771,7 +763,7 @@ fn parse_class_body(
                 java_type,
                 is_static: field_is_static,
                 is_final: field_is_final,
-                is_volatile,
+                is_volatile: false,
                 annotations,
                 has_initializer,
             });
@@ -829,14 +821,7 @@ fn parse_type_atom(p: &mut Parser, allow_diamond: bool) -> Option<JavaType> {
 
     let mut args = Vec::new();
     loop {
-        if p.eat_char(b'?') {
-            if p.eat_keyword("extends") || p.eat_keyword("super") {
-                parse_type(p)?;
-            }
-            args.push(JavaType::Class("?".to_owned()));
-        } else {
-            args.push(parse_type(p)?);
-        }
+        args.push(parse_type(p)?);
         if !p.eat_char(b',') {
             return p.eat_char(b'>').then(|| JavaType::Generic(name, args));
         }

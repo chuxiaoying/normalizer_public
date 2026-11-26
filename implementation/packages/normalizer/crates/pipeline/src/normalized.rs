@@ -229,11 +229,9 @@ pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String,
 pub(crate) fn source_payload_domain(class: &simulator_parser::JavaClass) -> Option<&'static str> {
     if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
     let [field] = class.fields() else { return None; };
-    if field.name() != "payload" || field.is_static() || field.is_final() || field.is_volatile()
-        || field.has_initializer() || !field.annotations().is_empty()
-    {
-        return None;
-    }
+    let field = Some(field).filter(|field| field.name() == "payload" && !field.is_static()
+        && !field.is_final() && !field.is_volatile() && !field.has_initializer()
+        && field.annotations().is_empty())?;
     match field.java_type() {
         JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String") => Some("text?"),
         ty if integral(ty) => Some("number"),
@@ -667,9 +665,8 @@ pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)>
     let [S::Assign { target: E::Ident(total), value: E::BinOp { op: B::Add, left, right }, .. }] = body else {
         return None;
     };
-    if item == total || !matches!(left.as_ref(), E::Ident(name) if name == total) {
-        return None;
-    }
+    let total = Some(total).filter(|total| item != total.as_str()
+        && matches!(left.as_ref(), E::Ident(name) if name == *total))?;
     let delta = match right.as_ref() {
         E::Ident(n) if n == item => 0,
         E::BinOp { op: op @ (B::Add | B::Sub), left, right }
@@ -696,11 +693,9 @@ fn local_array_construction(e: &E) -> bool {
 }
 
 fn signed_literal_index(e: &E) -> bool {
-    match e {
-        E::Lit(JavaLit::Int(_)) => true,
-        E::UnaryOp { op: U::Neg, operand } => matches!(operand.as_ref(), E::Lit(JavaLit::Int(_))),
-        _ => false,
-    }
+    matches!(e, E::Lit(JavaLit::Int(_)))
+        || matches!(e, E::UnaryOp { op: U::Neg, operand }
+            if matches!(operand.as_ref(), E::Lit(JavaLit::Int(_))))
 }
 
 fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
