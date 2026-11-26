@@ -578,7 +578,7 @@ impl Loaded {
                 let ty = Ty::parse(value)?;
                 need(!matches!(c.full_name().as_str(), "Object" | "String")
                     && identifier(&c.full_name()) && c.methods().is_empty()
-                    && matches!(ty, Ty::Task(_) | Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap) && ty.state_value(),
+                    && matches!(ty, Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap),
                     "result value alias requires a declared empty carrier class and composite state type")?;
             }
             if c.is_interface() {
@@ -597,6 +597,11 @@ impl Loaded {
                 }
                 e.methods.insert(id, m);
             }
+        }
+        // Source admission already owns executable/native declaration
+        // validity. Semantic bindings only exist on signature-only adapters.
+        if self.project.direct_source {
+            return Ok(e);
         }
         for name in self.project.result_value_types.keys() {
             need(
@@ -624,10 +629,6 @@ impl Loaded {
                 "Java parameter signature mismatch",
             )?;
             need(
-                m.body().is_none(),
-                "semantic binding cannot replace a Java body",
-            )?;
-            need(
                 f.params.len() == m.params().len()
                     && Ty::parse(&f.returns)? == self.project.result_type(m.return_type())?,
                 "semantic return/arity mismatch",
@@ -653,12 +654,8 @@ impl Loaded {
                 "duplicate binding",
             )?;
         }
-        for (id, m) in &e.methods {
-            need(
-                m.body().is_some() || e.bindings.contains_key(id)
-                    || self.project.direct_source && m.is_native(),
-                "unbound bodyless method",
-            )?;
+        for id in e.methods.keys() {
+            need(e.bindings.contains_key(id), "unbound bodyless method")?;
         }
         Ok(e)
     }
