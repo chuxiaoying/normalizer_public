@@ -43,9 +43,6 @@ fn fold_call(
     func_key: crate::domains::primitive::registry::FuncKey,
     args: &[Expr],
 ) -> Option<Expr> {
-    if let Some(value) = crate::domains::composite::reduce(func_key, args) {
-        return Some(value);
-    }
     let sem = crate::domains::primitive::registry::func_semantics(func_key);
     if !sem.pure {
         return None;

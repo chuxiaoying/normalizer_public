@@ -198,30 +198,3 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
     }
     Ok(crate::normalize(lift(entries, &mut Vec::new())))
 }
-
-pub fn reduce(key: crate::FuncKey, args: &[Expr]) -> Option<Expr> {
-    if let ("value.field", [record, field]) = (output_name(&crate::func_name(key)), args) {
-        fn project_case(
-            branches: &[(Expr, Expr)],
-            field: &Expr,
-            key: crate::FuncKey,
-        ) -> Expr {
-            let projected = branches
-                .iter()
-                .map(|(condition, value)| {
-                    let value = match value.as_case_when() {
-                        Some(nested) => project_case(nested, field, key),
-                        None => b::call(key, vec![value.clone(), field.clone()]),
-                    };
-                    (condition.clone(), value)
-                })
-                .collect();
-            // Keep the original first-match/normal-return domain; no new ELSE.
-            b::normal_return_case_when(projected)
-        }
-
-        Some(project_case(record.as_case_when()?, field, key))
-    } else {
-        None
-    }
-}

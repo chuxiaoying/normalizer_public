@@ -69,6 +69,10 @@ impl Ty {
         })
     }
 }
+pub(super) fn valid_record_field(name: &str, typ: &Ty) -> bool {
+    identifier(name) && typ.state_value()
+}
+
 // Structural types are declarations, never external classes or executable code.
 pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
     fn parts(s: &str) -> Vec<&str> {
@@ -106,7 +110,7 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
                 .ok_or_else(|| fail("record field needs name:type"))?;
             let typ = Ty::parse(typ)?;
             need(
-                identifier(name) && typ.state_value() && fields.insert(name.into(), typ).is_none(),
+                valid_record_field(name, &typ) && fields.insert(name.into(), typ).is_none(),
                 "invalid/duplicate record field",
             )?;
         }

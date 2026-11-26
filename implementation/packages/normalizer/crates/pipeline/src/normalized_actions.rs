@@ -9,13 +9,42 @@ enum PortHeapEffect {
     None,
 }
 
+#[derive(Debug)]
+enum DeclaredPortType {
+    Adapter(String),
+    Source(Ty),
+}
+
+impl<'de> Deserialize<'de> for DeclaredPortType {
+    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> std::result::Result<Self, D::Error> {
+        String::deserialize(decoder).map(Self::Adapter)
+    }
+}
+
+impl DeclaredPortType {
+    fn resolve(&self) -> Result<Ty> {
+        match self {
+            Self::Adapter(typ) => Ty::parse(typ),
+            Self::Source(typ) => {
+                // Source records have one level of scalar fields. Retain the
+                // field-name admission formerly enforced by the wire parser.
+                if let Ty::Record(fields) = typ {
+                    need(fields.iter().all(|(name, field)| values::valid_record_field(name, field)),
+                        "invalid/duplicate record field")?;
+                }
+                Ok(typ.clone())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Port {
     pub(super) origin: Origin,
     pub(super) endpoint: String,
-    params: Vec<Parameter>,
-    returns: String,
+    params: Vec<Parameter<DeclaredPortType>>,
+    returns: DeclaredPortType,
     throws: Vec<String>,
     #[serde(rename = "heap_effect")]
     _heap_effect: PortHeapEffect,
@@ -27,15 +56,17 @@ impl Port {
     pub(super) fn from_source(
         origin: Origin,
         endpoint: String,
-        params: Vec<Parameter>,
-        returns: String,
+        params: Vec<Parameter<Ty>>,
+        returns: Ty,
         throws: Vec<String>,
     ) -> Self {
         Self {
             origin,
             endpoint,
-            params,
-            returns,
+            params: params.into_iter().map(|param| Parameter {
+                name: param.name, typ: DeclaredPortType::Source(param.typ),
+            }).collect(),
+            returns: DeclaredPortType::Source(returns),
             throws,
             _heap_effect: PortHeapEffect::None,
             argument_observation: "immutable_value".into(),
@@ -140,7 +171,7 @@ impl Project {
                     _ => Err(fail("unsupported port observation contract")),
                 }
             };
-            let returns = Ty::parse(&p.returns)?;
+            let returns = p.returns.resolve()?;
             validate(&returns)?;
             let mut names = BTreeSet::new();
             let mut parameters = Vec::with_capacity(p.params.len());
@@ -149,7 +180,7 @@ impl Project {
                     identifier(&a.name) && names.insert(&a.name),
                     "invalid port parameter",
                 )?;
-                let ty = Ty::parse(&a.typ)?;
+                let ty = a.typ.resolve()?;
                 validate(&ty)?;
                 parameters.push(ty);
             }

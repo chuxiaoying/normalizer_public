@@ -55,7 +55,7 @@ pub(super) fn contracts(
                     )?;
                     Ok(Parameter {
                         name: name.clone(),
-                        typ: ty.describe(),
+                        typ: ty,
                     })
                 })
                 .collect::<Result<_>>()?;
@@ -67,7 +67,7 @@ pub(super) fn contracts(
                 origin,
                 p.endpoint.clone(),
                 params,
-                domain(&p.returns, program)?.describe(),
+                domain(&p.returns, program)?,
                 p.throws.clone(),
             );
             Ok((id.clone(), port))

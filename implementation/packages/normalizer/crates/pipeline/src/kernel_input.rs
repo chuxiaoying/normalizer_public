@@ -211,10 +211,10 @@ struct Function {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Parameter {
+struct Parameter<T = String> {
     name: String,
     #[serde(rename = "type")]
-    typ: String,
+    typ: T,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
