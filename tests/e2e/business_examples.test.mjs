@@ -66,6 +66,10 @@ for (const { seedId, entry, scene, fixture, variants, reject } of loadSeedEntrie
 for (const [name, setup, diagnostic] of [
   ['missing-root', project => join(project, 'does-not-exist'), '[NORM-SOURCE] expected existing directory'],
   ['empty-source-root', project => project, '[SOURCE-EMPTY]'],
+  ['missing-entry-owner-is-not-inferred-from-another-class', project => {
+    writeFileSync(join(project, 'Other.java'), 'class Other { static int run() { return 7; } }');
+    return project;
+  }, /\[NORM-ENTRY\].*Probe\.run/],
   ['malformed-source-utf8', project => {
     writeFileSync(join(project, 'Bad.java'), Buffer.from([0xff]));
     return project;

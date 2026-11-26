@@ -31,3 +31,33 @@ variants:
       - from: 'void waitForChange(int accountId);'
         to: 'int waitForChange(int accountId);'
     reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'ReadinessService.readWhenReady']
+  - name: ordinary-loop-with-a-computed-condition-argument-remains-unproved
+    edits:
+      - &ordinary_ready_receiver
+        from: |2-
+              private final ReadinessClient readinessClient;
+
+              ReadinessService(ReadinessClient readinessClient) {
+                  this.readinessClient = readinessClient;
+              }
+
+              int readWhenReady(int accountId) {
+        to: '    int readWhenReady(ReadinessClient readinessClient, int accountId) {'
+      - &ordinary_wait_result
+        from: 'void waitForChange(int accountId);'
+        to: 'int waitForChange(int accountId);'
+      - from: '!readinessClient.isReady(accountId)'
+        to: '!readinessClient.isReady(accountId + 1)'
+    reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'ReadinessService.readWhenReady']
+  - name: loop-with-an-ordinary-local-helper-is-not-external-only
+    edits:
+      - *ordinary_ready_receiver
+      - *ordinary_wait_result
+      - from: '    int recursiveNormalize(int value) {'
+        to: |2-
+              static int tick() { return 1; }
+
+              int recursiveNormalize(int value) {
+      - from: 'readinessClient.waitForChange(accountId);'
+        to: 'tick();'
+    reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'ReadinessService.readWhenReady']

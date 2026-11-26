@@ -19,3 +19,7 @@
   expect:
     - path: [R]
       value: 'true'
+
+- name: qualified-nullable-text-keeps-the-same-parameter
+  edits:
+    - { from: 'Nullable String value', to: 'Nullable java.lang.String value' }
