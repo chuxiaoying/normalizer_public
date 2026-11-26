@@ -6,3 +6,4 @@ pub mod composite;
 
 pub mod completion;
 pub mod decimal;
+pub mod text;

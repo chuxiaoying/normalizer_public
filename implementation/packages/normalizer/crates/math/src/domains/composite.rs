@@ -35,25 +35,25 @@ pub fn field_projection(expr: &Expr) -> Option<(&Expr, &str, Primitive)> {
     Some((record, name.as_str(), result))
 }
 
-pub fn apply(name: &str, args: Vec<Expr>, params: Vec<Primitive>, result: Primitive) -> Expr {
-    assert!(matches!(name, "value.input" | "value.field"), "undefined composite operation");
-    let registered = if name == "value.field" {
-        format!("{name}@{}", result.algebra_name())
-    } else {
-        name.into()
-    };
-    let certified_field =
-        name == "value.field" && params == vec![Primitive::Composite, Primitive::String];
+pub fn field(record: Expr, name: &str, result: Primitive) -> Expr {
+    let registered = format!("value.field@{}", result.algebra_name());
     let key = crate::register_func(
         &registered,
-        params,
+        vec![Primitive::Composite, Primitive::String],
         Some(result),
         FuncSemantics::pure_function(),
     );
-    if certified_field {
-        field_intrinsics().write().unwrap().insert(key, result);
-    }
-    crate::normalize(b::call(key, args))
+    field_intrinsics().write().unwrap().insert(key, result);
+    crate::normalize(b::call(key, vec![record, b::lit_str(name)]))
+}
+
+static VALUE_INPUT: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
+
+pub fn input(name: &str) -> Expr {
+    let key = *VALUE_INPUT.get_or_init(|| crate::register_func(
+        "value.input", vec![Primitive::String], Some(Primitive::Composite), FuncSemantics::pure_function(),
+    ));
+    crate::normalize(b::call(key, vec![b::lit_str(name)]))
 }
 // Provenance is kept at the intrinsic, separate from opaque function names.
 static VECTOR_LENGTH: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
@@ -73,9 +73,8 @@ pub fn vector_length_input(expr: &Expr) -> Option<&Expr> {
 }
 pub fn input_name(expr: &Expr) -> Option<&str> {
     let (key, args) = expr.as_call()?;
-    if crate::func_name(key) != "value.input" { return None; }
-    let [name] = args else { return None; };
-    match name.as_lit()? { crate::Lit::Str(name) => Some(name), _ => None }
+    if VALUE_INPUT.get() != Some(&key) { return None; }
+    match args.first()?.as_lit()? { crate::Lit::Str(name) => Some(name), _ => None }
 }
 
 pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {

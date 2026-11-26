@@ -1,8 +1,8 @@
-//! Closed text operation. Nullable content, not Java String object identity.
-use math::{builder as b, Expr, Lit, Primitive};
-pub const KEY: &str = "normalized.text.is_blank_java17";
+//! Source recognition for closed normalized text intrinsics.
+pub use math::domains::text::{is_blank, trim, whitespace, KEY};
+pub(crate) use math::domains::text::TRIM_KEY;
+
 pub(crate) const SOURCE_IMPORT: &str = "normalizer.intrinsics.NormalizedText";
-pub(crate) const TRIM_KEY: &str = "normalized.text.trim_utf16";
 pub(crate) enum SourceIntrinsic {
     Trim,
     DefaultIfBlank,
@@ -21,45 +21,4 @@ pub(crate) fn source_intrinsic(
         ("NormalizedText.defaultIfBlank", 2) => Some(SourceIntrinsic::DefaultIfBlank),
         _ => None,
     }
-}
-
-pub fn trim(value: Expr) -> Expr {
-    let key = math::register_func(
-        TRIM_KEY,
-        vec![Primitive::String],
-        Some(Primitive::String),
-        math::domains::primitive::registry::FuncSemantics::pure_function()
-            .with_null_behavior(vec![0], Lit::Null)
-            .with_evaluator(std::sync::Arc::new(|args| evaluate_text(args, |text| {
-                Lit::Str(text.trim_matches(|c: char| c <= '\u{20}').into())
-            })))
-            .with_unary_idempotence(),
-    );
-    math::normalize(b::call(key, vec![value]))
-}
-
-/// Character.isWhitespace(char), Java 17: Unicode spaces excluding NBSPs,
-/// together with Java's ASCII whitespace/control ranges. Surrogates are not spaces.
-pub fn whitespace(unit: u16) -> bool {
-    matches!(unit, 0x0009..=0x000d | 0x001c..=0x0020 | 0x1680 |
-        0x2000..=0x2006 | 0x2008..=0x200a | 0x2028..=0x2029 | 0x205f | 0x3000)
-}
-fn evaluate_text(args: &[Lit], evaluate: impl FnOnce(&str) -> Lit) -> Option<Lit> {
-    match args {
-        [Lit::Str(text)] => Some(evaluate(text)),
-        _ => None,
-    }
-}
-pub fn is_blank(value: Expr) -> Expr {
-    let key = math::register_func(
-        KEY,
-        vec![Primitive::String],
-        Some(Primitive::Boolean),
-        math::domains::primitive::registry::FuncSemantics::pure_function()
-            .with_null_behavior(vec![0], Lit::Bool(true))
-            .with_evaluator(std::sync::Arc::new(|args| evaluate_text(args, |text| {
-                Lit::Bool(text.encode_utf16().all(whitespace))
-            }))),
-    );
-    math::normalize(b::call(key, vec![value]))
 }

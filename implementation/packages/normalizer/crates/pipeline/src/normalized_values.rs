@@ -95,12 +95,7 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
         }
     }
     let result_type = ty.primitive_value()?;
-    let expr = data::apply(
-        "value.field",
-        vec![value, b::lit_str(name)],
-        vec![Primitive::Composite, Primitive::String],
-        result_type,
-    );
+    let expr = data::field(value, name, result_type);
     Ok(Value::Term(ty, expr))
 }
 

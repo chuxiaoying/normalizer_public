@@ -1155,7 +1155,7 @@ fn comparison_atom_key(left: &Expr, right: &Expr) -> String {
 
 /// 构造已注册函数的调用。
 ///
-pub fn call(key: FuncKey, args: Vec<Expr>) -> Expr {
+pub(crate) fn call(key: FuncKey, args: Vec<Expr>) -> Expr {
     Expr::new(ExprKind::Call {
         key,
         args,

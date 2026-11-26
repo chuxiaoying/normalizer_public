@@ -867,12 +867,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
     Ok(match t {
         Ty::Vector(_) | Ty::Record(_) => Value::Term(
             t.clone(),
-            math::domains::composite::apply(
-                "value.input",
-                vec![b::lit_str(name)],
-                vec![math::Primitive::String],
-                math::Primitive::Composite,
-            ),
+            math::domains::composite::input(name),
         ),
         Ty::Seq(item) => Value::Sequence {
             item: *item.clone(),
