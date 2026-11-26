@@ -71,16 +71,17 @@ fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     })
 }
 
-/// Counting or exactly summing an empty relation yields zero.
-fn rewrite_empty_count_or_sum(expr: &Expr) -> Option<Expr> {
-    match relation_aggregate_fields(expr) {
-        Some((
-            RelationAggregateKind::Count | RelationAggregateKind::Sum,
-            RelationExpr::Empty,
-            _,
-            _,
-        )) => Some(builder::lit_int(0)),
-        _ => None,
+/// An empty relation has no rows to count, sum, test, or select.
+fn rewrite_empty_aggregate(expr: &Expr) -> Option<Expr> {
+    use RelationAggregateKind::*;
+    let (kind, RelationExpr::Empty, _, default) = relation_aggregate_fields(expr)? else {
+        return None;
+    };
+    match kind {
+        Count | Sum => Some(builder::lit_int(0)),
+        Exists => Some(builder::lit_bool(false)),
+        FirstValue => default.clone(),
+        NthValue => None,
     }
 }
 
@@ -116,29 +117,6 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
     ))
 }
 
-/// Rule Q2: Exists(Empty) = false.
-///
-/// Local simplification: Empty has no rows, so existence is false regardless of
-/// aggregate payload. This is expressed as the existing math boolean literal,
-/// not as a parallel BoolExpr.
-fn rewrite_empty_exists(expr: &Expr) -> Option<Expr> {
-    match relation_aggregate_fields(expr) {
-        Some((RelationAggregateKind::Exists, RelationExpr::Empty, _, _)) => {
-            Some(builder::lit_bool(false))
-        }
-        _ => None,
-    }
-}
-
-fn rewrite_empty_first(expr: &Expr) -> Option<Expr> {
-    match relation_aggregate_fields(expr) {
-        Some((RelationAggregateKind::FirstValue, RelationExpr::Empty, _, Some(default_expr))) => {
-            Some(default_expr.clone())
-        }
-        _ => None,
-    }
-}
-
 /// Apply local relation-query rewrite rules at the Expr layer.
 ///
 /// These rules operate over structured `RelationExpr` aggregate nodes; the
@@ -154,10 +132,8 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
         None
     };
     let output = rewrite_count_zero_comparison(expr)
-        .or_else(|| rewrite_empty_count_or_sum(expr))
+        .or_else(|| rewrite_empty_aggregate(expr))
         .or_else(|| rewrite_index_zero_as_first(expr))
-        .or_else(|| rewrite_empty_exists(expr))
-        .or_else(|| rewrite_empty_first(expr))
         .unwrap_or_else(|| expr.clone());
     if let Some((kind, relation, select_expr, (input_size, input_depth), start)) = profile {
         let output_relation =
