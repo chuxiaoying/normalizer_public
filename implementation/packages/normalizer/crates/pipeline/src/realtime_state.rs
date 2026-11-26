@@ -35,6 +35,56 @@ pub(crate) enum CompletionOutcome {
     Throw { class: String, payload: Option<Expr> },
 }
 
+pub(crate) struct TerminalAlternatives(Vec<CompletionAlternative>);
+
+impl TerminalAlternatives {
+    pub(crate) fn is_always_throwing(&self) -> bool {
+        // The completion proof already rejects an empty domain.
+        self.0.iter().all(|a| matches!(a.outcome, CompletionOutcome::Throw { .. }))
+    }
+
+    pub(crate) fn as_slice(&self) -> &[CompletionAlternative] { &self.0 }
+    pub(crate) fn into_vec(self) -> Vec<CompletionAlternative> { self.0 }
+
+    /// Project the normal-return part of a terminal completion. Throwing
+    /// alternatives leave their domain absent from the CASE expression, which
+    /// matches the PERS convention that `R` is defined only on normal return.
+    pub(crate) fn normal_return_value(&self) -> Option<Expr> {
+        let returns = self.0.iter()
+            .filter_map(|alternative| match &alternative.outcome {
+                CompletionOutcome::Return(value) => Some((alternative.guard.clone(), value.clone())),
+                CompletionOutcome::Continue | CompletionOutcome::Throw { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        if returns.is_empty() {
+            return None;
+        }
+        if returns.iter().all(|(_, value)| value == &returns[0].1) {
+            return Some(canonicalize_realtime_case(
+                returns.into_iter().next().unwrap().1,
+            ));
+        }
+        let expression = math::normalize(b::normal_return_case_when(returns));
+        Some(canonicalize_realtime_case(expression))
+    }
+
+    /// R is observed only after normal completion. Once all exits are covered
+    /// and throws are published separately, the last normal arm is exhaustive
+    /// on that observation domain. Its guard need not retest a failed call.
+    pub(crate) fn value_on_normal_exit(&self) -> Option<Expr> {
+        let mut returns: Vec<_> = self.0.iter().filter_map(|alt| {
+            if let CompletionOutcome::Return(value) = &alt.outcome {
+                Some((alt.guard.clone(), value.clone()))
+            } else {
+                None
+            }
+        }).collect();
+        returns.last_mut()?.0 = b::lit_bool(true);
+        Some(canonicalize_realtime_case(math::normalize(b::case_when(returns))))
+    }
+
+}
+
 impl Completion {
     /// Domain on which the next statement still executes.
     pub(crate) fn continuing_guard(&self) -> Expr {
@@ -59,7 +109,7 @@ impl Completion {
     /// Return the terminal alternatives when this completion covers the whole
     /// current domain. A guarded set with a fallthrough path is still an
     /// intermediate block state and cannot be rendered as a function result.
-    pub(crate) fn terminal_alternatives(&self) -> Option<Vec<CompletionAlternative>> {
+    pub(crate) fn terminal_alternatives(&self) -> Option<TerminalAlternatives> {
         let alternatives = self.clone().alternatives();
         if alternatives
             .iter()
@@ -68,54 +118,15 @@ impl Completion {
         {
             return None;
         }
-        Some(alternatives)
+        Some(TerminalAlternatives(alternatives))
     }
 
     pub(crate) fn is_always_throwing(&self) -> bool {
-        self.terminal_alternatives().is_some_and(|alternatives| {
-            !alternatives.is_empty() && alternatives.iter().all(|alternative| {
-                matches!(alternative.outcome, CompletionOutcome::Throw { .. })
-            })
-        })
+        self.terminal_alternatives().is_some_and(|alternatives| alternatives.is_always_throwing())
     }
 
-    /// Project the normal-return part of a terminal completion. Throwing
-    /// alternatives leave their domain absent from the CASE expression, which
-    /// matches the PERS convention that `R` is defined only on normal return.
     pub(crate) fn normal_return_value(&self) -> Option<Expr> {
-        let alternatives = self.terminal_alternatives()?;
-        let returns = alternatives
-            .into_iter()
-            .filter_map(|alternative| match alternative.outcome {
-                CompletionOutcome::Return(value) => Some((alternative.guard, value)),
-                CompletionOutcome::Continue | CompletionOutcome::Throw { .. } => None,
-            })
-            .collect::<Vec<_>>();
-        if returns.is_empty() {
-            return None;
-        }
-        if returns.iter().all(|(_, value)| value == &returns[0].1) {
-            return Some(canonicalize_realtime_case(
-                returns.into_iter().next().unwrap().1,
-            ));
-        }
-        let expression = math::normalize(b::normal_return_case_when(returns));
-        Some(canonicalize_realtime_case(expression))
-    }
-
-    /// R is observed only after normal completion. Once all exits are covered
-    /// and throws are published separately, the last normal arm is exhaustive
-    /// on that observation domain. Its guard need not retest a failed call.
-    pub(crate) fn value_on_normal_exit(&self) -> Option<Expr> {
-        let mut returns: Vec<_> = self.terminal_alternatives()?.into_iter().filter_map(|alt| {
-            if let CompletionOutcome::Return(value) = alt.outcome {
-                Some((alt.guard, value))
-            } else {
-                None
-            }
-        }).collect();
-        returns.last_mut()?.0 = b::lit_bool(true);
-        Some(canonicalize_realtime_case(math::normalize(b::case_when(returns))))
+        self.terminal_alternatives()?.normal_return_value()
     }
 
     pub(crate) fn alternatives(self) -> Vec<CompletionAlternative> {
@@ -473,26 +484,21 @@ impl SymbolicStore {
             }
             branches.push((guard, entry.value.clone()));
         }
-        if let Some(fallback) = fallback {
-            let value = branches
-                .into_iter()
-                .rev()
-                .fold(fallback, |old, (guard, value)| {
-                    join_value(guard, value, old)
+        let fallback = match fallback {
+            Some(value) => value,
+            None => {
+                // Without an initial or unconditional write, the oldest
+                // reachable value can be a fallback only if coverage is proven.
+                let coverage = branches.iter().fold(b::lit_bool(false), |coverage, (guard, _)| {
+                    b::or(coverage, guard.clone())
                 });
-            return Some(value);
-        }
-        let coverage = branches
-            .iter()
-            .fold(b::lit_bool(false), |coverage, (guard, _)| {
-                b::or(coverage, guard.clone())
-            });
-        if !b::path_implies(path, &math::normalize(coverage)) {
-            return None;
-        }
-        let mut branches = branches.into_iter().rev();
-        let (_, fallback) = branches.next()?;
-        Some(branches.fold(fallback, |old, (guard, value)| {
+                if !b::path_implies(path, &math::normalize(coverage)) {
+                    return None;
+                }
+                branches.pop()?.1
+            }
+        };
+        Some(branches.into_iter().rev().fold(fallback, |old, (guard, value)| {
             join_value(guard, value, old)
         }))
     }

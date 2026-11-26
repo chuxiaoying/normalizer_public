@@ -224,11 +224,9 @@ impl Engine<'_> {
         self.action_path = caller_action_path;
         done?;
         let local_completion = self.realtime_completion.clone();
-        need(
-            local_completion.terminal_alternatives().is_some(),
-            "action has a normal path without method return",
-        )?;
-        let returned = local_completion.normal_return_value();
+        let terminal = local_completion.terminal_alternatives()
+            .ok_or_else(|| fail("action has a normal path without method return"))?;
+        let returned = terminal.normal_return_value();
         self.realtime_completion = parent_completion.replace_continue(local_completion);
         match returned {
             Some(value) => Ok(Value::Term(ty, value)),

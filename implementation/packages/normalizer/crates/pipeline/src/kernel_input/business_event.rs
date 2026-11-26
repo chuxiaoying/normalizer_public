@@ -69,9 +69,12 @@ pub(super) fn observations(
     let arrays = entry.scalar_array_symbols();
     let identities = entry.source_identity_names(result);
     let mut names = names;
-    let returned = match result.realtime_completion.value_on_normal_exit() {
+    let alternatives = result.realtime_completion.terminal_alternatives()
+        .ok_or_else(|| fail("entry has incomplete control flow"))?;
+    let always_throwing = alternatives.is_always_throwing();
+    let returned = match alternatives.value_on_normal_exit() {
         Some(value) => value,
-        None if result.realtime_completion.is_always_throwing() => b::lit_null(),
+        None if always_throwing => b::lit_null(),
         None => return Err(fail("no normal settled return")),
     };
     let mut add_declared_paths = |expression: &Expr| {
@@ -84,9 +87,7 @@ pub(super) fn observations(
         });
     };
     add_declared_paths(&returned);
-    let alternatives = result.realtime_completion.terminal_alternatives()
-        .ok_or_else(|| fail("entry has incomplete control flow"))?;
-    for alternative in &alternatives {
+    for alternative in alternatives.as_slice() {
         add_declared_paths(&alternative.guard);
         if let CompletionOutcome::Return(value) = &alternative.outcome { add_declared_paths(value); }
     }
@@ -255,7 +256,7 @@ pub(super) fn observations(
     let temporal_names = &publication.aliases;
 
     let mut exceptions: Vec<(String, Option<Expr>, Expr)> = Vec::new();
-    for alternative in alternatives {
+    for alternative in alternatives.into_vec() {
         validate_ids(&alternative.guard, &issued, None)?;
         match alternative.outcome {
             CompletionOutcome::Throw { class, payload } => {
@@ -342,7 +343,7 @@ pub(super) fn observations(
         normalized
     };
     ctx.set_temporal_names(publication.aliases);
-    let returned = if result.realtime_completion.is_always_throwing() {
+    let returned = if always_throwing {
         "⊥".into()
     } else if entry.return_type() == "void" {
         need(returned.is_null(), "non-void return in void event")?;
