@@ -85,3 +85,9 @@
   - from: 'values.length > 0 ? 7 : 11'
     to: 'values.map.length > 0 ? 7 : 11'
   reject: ['[NORM-JS-MODULE]', 'length requires a direct declared non-null readonly Vector']
+
+- name: a-computed-element-read-cannot-certify-vector-length
+  edits:
+  - from: 'values.length > 0 ? 7 : 11'
+    to: 'values[values.length].length > 0 ? 7 : 11'
+  reject: ['[NORM-JS-MODULE]', 'unsupported standalone scalar operation opaque']

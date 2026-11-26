@@ -19,8 +19,8 @@ function fixture(t, source, worker) {
   mkdirSync(project);
   writeFileSync(join(target, 'debug/normalizer-normalized'), worker, { mode: 0o700 });
   writeFileSync(join(project, 'value.js'), source);
-  return () => {
-    const result = spawnSync(cli, ['module', project, 'value.js', 'value'], {
+  return (args = ['module', project, 'value.js', 'value']) => {
+    const result = spawnSync(cli, args.map(arg => arg === '<project>' ? project : arg), {
       cwd: root, encoding: 'utf8', timeout: 30_000,
       env: { ...process.env, CARGO_TARGET_DIR: target, CARGO: '/bin/false' },
     });
@@ -54,4 +54,14 @@ test('worker failure keeps its status and diagnostic but discards incomplete out
   assert.equal(result.status, 47, result.stderr);
   assert.equal(result.stderr, 'worker diagnostic\n');
   assert.equal(result.stdout, '');
+});
+
+test('unknown scenario is rejected before reading sources or invoking the worker', t => {
+  const run = fixture(t, scalarModule, '#!/bin/sh\nprintf "unexpected worker invocation\\n" >&2\nexit 47\n');
+  const result = run(['scenario', 'unknown-source-scenario', '<project>',
+    '--entry', 'missing.mjs:entry', '--source', 'missing.vue']);
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /SCENARIO_MODULE_INPUT: expected a supported scenario/);
+  assert.doesNotMatch(result.stderr, /unexpected worker invocation|no such file/i);
 });

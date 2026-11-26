@@ -11,3 +11,10 @@ variants:
   - name: optional-call-is-not-a-definite-call
     edits: [{ from: 'await source.read()', to: 'await source?.read()' }]
     reject: ['[NORM-JS-MODULE]', 'async entry requires a closed completion contract']
+  - name: a-mutable-prefix-binding-does-not-prove-closed-completion
+    edits: [{ from: 'const value = await source.read();', to: 'let value = await source.read();' }]
+    reject: ['[NORM-JS-MODULE]', 'async entry requires a closed completion contract']
+  - name: destructuring-the-awaited-value-does-not-prove-closed-completion
+    edits:
+      - { from: 'const value = await source.read();', to: 'const { value } = await source.read();' }
+    reject: ['[NORM-JS-MODULE]', 'async entry requires a closed completion contract']

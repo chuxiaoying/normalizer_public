@@ -179,3 +179,21 @@
   - from: '{ ok: true }, "sent", "ack"'
     to: '{ ok: true, diagnostic: "sent" }, "sent", "ack"'
   reject: ['[NORM-TS-MODULE]', 'tuple requires literal slots or distinct constant Boolean record fields']
+
+- name: a-typed-tuple-entry-must-preserve-the-closed-helper-call
+  edits:
+  - from: 'const [error, result, ...trace] = receipt(failed, detailed)'
+    to: 'const [error, result, ...trace]: Receipt = [undefined, { ok: true }]'
+  reject: ['[NORM-TS-MODULE]', 'expected a closed typed tuple entry and one local tuple source helper']
+
+- name: a-builtin-truthiness-call-is-not-a-closed-helper-boolean
+  edits:
+  - from: 'receipt(failed, detailed)'
+    to: 'receipt(Boolean(failed), detailed)'
+  reject: ['[NORM-TS-MODULE]', 'unsupported tuple helper Boolean expression']
+
+- name: a-builtin-truthiness-call-is-not-a-tuple-observation-predicate
+  edits:
+  - from: 'error === undefined && result?.ok'
+    to: 'Boolean(error)'
+  reject: ['[NORM-TS-MODULE]', 'unsupported tuple helper Boolean expression']
