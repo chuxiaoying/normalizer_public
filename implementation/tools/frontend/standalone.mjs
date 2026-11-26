@@ -149,6 +149,9 @@ function compile(source, file, entry, physicalPath) {
     const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
     const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
     if (isListener || isTuple) {
+      if (fn.parameters.some(p => p.type?.kind !== ts.SyntaxKind.BooleanKeyword)) {
+        failTypedModule('this typed statement adapter requires explicit Boolean entry parameters');
+      }
       const shape = isListener ? compileTypedListener(physicalPath, sf, fn, file)
         : compileTypedTuple(physicalPath, sf, fn);
       const params = shape.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
@@ -264,6 +267,7 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
     schema: 'normalizer.kernel-input/1', source: 'Carrier.java', source_text: javaSource, entries: [binding],
     result_value_types: resultTypes,
     ...(typed.ports && {ports: typed.ports}),
+    ...(typed.exceptions && {exceptions: typed.exceptions}),
     parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,

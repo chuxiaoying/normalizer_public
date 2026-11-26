@@ -116,6 +116,9 @@ pub(super) enum Action {
         site: String,
         condition: Option<Node>,
     },
+    ThrowUninitializedCallback {
+        condition: Node,
+    },
     TaskInvoke {
         name: String,
         port: String,
@@ -422,6 +425,17 @@ impl Engine<'_> {
                 Action::ReadInput { name, input } => self.read_host_input(env, name, input)?,
                 Action::CallSync { port, target, site, condition } => {
                     self.call_closed_sync(port.as_deref(), target, site, condition.as_ref(), env)?;
+                }
+                Action::ThrowUninitializedCallback { condition } => {
+                    let condition = self.action_value(condition, env)?;
+                    need(condition.ty() == Ty::Bool, "callback type error requires a Boolean guard")?;
+                    let condition = condition.scalar()?;
+                    let guard = math::normalize(b::and(self.action_path.clone(), condition.clone()));
+                    if guard.as_bool() != Some(false) {
+                        self.realtime_throws.push(guard);
+                        self.realtime_completion = self.realtime_completion
+                            .replace_continue_with_throw(condition, "TypeError", None);
+                    }
                 }
                 Action::TaskInvoke { name, port, site, args } => {
                     self.task_invoke(name, port, site, args, env)?;

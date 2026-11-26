@@ -29,6 +29,9 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
     }
     const root = singleAnnotatedBinding(host, 'listener host must mark one named declaration', fail);
     const markers = normalizerMarkers(host, fail);
+    if (ts.getJSDocTags(host).some(tag => ['throws', 'exception'].includes(tag.tagName.text))) {
+      fail('unsupported listener host contract tag');
+    }
     if (markers.size && !markers.has('external') || root.initializer || !root.type || !ts.isTypeLiteralNode(root.type)) {
       fail('listener host requires a closed declared receiver interface or source shape');
     }
@@ -51,10 +54,28 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
     }
   }
 
-  const [slot, register, call, ...dispatches] = fn.body.statements;
-  const declarations = slot && ts.isVariableStatement(slot) && slot.declarationList.flags & ts.NodeFlags.Let
-    && slot.declarationList.declarations;
-  const pending = declarations?.[0], slotType = pending?.type;
+  const statements = [...fn.body.statements];
+  const registrarIndex = statements.findIndex(ts.isFunctionDeclaration);
+  const slots = statements.slice(0, registrarIndex).flatMap(st => ts.isVariableStatement(st)
+    && st.declarationList.flags & ts.NodeFlags.Let ? [...st.declarationList.declarations] : []);
+  const [register, call, ...dispatches] = registrarIndex < 0 ? [] : statements.slice(registrarIndex);
+  const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
+  const observedSlots = new Set();
+  for (const st of dispatches) {
+    const scan = node => {
+      if (ts.isCallExpression(node)) {
+        let target = unwrapParens(node.expression);
+        if (ts.isNonNullExpression(target)) target = unwrapParens(target.expression);
+        if (ts.isIdentifier(target)) {
+          const dec = declarationOf(target);
+          if (slots.includes(dec)) observedSlots.add(dec);
+        }
+      }
+      ts.forEachChild(node, scan);
+    };
+    scan(st);
+  }
+  const pending = [...observedSlots][0];
   const registrar = register && ts.isFunctionDeclaration(register) && register;
   const parameter = registrar?.parameters?.[0];
   const registration = call && statementCall(call);
@@ -62,22 +83,34 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
   const body = arrow && ts.isArrowFunction(arrow) && ts.isBlock(arrow.body) && arrow.body.statements;
   const returns = body?.at?.(-1);
   if (fn.asteriskToken || fn.modifiers?.some((m) => is(m, ts.SyntaxKind.AsyncKeyword))
-      || declarations?.length !== 1 || pending.initializer || !ts.isIdentifier(pending.name)
-      || !slotType || !ts.isUnionTypeNode(slotType) || slotType.types.length !== 2
-      || !slotType.types.some(callbackType) || !slotType.types.some((item) => is(item, ts.SyntaxKind.UndefinedKeyword))
+      || registrarIndex < 1 || observedSlots.size > 1
+      || !statements.slice(0, registrarIndex).every(st => ts.isVariableStatement(st)
+          && st.declarationList.flags & ts.NodeFlags.Let
+          && st.declarationList.declarations.every(dec => !dec.initializer && ts.isIdentifier(dec.name)
+            && dec.type && ts.isUnionTypeNode(dec.type) && dec.type.types.length === 2
+            && dec.type.types.some(callbackType) && dec.type.types.some(t => is(t, ts.SyntaxKind.UndefinedKeyword))))
       || !registrar?.name || !registrar.body || registrar.asteriskToken
       || registrar.modifiers || registrar.parameters.length !== 1
       || !ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
       || parameter.dotDotDotToken || parameter.questionToken
       || !registration || registration.questionDotToken || registration.arguments.length !== 1
-      || !named(registration.expression, registrar.name.text) || !body || arrow.modifiers
-      || arrow.parameters.length || !returns || !ts.isReturnStatement(returns)
-      || !returns.expression || !ts.isStringLiteral(returns.expression)) {
+      || !named(registration.expression, registrar.name.text) || declarationOf(registration.expression) !== registrar || !body || arrow.modifiers
+      || arrow.parameters.some(p => !p.questionToken || p.initializer || p.dotDotDotToken || !ts.isIdentifier(p.name))
+      || !returns || !ts.isReturnStatement(returns) || !returns.expression
+      || !(checker.getTypeAtLocation(returns.expression).flags & ts.TypeFlags.StringLike
+          || checker.getTypeAtLocation(returns.expression).types?.every(alt => alt.flags & ts.TypeFlags.StringLike))) {
     fail('listener needs a closed synchronous entry, callback slot and registration');
   }
   const callback = body.slice(0, -1);
+  function pureReturn(node) {
+    node = unwrapParens(node);
+    return ts.isStringLiteral(node) || ts.isConditionalExpression(node)
+      && ts.isIdentifier(unwrapParens(node.condition))
+      && fn.parameters.includes(declarationOf(unwrapParens(node.condition)))
+      && pureReturn(node.whenTrue) && pureReturn(node.whenFalse);
+  }
+  if (!pureReturn(returns.expression)) fail('listener callback return must be a closed pure value');
 
-  const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   let serial = 0;
   const steps = [];
   function statementExpression(st) {
@@ -113,18 +146,25 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
   for (const st of register.body.statements) {
     const expr = statementExpression(st);
     if (expr && ts.isBinaryExpression(expr) && is(expr.operatorToken, ts.SyntaxKind.EqualsToken)
-        && named(expr.left, pending.name.text) && named(expr.right, parameter.name.text)) {
-      if (declarationOf(expr.left) !== pending || declarationOf(expr.right) !== parameter) {
-        fail('listener registration must write the entry callback slot from its callback parameter');
-      }
-      saved = true;
-    } else if (named(callExpression(st), parameter.name.text)) {
+        && ts.isIdentifier(expr.left) && ts.isIdentifier(expr.right)
+        && declarationOf(expr.right) === parameter) {
+      const left = declarationOf(expr.left);
+      if (pending && left === pending) saved = true;
+      else if (left !== parameter && !slots.includes(left)) fail('listener registration must write a known local slot');
+    } else if (callExpression(st) && declarationOf(callExpression(st)) === parameter) {
       executeCallback(null);
+    } else if (ts.isIfStatement(st) && !st.elseStatement && ts.isBinaryExpression(st.expression)
+        && is(st.expression.operatorToken, ts.SyntaxKind.EqualsEqualsEqualsToken)
+        && ts.isIdentifier(st.expression.left) && ts.isIdentifier(st.expression.right)) {
+      const a = declarationOf(st.expression.left), b = declarationOf(st.expression.right);
+      if (!saved || !((a === parameter && b === pending) || (b === parameter && a === pending))) {
+        fail('listener registration requires a proven local callback equality');
+      }
+      for (const branch of blockStatements(st.thenStatement)) lowerExternal(branch, null);
     } else {
       lowerExternal(st, null);
     }
   }
-  if (!saved) fail('listener callback is not registered in the local slot');
   function numericTruth(node) {
     node = unwrapParens(node);
     if (ts.isPrefixUnaryExpression(node)
@@ -139,7 +179,23 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
   }
   function gate(node) {
     node = unwrapParens(node);
-    if (ts.isIdentifier(node) && params.includes(node.text)) return {op: 'var', name: node.text};
+    if (ts.isIdentifier(node) && fn.parameters.includes(declarationOf(node))
+        && checker.getTypeAtLocation(node).flags & ts.TypeFlags.BooleanLike) return {op: 'var', name: node.text};
+    if (ts.isBinaryExpression(node)
+        && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(node.operatorToken.kind)) {
+      const left = unwrapParens(node.left), right = unwrapParens(node.right);
+      const sel = ts.isConditionalExpression(left) && ts.isStringLiteral(right) ? left
+        : ts.isConditionalExpression(right) && ts.isStringLiteral(left) ? right : null;
+      if (sel && ts.isStringLiteral(sel.whenTrue) && ts.isStringLiteral(sel.whenFalse)) {
+        const compare = sel === left ? right.text : left.text;
+        const neq = node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
+        const yes = (sel.whenTrue.text === compare) !== neq;
+        const no = (sel.whenFalse.text === compare) !== neq;
+        const guard = gate(sel.condition);
+        if (yes === no) return value('bool', yes);
+        return yes ? guard : invert(guard);
+      }
+    }
     if (is(node, ts.SyntaxKind.TrueKeyword) || is(node, ts.SyntaxKind.FalseKeyword)) return value('bool', is(node, ts.SyntaxKind.TrueKeyword));
     if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
       const operand = gate(node.operand);
@@ -151,8 +207,9 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
     const raw = callExpression(st);
     let expr = raw && unwrapParens(raw);
     if (expr && ts.isNonNullExpression(expr)) expr = unwrapParens(expr.expression);
-    if (named(expr, pending.name.text) && declarationOf(expr) === pending) {
-      executeCallback(condition);
+    if (pending && named(expr, pending.name.text) && declarationOf(expr) === pending) {
+      if (saved) executeCallback(condition);
+      else steps.push({op: 'throw_uninitialized_callback', condition});
     } else {
       lowerExternal(st, condition);
     }
@@ -168,5 +225,6 @@ export function compileTypedListener(physicalPath, sf, fn, modulePath) {
   }
   steps.push({op: 'return', value: value('unit', null)});
   return {params, excerpt: fn.getText(sf), ports, externalResults,
+    exceptions: steps.some(step => step.op === 'throw_uninitialized_callback') ? {TypeError: 'unit'} : {},
     result: {op: 'settled', returns: 'unit', steps}};
 }

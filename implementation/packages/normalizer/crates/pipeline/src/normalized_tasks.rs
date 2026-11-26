@@ -54,7 +54,8 @@ fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
             Action::ReadInput { .. } | Action::Rethrow | Action::LocalIr { .. } => {}
             Action::CallSync { condition, .. }
                 if condition.as_ref().is_none_or(expression_is_closed) => {}
-            Action::WriteState { value, .. }
+            Action::ThrowUninitializedCallback { condition: value }
+            | Action::WriteState { value, .. }
             | Action::Let { value, .. }
             | Action::Return { value }
                 if expression_is_closed(value) => {}
