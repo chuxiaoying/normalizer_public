@@ -94,16 +94,14 @@ pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> String {
         }
         let out = canonical_order_key_uncached(expr, ctx);
         let cache_weight = expr.size();
-        if cache_weight <= crate::profile::cache_entry_limit() {
+        crate::cache::with_entry_budget("ordering_axiom", cache_weight, || {
             CANONICAL_ORDER_CACHE.with(|cache| {
                 let mut cache = cache.borrow_mut();
                 // Preserve the ordering table's historical one-key offset.
                 crate::cache::insert_bounded(&mut cache, expr.clone(), out.clone(),
                     crate::cache::DEFAULT_KEY_LIMIT + 1, "ordering_axiom");
             });
-        } else {
-            crate::profile::cache_admission_skip("ordering_axiom", cache_weight);
-        }
+        });
         return out;
     }
 

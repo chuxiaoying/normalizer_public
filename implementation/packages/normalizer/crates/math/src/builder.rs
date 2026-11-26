@@ -682,13 +682,11 @@ fn conditions_cover_cache_get(conds: &[Expr]) -> Option<bool> {
 
 fn conditions_cover_cache_insert(conds: &[Expr], value: bool) {
     let cache_weight: usize = conds.iter().map(Expr::size).sum();
-    if cache_weight > crate::profile::cache_entry_limit() {
-        crate::profile::cache_admission_skip("conditions_cover", cache_weight);
-        return;
-    }
-    CONDITIONS_COVER_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover");
+    crate::cache::with_entry_budget("conditions_cover", cache_weight, || {
+        CONDITIONS_COVER_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover");
+        });
     });
 }
 
@@ -824,13 +822,11 @@ fn conditions_cover_disjunction_cache_insert(conds: &[Expr], value: Expr) {
         .map(Expr::size)
         .sum::<usize>()
         .saturating_add(value.size());
-    if cache_weight > crate::profile::cache_entry_limit() {
-        crate::profile::cache_admission_skip("conditions_cover_disjunction", cache_weight);
-        return;
-    }
-    CONDITIONS_COVER_DISJUNCTION_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover_disjunction");
+    crate::cache::with_entry_budget("conditions_cover_disjunction", cache_weight, || {
+        CONDITIONS_COVER_DISJUNCTION_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover_disjunction");
+        });
     });
 }
 
@@ -872,13 +868,11 @@ fn path_proof_cache_insert(
     value: bool,
 ) {
     let cache_weight = active.size().saturating_add(expr.size());
-    if cache_weight > crate::profile::cache_entry_limit() {
-        crate::profile::cache_admission_skip("path_proof", cache_weight);
-        return;
-    }
-    cache_cell.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        crate::cache::insert_bounded(&mut cache, (active.clone(), expr.clone()), value, crate::cache::DEFAULT_KEY_LIMIT, "path_proof");
+    crate::cache::with_entry_budget("path_proof", cache_weight, || {
+        cache_cell.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            crate::cache::insert_bounded(&mut cache, (active.clone(), expr.clone()), value, crate::cache::DEFAULT_KEY_LIMIT, "path_proof");
+        });
     });
 }
 
@@ -1168,28 +1162,15 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
         );
         return false;
     }
-    if structural_implication(active, expr, &mut 2048) {
-        path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, true);
-        emit_path_implies_event(
-            active,
-            expr,
-            1,
-            profile_start,
-            false,
-            true,
-            false,
-            true,
-            None,
-        );
-        return true;
-    }
+    let structural_proof = structural_implication(active, expr, &mut 2048);
     // Path implication is also an optimization proof. Avoid constructing a
     // second copy of very large merged guards for the arithmetic fallback;
     // failure to prove implication conservatively retains the branch.
-    if active
-        .size()
-        .checked_add(expr.size())
-        .is_none_or(|size| size > MAX_TRUTH_TABLE_INPUT_SIZE)
+    if !structural_proof
+        && active
+            .size()
+            .checked_add(expr.size())
+            .is_none_or(|size| size > MAX_TRUTH_TABLE_INPUT_SIZE)
     {
         crate::profile::count(
             &PATH_IMPLIES_BUDGET_SKIPS,
@@ -1220,8 +1201,13 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     // Propositional validity is sufficient even when the atoms are arithmetic
     // comparisons. A counterexample is conclusive only for independent Boolean
     // symbols; correlated comparisons must still use the arithmetic prover.
-    let conditions = [not(active.clone()), expr.clone()];
-    match boolean_truth_table_covers_all_precheck(&conditions) {
+    let coverage = if structural_proof {
+        TruthTableCoverage::CoversAll
+    } else {
+        let conditions = [not(active.clone()), expr.clone()];
+        boolean_truth_table_covers_all_precheck(&conditions)
+    };
+    match coverage {
         TruthTableCoverage::CoversAll => {
             path_proof_cache_insert(&PATH_IMPLIES_CACHE, active, expr, true);
             emit_path_implies_event(
