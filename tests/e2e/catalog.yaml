@@ -267,8 +267,8 @@ groups:
     frontend-vo-consumption-vue:
       scene: frontend-vo-consumption
       entries:
-      - PayableCard#balance.amount
-      - PayableCard#balance.caption
+      - amount
+      - caption
     frontend-vo-production-vue:
       scene: frontend-vo-production
       entries:

@@ -1,24 +1,26 @@
 - name: replace-total-at-second-directive
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: "yield netAmount\n    */"
-    to: "yield netAmount\n    */\n    /* @normalizer-ir total = sum from rows as row yield row.priority */"
+    to: "yield netAmount\n    */\n    /* @normalizer-ir total = sum from rows as row yield row.priority\
+      \ */"
   expect:
   - path:
     - S
     - 5
     - write
     - value
-    value: "CASE\n  WHEN $e_0.quota < COALESCE(\n    SUM(\n      SELECT row.priority\n      FROM $e_1 AS row\n    ),\n    0\n  ) THEN\
-      \ $e_0.quota\n  ELSE COALESCE(\n    SUM(\n      SELECT row.priority\n      FROM $e_1 AS row\n    ),\n    0\n  )\nEND"
+    value: "CASE\n  WHEN $e_0.quota < COALESCE(\n    SUM(\n      SELECT row.priority\n      FROM $e_1\
+      \ AS row\n    ),\n    0\n  ) THEN $e_0.quota\n  ELSE COALESCE(\n    SUM(\n      SELECT row.priority\n\
+      \      FROM $e_1 AS row\n    ),\n    0\n  )\nEND"
 - name: accumulate-into-initialized-zero
   edits:
-  - file: src/ArrearsPage.mjs
-    from: "let total\n    /* @normalizer-ir\n       total = sum"
-    to: "let total = 0\n    /* @normalizer-ir\n       total += sum"
+  - file: src/ArrearsPage.ts
+    from: "let total: number\n    /* @normalizer-ir\n       total = sum"
+    to: "let total: number = 0\n    /* @normalizer-ir\n       total += sum"
 - name: unknown-second-directive
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: "yield netAmount\n    */"
     to: "yield netAmount\n    */\n    /* @normalizer-ir total = unknown_operation rows */"
   reject:
@@ -28,7 +30,7 @@
   - expected a typed relation query
 - name: directive-inside-write-value
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: arrears.status.failed = true
     to: arrears.status.failed = /* @normalizer-ir total = sum from rows as row yield row.priority */ true
   reject:
@@ -36,12 +38,12 @@
   - '@normalizer-ir must appear between statements'
 - name: later-sum-adds-to-existing-binding
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: "yield netAmount\n    */"
-    to: "yield netAmount\n    */\n    const first = total\n    /* @normalizer-ir total += sum from rows as row\n         where row.dueDate\
-      \ <= props.today and row.priority >= profile.minPriority\n         let netAmount = row.amount - row.waivedAmount\n         where\
-      \ netAmount > 0 yield netAmount */"
-  - file: src/ArrearsPage.mjs
+    to: "yield netAmount\n    */\n    const first = total\n    /* @normalizer-ir total += sum from rows\
+      \ as row\n         where row.dueDate <= today and row.priority >= profile.minPriority\n        \
+      \ let netAmount = row.amount - row.waivedAmount\n         where netAmount > 0 yield netAmount */"
+  - file: src/ArrearsPage.ts
     from: 'total > profile.quota ? profile.quota : total'
     to: 'total === first + first ? 701 : 702'
   expect:
@@ -53,30 +55,30 @@
     value: '701'
 - name: capture-invariant-today-before-await
   edits:
-  - file: src/ArrearsPage.mjs
-    from: '  const todayAtEntry = props.today
+  - file: src/ArrearsPage.ts
+    from: '  const todayAtEntry = today
 
       '
     to: ''
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: row.dueDate <= todayAtEntry
-    to: row.dueDate <= props.today
+    to: row.dueDate <= today
 - name: both-sides-of-await-read-the-same-invariant-today
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: row.dueDate <= todayAtEntry
-    to: "row.dueDate <= todayAtEntry\n           and row.dueDate <= props.today"
+    to: "row.dueDate <= todayAtEntry\n           and row.dueDate <= today"
 - name: synchronous-entry-hides-await
   edits:
-  - file: src/ArrearsPage.mjs
-    from: export async function onLoad() {
-    to: export function onLoad() {
+  - file: src/ArrearsPage.ts
+    from: 'export async function onLoad(accountId: number, today: number): Promise<void> {'
+    to: 'export function onLoad(accountId: number, today: number): Promise<void> {'
   reject:
   - 'SCENARIO_MODULE_INPUT:'
   - entry needs an exported async function
 - name: a-state-write-must-use-a-field-declared-for-this-entry
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: arrears.status.ready = true
     to: arrears.status.neverDeclared = true
   reject:
@@ -85,66 +87,66 @@
   - undeclared state field
 - name: reuse-entry-today-through-local-alias
   edits:
-  - file: src/ArrearsPage.mjs
-    from: const todayAtEntry = props.today
-    to: "const dateSnapshot = props.today\n  const todayAtEntry = dateSnapshot"
-
+  - file: src/ArrearsPage.ts
+    from: const todayAtEntry = today
+    to: "const dateSnapshot = today\n  const todayAtEntry = dateSnapshot"
 - name: conditional-stable-entry-input-selects-either-arm
   edits:
-  - file: src/ArrearsPage.mjs
-    from: arrears.loadedAccountId = props.accountId
-    to: 'arrears.loadedAccountId = props.accountId === 0 ? props.today : props.accountId'
+  - file: src/ArrearsPage.ts
+    from: arrears.loadedAccountId = accountId
+    to: 'arrears.loadedAccountId = accountId === 0 ? today : accountId'
   expect:
-  - path: [S, 0, write, value]
-    value: |-
-      CASE
-        WHEN accountId == 0 THEN today
-        ELSE accountId
-      END
-
+  - path:
+    - S
+    - 0
+    - write
+    - value
+    value: "CASE\n  WHEN accountId == 0 THEN today\n  ELSE accountId\nEND"
 - name: conditional-stable-entry-input-equal-arms-collapse
   edits:
-  - file: src/ArrearsPage.mjs
-    from: arrears.loadedAccountId = props.accountId
-    to: 'arrears.loadedAccountId = props.accountId === 0 ? props.accountId : props.accountId'
-
+  - file: src/ArrearsPage.ts
+    from: arrears.loadedAccountId = accountId
+    to: 'arrears.loadedAccountId = accountId === 0 ? accountId : accountId'
 - name: conditional-stable-entry-input-shares-alias-across-await
   edits:
-  - file: src/ArrearsPage.mjs
+  - file: src/ArrearsPage.ts
     from: 'total > profile.quota ? profile.quota : total'
-    to: 'props.accountId === 0 ? todayAtEntry : props.today'
+    to: 'accountId === 0 ? todayAtEntry : today'
   expect:
-  - path: [S, 5, write, value]
+  - path:
+    - S
+    - 5
+    - write
+    - value
     value: today
-
 - name: plain-doc-comment-does-not-hide-the-host-contract
   edits:
-  - file: src/ArrearsPage.mjs
-    from: |-
-      /**
-       * @entryInputs
-    to: |-
-      /** Snapshot of the current account. */
-      /**
-       * @entryInputs
+  - file: src/ArrearsPage.ts
+    from: 'export async function onLoad(accountId: number, today: number): Promise<void> {'
+    to: '/** Snapshot of the current account. */
 
+      export async function onLoad(accountId: number, today: number): Promise<void> {'
 - name: awaited-external-contract-requires-a-promise-element
   edits:
-  - file: src/ArrearsPage.mjs
-    from: '@returns {Promise<Profile>}'
-    to: '@returns {Profile}'
-  reject: ['SCENARIO_MODULE_INPUT:', 'awaited external callback requires a closed Promise<Element> and named rejection types']
-
+  - file: src/ArrearsPage.ts
+    from: 'fetchProfile(accountId: number): Promise<Profile>'
+    to: 'fetchProfile(accountId: number): Profile'
+  reject:
+  - 'SCENARIO_MODULE_INPUT:'
+  - awaited external port requires a closed Promise<Element> and named rejection types
 - name: an-optional-host-field-cannot-be-published-as-a-required-input
   edits:
-  - file: src/ArrearsPage.mjs
-    from: '@type {{ accountId: number, today: number }}'
-    to: '@type {{ accountId?: number, today: number }}'
-  reject: ['SCENARIO_MODULE_INPUT:', 'props requires a closed record with required named source slots']
-
+  - file: src/ArrearsPage.ts
+    from: 'today: number): Promise<void>'
+    to: 'today?: number): Promise<void>'
+  reject:
+  - 'SCENARIO_MODULE_INPUT:'
+  - entry requires named required parameters
 - name: local-ir-cannot-assign-to-a-const-binding
   edits:
-  - file: src/ArrearsPage.mjs
-    from: 'let total'
-    to: 'const total = 0'
-  reject: ['SCENARIO_MODULE_INPUT:', 'local IR requires a writable local assignment in this block']
+  - file: src/ArrearsPage.ts
+    from: 'let total: number'
+    to: 'const total: number = 0'
+  reject:
+  - 'SCENARIO_MODULE_INPUT:'
+  - local IR requires a writable local assignment in this block
