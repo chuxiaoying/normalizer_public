@@ -1038,6 +1038,11 @@ impl<'a> Engine<'a> {
                 };
                 if let Some(operand) = nullable {
                     let v = self.java_expr(operand, id, env, path)?;
+                    if let Value::Term(Ty::Text, expression) = &v {
+                        if let Some(test) = self.compare_first_text_to_null(expression, op == BinOpKind::Ne) {
+                            return Ok(Value::Term(Ty::Bool, test));
+                        }
+                    }
                     let presence = match &v { Value::Term(Ty::Ref,r)=>self.row_presence(r),_=>None };
                     let null = if let Some(present)=presence { b::not(present) } else if matches!(&v, Value::Term(Ty::Ref, reference)
                         if self.source_objects.owns(reference) || self.source_objects.has_complete_identity_partition(reference))

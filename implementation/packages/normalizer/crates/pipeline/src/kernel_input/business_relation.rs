@@ -795,6 +795,25 @@ impl<'a> Engine<'a> {
         Ok(())
     }
 
+    /// A non-null literal fallback cannot satisfy the null test. Under the
+    /// presence guard the ordered first value is unaffected by its fallback.
+    pub(super) fn compare_first_text_to_null(&self, expression: &Expr, different: bool) -> Option<Expr> {
+        let (math::RelationAggregateKind::FirstValue, ordered, Some(value), Some(fallback)) =
+            expression.as_relation_aggregate()? else { return None; };
+        if !matches!(fallback.as_lit(), Some(math::Lit::Str(_))) {
+            return None;
+        }
+        let (rows, _) = r::order_components(ordered)?;
+        let (owner, column) = value.as_row_value()?.split_once('.')?;
+        if self.source_relations.tables.get(owner)?.get(column)? != "text?" {
+            return None;
+        }
+        let present = r::relation_exists(rows.clone());
+        let first = r::relation_first_value(ordered.clone(), value.clone(), b::lit_null());
+        let test = if different { b::ne(first, b::lit_null()) } else { b::eq(first, b::lit_null()) };
+        Some(b::case_when(vec![(present, test)], b::lit_bool(different)))
+    }
+
     pub(super) fn row_presence(&self, reference: &Expr) -> Option<Expr> {
         let row = self
             .source_relations
