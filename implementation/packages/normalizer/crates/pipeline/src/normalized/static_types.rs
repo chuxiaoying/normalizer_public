@@ -473,11 +473,11 @@ impl Admission<'_> {
                     if let Some(value) = initializer {
                         let actual = self.expression_in_context(value, scope, self.root_object_target(java_type))?;
                         let label = format!("initializer for {name}");
-                        // Record arrays share one semantic sequence type; keep
-                        // their Java component identity at the source boundary.
+                        // Structural admission already required a local name.
+                        // Record arrays share one sequence type, so resolve
+                        // that name and keep its exact Java component identity.
                         if let Some(component) = super::record_array_component(java_type) {
                             if !super::declared_reference(component, self.layouts)
-                                || !matches!(value, E::Ident(_))
                                 || self.declared_type(value, scope).as_ref() != Some(java_type)
                             {
                                 return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
