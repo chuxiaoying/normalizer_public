@@ -376,23 +376,7 @@ impl Engine<'_> {
                     if guard.as_bool() == Some(false) {
                         continue;
                     }
-                    let reference = self
-                        .state_roots
-                        .entry(root.clone())
-                        .or_insert_with(|| {
-                            b::heap_ref(
-                                self.heap
-                                    .new_path_object()
-                                    .id(),
-                            )
-                        })
-                        .clone();
-                    self.realtime_store.store_guarded(
-                        guard.clone(),
-                        reference,
-                        fields.join("."),
-                        value.clone(),
-                    );
+                    // Adapter state writes have no readable heap identity; S owns them.
                     self.realtime_effects.write_state(guard, target, value);
                 }
                 Action::ReadInput { name, input } => self.read_host_input(env, name, input)?,
