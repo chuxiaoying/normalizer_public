@@ -1025,6 +1025,9 @@ impl<'a> Parser<'a> {
                 Ok(Some(JavaLit::Char(c)))
             }
             Some(c) if c.is_ascii_digit() => Ok(Some(self.read_number_literal()?)),
+            Some(b'.') if self.peek_at(1).is_some_and(|c| c.is_ascii_digit()) => {
+                Ok(Some(self.read_number_literal()?))
+            }
             _ => {
                 if self.eat_keyword("true") {
                     return Ok(Some(JavaLit::Bool(true)));
@@ -1115,6 +1118,69 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
+    fn scan_numeric_digits(&mut self, hex: bool) {
+        while self.peek().is_some_and(|c| {
+            c == b'_' || if hex { c.is_ascii_hexdigit() } else { c.is_ascii_digit() }
+        }) {
+            self.pos += 1;
+        }
+    }
+
+    fn digit_sequence(&self, start: usize) -> &[u8] {
+        &self.source.as_bytes()[start..self.pos]
+    }
+
+    // Only admit digit separators between digits, not against a prefix,
+    // radix point, exponent sign or type suffix. An empty part is optional.
+    fn checked_ieee_digits(&self, from: usize, part: &'static str) -> Result<bool, ParseError> {
+        let digits = self.digit_sequence(from);
+        if digits.first() == Some(&b'_') || digits.last() == Some(&b'_') {
+            return Err(self.err(part));
+        }
+        Ok(!digits.is_empty())
+    }
+
+    fn reject_ieee_literal(
+        &mut self, start: usize, digits_start: usize, hex: bool,
+    ) -> Result<JavaLit, ParseError> {
+        let has_whole = self.checked_ieee_digits(digits_start, "invalid numeric literal significand")?;
+        let mut has_fraction = false;
+        if self.peek() == Some(b'.') {
+            self.pos += 1;
+            let fraction_start = self.pos;
+            self.scan_numeric_digits(hex);
+            has_fraction = self.checked_ieee_digits(fraction_start, "invalid numeric literal significand")?;
+        }
+        if !has_whole && !has_fraction {
+            return Err(self.err("invalid numeric literal significand"));
+        }
+
+        let exponent = if hex { matches!(self.peek(), Some(b'p' | b'P')) }
+            else { matches!(self.peek(), Some(b'e' | b'E')) };
+        if exponent {
+            self.pos += 1;
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                self.pos += 1;
+            }
+            let from = self.pos;
+            self.scan_numeric_digits(false);
+            if !self.checked_ieee_digits(from, "invalid numeric literal exponent")? {
+                return Err(self.err("invalid numeric literal exponent"));
+            }
+        } else if hex {
+            return Err(self.err("hexadecimal floating literal is missing binary exponent"));
+        }
+
+        if matches!(self.peek(), Some(b'f' | b'F' | b'd' | b'D')) {
+            self.pos += 1;
+        }
+        if self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
+            return Err(self.err("invalid numeric literal suffix"));
+        }
+
+        Err(self.err_at(start, "[JAVA-IEEE-LITERAL] raw IEEE literal requires explicit preprocessing"))
+    }
+
     fn read_number_literal(&mut self) -> Result<JavaLit, ParseError> {
         let start = self.pos;
         let mut is_long = false;
@@ -1126,51 +1192,29 @@ impl<'a> Parser<'a> {
 
         if radix != 10 {
             self.pos += 2;
-            let start_digits = self.pos;
-            while self.peek().is_some_and(|c| {
-                c == b'_' || if radix == 16 { c.is_ascii_hexdigit() } else { c.is_ascii_digit() }
-            }) {
-                self.pos += 1;
-            }
-            if self.pos == start_digits || self.source.as_bytes()[start_digits] == b'_' {
-                return Err(self.err("expected digit after integer radix prefix"));
-            }
-        } else {
-            while let Some(c) = self.peek() {
-                if c.is_ascii_digit() || c == b'_' {
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
-            let fraction = self.peek() == Some(b'.')
-                && self.peek_at(1).is_some_and(|c| c.is_ascii_digit());
-            let exponent = matches!(self.peek(), Some(b'e' | b'E'));
-            if exponent {
-                let digits_at = if matches!(self.peek_at(1), Some(b'+' | b'-')) { 2 } else { 1 };
-                if !self.peek_at(digits_at).is_some_and(|c| c.is_ascii_digit()) {
-                    return Err(self.err("invalid numeric literal exponent"));
-                }
-            }
-            if fraction || exponent {
-                return Err(self.err_at(start, "[JAVA-IEEE-LITERAL] raw IEEE literal requires explicit preprocessing"));
-            }
+        }
+        let digits_start = self.pos;
+        self.scan_numeric_digits(radix == 16);
+        let exponent_marker = match radix {
+            16 => matches!(self.peek(), Some(b'p' | b'P')),
+            10 => matches!(self.peek(), Some(b'e' | b'E')),
+            _ => false,
+        };
+        let suffix = radix == 10 && matches!(self.peek(), Some(b'f' | b'F' | b'd' | b'D'));
+        if exponent_marker || suffix || (radix != 2 && self.peek() == Some(b'.')) {
+            return self.reject_ieee_literal(start, digits_start, radix == 16);
         }
 
+        if radix != 10
+            && (self.pos == digits_start || self.source.as_bytes()[digits_start] == b'_')
+        {
+            return Err(self.err("expected digit after integer radix prefix"));
+        }
         let end = self.pos;
-        // A binary or hexadecimal integer takes only the long suffix.
-        match self.peek() {
-            Some(b'L' | b'l') => {
-                is_long = true;
-                self.pos += 1;
-            }
-            Some(b'F' | b'f' | b'D' | b'd') if radix == 10 => {
-                if self.peek_at(1).is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
-                    return Err(self.err("invalid numeric literal suffix"));
-                }
-                return Err(self.err_at(start, "[JAVA-IEEE-LITERAL] raw IEEE literal requires explicit preprocessing"));
-            }
-            _ => {}
+        // An integer token can take only the long suffix.
+        if matches!(self.peek(), Some(b'L' | b'l')) {
+            is_long = true;
+            self.pos += 1;
         }
         if self.source.as_bytes().get(end - 1) == Some(&b'_')
             || self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$')

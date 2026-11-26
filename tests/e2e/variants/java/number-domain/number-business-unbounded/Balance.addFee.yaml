@@ -21,3 +21,107 @@
   expect:
     - path: [R]
       value: '784637716923335095224261902710254454442933591094742482943'
+
+- name: native-ieee-decimal-fraction-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1.25; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-leading-point-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return .25; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-trailing-point-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1.; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-unsigned-exponent-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1e2; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-signed-exponent-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1.2_5E-2_0; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-double-suffix-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1d; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-float-suffix-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1F; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-hex-point-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 0x1.fp2; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-hex-no-point-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 0x1p3; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: native-ieee-hex-leading-point-needs-preprocessing
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 0x.8P+3f; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "[JAVA-IEEE-LITERAL]"]
+
+- name: reject-missing-signed-exponent-digits
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1e+; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "invalid numeric literal exponent"]
+
+- name: reject-missing-hex-exponent
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 0x1.f; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "missing binary exponent"]
+
+- name: reject-decimal-underscore-before-point
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1_.25; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "invalid numeric literal significand"]
+
+- name: reject-trailing-exponent-underscore
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1e2_; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "invalid numeric literal exponent"]
+
+- name: reject-conflicting-numeric-suffixes
+  edits:
+    - from: "static int addFee"
+      to: "static double raw() { return 1dL; } static int addFee"
+  reject: ["[SOURCE-PARSE-FAILED]", "kind=PREPROCESS_REQUIRED", "invalid numeric literal suffix"]
+
+- name: hex-e-is-an-integer-digit
+  edits:
+    - from: "return balance + fee;"
+      to: "return 0x1e3;"
+  expect:
+    - { path: [R], value: '483' }
+
+- name: hex-d-and-f-are-integer-digits
+  edits:
+    - from: "return balance + fee;"
+      to: "return 0x1fd;"
+  expect:
+    - { path: [R], value: '509' }
