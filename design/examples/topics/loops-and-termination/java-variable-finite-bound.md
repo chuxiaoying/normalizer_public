@@ -31,7 +31,8 @@ AI 只替换变量次数的循环片段，保留 Java 入口、初值和返回�
 ```diff
 --- a/src/VariableLoop.java
 +++ b/src/VariableLoop.java
-@@ -2,8 +2,8 @@
+@@ -1,9 +1,9 @@
+ class VariableLoop {
      static int count(int limit) {
          int total = 0;
 -        for (int i = 0; i < limit; i++) {

@@ -57,41 +57,43 @@ class BillRow {
 
 AI 将原 SQL 的账户筛选、状态筛选和字段投影绑定到查询位置的 `rows`。循环位置只描述对这些行的正金额累加。
 
+分析代码以 `ArrearsService.INSTANCE` 定位同一个入口方法；Mapper 调用在原观察处交为关系读取，行数组只承载同一批行。
+
 ```diff
 --- a/src/ArrearsService.java
 +++ b/src/ArrearsService.java
-@@ -1,36 +1,24 @@
- import java.util.List;
+@@ -1,40 +1,25 @@
+-import java.util.List;
 -import org.apache.ibatis.annotations.Select;
-
+-
  class ArrearsService {
 -    private final BillMapper billMapper;
 -
 -    ArrearsService(BillMapper billMapper) {
 -        this.billMapper = billMapper;
 -    }
--
++    static final ArrearsService INSTANCE = new ArrearsService();
+
      int positiveTotal(int accountId) {
          int total = 0;
-
+-
 -        for (BillRow row : billMapper.selectOpenBills(accountId)) {
 -            if (row.amount > 0) {
 -                total += row.amount;
 -            }
 -        }
-+        List<BillRow> rows;
+-
++        BillRow[] rows;
 +        /* @normalizer-ir
 +           rows = from bill as b
 +               where b.account_id == accountId and b.status == "OPEN"
 +               yield { accountId: b.account_id, amount: b.amount, status: b.status }
 +        */
-+
 +        /* @normalizer-ir
 +           total += sum from rows as row
 +               where row.amount > 0
 +               yield row.amount
 +        */
-
          return total;
      }
 -}
@@ -109,6 +111,10 @@ AI 将原 SQL 的账户筛选、状态筛选和字段投影绑定到查询位置
  }
 
  class BillRow {
+     int accountId;
+     int amount;
+     String status;
+ }
 ```
 
 求和在空集上贡献零。内核通过 `rows` 合并两处筛选，再结合 Java 中的初值和返回语句推导 `R`。
@@ -121,7 +127,7 @@ AI 将原 SQL 的账户筛选、状态筛选和字段投影绑定到查询位置
 schema: normalizer.pers/1
 
 entry:
-  function: src/ArrearsService.java#ArrearsService.positiveTotal
+  function: src/ArrearsService.java#ArrearsService.INSTANCE.positiveTotal
   returns: number
 
 P:
@@ -144,9 +150,9 @@ R: |-
     SUM(
       SELECT bill.amount
       FROM bill
-      WHERE bill.account_id == accountId
+      WHERE bill.account_id = :accountId
         AND bill.amount > 0
-        AND bill.status == "OPEN"
+        AND bill.status = 'OPEN'
     ),
     0
   )

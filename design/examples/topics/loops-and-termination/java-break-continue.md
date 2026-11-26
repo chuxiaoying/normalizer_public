@@ -2,7 +2,7 @@
 
 ## 设计意图
 
-区分跳过当前迭代、退出整个循环和方法返回。退出后的汇合读取只看到真正执行过的迭代；没有预处理交付的原始跳转要明确拒绝，不能当无操作。
+区分跳过当前迭代、退出整个循环和方法返回。退出后的汇合读取只看到真正执行过的迭代；原生跳转必须实际执行，不能当无操作或改写成不保留前缀的集合操作。
 
 ## 输入原始代码
 
@@ -24,32 +24,9 @@ class BreakContinue {
 
 ## AI 预处理结果
 
-```diff
---- a/src/BreakContinue.java
-+++ b/src/BreakContinue.java
-@@ -1,11 +1,12 @@
- class BreakContinue {
-     static int sum(int limit) {
-         int total = 0;
--        for (int i = 0; i < limit; i++) {
--            if (i < 2) continue;
--            if (i > 4) break;
--            total = total + i;
--        }
-+        /* @normalizer-ir
-+           total = fold [0, limit) as i
-+             when i < 2 continue
-+             when i > 4 break
-+             yield i
-+        */
-         return total;
-     }
- }
-```
+**原样通过。** `i` 每轮递增一次；即使 `limit` 未知，走到 `i = 5` 也确定由 `break` 退出。最多进入 6 轮，保留原生 `continue` 和 `break`，由内核沿实际路径执行。此处不把 Java 标签式跳转推断为本例的单层循环控制。
 
-直接提交原 Java 的 `continue` 或 `break`，会在对应关键字处要求先预处理，而不是送入内核后才报泛化循环错误。上面的显式 fold IR 保留这两个动作，运行结果不变；不把 Java 标签式跳转推断为本例的单层循环控制。
-
-**预处理要点**：continue 和 break 都是迭代域的一部分，不能被预处理粗略改成普通筛选或截断集合。内核需要同时看到跳过、终止和已提交前缀。
+**预处理要点**：有可证明的小上界，不需要把已合规的循环交成 fold 指令；控制动作也不能被预处理粗略改成筛选。
 
 ## 归一化最终结果
 

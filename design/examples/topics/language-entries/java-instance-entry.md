@@ -18,7 +18,20 @@ class InstanceEntry {
 
 ## AI 预处理结果
 
-**原样通过。** 这是合法的原生 Java 入口，没有外部边界或显式 `state` 标记需要补充。
+实例方法的接收者必须可从类名找到。本例构造器没有外部依赖或可观察状态，因此显式交付静态接收者；方法体不改。
+
+```diff
+--- a/src/InstanceEntry.java
++++ b/src/InstanceEntry.java
+@@ -1,5 +1,7 @@
+ class InstanceEntry {
++    static final InstanceEntry INSTANCE = new InstanceEntry();
++
+     int add(int value, int fee) {
+         return value + fee;
+     }
+ }
+```
 
 ## 归一化最终结果
 
@@ -26,7 +39,7 @@ class InstanceEntry {
 schema: normalizer.pers/1
 
 entry:
-  function: src/InstanceEntry.java#InstanceEntry.add
+  function: src/InstanceEntry.java#InstanceEntry.INSTANCE.add
   returns: number
 
 P:
@@ -41,6 +54,6 @@ P:
 R: fee + value
 ```
 
-**预处理要点**：只要源码没有显式状态语义，AI 不为 `this` 添加隐含的 S，也不改写合法入口。
+**预处理要点**：只要源码没有显式状态语义，AI 不为 `this` 添加隐含状态或动作，也不把接收者变成 P。
 
-**PERS 验收要点**：入口形态和业务状态是两个层次，receiver 只有在显式状态合同下才进入 S。
+**PERS 验收要点**：入口形态和业务状态是两个层次，接收者路径只负责定位；读取已有状态由 E 交代，实际写入才进入 S。

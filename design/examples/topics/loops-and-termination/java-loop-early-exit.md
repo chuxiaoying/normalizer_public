@@ -62,30 +62,24 @@ Mapper 先按优先级、到期日和 ID 排序，Java 遍历沿用查询返回�
 
 查询位置的注释按原 SQL 筛选、排序并生成 `rows`。循环位置的 `first` 从这组有序行中选择首个已到期且金额为正的账单。
 
+分析代码以 `ArrearsService.INSTANCE` 定位同一个入口方法；Mapper 调用在原观察处交为关系读取，行数组只承载同一批行。
+
 ```diff
 --- a/src/ArrearsService.java
 +++ b/src/ArrearsService.java
-@@ -1,39 +1,28 @@
- import java.util.List;
+@@ -1,45 +1,30 @@
+-import java.util.List;
 -import org.apache.ibatis.annotations.Select;
-
+-
  class ArrearsService {
 -    private final BillMapper billMapper;
-+    int firstPayableAmount(int accountId, int today) {
-+        List<BillRow> rows;
-+        /* @normalizer-ir
-+           rows = from bill as b
-+               where b.account_id == accountId and b.status == "OPEN"
-+               order by b.priority, b.due_date, b.id
-+               yield { id: b.id, accountId: b.account_id, dueDate: b.due_date,
-+                       amount: b.amount, priority: b.priority }
-+        */
-
+-
 -    ArrearsService(BillMapper billMapper) {
 -        this.billMapper = billMapper;
 -    }
--
--    int firstPayableAmount(int accountId, int today) {
++    static final ArrearsService INSTANCE = new ArrearsService();
+
+     int firstPayableAmount(int accountId, int today) {
 -        for (BillRow row : billMapper.selectOpenBills(accountId)) {
 -            if (row.dueDate > today) {
 -                continue;
@@ -93,16 +87,22 @@ Mapper 先按优先级、到期日和 ID 排序，Java 遍历沿用查询返回�
 -            if (row.amount > 0) {
 -                return row.amount;
 -            }
+-        }
++        BillRow[] rows;
++        /* @normalizer-ir
++           rows = from bill as b
++               where b.account_id == accountId and b.status == "OPEN"
++               order by b.priority, b.due_date, b.id
++               yield { id: b.id, accountId: b.account_id, dueDate: b.due_date,
++                       amount: b.amount, priority: b.priority }
++        */
 +        BillRow match;
 +        /* @normalizer-ir
 +           match = first from rows as row
 +               where row.dueDate <= today and row.amount > 0
-+               yield row
-+               else null
++               yield row else null
 +        */
-+        if (match != null) {
-+            return match.amount;
-         }
++        if (match != null) return match.amount;
          return 0;
      }
 -}
@@ -123,6 +123,12 @@ Mapper 先按优先级、到期日和 ID 排序，Java 遍历沿用查询返回�
  }
 
  class BillRow {
+     int id;
+     int accountId;
+     int dueDate;
+     int amount;
+     int priority;
+ }
 ```
 
 命中时 Java 仍提前返回，未命中时走方法末尾的 `return 0;`。内核沿 `rows` 取得查询的行序，推导最终筛选、排序和首行选择。
@@ -135,7 +141,7 @@ Mapper 先按优先级、到期日和 ID 排序，Java 遍历沿用查询返回�
 schema: normalizer.pers/1
 
 entry:
-  function: src/ArrearsService.java#ArrearsService.firstPayableAmount
+  function: src/ArrearsService.java#ArrearsService.INSTANCE.firstPayableAmount
   returns: number
 
 P:
@@ -164,10 +170,10 @@ R: |-
     (
       SELECT bill.amount
       FROM bill
-      WHERE bill.account_id == accountId
-        AND bill.due_date <= today
+      WHERE bill.account_id = :accountId
+        AND bill.due_date <= :today
         AND bill.amount > 0
-        AND bill.status == "OPEN"
+        AND bill.status = 'OPEN'
       ORDER BY bill.priority, bill.due_date, bill.id
       LIMIT 1
     ),

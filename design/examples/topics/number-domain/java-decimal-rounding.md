@@ -4,29 +4,42 @@
 
 检验正负中点、显式舍入模式和二进制浮点无法精确表示的值。没要求保留两位时不自行舍入；模式、位数或中点两侧变化应按源码产生不同数值。
 
-局部 IR 准入另行区分名为 `round` 的变量与带括号的舍入操作，拒绝缺少数字的精确小数字面量及非整数或超实现上限的位数。准入检查不执行舍入，也不把非法扩展标记交给执行器兜底。
+准入检查只核对值、位数和模式的类型及签名，不提前执行舍入。保留已经声明的位数或模式差异，不能暗用宿主的默认舍入。
 
 ## 输入原始代码
 
-本例保留把金额舍入到两位小数的计算。源码直接嵌入局部 IR `round(value, 2, HALF_UP)`，用 `java.math.BigDecimal` 标记精确十进制数值，不把原生 `double` 的二进制近似当成精确小数。没有调用 Java 的舍入库，也没有把金额格式化成文本。这里的 2 和 HALF_UP 只属于这个例子，不是金额类型的默认位数或中点模式。显式指定其他位数或模式时保留它们，未要求舍入时不插入 ROUND。
+本例保留把金额舍入到两位小数的计算。生产源码用 `BigDecimal.setScale(2, RoundingMode.HALF_UP)` 表达金额舍入，用 `BigDecimal` 承载精确十进制数值；不把二进制浮点近似当成精确小数，也不把金额格式化成文本。这里的 2 和 HALF_UP 只属于这个例子，不是金额类型的默认位数或中点模式。显式指定其他位数或模式时保留它们，未要求舍入时不插入 ROUND。
 
 ```java
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 class DecimalPrice {
-    static java.math.BigDecimal roundPrice(java.math.BigDecimal value) {
-        java.math.BigDecimal rounded;
-        /* @normalizer-ir
-           rounded = round(value, 2, HALF_UP)
-        */
-        return rounded;
+    static BigDecimal roundPrice(BigDecimal value) {
+        return value.setScale(2, RoundingMode.HALF_UP);
     }
 }
 ```
 
 ## AI 预处理结果
 
-**原样通过。** 场景规范源码已用局部 `round` 语义表达舍入。AI 不把小数转成 Java 固定宽度整数，也不预先计算具体金额。
+保留精确数值载体，换成第四章定义的标准运算；不另造注释内的通用舍入指令，不把小数转成固定宽度整数，也不预先计算金额。
 
-**预处理要点**：小数精度和显示边界必须有独立数值合同，不能把宿主库函数名当成业务规则，也不能把一次样例结果写成常量。
+```diff
+--- a/src/DecimalPrice.java
++++ b/src/DecimalPrice.java
+@@ -1,8 +1,8 @@
+ import java.math.BigDecimal;
+-import java.math.RoundingMode;
++import normalizer.intrinsics.N;
+
+ class DecimalPrice {
+     static BigDecimal roundPrice(BigDecimal value) {
+-        return value.setScale(2, RoundingMode.HALF_UP);
++        return N.round(value, 2, N.HALF_UP);
+     }
+ }
+```
 
 ## 归一化最终结果
 
@@ -51,6 +64,6 @@ R: 'ROUND(value, 2, "HALF_UP")'
 精确小数须区分中点两侧。HALF_EVEN 根据保留最后一位的奇偶决定方向，2.355 保留两位为 2.36，2.345 为 2.34。
 
 
-若乘数和被乘数都是精确小数，先按精确数值计算乘积。`round(1.25 * 2.5, 4, HALF_EVEN)` 的乘积是 `3.125`，请求的四位大于实际的三位小数，数值不变。规范结果只写 `3.125`，不保留 ROUND 或补末尾零。
+若乘数和被乘数都是精确小数，先按精确数值计算乘积。以 4 位 HALF_EVEN 对 `N.multiply` 得到的 1.25 × 2.5 舍入时，乘积是 `3.125`，请求的四位大于实际的三位小数，数值不变。规范结果只写 `3.125`，不保留 ROUND 或补末尾零。
 
 内核直接检查带未知数值的 ROUND 仍可读出同一数值、原比例和明确的舍入模式；对照普通乘法不能被读成 ROUND。源用例验证最终结果，内核单测验证规范化重建再读取时的载体结构。
