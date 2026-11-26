@@ -117,6 +117,8 @@ impl Ty {
 #[derive(Clone, PartialEq)]
 enum Value {
     Term(Ty, Expr),
+    /// A host-proven lower bound, never inferred from the displayed Expr.
+    IntegerFloor { value: Expr, lower: math::Integer, domain: Expr },
     Rows(Box<business_relation::Rows>),
     LocalIntArray(source_arrays::LocalIntArray),
     LocalTextMap(source_map::LocalTextMap),
@@ -154,15 +156,25 @@ impl Value {
     fn ty(&self) -> Ty {
         match self {
             Self::Term(t, _) => t.clone(),
+            Self::IntegerFloor { .. } => Ty::Integer,
             Self::Rows(_) => Ty::LocalRelation,
             Self::LocalTextMap(_) => Ty::LocalTextMap,
             Self::LocalIntArray(_) | Self::EagerIntProjection { .. } => Ty::Seq(Box::new(Ty::Integer)),
             Self::Sequence { item, .. } => Ty::Seq(Box::new(item.clone())),
         }
     }
+    fn certified_integer_floor(&self, path: &Expr) -> Option<math::Integer> {
+        match self {
+            Self::IntegerFloor { lower, domain, .. }
+                if path.as_bool() != Some(false) && b::path_implies(path, domain) => Some(lower.clone()),
+            Self::Term(Ty::Integer, value) => value.as_lit()?.as_integer(),
+            _ => None,
+        }
+    }
+
     fn scalar(&self) -> Result<Expr> {
         match self {
-            Self::Term(_, e) => Ok(e.clone()),
+            Self::Term(_, e) | Self::IntegerFloor { value: e, .. } => Ok(e.clone()),
             _ => Err(fail("expected scalar")),
         }
     }

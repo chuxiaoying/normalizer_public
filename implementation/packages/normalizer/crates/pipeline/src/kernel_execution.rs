@@ -585,7 +585,7 @@ impl Engine<'_> {
     }
     fn promote_native_decimal(value: Value) -> Value {
         match value {
-            Value::Term(Ty::Integer, expr) => Value::Term(Ty::Decimal, expr),
+            Value::Term(Ty::Integer, expr) | Value::IntegerFloor { value: expr, .. } => Value::Term(Ty::Decimal, expr),
             value => value,
         }
     }
@@ -628,6 +628,17 @@ impl Engine<'_> {
             left.ty() == Ty::Integer && right.ty() == Ty::Integer,
             "integer operands required",
         )?;
+        if op == JavaArithmetic::Add
+            && (matches!(left, Value::IntegerFloor { .. }) || matches!(right, Value::IntegerFloor { .. }))
+        {
+            let domain = self.normal_path(path.clone());
+            if let (Some(left_floor), Some(right_floor)) =
+                (left.certified_integer_floor(&domain), right.certified_integer_floor(&domain))
+            {
+                let value = math::normalize(b::add(left.scalar()?, right.scalar()?));
+                return Ok(Value::IntegerFloor { value, lower: left_floor + right_floor, domain });
+            }
+        }
         let (left, right) = (left.scalar()?, right.scalar()?);
         // Operand evaluation is already recorded in S. An identical
         // numeric receipt can cancel only on a path that acquired it.
@@ -1013,7 +1024,7 @@ impl Engine<'_> {
                     l.ty() != Ty::Text,
                     "Java text identity comparison requires explicit identity representation",
                 )?;
-                let r = self.java_expr(right, id, env, path)?;
+                let r = self.java_expr(right, id, env, path.clone())?;
                 if matches!((l.ty(), r.ty()), (Ty::Decimal, Ty::Decimal) | (Ty::Decimal, Ty::Integer) | (Ty::Integer, Ty::Decimal)) {
                     let op = match op {
                         B::Eq => BinOpKind::Eq,
@@ -1031,6 +1042,12 @@ impl Engine<'_> {
                     matches!(op, B::Eq | B::Ne) || matches!(ty, Ty::Integer | Ty::I32 | Ty::I64),
                     "ordered comparison type",
                 )?;
+                if matches!(l, Value::IntegerFloor { .. }) || matches!(r, Value::IntegerFloor { .. }) {
+                    let domain = self.normal_path(path);
+                    if let Some(value) = compare_integer_floor(*op, &l, &r, &domain) {
+                        return Ok(Value::Term(Ty::Bool, b::lit_bool(value)));
+                    }
+                }
                 let a = l.scalar()?;
                 let z = r.scalar()?;
                 need(!matches!(ty, Ty::Record(_)),
@@ -1054,6 +1071,31 @@ impl Engine<'_> {
             _ => Err(fail("unsupported Java expression in pure-array-1")),
         }
     }
+}
+
+// Apply the source host's proof before entering the unconstrained math cache.
+fn compare_integer_floor(op: B, left: &Value, right: &Value, domain: &Expr) -> Option<bool> {
+    fn against_literal(op: B, subject: &Value, bound: &Value, domain: &Expr) -> Option<bool> {
+        let lower = subject.certified_integer_floor(domain)?;
+        let Value::Term(Ty::Integer, bound) = bound else { return None; };
+        let bound = bound.as_lit()?.as_integer()?;
+        match op {
+            B::Lt if lower >= bound => Some(false),
+            B::Le | B::Eq if lower > bound => Some(false),
+            B::Gt | B::Ne if lower > bound => Some(true),
+            B::Ge if lower >= bound => Some(true),
+            _ => None,
+        }
+    }
+    let swapped = match op {
+        B::Lt => B::Gt,
+        B::Le => B::Ge,
+        B::Gt => B::Lt,
+        B::Ge => B::Le,
+        B::Eq | B::Ne => op,
+        _ => return None,
+    };
+    against_literal(op, left, right, domain).or_else(|| against_literal(swapped, right, left, domain))
 }
 
 impl Engine<'_> {
@@ -1234,8 +1276,8 @@ impl Engine<'_> {
         for ((t, name), v) in m.params().iter().zip(&mut args) {
             let expected = self.project.semantic_parameter_type(method_name, name, t)?;
             if crate::normalized::native_decimal_type(t) {
-                if let Value::Term(ty @ Ty::Integer, _) = v {
-                    *ty = Ty::Decimal;
+                if v.ty() == Ty::Integer {
+                    *v = Self::promote_native_decimal(v.clone());
                 }
             }
             if expected == Ty::Text

@@ -20,6 +20,54 @@ pub(super) struct Relations {
 }
 
 impl Engine<'_> {
+    /// Only declared base tables filtered by closed, typed expressions in the
+    /// current source frame are admitted. In particular, raw E/T values or
+    /// composite observations cannot acquire this proof through their name.
+    fn closed_count_source(&self, relation: &RelationExpr) -> bool {
+        let mut predicates = Vec::new();
+        let mut base = relation;
+        while let RelationExpr::Select { predicate, input } = base {
+            predicates.push(predicate);
+            base = input;
+        }
+        let RelationExpr::Base { name, alias } = base else { return false; };
+        let Some(columns) = self.source_relations.tables.get(name).filter(|_| name == alias) else {
+            return false;
+        };
+        let Some(entry) = self.selected_entry.and_then(|id| self.methods.get(id)) else {
+            return false;
+        };
+        fn closed(expr: &Expr, table: &str, columns: &BTreeMap<String, String>, entry: &simulator_parser::JavaMethod) -> bool {
+            if let Some(literal) = expr.as_lit() {
+                return matches!(literal, math::Lit::Int(_) | math::Lit::BigInt(_) | math::Lit::Bool(_) | math::Lit::Str(_) | math::Lit::Null);
+            }
+            if let Some(row) = expr.as_row_value() {
+                return row.split_once('.').is_some_and(|(owner, field)|
+                    owner == table && columns.contains_key(field));
+            }
+            if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
+                return entry.params().iter().any(|(ty, parameter)| parameter == name
+                    && match primitive_type.as_str() {
+                        "integer" => crate::normalized::integral(ty),
+                        "boolean" => matches!(ty, JavaType::Primitive(t) if t == "boolean"),
+                        _ => false,
+                    });
+            }
+            if let Some((op, left, right)) = expr.as_binop() {
+                return matches!(op, BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne
+                    | BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
+                    | BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
+                    && closed(left, table, columns, entry) && closed(right, table, columns, entry);
+            }
+            if let Some((op, operand)) = expr.as_unary_op() {
+                return matches!(op, math::UnaryOpKind::Not | math::UnaryOpKind::Neg)
+                    && closed(operand, table, columns, entry);
+            }
+            false
+        }
+        predicates.into_iter().all(|p| closed(p, name, columns, entry))
+    }
+
     fn query_row_declaration(&self, decl: &JavaType) -> Result<&simulator_parser::JavaClass> {
         let JavaType::Generic(container, args) = decl else {
             return Err(fail(format!(
@@ -532,8 +580,16 @@ impl Engine<'_> {
             (Kind::Count, Projection::Value(Scalar::Path(parts)))
                 if parts.as_slice() == std::slice::from_ref(&query.alias) =>
             {
-                // Count rows, irrespective of which of their columns are NULL.
-                Value::Term(Ty::Integer, math::normalize(r::relation_sum(rows.input, b::lit_int(1))))
+                // This is the unprojected, no-default cardinality operation.
+                // Preserve its existing SUM(SELECT 1) business representation,
+                // but issue a bound only here, not from generic SUM expressions.
+                let certified = self.project.direct_source && self.closed_count_source(&rows.input);
+                let value = math::normalize(r::relation_sum(rows.input, b::lit_int(1)));
+                if certified {
+                    Value::IntegerFloor { value, lower: 0.into(), domain: self.normal_path(guard.clone()) }
+                } else {
+                    Value::Term(Ty::Integer, value)
+                }
             }
             (Kind::GroupCount, Projection::GroupKeys(keys)) => {
                 // Each group is one distinct *tuple* of evaluated keys, not
