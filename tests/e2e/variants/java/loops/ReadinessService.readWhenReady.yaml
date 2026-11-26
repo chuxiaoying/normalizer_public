@@ -8,3 +8,26 @@ variants:
     edits:
       - from: 'while (!readinessClient.isReady(accountId))'
         to: 'for (; !readinessClient.isReady(accountId); )'
+  - name: a-source-implementation-is-not-an-external-poll-certificate
+    edits:
+      - from: 'interface ReadinessClient {'
+        to: |-
+          class LocalReadiness implements ReadinessClient {
+              public boolean isReady(int accountId) { return accountId > 0; }
+              public int waitForChange(int accountId) { return accountId; }
+              public int readScore(int accountId) { return accountId; }
+          }
+
+          interface ReadinessClient {
+      - from: |2-
+              private final ReadinessClient readinessClient;
+
+              ReadinessService(ReadinessClient readinessClient) {
+                  this.readinessClient = readinessClient;
+              }
+
+              int readWhenReady(int accountId) {
+        to: '    int readWhenReady(ReadinessClient readinessClient, int accountId) {'
+      - from: 'void waitForChange(int accountId);'
+        to: 'int waitForChange(int accountId);'
+    reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'ReadinessService.readWhenReady']

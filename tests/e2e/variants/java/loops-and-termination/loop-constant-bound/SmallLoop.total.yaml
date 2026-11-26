@@ -78,3 +78,10 @@
   expect:
     - path: [R]
       value: '33'
+
+- name: an-assigned-outer-short-counter-is-outside-the-documented-finite-profile
+  edits:
+    - { from: 'int sum = 0;', to: 'short i = 99; int sum = 0;' }
+    - { from: 'int i = 0; i < 3; i++', to: 'i = 0; i < 3; i++' }
+    - { from: 'return sum;', to: 'return sum * 10 + i;' }
+  reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'assignment counter needs an already initialized int/long local']

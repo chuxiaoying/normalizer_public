@@ -32,3 +32,13 @@
   reject:
   - '[SOURCE-PARSE-FAILED]'
   - generic supertype requires explicit preprocessing
+- name: another-declared-interface-member-does-not-change-the-selected-call
+  edits:
+  - from: 'interface Fee { int apply(int value); }'
+    to: 'interface Fee { int preview(int value); int apply(int value); }'
+  - from: 'class FixedFee implements Fee {'
+    to: 'class FixedFee implements Fee { public int preview(int value) { return 7; }'
+  - from: 'class RateFee implements Fee {'
+    to: 'class RateFee implements Fee { public int preview(int value) { return 8; }'
+  - from: 'class ScaledFee implements Fee {'
+    to: 'class ScaledFee implements Fee { public int preview(int value) { return 9; }'
