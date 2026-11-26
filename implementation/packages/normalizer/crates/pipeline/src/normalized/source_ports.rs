@@ -43,6 +43,21 @@ pub(crate) struct SourcePort {
     pub throws: Vec<String>,
 }
 
+/// Resolve the actual source-declared port class before analyzing a
+/// receiver's assembly. A malformed declaration must not be diagnosed as
+/// merely an incompatible constructor argument.
+pub(crate) fn endpoint_declaration<'a>(program: &'a JavaProgram, field: &JavaField) -> Result<&'a JavaClass, String> {
+    if !field.is_final() || field.is_static() || field.has_initializer() {
+        return Err(error("NORM-EXTERNAL-FIELD", field.name()));
+    }
+    let JavaType::Class(endpoint) = field.java_type() else {
+        return Err(error("NORM-EXTERNAL-TYPE", field.name()));
+    };
+    program.find_class(endpoint)
+        .filter(|class| class.is_interface() || class.methods().iter().any(|method| external_member(class, method)))
+        .ok_or_else(|| error("NORM-EXTERNAL-TYPE", endpoint))
+}
+
 pub(crate) fn declarations(
     program: &JavaProgram,
     exceptions: &BTreeMap<String, String>,
@@ -50,20 +65,8 @@ pub(crate) fn declarations(
     let mut ports = BTreeMap::new();
     for owner in program.classes() {
         for field in owner.fields().iter().filter(|field| marked(owner, field)) {
-            if !field.is_final()
-                || field.is_static()
-                || field.has_initializer()
-            {
-                return Err(error("NORM-EXTERNAL-FIELD", field.name()));
-            }
-            let JavaType::Class(interface) = field.java_type() else {
-                return Err(error("NORM-EXTERNAL-TYPE", field.name()));
-            };
-            let declaration = program
-                .find_class(interface)
-                .filter(|class| class.is_interface()
-                    || class.methods().iter().any(|method| external_member(class, method)))
-                .ok_or_else(|| error("NORM-EXTERNAL-TYPE", interface))?;
+            let declaration = endpoint_declaration(program, field)?;
+            let interface = declaration.full_name();
             for method in declaration.methods() {
                 // The constructor, if present, is assembly, not a port member.
                 if !declaration.is_interface() && method.is_constructor() { continue; }
@@ -94,7 +97,7 @@ pub(crate) fn declarations(
                         id.clone(),
                         SourcePort {
                             interface: interface.clone(),
-                            source_path: declaration.source_file().unwrap_or(interface).to_owned(),
+                            source_path: declaration.source_file().unwrap_or(&interface).to_owned(),
                             endpoint,
                             returns: method.return_type().clone(),
                             params: method.params().to_vec(),

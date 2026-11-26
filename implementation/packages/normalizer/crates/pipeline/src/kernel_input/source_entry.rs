@@ -219,6 +219,11 @@ impl SourceEntry {
                 return Err(fail("receiver field must be static final with a matching explicit constructor"));
             }
             let mut receiver = SourceReceiver { owner: root_name.clone(), field: name.into(), assembly_fields: BTreeSet::new() };
+            if let Some(declaration) = program.find_class(target) {
+                for port in declaration.fields().iter().filter(|field| crate::normalized::source_ports::marked(declaration, field)) {
+                    crate::normalized::source_ports::endpoint_declaration(program, port)?;
+                }
+            }
             SourceReceiver::certify(program, target, field.initializer().unwrap()).map_err(|detail| fail(&detail))?;
             receiver.certify_static_assembly(program, class).map_err(|detail| fail(&detail))?;
             (target.as_str(), Some(receiver))
