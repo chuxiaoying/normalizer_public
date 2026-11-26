@@ -14,6 +14,8 @@ Java 源码入口中已证明的数组元素形态不能给适配工程的结果
 
 读取宿主输入和写入状态只依据当前所选入口的 P／E 声明。若入口缺少上下文、字段或参数，内核报错，不从同一工程的其他入口借用同名声明。
 
+适配器提供的入口标识包含源文件和函数，形参位置从零连续编号，不依赖 JSON 键顺序。状态路径只能穿过声明的记录字段；external 的不可变值类型必须闭合，不能把递归类型当成完整记录值。
+
 P 是本次调用绑定的入口快照。等待前后重复读取同一个 P 仍取得同一个值；与时间相关的可变状态或边界观察应另行建模，不能悄悄替换成第二个 P。
 
 Vue 的投影与事件输入可在[生产示例](../design/examples/topics/language-entries/frontend-vo-production-vue.md)及[消费示例](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md)中对照。术语和输出字段遵循[业务 PERS](../implementation/contracts/business-pers.md)。
