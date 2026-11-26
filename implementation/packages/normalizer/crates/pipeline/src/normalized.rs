@@ -694,20 +694,25 @@ fn source_array_read(target: &E, index: &E) -> bool {
 // Match one full accumulator update and reject every other loop shape at
 // one boundary. One closed integer addition to the element is supported.
 pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)> {
-    let (total, element) = match body {
-        [S::Assign {
-            target: E::Ident(total),
-            value: E::BinOp { op: B::Add, left, right },
-            ..
-        }] if item != total.as_str() && matches!(left.as_ref(), E::Ident(name) if name == total) =>
-            (total, right.as_ref()),
-        _ => return None,
+    let [S::Assign {
+        target: E::Ident(total),
+        value: E::BinOp { op: B::Add, left, right },
+        ..
+    }] = body else { return None; };
+    if item == total { return None; }
+    let names = |expression: &E, expected: &str|
+        matches!(expression, E::Ident(name) if name == expected);
+    let element = if names(left, total) {
+        right
+    } else if names(right, total) {
+        left
+    } else {
+        return None;
     };
-    let offset = match element {
+    let offset = match element.as_ref() {
         E::Ident(name) if name == item => Some(0),
-        E::BinOp { op: B::Add, left, right }
-            if matches!(left.as_ref(), E::Ident(name) if name == item) =>
-                integer_token(right),
+        E::BinOp { op: B::Add, left, right } if names(left, item) => integer_token(right),
+        E::BinOp { op: B::Add, left, right } if names(right, item) => integer_token(left),
         _ => None,
     }?;
     Some((total, offset))
@@ -811,6 +816,29 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
 mod source_declaration_contracts {
     use super::*;
     use simulator_parser::{parse, ParseOptions};
+
+    #[test]
+    fn a_native_exact_sum_recognizes_commutation_without_confusing_the_item_and_accumulator() {
+        for (write, expected) in [
+            ("total = total + row;", Some(("total", 0))),
+            ("total = row + total;", Some(("total", 0))),
+            ("total = (1 + row) + total;", Some(("total", 1))),
+            ("row = row + row;", None),
+            ("total = other + row;", None),
+            ("total = total + other;", None),
+            ("total = total + (other + 1);", None),
+        ] {
+            let source = format!("class Sum {{ static int run(int[] rows, int other) {{
+                int total = 0; for (int row : rows) {{ {write} }} return total;
+            }} }}");
+            let program = parse(&source, "Sum.java", &ParseOptions::default()).unwrap();
+            let method = &program.find_class("Sum").unwrap().methods()[0];
+            let [_, S::ForEach { var_name, body, .. }, _] = method.body().unwrap() else {
+                panic!("the source must keep one enhanced for loop");
+            };
+            assert_eq!(array_sum(var_name, body), expected, "{write}");
+        }
+    }
 
     #[test]
     fn numeric_array_admission_does_not_prove_boolean_element_arithmetic() {
