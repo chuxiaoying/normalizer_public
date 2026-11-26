@@ -44,7 +44,7 @@ topic 表示单个基础语义能力，basic 表示常规合同和防御边界�
 `implementation/tools/normalizer test seed-patches` 回放全部登记设计种子的预处理补丁（含待派生的种子），不启动内核。补丁回放通过不等于该种子已进入正式行为回归。
 
 
-`implementation/tools/normalizer test engineering` 运行架构工具测试和链接检查；`implementation/tools/normalizer test kernel-units` 验证内核内部结构不变量。它们不是业务种子，不改变业务回归清单。
+`implementation/tools/normalizer test engineering` 运行架构工具测试、设计阅览器生命周期测试和文档链接检查；`implementation/tools/normalizer test kernel-units` 验证内核内部结构不变量。它们不是业务种子，不改变业务回归清单。
 
 ## 一致性复核判据
 
