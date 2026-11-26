@@ -648,10 +648,18 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
 // The parser desugars compound assignments. This bounded source profile
 // accepts only addresses with no observable evaluation to duplicate.
 fn constant_array_address(target: &E, index: &E) -> bool {
-    let local = matches!(target, E::Ident(_));
-    let entry_field = matches!(target, E::FieldAccess { target, .. }
-        if matches!(target.as_ref(), E::Ident(owner) if owner == "this"));
-    (local || entry_field) && matches!(index, E::Lit(JavaLit::Int(i)) if *i >= 0)
+    source_ports::receiver(target).is_some()
+        && matches!(index, E::Lit(JavaLit::Int(i)) if *i >= 0)
+}
+
+// A bound local or local construction can also be read with a signed int
+// literal. Explicit this.fields still require the constant-address proof.
+fn source_array_read(target: &E, index: &E) -> bool {
+    if matches!(target, E::Ident(_)) || local_array_construction(target) {
+        signed_literal_index(index)
+    } else {
+        constant_array_address(target, index)
+    }
 }
 
 // Only a single exact sum update with an element coefficient of one.
@@ -731,9 +739,7 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
             expr(length, at, calls)?;
         }
         E::FieldAccess { target, .. } => expr(target, at, calls)?,
-        E::ArrayAccess { target, index } if constant_array_address(target, index)
-            || (local_array_construction(target) || matches!(target.as_ref(), E::Ident(_)))
-                && signed_literal_index(index) => {
+        E::ArrayAccess { target, index } if source_array_read(target, index) => {
             expr(target, at, calls)?;
             expr(index, at, calls)?;
         }
