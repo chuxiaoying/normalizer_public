@@ -36,7 +36,7 @@ impl Engine<'_> {
         let declared = self.program.find_class(opened_owner)
             .ok_or_else(|| fail("local stack has no record element declaration"))?;
         need(opened_owner == closed_owner && declared.fields().iter().any(|f|
-            !f.is_static() && f.name() == field && crate::normalized::integral(f.java_type())),
+            f.name() == field && crate::normalized::integral(f.java_type())),
             "local stack requires one declared integer field in the same input record type")?;
         let (empty, failed) = math::domains::relation::positional::reverse_stack_completion(&opens, &closes, field);
         self.throw_source_on_path(b::and(path, failed), "java.lang.IllegalArgumentException");

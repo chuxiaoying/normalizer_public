@@ -54,8 +54,7 @@ pub fn parse(
     let parsed = p.parse_program();
     let mut prog = p.lexical_error.take().map_or(parsed, Err).map_err(|error| {
         let Some(t) = &translated else { return error };
-        let ParseError::Syntax { file, line, col, msg } = error;
-        if file != file_hint { return ParseError::Syntax { file, line, col, msg } }
+        let ParseError::Syntax { line, col, msg, .. } = error;
         Parser::new(source, file_hint).err_at(t.raw_offset(line, col), &msg)
     })?;
     flatten_inner_classes(&mut prog);

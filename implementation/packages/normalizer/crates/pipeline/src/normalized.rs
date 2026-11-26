@@ -250,8 +250,6 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
                 || !class.methods().is_empty()
                 || !class.annotations().is_empty()
                 || !class.interfaces().is_empty()
-
-                || class.is_interface()
             {
                 return Err(error("NORM-EXCEPTION-DECLARATION", &class.full_name()));
             }
