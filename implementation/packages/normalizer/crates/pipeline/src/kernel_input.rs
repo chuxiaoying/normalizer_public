@@ -691,7 +691,7 @@ impl Loaded {
             .iter()
             .enumerate()
             .map(|(index, (t, n))| {
-                let expected = e.method_parameter_type(entry, index, n)?;
+                let expected = e.methods[entry].parameter_type(&self.project, entry, index, n)?;
                 let nullable = if self.project.direct_source {
                     self.project.source_nullable_entry_parameters.contains(n)
                 } else {

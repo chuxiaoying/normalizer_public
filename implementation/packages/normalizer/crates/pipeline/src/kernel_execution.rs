@@ -18,6 +18,25 @@ impl JavaArithmetic {
 }
 
 
+impl AdmittedMethod<'_> {
+    pub(super) fn parameter_type(
+        &self, project: &Project, id: &str, index: usize, name: &str,
+    ) -> Result<Ty> {
+        if let Some(binding) = &self.binding {
+            let semantic = &binding.function.params[index];
+            if semantic.name == name {
+                return Ok(binding.parameters[index].clone());
+            }
+            // A manually prepared carrier can bind a different semantic name.
+            // Resolve that rare Java-side override at the original call site.
+            if let Some(ty) = project.parameter_override(id.rsplit('.').next().unwrap_or(id), name)? {
+                return Ok(ty);
+            }
+        }
+        Ok(self.defaults[index].clone())
+    }
+}
+
 pub(super) struct Engine<'a> {
     pub(super) program: &'a JavaProgram,
     pub(super) temporal_definitions: Vec<super::temporal_graph::Definition>,
@@ -1227,40 +1246,23 @@ impl Engine<'_> {
         self.java_call_with_receiver(id, args, path, receiver, false)
     }
 
-    pub(super) fn method_parameter_type(&self, id: &str, index: usize, name: &str) -> Result<Ty> {
-        let method = &self.methods[id];
-        if let Some(binding) = &method.binding {
-            let semantic = &binding.function.params[index];
-            if semantic.name == name {
-                return Ok(binding.parameters[index].clone());
-            }
-            // A manually prepared carrier can bind a different semantic name.
-            // Resolve that rare Java-side override at the original call site.
-            if let Some(ty) = self.project.parameter_override(id.rsplit('.').next().unwrap_or(id), name)? {
-                return Ok(ty);
-            }
-        }
-        Ok(method.defaults[index].clone())
-    }
-
     fn java_call_with_receiver(
         &mut self, id: &str, mut args: Vec<Value>, path: Expr,
         receiver: Option<Value>, implicit_receiver: bool,
     ) -> Result<Value> {
         self.budget()?;
         self.java_calls += 1;
-        let nested_call = !self.active.is_empty();
-        let parent_completion = self.realtime_completion.clone();
+        let parent_completion = (!self.active.is_empty()).then(|| self.realtime_completion.clone());
         need(
             self.active.insert(format!("java:{id}")),
             "recursive Java call",
         )?;
-        let m = self.methods.get(id)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id))
-            .syntax;
+        let method = self.methods.get(id)
+            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
+        let m = method.syntax;
         need(m.params().len() == args.len(), "Java arity mismatch")?;
         for (index, ((t, name), v)) in m.params().iter().zip(&mut args).enumerate() {
-            let expected = self.method_parameter_type(id, index, name)?;
+            let expected = method.parameter_type(self.project, id, index, name)?;
             if crate::normalized::native_decimal_type(t) {
                 if v.ty() == Ty::Integer {
                     *v = Self::promote_native_decimal(v.clone());
@@ -1273,7 +1275,7 @@ impl Engine<'_> {
             }
             need(expected == v.ty(), "Java argument type mismatch")?;
         }
-        let value = if let Some(binding) = self.methods[id].binding.clone() {
+        let value = if let Some(binding) = method.binding.clone() {
             self.call(id, &binding, args, path)?
         } else {
             need(
@@ -1299,12 +1301,10 @@ impl Engine<'_> {
             value.ty() == self.methods[id].returns,
             "Java return type mismatch",
         )?;
-        let callee_completion = self.realtime_completion.clone();
-        self.realtime_completion = if nested_call {
-            parent_completion.replace_continue(callee_completion.resume_after_normal_return())
-        } else {
-            callee_completion
-        };
+        if let Some(parent) = parent_completion {
+            self.realtime_completion =
+                parent.replace_continue(self.realtime_completion.resume_after_normal_return());
+        }
         self.active.remove(&format!("java:{id}"));
         Ok(value)
     }
