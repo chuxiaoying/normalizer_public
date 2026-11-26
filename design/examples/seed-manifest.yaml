@@ -44,6 +44,7 @@ seeds:
   java-explicit-rollover: { kind: topic, topic: number-domain, related: [expression-simplification] }
   java-independent-choice: { kind: topic, topic: collections, related: [control-flow, objects-and-types] }
   java-invalid-declaration: { kind: basic, topic: basic-contracts, related: [language-entries] }
+  java-grouping-signed-operand: { kind: basic, topic: basic-contracts, related: [language-entries] }
   java-source-name-closure: { kind: basic, topic: basic-contracts, related: [language-entries] }
   java-conditional-type-admission: { kind: basic, topic: basic-contracts, related: [control-flow] }
   java-lifo-release: { kind: topic, topic: state-and-aliasing, related: [collections] }

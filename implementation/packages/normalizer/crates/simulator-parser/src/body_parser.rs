@@ -753,6 +753,13 @@ impl<'a> Parser<'a> {
             if !self.eat_char(b')') {
                 return Err(self.err("expected ')' after cast type"));
             }
+            // Arrays are reference types even when their element type is primitive.
+            // Only primitive scalar casts accept a signed unary operand.
+            self.skip_ws();
+            if !matches!(ty, JavaType::Primitive(_)) && matches!(self.peek(), Some(b'+' | b'-')) {
+                self.pos = save;
+                return Ok(None);
+            }
             let expr = self.parse_unary()?;
             return Ok(Some(JavaExpr::Cast {
                 target_type: ty,
@@ -775,11 +782,12 @@ impl<'a> Parser<'a> {
         }
         self.pos += 1;
         self.skip_ws();
-        // cast 后必须跟表达式起始字符：ident / lit / ! / ~ / - / + / ( / new
+        // A reference cast takes UnaryExpressionNotPlusMinus. When a
+        // parenthesized name precedes '+' or '-', let binary/postfix parsing
+        // continue instead of consuming the operator as a cast operand.
         let is_expr_start = match self.peek() {
             Some(c) if c.is_ascii_alphanumeric() || c == b'_' || c == b'$' => true,
             Some(b'"') | Some(b'\'') | Some(b'!') | Some(b'~') | Some(b'(') => true,
-            Some(b'-') | Some(b'+') => true,
             _ => false,
         };
         if !is_expr_start {

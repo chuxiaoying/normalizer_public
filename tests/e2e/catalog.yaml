@@ -16,6 +16,8 @@ groups:
     - TicketCode.Nested.readNested
     java-source-name-closure:
     - Catalog.price
+    java-grouping-signed-operand:
+    - SignedGrouping.read
     java-conditional-type-admission:
     - Shape.read
   java/collections:
