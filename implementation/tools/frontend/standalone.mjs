@@ -44,38 +44,45 @@ function fail(detail) { throw new Error('[NORM-JS-MODULE] ' + detail); }
 // In this bounded source prefix, the entry immediately evaluates a normal
 // invocation on an ordinary caller-supplied parameter. This is actual call
 // evidence, not an invented port or a synthetic scalar result for the kernel.
-function leadingParameterCall(fn) {
-  const params = [];
-  for (const param of fn.parameters) {
-    if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken) return null;
-    if (params.includes(param.name.text)) return null;
-    params.push(param.name.text);
+function namedParameters(parameters) {
+  const names = new Set();
+  for (const param of parameters) {
+    if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken)
+      return {error: 'expected named required parameters'};
+    if (names.has(param.name.text)) return {error: 'duplicate parameter ' + param.name.text};
+    names.add(param.name.text);
   }
-  const nodes = [...fn.body.statements];
-  const first = nodes[0];
-  if (!first) return null;
+  return {names};
+}
+
+function leadingParameterCall(fn, params) {
+  const nodes = fn.body.statements, first = nodes[0];
+  const top = first && (ts.isVariableStatement(first)
+    ? first.declarationList.declarations[0]?.initializer : first.expression);
+  if (!top) return;
   const declared = new Set(params);
-  for (const [i, statement] of nodes.entries()) {
-    if (ts.isVariableStatement(statement) && statement.declarationList.flags & ts.NodeFlags.Const) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (!ts.isIdentifier(declaration.name) || !declaration.initializer || declared.has(declaration.name.text)) return null;
-        declared.add(declaration.name.text);
-      }
-    } else if (!(ts.isReturnStatement(statement) && i === nodes.length - 1)
-      && !(ts.isExpressionStatement(statement) && i === 0)) return null;
-  }
-  const declaration = ts.isVariableStatement(first) ? first.declarationList.declarations[0] : null;
-  const top = declaration ? declaration.initializer : first.expression;
-  if (!top) return null;
+  const closedPrefix = nodes.every((statement, index) => {
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) {
+      return ts.isReturnStatement(statement) && index === nodes.length - 1
+        || ts.isExpressionStatement(statement) && index === 0;
+    }
+    return statement.declarationList.declarations.every(({name, initializer}) => {
+      if (!ts.isIdentifier(name) || !initializer || declared.has(name.text)) return false;
+      declared.add(name.text);
+      return true;
+    });
+  });
+  if (!closedPrefix) return;
   const expression = unwrap(top);
   const awaited = ts.isAwaitExpression(expression);
   const call = awaited ? unwrap(expression.expression) : expression;
-  if (!ts.isCallExpression(call) || call.questionDotToken || call.arguments.length !== 0) return null;
+  if (!ts.isCallExpression(call) || call.questionDotToken || call.arguments.length) return;
   const callee = unwrap(call.expression);
-  if (!ts.isPropertyAccessExpression(callee) || callee.questionDotToken || !ts.isIdentifier(callee.name)) return null;
+  if (!ts.isPropertyAccessExpression(callee) || callee.questionDotToken || !ts.isIdentifier(callee.name)) return;
   const receiver = unwrap(callee.expression);
-  if (!ts.isIdentifier(receiver) || !params.includes(receiver.text)) return null;
-  return { parameters: params, call: {receiver: receiver.text, member: callee.name.text, awaited} };
+  if (ts.isIdentifier(receiver) && params.has(receiver.text)) {
+    return { parameters: [...params], call: {receiver: receiver.text, member: callee.name.text, awaited} };
+  }
 }
 
 function mapEntries(node, names) {
@@ -117,6 +124,11 @@ function mapEntries(node, names) {
   });
 }
 
+const numericOperators = {
+  '+': ['number', 'add'], '-': ['number', 'subtract'],
+  '>': ['bool', 'gt'], '<': ['bool', 'gt'], '===': ['bool', 'eq'],
+};
+
 function compile(source, file, entry, physicalPath) {
   if (file.endsWith('.ts')) {
     const {sf, fn} = typedModuleAst(source, physicalPath, entry);
@@ -137,7 +149,8 @@ function compile(source, file, entry, physicalPath) {
   if (sf.statements.some(node => !ts.isFunctionDeclaration(node))) fail('standalone scalar modules require closed function declarations');
   localDirectives(sf, fn.body).requireConsumed();
   if (fn.asteriskToken) fail('generator entry requires a closed completion contract: ' + entry);
-  const call = leadingParameterCall(fn);
+  const formals = namedParameters(fn.parameters);
+  const call = formals.names && leadingParameterCall(fn, formals.names);
   if (call) return { closure: { schema: 'normalizer.standalone-closure/1', file, entry, ...call } };
   if (fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
@@ -149,14 +162,13 @@ function compile(source, file, entry, physicalPath) {
   if (orderedMap && sf.statements.some(declaration => declaration.name?.text === 'Map')) {
     fail('readonly Map requires an unshadowed built-in Map');
   }
+  if (formals.error) fail(formals.error);
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
-    if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken) fail('expected named required parameters');
     const [tag, ...more] = ts.getJSDocParameterTags(param);
     const domain = declaredParameter(tag?.typeExpression?.type, sf);
     if (more.length || !parameter(domain) || (!orderedMap && domain === nullableText)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
-    if (names.has(param.name.text)) fail('duplicate parameter ' + param.name.text);
     const binding = param.name.text;
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
     names.set(param.name.text, {name: binding, type: parameter(domain)});
@@ -172,10 +184,12 @@ function compile(source, file, entry, physicalPath) {
       const type = scalar(expr.type);
       return {type, node: internal('const', {type, value: expr.value})};
     }
-    if (expr.op === 'binary' && ['+', '-'].includes(expr.operator)) {
+    if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
+      const [type, operator] = numericOperators[expr.operator];
       const left = expression(expr.left), right = expression(expr.right);
-      if (left.type !== 'number' || right.type !== 'number') fail('exact arithmetic requires two business numbers');
-      return {type: 'number', node: internal(expr.operator === '+' ? 'add' : 'subtract', {left: left.node, right: right.node})};
+      if (left.type !== 'number' || right.type !== 'number') fail('scalar arithmetic and comparison require two business numbers');
+      const [a, b] = expr.operator === '<' ? [right, left] : [left, right];
+      return {type, node: internal(operator, {left: a.node, right: b.node})};
     }
     if (expr.op === 'read') {
       const [name, field, ...rest] = expr.target;
@@ -184,12 +198,6 @@ function compile(source, file, entry, physicalPath) {
         fail('length requires a direct declared non-null readonly Vector');
       }
       return {type: 'number', node: internal('value.field', {value: internal('var', {name: binding.name}), name: 'length'})};
-    }
-    if (expr.op === 'binary' && ['>', '<', '==='].includes(expr.operator)) {
-      const left = expression(expr.left), right = expression(expr.right);
-      if (left.type !== 'number' || right.type !== 'number') fail('comparison requires two business numbers');
-      const [a, b] = expr.operator === '<' ? [right, left] : [left, right];
-      return {type: 'bool', node: internal(expr.operator === '===' ? 'eq' : 'gt', {left: a.node, right: b.node})};
     }
     if (expr.op === 'array') {
       if (expr.items.some(item => item.op === 'opaque')) fail('readonly Vector literal requires a closed list of numbers');
