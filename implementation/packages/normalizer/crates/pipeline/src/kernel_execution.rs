@@ -652,10 +652,11 @@ impl Engine<'_> {
                     return Ok(Some(b::lit_int(array.length())));
                 }
                 if let Some(Value::Sequence { item: Ty::Integer, name: root, java_component, .. }) = env.get(name) {
-                    // Aliases preserve their root and its Java component.
-                    // Source admission cannot mark an array parameter nullable.
-                    // Still require an entry parameter; state names are not borrowed roots.
-                    let admitted = java_component.as_deref() == Some("int")
+                    // The direct source contract admits all checked integer
+                    // array carriers. Length does not read or convert an
+                    // element. Retain the adapter's exact int carrier rule.
+                    // State names are not borrowed entry roots.
+                    let admitted = (self.project.direct_source || java_component.as_deref() == Some("int"))
                         && self.selected_entry.and_then(|entry| self.methods.get(entry))
                             .is_some_and(|method| method.syntax.params().iter().any(|(_, parameter)| {
                                 parameter == root

@@ -69,3 +69,21 @@
     - { path: [R], value: 'LENGTH(values)' }
     - { path: [throws], absent: true }
     - { path: [S], absent: true }
+
+- name: a-long-array-alias-observes-length-without-reading-an-element
+  edits:
+    - { from: 'firstRequired(int[] values)', to: 'firstRequired(long[] values)' }
+    - { from: 'return values[0];', to: 'long[] ordered = values; return ordered.length;' }
+  expect:
+    - { path: [R], value: 'LENGTH(values)' }
+    - { path: [throws], absent: true }
+    - { path: [S], absent: true }
+
+- name: a-short-array-length-is-the-same-business-cardinality
+  edits:
+    - { from: 'firstRequired(int[] values)', to: 'firstRequired(short[] values)' }
+    - { from: 'return values[0];', to: 'return values.length;' }
+  expect:
+    - { path: [R], value: 'LENGTH(values)' }
+    - { path: [throws], absent: true }
+    - { path: [S], absent: true }
