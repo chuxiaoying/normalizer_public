@@ -102,7 +102,7 @@ groups:
     java-loop-fold:
     - ArrearsService.INSTANCE.positiveTotal
     java-loop-unknown:
-    - ReadinessService.readWhenReady
+    - ReadinessService.INSTANCE.readWhenReady
   java/loops-and-termination:
     loop-break-continue:
     - BreakContinue.sum

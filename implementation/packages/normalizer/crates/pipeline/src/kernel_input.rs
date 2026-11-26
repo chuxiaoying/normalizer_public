@@ -450,7 +450,9 @@ impl Loaded {
             exception_bindings: source_exception_bindings,
             ports: source_ports,
             nullable_entry_parameters: source_nullable_entry_parameters,
-        } = crate::normalized::validate_with_receiver(&program, entry, receiver)?;
+        } = crate::normalized::validate_with_receiver(
+            &program, entry, receiver, source_entry.as_ref().map(|source| source.locator.as_str()),
+        )?;
         let ports = source_ports::contracts(&program, &source_ports)?;
         let exceptions = source_exception_parents
             .keys()

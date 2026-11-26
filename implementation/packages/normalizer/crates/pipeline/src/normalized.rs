@@ -498,17 +498,19 @@ fn same_parameters(left: &JavaMethod, right: &JavaMethod) -> bool {
 
 /// Validate every supplied method, including unused helpers.
 pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvidence, String> {
-    validate_with_receiver(program, entry, None)
+    validate_with_receiver(program, entry, None, None)
 }
 
 pub(crate) fn validate_with_receiver(
-    program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>,
+    program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>, locator: Option<&str>,
 ) -> Result<SourceEvidence, String> {
     validate_official_namespace(program)?;
-    external_polling::validate_entry(program, entry)?;
     let exceptions = source_exceptions(program)?;
     let layouts = source_layouts_with_receiver(program, receiver)?;
     let ports = source_ports::declarations(program, &exceptions)?;
+    if receiver.is_some() {
+        external_polling::validate_entry(program, entry, locator.unwrap_or(entry), &ports)?;
+    }
     let is_port_interface = |name: &str| ports.values().any(|port| port.interface == name);
     let supported = |ty: &JavaType| {
         scalar(ty) || native_decimal_type(ty) || exact_decimal_type(ty) || calendar_date_type(ty) || matches!(ty, JavaType::Array(item) if integral(item) || declared_reference(item, &layouts) || matches!(item.as_ref(), JavaType::Array(scalar) if integral(scalar))) || declared_reference(ty, &layouts)
@@ -594,7 +596,9 @@ pub(crate) fn validate_with_receiver(
             resolved: exception_bindings.entry(id.clone()).or_default(),
         };
         statements(body, id, &mut calls, &mut catches, false)?;
-        static_types::validate(program, owner, m, id, body, &layouts)?;
+        let entry_owner = entry.rsplit_once('.').map(|(owner, _)| owner);
+        let closed_receiver = receiver.is_some() && entry_owner == Some(owner.full_name().as_str());
+        static_types::validate(program, owner, m, id, body, &layouts, closed_receiver)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
             let (target_owner, target_member) = match call {

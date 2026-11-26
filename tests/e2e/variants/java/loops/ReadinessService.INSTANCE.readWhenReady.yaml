@@ -18,16 +18,10 @@ variants:
         to: 'for (; !readinessClient.isReady(accountId); )'
   - name: a-source-implementation-is-not-an-external-poll-certificate
     edits:
-      - from: 'interface ReadinessClient {'
-        to: |-
-          class LocalReadiness implements ReadinessClient {
-              public boolean isReady(int accountId) { return accountId > 0; }
-              public int waitForChange(int accountId) { return accountId; }
-              public int readScore(int accountId) { return accountId; }
-          }
-
-          interface ReadinessClient {
+      - from: '    static final ReadinessService INSTANCE = new ReadinessService(new ReadinessClient());'
+        to: '    static final ReadinessService INSTANCE = new ReadinessService();'
       - from: |2-
+              @N.External
               private final ReadinessClient readinessClient;
 
               ReadinessService(ReadinessClient readinessClient) {
@@ -35,32 +29,23 @@ variants:
               }
 
               int readWhenReady(int accountId) {
-        to: '    int readWhenReady(ReadinessClient readinessClient, int accountId) {'
-      - from: 'void waitForChange(int accountId);'
-        to: 'int waitForChange(int accountId);'
+        to: |2-
+              int readWhenReady(int accountId) {
+                  ReadinessClient readinessClient = new ReadinessClient();
+      - from: '    native boolean isReady(int accountId);'
+        to: '    boolean isReady(int accountId) { return accountId > 0; }'
+      - from: '    native void waitForChange(int accountId);'
+        to: '    void waitForChange(int accountId) {}'
+      - from: '    native int readScore(int accountId);'
+        to: '    int readScore(int accountId) { return accountId; }'
     reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'ReadinessService.readWhenReady']
   - name: ordinary-loop-with-a-computed-condition-argument-remains-unproved
     edits:
-      - &ordinary_ready_receiver
-        from: |2-
-              private final ReadinessClient readinessClient;
-
-              ReadinessService(ReadinessClient readinessClient) {
-                  this.readinessClient = readinessClient;
-              }
-
-              int readWhenReady(int accountId) {
-        to: '    int readWhenReady(ReadinessClient readinessClient, int accountId) {'
-      - &ordinary_wait_result
-        from: 'void waitForChange(int accountId);'
-        to: 'int waitForChange(int accountId);'
       - from: '!readinessClient.isReady(accountId)'
         to: '!readinessClient.isReady(accountId + 1)'
     reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'ReadinessService.readWhenReady']
   - name: loop-with-an-ordinary-local-helper-is-not-external-only
     edits:
-      - *ordinary_ready_receiver
-      - *ordinary_wait_result
       - from: '    int recursiveNormalize(int value) {'
         to: |2-
               static int tick() { return 1; }

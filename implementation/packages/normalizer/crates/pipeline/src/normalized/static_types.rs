@@ -129,6 +129,7 @@ struct Admission<'a> {
     method: &'a JavaMethod,
     id: &'a str,
     layouts: &'a BTreeMap<String, BTreeMap<String, String>>,
+    closed_receiver: bool,
 }
 
 impl Admission<'_> {
@@ -137,6 +138,20 @@ impl Admission<'_> {
             code, self.id, detail,
             "请修正源码中的名称或静态类型；不要删除未执行的路径来绕过入口检查。",
         )
+    }
+
+    fn unmodeled_receiver_field(&self, field: &simulator_parser::JavaField) -> bool {
+        self.closed_receiver && !self.method.is_static() && !self.method.is_constructor()
+            && !field.is_static()
+            && !super::entry_state(self.class, field) && !super::source_ports::marked(self.class, field)
+    }
+
+    fn check_receiver_use(&self, name: &str) -> Result<(), String> {
+        if self.class.fields().iter().any(|f| f.name() == name && self.unmodeled_receiver_field(f)) {
+            return Err(self.diagnostic("NORM-ENTRY-STATE", &format!(
+                "receiver field {name} is used but has no entry-state or external binding")));
+        }
+        Ok(())
     }
 
     fn binding<'a>(&'a self, name: &str, scope: &'a Scope) -> Option<&'a JavaType> {
@@ -202,6 +217,7 @@ impl Admission<'_> {
             .map_or(Kind::Unresolved, Kind::declared);
         Ok(match expr {
             E::Ident(name) => {
+                if !scope.contains_key(name) { self.check_receiver_use(name)?; }
                 if let Some(ty) = self.declared_type(expr, scope) {
                     Kind::declared(&ty)
                 } else {
@@ -219,9 +235,16 @@ impl Admission<'_> {
             }
             E::Lit(JavaLit::Str(_)) => Kind::Text,
             E::Lit(JavaLit::Null) => Kind::Null,
-            E::FieldAccess { target, .. } => { self.expression(target, scope)?; declared() }
+            E::FieldAccess { target, field } => {
+                if matches!(target.as_ref(), E::Ident(name) if name == "this") {
+                    self.check_receiver_use(field)?;
+                }
+                self.expression(target, scope)?;
+                declared()
+            }
             E::MethodCall { target, method, args } => {
                 if let Some(E::Ident(receiver)) = target.as_deref() {
+                    if !scope.contains_key(receiver) { self.check_receiver_use(receiver)?; }
                     if self.binding(receiver, scope).is_none() {
                         let callee = format!("{receiver}.{method}");
                         use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
@@ -255,6 +278,11 @@ impl Admission<'_> {
                             }
                             return Ok(Kind::Text);
                         }
+                    }
+                }
+                if let Some(E::FieldAccess { target, field }) = target.as_deref() {
+                    if matches!(target.as_ref(), E::Ident(name) if name == "this") {
+                        self.check_receiver_use(field)?;
                     }
                 }
                 let callee = self.method(target.as_deref(), method, args.len(), scope);
@@ -676,6 +704,9 @@ impl Admission<'_> {
                 }
                 // Structural admission rejects raw while and incomplete for
                 // headers; directives and empty returns have no bindings here.
+                S::LocalIr(_) if self.class.fields().iter().any(|f| self.unmodeled_receiver_field(f)) =>
+                    return Err(self.diagnostic("NORM-ENTRY-STATE",
+                        "cannot prove plain receiver fields are unused by local semantic directives")),
                 S::While { .. } | S::For { .. } | S::LocalIr(_) | S::Return(None) => {}
             }
         }
@@ -683,7 +714,7 @@ impl Admission<'_> {
     }
 }
 
-pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S], layouts: &BTreeMap<String, BTreeMap<String, String>>) -> Result<(), String> {
+pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S], layouts: &BTreeMap<String, BTreeMap<String, String>>, closed_receiver: bool) -> Result<(), String> {
     let mut scope = method.params().iter().map(|(ty, name)| (name.clone(), Binding::plain(ty.clone()))).collect();
-    Admission { program, class, method, id, layouts }.block(body, &mut scope)
+    Admission { program, class, method, id, layouts, closed_receiver }.block(body, &mut scope)
 }

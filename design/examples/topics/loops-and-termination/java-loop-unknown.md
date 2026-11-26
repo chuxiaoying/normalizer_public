@@ -44,7 +44,50 @@ interface ReadinessClient {
 
 ## AI 预处理结果
 
-**拒绝。** 就绪状态取决于外部响应。源码没有给出等待次数上限或等价的完成合同；提前结束会改变外部调用次数及读取评分的时机。
+先声明已有的外部端口，并明确入口由静态字段取得接收者。这样的改写只澄清调用和边界，不添加循环终止假设。
+
+```diff
+--- a/src/ReadinessService.java
++++ b/src/ReadinessService.java
+@@ -1,27 +1,31 @@
++import normalizer.intrinsics.N;
++
+ class ReadinessService {
++    static final ReadinessService INSTANCE = new ReadinessService(new ReadinessClient());
++    @N.External
+     private final ReadinessClient readinessClient;
+
+     ReadinessService(ReadinessClient readinessClient) {
+         this.readinessClient = readinessClient;
+     }
+
+     int readWhenReady(int accountId) {
+         while (!readinessClient.isReady(accountId)) {
+             readinessClient.waitForChange(accountId);
+         }
+         return readinessClient.readScore(accountId);
+     }
+
+     int recursiveNormalize(int value) {
+         if (value <= 0) {
+             return 0;
+         }
+         return recursiveNormalize(value - 1) + 1;
+     }
+ }
+
+-interface ReadinessClient {
+-    boolean isReady(int accountId);
+-    void waitForChange(int accountId);
+-    int readScore(int accountId);
++class ReadinessClient {
++    native boolean isReady(int accountId);
++    native void waitForChange(int accountId);
++    native int readScore(int accountId);
+ }
+```
+
+**仍然拒绝。** 就绪状态取决于外部响应。源码没有给出等待次数上限或等价的完成合同；提前结束会改变外部调用次数及读取评分的时机。
 
 ```text
 PREPROCESS_REQUIRED
@@ -55,7 +98,7 @@ readWhenReady:
   required: explicit readiness completion contract or bounded polling policy
 ```
 
-同一类中的 `recursiveNormalize` 无法从 `readWhenReady` 到达，不参与此次入口分析。
+该轮询判定不依赖另一个未调用方法中的递归。
 
 ## 归一化最终结果
 

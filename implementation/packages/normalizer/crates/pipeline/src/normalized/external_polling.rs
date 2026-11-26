@@ -1,31 +1,24 @@
 //! Source admission for waits whose only exit depends on an external response.
 use simulator_parser::{
-    JavaBinOp, JavaClass, JavaExpr, JavaLit, JavaProgram, JavaStatement, JavaType, JavaUnaryOp,
+    JavaBinOp, JavaExpr, JavaLit, JavaProgram, JavaStatement, JavaUnaryOp,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use super::source_ports::SourcePort;
 
-pub(super) fn validate_entry(program: &JavaProgram, entry: &str) -> Result<(), String> {
+pub(super) fn validate_entry(
+    program: &JavaProgram, entry: &str, locator: &str, ports: &BTreeMap<String, SourcePort>,
+) -> Result<(), String> {
     let Some((class, method)) = entry.rsplit_once('.').and_then(|(owner, _)| {
         let class = program.find_class(owner)?;
         Some((class, super::method_for_key(class, entry)?))
     }) else { return Ok(()); }; // Let admission diagnose an unresolved entry.
-    let mut fields = BTreeMap::new();
-    for field in class.fields() {
-        bind_interface(program, &mut fields, field.name(), field.java_type());
-    }
-    let mut bindings = fields.clone();
-    if method.is_static() { fields.clear(); }
-    for (ty, name) in method.params() {
-        bind_interface(program, &mut bindings, name, ty);
-    }
+    if method.is_static() { return Ok(()); }
+    let owner = class.full_name();
+    let mut shadowed: BTreeSet<&str> = method.params().iter().map(|(_, name)| name.as_str()).collect();
 
     for statement in method.body().unwrap_or_default() {
         match statement {
-            JavaStatement::VarDecl {
-                name, java_type, ..
-            } => {
-                bind_interface(program, &mut bindings, name, java_type);
-            }
+            JavaStatement::VarDecl { name, .. } => { shadowed.insert(name.as_str()); }
             JavaStatement::Return(_) | JavaStatement::Throw(_) => break,
             JavaStatement::While { cond, body }
             | JavaStatement::For {
@@ -34,14 +27,14 @@ pub(super) fn validate_entry(program: &JavaProgram, entry: &str) -> Result<(), S
                 update: None,
                 body,
             } => {
-                let boundary = |expr| external_call(program, &bindings, &fields, expr);
+                let boundary = |expr| external_call(&owner, ports, &shadowed, expr);
                 let only_external_calls = || body.iter().all(|statement| {
                     matches!(statement, JavaStatement::ExprStmt(expr) if boundary(expr).is_some())
                 });
                 if let Some(probe) = poll_operand(cond).and_then(boundary).filter(|_| only_external_calls()) {
                     return Err(crate::preprocess::required(
                         "NORM-EXTERNAL-POLL",
-                        entry,
+                        locator,
                         &format!("termination depends on external response from {probe}; no finite bound is declared"),
                         "Supply an explicit completion contract or a bounded polling policy.",
                     ));
@@ -74,33 +67,10 @@ fn poll_operand(expr: &JavaExpr) -> Option<&JavaExpr> {
     }
 }
 
-// Store only declared interfaces; a non-interface declaration still shadows
-// an earlier field/parameter with the same name and clears its certificate.
-type InterfaceBindings<'a> = BTreeMap<&'a str, (&'a str, &'a JavaClass)>;
-
-fn bind_interface<'a>(
-    program: &'a JavaProgram,
-    bindings: &mut InterfaceBindings<'a>,
-    name: &'a str,
-    ty: &'a JavaType,
-) {
-    let interface = match ty {
-        JavaType::Class(qualified) => program.find_class(qualified)
-            .filter(|class| class.is_interface())
-            .map(|class| (qualified.as_str(), class)),
-        _ => None,
-    };
-    if let Some(interface) = interface {
-        bindings.insert(name, interface);
-    } else {
-        bindings.remove(name);
-    }
-}
-
 fn external_call(
-    program: &JavaProgram,
-    bindings: &InterfaceBindings<'_>,
-    fields: &InterfaceBindings<'_>,
+    owner: &str,
+    ports: &BTreeMap<String, SourcePort>,
+    shadowed: &BTreeSet<&str>,
     expr: &JavaExpr,
 ) -> Option<String> {
     let (receiver, method, args) = match expr {
@@ -109,15 +79,12 @@ fn external_call(
             => (receiver.as_ref(), method, args),
         _ => return None,
     };
-    let &(qualified, interface) = match receiver {
-        JavaExpr::Ident(name) => bindings.get(name.as_str()),
+    let field = match receiver {
+        JavaExpr::Ident(name) if !shadowed.contains(name.as_str()) => name,
         JavaExpr::FieldAccess { target, field }
-            if matches!(target.as_ref(), JavaExpr::Ident(name) if name == "this") =>
-                fields.get(field.as_str()),
-        _ => None,
-    }?;
-    (!program.classes().iter().any(|class| class.interfaces().iter()
-        .any(|ty| ty.as_str() == qualified))
-        && super::source_ports::declares_bodyless_member(interface, method, args.len()))
-        .then(|| format!("{qualified}.{method}"))
+            if matches!(target.as_ref(), JavaExpr::Ident(name) if name == "this") => field,
+        _ => return None,
+    };
+    let port = ports.get(&format!("{owner}.{field}.{method}"))?;
+    (port.params.len() == args.len()).then(|| format!("{}.{method}", port.interface))
 }

@@ -537,6 +537,8 @@ impl<'a> Engine<'a> {
                     {
                         let value = self.java_expr(value,id,env,path.clone())?;
                         self.write_entry_state(id.rsplit_once('.').unwrap().0, name, value, path)?;
+                    } else {
+                        return Err(fail(format!("unbound Java assignment target {name}")));
                     }
                 }
                 S::Assign {

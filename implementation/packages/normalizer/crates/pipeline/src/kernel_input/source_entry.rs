@@ -61,11 +61,13 @@ impl SourceReceiver {
             }
         }
         if class.fields().iter().any(|f| !f.is_static()
-            && !crate::normalized::entry_state(class, f)
+            && crate::normalized::source_ports::marked(class, f)
             && !attached_ports.contains(f.name()))
         {
-            return Err("entry receiver fields must have an entry-state or bound external declaration".into());
+            return Err("external receiver field must have a proven binding".into());
         }
+        // Executable uses of plain receiver fields are rejected by the
+        // scope-aware source gate; an unused declaration need not become E.
         Ok(())
     }
     fn certify_static_assembly(&mut self, program: &JavaProgram, root: &JavaClass) -> Result<()> {
