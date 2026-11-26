@@ -3,6 +3,12 @@
 // framework/template semantics.
 import ts from 'typescript';
 
+export function parsePlainModule(file, text, fail) {
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
+  return sf;
+}
+
 const BINARY = new Map([
   [ts.SyntaxKind.PlusToken, '+'], [ts.SyntaxKind.MinusToken, '-'],
   [ts.SyntaxKind.GreaterThanToken, '>'], [ts.SyntaxKind.LessThanToken, '<'],
@@ -16,16 +22,13 @@ export function unwrapParens(node) {
 
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
-  if (ts.isPropertyAccessExpression(node)) {
-    const parent = pathOf(node.expression);
-    return parent ? [...parent, node.name.text] : null;
-  }
-  if (ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)) {
-    const parent = pathOf(node.expression);
-    // A bracket string supplies one exact property key, even if it contains ".".
-    return parent ? [...parent, node.argumentExpression.text] : null;
-  }
-  return null;
+  const property = ts.isPropertyAccessExpression(node) ? node.name
+    : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)
+      ? node.argumentExpression : undefined;
+  if (!property) return;
+  const parent = pathOf(node.expression);
+  // A bracket string supplies one exact property key, even if it contains ".".
+  if (parent) return [...parent, property.text];
 }
 
 // Callers require an expression. Array holes remain explicit

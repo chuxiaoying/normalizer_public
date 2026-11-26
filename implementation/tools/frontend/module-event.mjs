@@ -3,6 +3,7 @@
 import ts from 'typescript';
 import { basename, extname } from 'node:path';
 import { literalShape } from './module-projection.mjs';
+import { parsePlainModule, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 function fail(message) {
@@ -12,14 +13,12 @@ function fail(message) {
 function hostType(type) {
   if (type === 'boolean') return 'bool';
   if (type === 'string') return 'text';
-  if (type === 'number' || type === 'void' || /^[A-Za-z_$][\w$]*(\[\])?$/.test(type)) return type;
+  if (/^[A-Za-z_$][\w$]*(\[\])?$/.test(type)) return type;
   fail(`unsupported module type ${type}`);
 }
 
 export function readModuleEvent(modulePath, text, entryName, originPath) {
-  const sf = ts.createSourceFile(modulePath, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  if (sf.parseDiagnostics.length)
-    fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
+  const sf = parsePlainModule(modulePath, text, fail);
   const types = Object.create(null),
     states = Object.create(null),
     parameters = Object.create(null);
@@ -27,55 +26,56 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     callbacks = new Map(),
     ports = new Map();
   const page = basename(originPath, extname(originPath));
-  const tags = (node) => (node.jsDoc || []).flatMap((doc) => [...(doc.tags || [])]);
+  function* docTags(node) {
+    for (const doc of node.jsDoc ?? [])
+      for (const tag of doc.tags ?? []) yield [doc, tag];
+  }
 
   for (const statement of sf.statements) {
-    for (const doc of statement.jsDoc || []) {
-      for (const tag of doc.tags || []) {
-        if (ts.isJSDocTypedefTag(tag)) {
-          const fields = tag.typeExpression?.jsDocPropertyTags;
-          if (!fields?.length || !tag.name) fail('record typedef requires named fields');
-          types[tag.name.text] = {
-            fields: Object.fromEntries(
-              fields.map((field) => [
-                field.name.getText(),
-                hostType(field.typeExpression.type.getText()),
-              ]),
-            ),
-          };
+    for (const [doc, tag] of docTags(statement)) {
+      if (ts.isJSDocTypedefTag(tag)) {
+        const fields = tag.typeExpression?.jsDocPropertyTags;
+        if (!fields?.length || !tag.name) fail('record typedef requires named fields');
+        types[tag.name.text] = {
+          fields: Object.fromEntries(
+            fields.map((field) => [
+              field.name.getText(),
+              hostType(field.typeExpression.type.getText()),
+            ]),
+          ),
+        };
+      }
+      if (ts.isJSDocCallbackTag(tag)) {
+        const result = tag.typeExpression?.type?.typeExpression?.type;
+        if (
+          !result ||
+          !ts.isTypeReferenceNode(result) ||
+          result.typeName.getText() !== 'Promise' ||
+          result.typeArguments?.length !== 1
+        ) {
+          fail('awaited external callback must declare Promise<Element>');
         }
-        if (ts.isJSDocCallbackTag(tag)) {
-          const result = tag.typeExpression?.type?.typeExpression?.type;
-          if (
-            !result ||
-            !ts.isTypeReferenceNode(result) ||
-            result.typeName.getText() !== 'Promise' ||
-            result.typeArguments?.length !== 1
-          ) {
-            fail('awaited external callback must declare Promise<Element>');
-          }
-          const rejects = [...doc.tags]
-            .filter((t) => t.tagName.text === 'rejects')
-            .map((t) => {
-              const name = typeof t.comment === 'string' && /^\{([\w.]+)\}$/.exec(t.comment)?.[1];
-              if (!name) fail('@rejects needs an exception type');
-              return name;
-            });
-          callbacks.set(tag.name.text, {
-            params: tag.typeExpression.parameters.map((p) => ({
-              name: p.name.text,
-              type: hostType(p.typeExpression.type.getText()),
-            })),
-            returns: hostType(result.typeArguments[0].getText()),
-            throws: rejects,
+        const rejects = [...doc.tags]
+          .filter((t) => t.tagName.text === 'rejects')
+          .map((t) => {
+            const name = typeof t.comment === 'string' && /^\{([\w.]+)\}$/.exec(t.comment)?.[1];
+            if (!name) fail('@rejects needs an exception type');
+            return name;
           });
-        }
+        callbacks.set(tag.name.text, {
+          params: tag.typeExpression.parameters.map((p) => ({
+            name: p.name.text,
+            type: hostType(p.typeExpression.type.getText()),
+          })),
+          returns: hostType(result.typeArguments[0].getText()),
+          throws: rejects,
+        });
       }
     }
   }
   for (const st of sf.statements) {
     if (!ts.isVariableStatement(st)) continue;
-    const flags = new Set(tags(st).map((t) => t.tagName.text));
+    const flags = new Set(Array.from(docTags(st), ([, tag]) => tag.tagName.text));
     if (![...flags].some((flag) => ['entryState', 'entryInputs', 'external'].includes(flag))) continue;
     if (
       st.declarationList.declarations.length !== 1 ||
@@ -138,7 +138,7 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     return name;
   }
   function lower(n, steps) {
-    if (ts.isParenthesizedExpression(n)) return lower(n.expression, steps);
+    n = unwrapParens(n);
     const input = inputs.get(n.getText());
     if (input !== undefined) return variable(readInput(input, steps));
     if (ts.isIdentifier(n)) return variable(n.text);

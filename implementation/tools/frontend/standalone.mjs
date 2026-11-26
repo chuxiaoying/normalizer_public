@@ -1,11 +1,11 @@
 // Standalone JavaScript source, lowered without executing user code.
 // It parses, never executes, the module and uses the shared PERS kernel.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { invokeKernel } from './invoke-kernel.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { lowerExpression, unwrapParens as unwrap } from './ir.mjs';
+import { lowerExpression, parsePlainModule, unwrapParens as unwrap } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { typedModuleAst } from './typed-module.mjs';
@@ -88,9 +88,8 @@ function mapEntries(node, names) {
   if (!ts.isArrayLiteralExpression(rows)) fail('readonly Map requires literal entry assembly');
   const seen = new Set();
   return rows.elements.map(row => {
-    if (!ts.isSpreadElement(row)) fail('readonly Map requires explicitly null-guarded entries');
-    const candidate = unwrap(row.expression);
-    if (!ts.isConditionalExpression(candidate)) fail('readonly Map requires explicitly null-guarded entries');
+    const candidate = ts.isSpreadElement(row) && unwrap(row.expression);
+    if (!candidate || !ts.isConditionalExpression(candidate)) fail('readonly Map requires explicitly null-guarded entries');
     const cond = unwrap(candidate.condition);
     if (!ts.isBinaryExpression(cond)
         || ![ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(cond.operatorToken.kind)) {
@@ -128,8 +127,7 @@ function compile(source, file, entry, physicalPath) {
     const returns = isListener ? 'void' : 'number';
     return projectInput(file, entry, params, returns, false, returns, typed.result, typed.excerpt, typed);
   }
-  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
+  const sf = parsePlainModule(file, source, fail);
   const exported = sf.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === entry
     && node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
   if (exported.length !== 1 || !exported[0].body) fail('expected one defined exported function: ' + entry);
@@ -257,8 +255,7 @@ try {
   const source = readFileSync(path, 'utf8');
   const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, declared);
   if (closure) {
-    const result = spawnSync(kernel, ['--validate-standalone-closure'], {input: JSON.stringify(closure), encoding: 'utf8'});
-    if (result.error) throw result.error;
+    const result = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));
     if (result.status === 0 || result.stdout) fail('expected a kernel closure failure with no result');
     publishKernelFailure(result);
   } else {
@@ -268,8 +265,7 @@ try {
       writeFileSync(join(temp, moduleFile), source);
       const projectPath = join(temp, 'Project.json');
       writeFileSync(projectPath, JSON.stringify(project));
-      const result = spawnSync(kernel, ['--project', projectPath, binding], {encoding: 'utf8'});
-      if (result.error) throw result.error;
+      const result = invokeKernel(kernel, ['--project', projectPath, binding]);
       if (result.status !== 0) {
         publishKernelFailure(result);
       } else {

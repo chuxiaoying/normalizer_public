@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { invokeKernel } from '../frontend/invoke-kernel.mjs';
 import { buildModuleProject } from './module-project.mjs';
 
 const [kernel, scene, root, entryFlag, entry, sourceFlag, original, ...extra] = process.argv.slice(2);
@@ -16,8 +16,7 @@ try {
   const project = buildModuleProject({
     scene, root, file: entry.slice(0, separator), name: entry.slice(separator + 1), original, directory,
   });
-  const result = spawnSync(kernel, ['--project', project.projectPath, project.entry], { encoding: 'utf8' });
-  if (result.error) throw result.error;
+  const result = invokeKernel(kernel, ['--project', project.projectPath, project.entry]);
   if (result.status !== 0) {
     const detail = result.stderr || result.stdout || `exit ${result.status}`;
     throw new Error(`SCENARIO_KERNEL_FAILED: ${detail.trim()}`);

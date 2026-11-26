@@ -2,7 +2,7 @@
 // and the types of its instance state. Initial values describe field types only.
 import { basename, extname } from 'node:path';
 import ts from 'typescript';
-import { lowerExpression } from './ir.mjs';
+import { lowerExpression, parsePlainModule } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 function fail(detail) {
@@ -25,8 +25,7 @@ export function literalShape(node) {
 }
 
 export function readModuleProjection(modulePath, source, entryName, originPath) {
-  const sf = ts.createSourceFile(modulePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
+  const sf = parsePlainModule(modulePath, source, fail);
   const states = new Map();
   const page = basename(originPath, extname(originPath));
   for (const statement of sf.statements) {
@@ -46,8 +45,8 @@ export function readModuleProjection(modulePath, source, entryName, originPath) 
   if (fn.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) fail(`async entry ${entryName} requires lowering await, completion and time-specific host input reads`);
   const prop = ts.getJSDocTags(fn).find(tag => tag.tagName.text === 'componentProp')?.comment;
   if (typeof prop !== 'string' || !/^[\w.-]+#[\w.-]+\.[\w-]+$/.test(prop)) fail(`missing or invalid @componentProp on ${entryName}`);
-  const statements = fn.body?.statements ?? [];
-  const returned = statements.at(-1);
+  const statements = fn.body?.statements;
+  const returned = statements?.at(-1);
   if (fn.parameters.length || !returned || !ts.isReturnStatement(returned) || !returned.expression) {
     fail(`synchronous component projection ${entryName} requires a return expression and no parameters`);
   }

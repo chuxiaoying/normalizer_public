@@ -1,6 +1,7 @@
 // Closed lowering for a local listener slot and typed synchronous calls.
 // A registration writes the lexical callback; dispatch evaluates its body.
 import ts from 'typescript';
+import { unwrapParens } from './ir.mjs';
 import { checkedTypeScript, failTypedModule, typedBooleanParameters } from './typed-module.mjs';
 
 const fail = failTypedModule;
@@ -66,7 +67,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
   if (!ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
       || parameter.dotDotDotToken || parameter.questionToken) fail('listener registration needs an exact callback parameter');
 
-  const registration = call && ts.isExpressionStatement(call) && ts.isCallExpression(call.expression) ? call.expression : null;
+  const registration = call && statementCall(call);
   const arrow = registration?.arguments[0];
   if (!registration || registration.questionDotToken || registration.arguments.length !== 1
       || !named(registration.expression, register.name.text) || !arrow || !ts.isArrowFunction(arrow)
@@ -82,9 +83,16 @@ export function compileTypedListener(physicalPath, sf, fn) {
   const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   let serial = 0;
   const steps = [];
+  function statementExpression(st) {
+    if (ts.isExpressionStatement(st)) return st.expression;
+  }
+  function statementCall(st) {
+    const expr = statementExpression(st);
+    if (expr && ts.isCallExpression(expr)) return expr;
+  }
   function callExpression(st) {
-    return ts.isExpressionStatement(st) && ts.isCallExpression(st.expression)
-      && !st.expression.questionDotToken && !st.expression.arguments.length ? st.expression.expression : null;
+    const expr = statementCall(st);
+    if (expr && !expr.questionDotToken && !expr.arguments.length) return expr.expression;
   }
   function lowerExternal(st, condition) {
     const callee = callExpression(st);
@@ -103,7 +111,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
   const executeCallback = condition => { for (const st of callback) lowerExternal(st, condition); };
   let saved = false;
   for (const st of register.body.statements) {
-    const expr = ts.isExpressionStatement(st) ? st.expression : null;
+    const expr = statementExpression(st);
     if (expr && ts.isBinaryExpression(expr) && is(expr.operatorToken, ts.SyntaxKind.EqualsToken)
         && named(expr.left, pending.name.text) && named(expr.right, parameter.name.text)) {
       if (declarationOf(expr.left) !== pending || declarationOf(expr.right) !== parameter) {
@@ -119,7 +127,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
   }
   if (!saved) fail('listener callback is not registered in the local slot');
   function numericTruth(node) {
-    if (ts.isParenthesizedExpression(node)) return numericTruth(node.expression);
+    node = unwrapParens(node);
     if (ts.isPrefixUnaryExpression(node)
         && (node.operator === ts.SyntaxKind.PlusToken || node.operator === ts.SyntaxKind.MinusToken)) {
       return numericTruth(node.operand); // the sign does not change whether the exact value is zero
@@ -131,7 +139,7 @@ export function compileTypedListener(physicalPath, sf, fn) {
     return /[1-9]/.test(spelling.split(/[eE]/, 1)[0]);
   }
   function gate(node) {
-    if (ts.isParenthesizedExpression(node)) return gate(node.expression);
+    node = unwrapParens(node);
     if (ts.isIdentifier(node) && params.includes(node.text)) return {op: 'var', name: node.text};
     if (is(node, ts.SyntaxKind.TrueKeyword) || is(node, ts.SyntaxKind.FalseKeyword)) return value('bool', is(node, ts.SyntaxKind.TrueKeyword));
     if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
