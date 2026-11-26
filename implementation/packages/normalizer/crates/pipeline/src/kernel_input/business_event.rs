@@ -50,6 +50,13 @@ fn bind_receipt<'a>(
     Ok((receipt.response(), binding_id, format!("$e_{position}")))
 }
 
+// A positive tag required by every path through a conjunction is proof;
+// a tag under NOT, OR, or an unknown call is not.
+fn requires_completion_tag(guard: &Expr, tag: &Expr) -> bool {
+    guard == tag || matches!(guard.as_binop(), Some((BinOpKind::And, left, right))
+        if requires_completion_tag(left, tag) || requires_completion_tag(right, tag))
+}
+
 pub(super) fn observations(
     project: &Project,
     entry: &EntryContext,
@@ -94,6 +101,7 @@ pub(super) fn observations(
     let mut temporal_receipts = BTreeMap::new();
     let mut total_port_receipts = BTreeSet::new();
     let mut external_payloads = Vec::new();
+    let mut receipt_throw_partitions = Vec::new();
     let validate_ids = |expr: &Expr, issued: &BTreeSet<u64>, temporals: Option<&BTreeMap<u64, usize>>| -> Result<()> {
         let mut closed = true;
         let mut heap_operands = BTreeMap::<i64, (usize, usize)>::new();
@@ -166,7 +174,12 @@ pub(super) fn observations(
                     "external business result disagrees with port type",
                 )?;
                 let (response, binding_id, output) = bind_receipt(receipt, &event.guard, &mut issued, &mut ctx)?;
-                for (class, failed, payload) in spec.throw_variants(response) {
+                let variants = spec.throw_variants(response);
+                if variants.len() > 1 {
+                    // Only declared tags of this issued occurrence share a partition.
+                    receipt_throw_partitions.push(variants.iter().map(|(_, failed, _)| failed.clone()).collect::<Vec<_>>());
+                }
+                for (class, failed, payload) in variants {
                     if let Some(payload) = payload.filter(|_| project.direct_source
                         && project.exceptions.get(&class).is_some_and(|ty| matches!(ty.as_str(), "text?" | "number")))
                     {
@@ -272,7 +285,12 @@ pub(super) fn observations(
         for (i, (_, left, left_guard)) in exceptions.iter().enumerate() {
             for (_, right, right_guard) in &exceptions[i + 1..] {
                 if left.is_some() || right.is_some() {
-                    need(math::normalize(b::and(left_guard.clone(), right_guard.clone())).as_bool() == Some(false),
+                    let tagged_disjoint = receipt_throw_partitions.iter().any(|tags|
+                        tags.iter().any(|left| requires_completion_tag(left_guard, left)
+                            && tags.iter().any(|right| left != right
+                                && requires_completion_tag(right_guard, right))));
+                    need(tagged_disjoint
+                        || math::normalize(b::and(left_guard.clone(), right_guard.clone())).as_bool() == Some(false),
                         "typed exception alternatives lack a disjoint terminal guard proof")?;
                 }
             }

@@ -106,13 +106,27 @@ impl Engine<'_> {
         let response = receipt.response().clone();
         self.realtime_effects
             .record_port(guard.clone(), id, id, values, receipt, spec.clone());
-        for (class, failed, payload) in spec.throw_variants(&response) {
-            let condition = math::normalize(b::and(guard.clone(), failed.clone()));
-
-            self.realtime_throws.push(condition.clone());
-            self.realtime_completion = self
-                .realtime_completion
-                .replace_continue_with_throw(condition, &class, payload);
+        if spec.throwing() {
+            // These failures are disjoint tags of this one receipt. Install
+            // the partition together: list order is not exception priority.
+            let mut failure = b::lit_bool(false);
+            let mut alternatives = Vec::new();
+            for (class, failed, payload) in spec.throw_variants(&response) {
+                let condition = math::normalize(b::and(guard.clone(), failed));
+                failure = b::or(failure, condition.clone());
+                self.realtime_throws.push(condition.clone());
+                alternatives.push(realtime_state::CompletionAlternative {
+                    guard: condition,
+                    outcome: realtime_state::CompletionOutcome::Throw { class, payload },
+                });
+            }
+            alternatives.push(realtime_state::CompletionAlternative {
+                guard: math::normalize(b::not(failure)),
+                outcome: realtime_state::CompletionOutcome::Continue,
+            });
+            self.realtime_completion = self.realtime_completion.replace_continue(
+                realtime_state::Completion::from_alternatives(alternatives),
+            );
         }
         // A non-throwing integer port exposes the acquired numeric value of
         // this receipt, not the completion control token. The identity and
