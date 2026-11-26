@@ -10,3 +10,15 @@ variants:
       - from: 'down(value - 1)'
         to: 'down(value - 2)'
     reject: ['[NORM-RECURSION]', 'kind=PREPROCESS_REQUIRED', 'Recursive.down']
+  - name: mutual-call-cycle-keeps-the-same-argument
+    edits:
+      - from: |-
+          return down(value - 1) + 1;
+              }
+        to: |-
+          return step(value);
+              }
+              static int step(int value) {
+                  return down(value);
+              }
+    reject: ['[NORM-RECURSION]', 'kind=PREPROCESS_REQUIRED', 'Recursive.down']

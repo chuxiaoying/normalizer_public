@@ -36,3 +36,5 @@ down:
 未生成 PERS。CLI 必须以非零状态返回 `PREPROCESS_REQUIRED`，stdout 为空，并指出 `Recursive.down`。
 
 **PERS 验收要点**：递归终止合同属于进入内核前的准入条件，不能把不完整的递归执行包装成一个看似完整的 R。
+
+双函数对照保留 `down` 的基本情况，但当 `value > 0` 时，`down(value)` 调用 `step(value)`，后者再以同一实参调用 `down(value)`。状态没有下降，两条调用边组成同一个环。所选入口同样必须被明确拒绝且无 PERS；不能只检查函数是否直接调用自己。
