@@ -54,7 +54,14 @@ impl TerminalAlternatives {
     }
 
     pub(crate) fn as_slice(&self) -> &[TerminalAlternative] { &self.0 }
-    pub(crate) fn into_vec(self) -> Vec<TerminalAlternative> { self.0 }
+    pub(crate) fn total_return_value(&self) -> Option<&Expr> {
+        // The only Guarded constructor already collapses this exact form.
+        match self.as_slice() {
+            [TerminalAlternative { guard, outcome: TerminalOutcome::Return(value) }]
+                if guard.as_bool() == Some(true) => Some(value),
+            _ => None,
+        }
+    }
 
     /// Project the normal-return part of a terminal completion. Throwing
     /// alternatives leave their domain absent from the CASE expression, which

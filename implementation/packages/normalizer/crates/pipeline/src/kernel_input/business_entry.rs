@@ -335,7 +335,7 @@ impl EntryContext {
             && self.returns == "map<text,text>");
         let has_temporals = !result.temporal_definitions.is_empty();
         let total_return = if events.is_empty() || has_temporals {
-            result.realtime_completion.return_value()
+            result.terminal.total_return_value()
         } else {
             None
         };
@@ -345,7 +345,7 @@ impl EntryContext {
         if events.is_empty() {
             if let Some(returned) = total_return {
                 result.check_visible_heap()?;
-                return self.render_output(BusinessOutput::Pure(returned), result, method, certified_composite_return);
+                return self.render_output(BusinessOutput::Pure(returned.clone()), result, method, certified_composite_return);
             }
         }
         let mut names = self.host_names();

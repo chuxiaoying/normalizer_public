@@ -1,5 +1,5 @@
 //! State retained at the entry boundary for projection to business PERS.
-use super::realtime_state::{Completion, EffectSequence, SymbolicStore};
+use super::realtime_state::{EffectSequence, SymbolicStore, TerminalAlternatives};
 use super::{fail, Result};
 use math::Expr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,7 +20,7 @@ pub(super) struct ExecutionResult {
     pub(super) host_state_roots: BTreeSet<i64>,
     pub(super) checked_ports: BTreeMap<String, super::actions::CheckedPort>,
     pub(super) realtime_effects: EffectSequence,
-    pub(super) realtime_completion: Completion,
+    pub(super) terminal: TerminalAlternatives,
 }
 
 impl ExecutionResult {

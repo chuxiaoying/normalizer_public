@@ -67,8 +67,7 @@ pub(super) fn observations(
     let arrays = entry.scalar_array_symbols();
     let identities = entry.source_identity_names(result);
     let mut names = names;
-    let alternatives = result.realtime_completion.terminal_alternatives()
-        .ok_or_else(|| fail("entry has incomplete control flow"))?;
+    let alternatives = &result.terminal;
     let always_throwing = alternatives.is_always_throwing();
     let returned = alternatives.value_on_normal_exit();
     let mut add_declared_paths = |expression: &Expr| {
@@ -246,33 +245,33 @@ pub(super) fn observations(
     let temporal_names = &publication.aliases;
 
     let mut exceptions: Vec<(String, Option<Expr>, Expr)> = Vec::new();
-    for alternative in alternatives.into_vec() {
+    for alternative in alternatives.as_slice() {
         validate_ids(&alternative.guard, &issued, None)?;
-        match alternative.outcome {
+        match &alternative.outcome {
             TerminalOutcome::Throw { class, payload } => {
-                if let Some(value) = &payload {
+                if let Some(value) = payload {
                     need(
                         (project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
                             && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))))
                             || external_payloads.iter().any(|(declared, observed, domain)|
-                                declared == &class && observed == value
+                                declared == class && observed == value
                                     && b::path_implies(&alternative.guard, domain)),
                         "exception payload outside closed typed entry",
                     )?;
                     validate_ids(value, &issued, None)?;
                 } else {
-                    need(project.type_only_exception(&class), "undeclared type-only exception")?;
+                    need(project.type_only_exception(class), "undeclared type-only exception")?;
                 }
                 if let Some((_, _, guard)) = exceptions.iter_mut()
-                    .find(|(name, existing, _)| *name == class && *existing == payload)
+                    .find(|(name, existing, _)| *name == *class && *existing == *payload)
                 {
-                    *guard = math::normalize(b::or(guard.clone(), alternative.guard));
+                    *guard = math::normalize(b::or(guard.clone(), alternative.guard.clone()));
                 } else {
-                    exceptions.push((class, payload, alternative.guard));
+                    exceptions.push((class.clone(), payload.clone(), alternative.guard.clone()));
                 }
             }
             TerminalOutcome::Return(value) => {
-                validate_ids(&value, &issued, Some(temporal_names))?;
+                validate_ids(value, &issued, Some(temporal_names))?;
             }
         }
     }

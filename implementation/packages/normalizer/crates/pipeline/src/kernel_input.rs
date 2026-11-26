@@ -718,7 +718,8 @@ impl Loaded {
         let realtime_completion = e.realtime_completion.replace_continue(
             realtime_state::Completion::Return(value.scalar()?),
         );
-        need(realtime_completion.terminal_alternatives().is_some(), "entry has incomplete control flow")?;
+        let terminal = realtime_completion.terminal_alternatives()
+            .ok_or_else(|| fail("entry has incomplete control flow"))?;
         e.emit_profile_metrics("completed");
         Ok(ExecutionResult {
             temporal_definitions: e.temporal_definitions,
@@ -733,7 +734,7 @@ impl Loaded {
             realtime_local_allocations: e.realtime_local_allocations,
             realtime_effects: e.realtime_effects,
             checked_ports: e.checked_ports,
-            realtime_completion,
+            terminal,
         })
     }
 }
