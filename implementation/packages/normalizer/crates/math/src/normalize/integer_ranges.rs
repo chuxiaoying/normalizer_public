@@ -58,7 +58,7 @@ fn subject_domain(e: &Expr) -> Option<(Endpoint, Endpoint)> {
 #[derive(Clone)]
 enum Guard {
     Bool(bool),
-    Compare(B, BigInt),
+    Compare(fn(&BigInt, &BigInt) -> bool, BigInt),
     And(Box<Guard>, Box<Guard>),
     Or(Box<Guard>, Box<Guard>),
     Not(Box<Guard>),
@@ -67,15 +67,7 @@ impl Guard {
     fn at(&self, x: &BigInt) -> bool {
         match self {
             Self::Bool(v) => *v,
-            Self::Compare(op, n) => match op {
-                B::Eq => x == n,
-                B::Ne => x != n,
-                B::Lt => x < n,
-                B::Le => x <= n,
-                B::Gt => x > n,
-                B::Ge => x >= n,
-                _ => unreachable!(),
-            },
+            Self::Compare(test, n) => test(x, n),
             Self::And(a, b) => a.at(x) && b.at(x),
             Self::Or(a, b) => a.at(x) || b.at(x),
             Self::Not(a) => !a.at(x),
@@ -99,9 +91,6 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
             Guard::Or(a, z)
         });
     }
-    if !matches!(op, B::Eq | B::Ne | B::Lt | B::Le | B::Gt | B::Ge) {
-        return None;
-    }
     let (s, n) = if let Some(n) = z.as_lit().and_then(Lit::as_integer) {
         (a, n)
     } else if let Some(n) = a.as_lit().and_then(Lit::as_integer) {
@@ -109,6 +98,15 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
         (z, n)
     } else {
         return None;
+    };
+    let test: fn(&BigInt, &BigInt) -> bool = match op {
+        B::Eq => BigInt::eq,
+        B::Ne => BigInt::ne,
+        B::Lt => BigInt::lt,
+        B::Le => BigInt::le,
+        B::Gt => BigInt::gt,
+        B::Ge => BigInt::ge,
+        _ => return None,
     };
     subject_domain(s)?;
     if let Some(old) = subject {
@@ -120,7 +118,7 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
     }
     cuts.push(n.clone());
     cuts.push(&n + 1);
-    Some(Guard::Compare(op, n))
+    Some(Guard::Compare(test, n))
 }
 
 fn cells(lo: Endpoint, hi: Endpoint, mut cuts: Vec<BigInt>) -> impl Iterator<Item = (Endpoint, Endpoint)> {

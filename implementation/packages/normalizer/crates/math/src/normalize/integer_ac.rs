@@ -117,9 +117,11 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     let ExprKind::BinOp { op, left, right } = expr.kind() else {
         return expr.clone();
     };
-    if !matches!(op, B::Add | B::Mul) {
-        return expr.clone();
-    }
+    let combine: fn(Expr, Expr) -> Expr = match op {
+        B::Add => b::add,
+        B::Mul => b::mul,
+        _ => return expr.clone(),
+    };
     if !total_with_temporals(expr, ctx) {
         if exact_business_integer(expr, ctx) && crate::canonical_order_compare(left, right, ctx).is_gt() {
             return b::binop_public(*op, right.clone(), left.clone());
@@ -180,14 +182,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     }
     // This shared structural comparator is legal only after the proof above.
     terms.sort_by(|left, right| crate::canonical_order_compare(left, right, ctx));
-    terms
-        .into_iter()
-        .reduce(|left, right| match op {
-            B::Add => b::add(left, right),
-            B::Mul => b::mul(left, right),
-            _ => unreachable!(),
-        })
-        .unwrap()
+    terms.into_iter().reduce(combine).unwrap()
 }
 
 // A proven total exact integer base is evaluated once. Combine only the two

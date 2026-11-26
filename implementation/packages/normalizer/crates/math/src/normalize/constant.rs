@@ -106,14 +106,18 @@ fn symbolic_equation(
     // Boolean and nullable text have complete scalar result sorts. Number
     // does not encode source word width, and composite/ref equations need a
     // separate type-preserving contract before admission.
-    let result_sort = crate::domains::primitive::registry::func_return_type(key);
-    assert!(
-        matches!(
-            result_sort,
-            Some(crate::Primitive::Boolean | crate::Primitive::String)
-        ),
-        "[MATH-SYMBOLIC-TYPE] symbolic equations require Boolean or String return type"
-    );
+    let (is_result, invalid_result): (fn(&Expr) -> bool, &str) =
+        match crate::domains::primitive::registry::func_return_type(key) {
+            Some(crate::Primitive::Boolean) => (
+                super::boolean_casewhen::is_boolean_expr,
+                "[MATH-SYMBOLIC-TYPE] predicate equation returned a non-boolean expression",
+            ),
+            Some(crate::Primitive::String) => (
+                is_symbolic_text,
+                "[MATH-SYMBOLIC-TYPE] text equation returned an untyped or non-text expression",
+            ),
+            _ => panic!("[MATH-SYMBOLIC-TYPE] symbolic equations require Boolean or String return type"),
+        };
     let original = builder::call(key, args.to_vec());
     let entered = ACTIVE_SYMBOLIC.with(|active| active.borrow_mut().insert(original.clone()));
     assert!(entered, "[MATH-SYMBOLIC-CYCLE] reentrant symbolic equation");
@@ -126,17 +130,7 @@ fn symbolic_equation(
         symbolic_rank(&result) < symbolic_rank(&original),
         "[MATH-SYMBOLIC-NONDECREASING] symbolic equation must strictly decrease its call rank"
     );
-    match result_sort {
-        Some(crate::Primitive::Boolean) => assert!(
-            super::boolean_casewhen::is_boolean_expr(&result),
-            "[MATH-SYMBOLIC-TYPE] predicate equation returned a non-boolean expression"
-        ),
-        Some(crate::Primitive::String) => assert!(
-            is_symbolic_text(&result),
-            "[MATH-SYMBOLIC-TYPE] text equation returned an untyped or non-text expression"
-        ),
-        _ => unreachable!(),
-    }
+    assert!(is_result(&result), "{invalid_result}");
     Some(result)
 }
 
