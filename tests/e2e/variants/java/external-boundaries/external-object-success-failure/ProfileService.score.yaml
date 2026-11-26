@@ -59,3 +59,12 @@
         - call: { external: client.fetch, args: ["accountId + 9"], returns: Profile, result: $e_9 }
         - call: { external: client.fetch, args: ["accountId + 10"], returns: Profile, result: $e_10 }
     - { path: [throws], absent: true }
+
+- name: acquired-immutable-field-self-subtraction-preserves-call
+  edits:
+    - from: 'return client.fetch(accountId).score;'
+      to: |-
+        Profile reply = client.fetch(accountId);
+                return reply.score - reply.score;
+  expect:
+    - { path: [R], value: '0' }

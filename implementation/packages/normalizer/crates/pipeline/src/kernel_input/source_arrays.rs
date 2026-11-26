@@ -64,8 +64,12 @@ fn initial_array(root: &str) -> RelationExpr {
     RelationExpr::base(root, "value")
 }
 
+pub(super) fn borrowed_array_length(root: &str) -> Expr {
+    r::relation_count(initial_array(root))
+}
+
 fn bounds_failure(root: &str, index: i64) -> Expr {
-    let length = r::relation_count(initial_array(root));
+    let length = borrowed_array_length(root);
     if index == 0 { b::eq(length, b::lit_int(0)) }
     else { b::le(length, b::lit_int(index)) }
 }

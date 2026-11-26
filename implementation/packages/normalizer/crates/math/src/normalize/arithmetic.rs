@@ -43,7 +43,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
 ///
 /// 规则清单：
 /// - 加法幺元：`0 + x → x`、`x + 0 → x`
-/// - 减法右零元：`x - 0 → x`（`0 - x` 不处理，需引入 UnaryOp::Neg）
+/// - 减法：`x - 0 → x`；同一个全域精确整数 `x - x → 0`
 /// - 乘法幺元：`1 * x → x`、`x * 1 → x`
 /// - 乘法零元：`0 * x → 0`、`x * 0 → 0`
 ///
@@ -67,6 +67,9 @@ fn simplify_identity(expr: &Expr) -> Option<Expr> {
                 return Some(left.clone());
             }
             if super::integer_ac::total_integer(expr) {
+                if left == right {
+                    return Some(crate::builder::lit_int(0));
+                }
                 if let Some(value) = remove_additive_term(left, right)
                     .or_else(|| combine_acquired_row_literals(left, right))
                 {
@@ -148,15 +151,15 @@ fn simplify_reference_comparison(expr: &Expr) -> Option<Expr> {
     if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
         return None;
     }
-    let positive = |value: &Expr| value.as_heap_ref().filter(|id| *id > 0);
-    // The earlier reflexive comparison has already handled equal identities.
-    let distinct_positive = positive(left).is_some() && positive(right).is_some();
-    let positive_vs_null = (left.is_null() && positive(right).is_some())
-        || (right.is_null() && positive(left).is_some());
-    if distinct_positive || positive_vs_null {
+    let positive = |value: &Expr| value.as_heap_ref().is_some_and(|id| id > 0);
+    // Orient the pair for the decision without rebuilding it. The earlier
+    // reflexive rule already handled null/null and equal allocation IDs.
+    let swapped = left.is_null();
+    let (subject, other) = if swapped { (right, left) } else { (left, right) };
+    if positive(subject) && (other.is_null() || positive(other)) {
         return Some(crate::builder::lit_bool(op == BinOpKind::Ne));
     }
-    (left.is_null() && !right.is_null()).then(|| crate::builder::binop_public(op, right.clone(), left.clone()))
+    swapped.then(|| crate::builder::binop_public(op, subject.clone(), other.clone()))
 }
 
 /// 同 subject 偏移量比较化简。

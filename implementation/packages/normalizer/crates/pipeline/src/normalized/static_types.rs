@@ -451,12 +451,12 @@ impl Admission<'_> {
     fn prove_initialized_counter(&self, name: &str, body: &[S], scope: &Scope) -> Result<(), String> {
         let not_proven = |detail: &str| crate::preprocess::required(
             "NORM-LOOP", self.id, detail,
-            "当前赋值初始化循环只证明已初始化的可变 int 局部计数器；保留合法源码，不要编造初值。",
+            "当前赋值初始化循环只证明已初始化的可变 int/long 局部计数器；保留合法源码，不要编造初值。",
         );
         if !scope.get(name).is_some_and(|binding| binding.initialized_local
-            && super::java_int(&binding.ty))
+            && matches!(&binding.ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
         {
-            return Err(not_proven("assignment counter needs an already initialized int local"));
+            return Err(not_proven("assignment counter needs an already initialized int/long local"));
         }
         if !super::fixed_for::preserves_assignment_counter(body, name) {
             return Err(not_proven(&format!("body must preserve proven induction counter {name}")));
@@ -507,17 +507,17 @@ impl Admission<'_> {
                 }
                 S::Block(body) => self.block(body, &mut scope.clone())?,
                 S::Throw(value) | S::ExprStmt(value) => { self.expression(value, scope)?; }
-                // Fixed-loop headers and lifted directives have their own
-                // source contract. Visit native bodies with their lexical bindings.
-                S::For { init, update, body, .. } => {
+                // Structural admission already required both components of
+                // each fixed or rectangular loop. Only check their bindings here.
+                S::For { init: Some(init), update: Some(update), body, .. } => {
                     let mut loop_scope = scope.clone();
-                    let assignment = super::fixed_for::assignment_init(init.as_deref());
+                    let assignment = super::fixed_for::assignment_init(init.as_ref());
                     if let Some((_, target, value)) = assignment {
                         self.assignment(target, value, false, scope)?;
-                    } else if let Some(init) = init {
+                    } else {
                         self.block(std::slice::from_ref(init.as_ref()), &mut loop_scope)?;
                     }
-                    if let Some(update) = update { self.expression(update, &loop_scope)?; }
+                    self.expression(update, &loop_scope)?;
                     self.block(body, &mut loop_scope)?;
                     if let Some((name, ..)) = assignment {
                         self.prove_initialized_counter(name, body, scope)?;
@@ -530,8 +530,9 @@ impl Admission<'_> {
                     loop_scope.insert(var_name.clone(), Binding::plain(var_type.clone()));
                     self.block(body, &mut loop_scope)?;
                 }
-                // Raw while statements are rejected by structural source admission.
-                S::While { .. } | S::LocalIr(_) | S::Return(None) => {}
+                // Structural admission rejects raw while and incomplete for
+                // headers; directives and empty returns have no bindings here.
+                S::While { .. } | S::For { .. } | S::LocalIr(_) | S::Return(None) => {}
             }
         }
         Ok(())

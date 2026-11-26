@@ -11,3 +11,15 @@
       value: 'values[1]'
     - path: [throws, 0, when]
       value: 'LENGTH(values) <= 1'
+
+- name: borrowed-array-length-through-local-alias
+  edits:
+    - from: 'return values[0];'
+      to: 'int[] ordered = values; return ordered.length;'
+  expect:
+    - path: [R]
+      value: LENGTH(values)
+    - path: [throws]
+      absent: true
+    - path: [S]
+      absent: true

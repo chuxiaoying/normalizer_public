@@ -146,3 +146,20 @@
   expect:
   - path: [R]
     value: '2'
+
+- name: constant-true-empty-arm-continues-to-the-symbolic-tail
+  edits:
+  - from: 'if (failed) return ["offline"]'
+    to: |-
+      if (true) {}
+          if (failed) return ["offline"]
+
+- name: nested-selected-empty-else-continues-to-the-symbolic-tail
+  edits:
+  - from: 'if (failed) return ["offline"]'
+    to: |-
+      if (true) {
+              if (false) return ["offline"]
+              else {}
+          }
+          if (failed) return ["offline"]

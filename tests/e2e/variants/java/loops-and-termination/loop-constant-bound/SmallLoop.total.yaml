@@ -64,3 +64,17 @@
   expect:
     - { path: [P, parameters, items], add: { position: 0, type: 'number[]' } }
     - { path: [R], value: 'COALESCE(SUM(SELECT value + 1 FROM items), 0)' }
+
+- name: an-assigned-outer-long-counter-retains-the-last-update
+  edits:
+    - from: 'static int total()'
+      to: 'static long total()'
+    - from: 'int sum = 0;'
+      to: 'long i = 99L; long sum = 0L;'
+    - from: 'int i = 0; i < 3; i++'
+      to: 'i = 0L; i < 3L; i++'
+    - from: 'return sum;'
+      to: 'return sum * 10L + i;'
+  expect:
+    - path: [R]
+      value: '33'

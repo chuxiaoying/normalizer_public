@@ -293,18 +293,13 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
     if values.len() != 2 {
         return None;
     }
-    let effective_domains = first_match_effective_domains(branches);
-    let raw_conds: Vec<Expr> = branches.iter().map(|(cond, _)| cond.clone()).collect();
-    let raw_covered = crate::builder::conditions_cover_all(&raw_conds);
-    let effective_covered = crate::builder::conditions_cover_all(&effective_domains);
-    if !(raw_covered || effective_covered) {
-        return None;
-    }
-
     let (last_cond, default_value) = branches.last()?;
     if last_cond.as_bool() != Some(true) {
         return None;
     }
+    // The explicit TRUE arm certifies coverage. Effective domains are still
+    // needed to preserve first-match priority when earlier guards overlap.
+    let effective_domains = first_match_effective_domains(branches);
     let default_value = default_value.clone();
 
     let mut out: Vec<(Expr, Expr)> = Vec::new();

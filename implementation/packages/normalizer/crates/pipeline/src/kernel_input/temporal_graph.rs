@@ -101,8 +101,10 @@ pub(super) fn publish(
                     Operand::Prior(slot)
                 } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
                     Operand::Integer(n)
-                } else if let Some(SymVarOrigin::Parameter {name, primitive_type}) = operand.as_sym_var() {
-                    need(primitive_type == "integer" && domains.get(name).is_some_and(|domain| domain == "number"),
+                } else if let Some(SymVarOrigin::Parameter { name, .. }) = operand.as_sym_var() {
+                    // Fold initials and numeric choice fallbacks admit an
+                    // exact integer before entering the temporal graph.
+                    need(domains.get(name).is_some_and(|domain| domain == "number"),
                         "temporal parameter must be a declared number")?;
                     Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid temporal input name"))?)
                 } else if let Some(SymVarOrigin::External {binding_id, path, primitive_type}) = operand.as_sym_var() {

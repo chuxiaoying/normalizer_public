@@ -618,14 +618,30 @@ impl Engine<'_> {
         self.source_local_array_allocation(size, path)
     }
 
-    fn local_java_array_length(&mut self, target: &J, id: &str, env: &mut Env, path: Expr) -> Result<Option<i64>> {
+    fn source_java_array_length(&mut self, target: &J, id: &str, env: &mut Env, path: Expr) -> Result<Option<Expr>> {
         match target {
             J::Ident(name) => {
                 if let Some(Value::LocalIntArray(array)) = env.get(name) {
                     // Charge the child identifier visit just as generic expression
                     // evaluation did; the immutable length itself needs no path.
                     self.budget()?;
-                    return Ok(Some(array.length()));
+                    return Ok(Some(b::lit_int(array.length())));
+                }
+                if let Some(Value::Sequence { item: Ty::Integer, name: root, java_component, .. }) = env.get(name) {
+                    // A local alias retains the original entry parameter. A
+                    // borrowed length reads its cardinality, not an element.
+                    // State arrays and nullable receivers are a separate route.
+                    let admitted = java_component.as_deref() == Some("int")
+                        && !self.project.source_nullable_entry_parameters.contains(root)
+                        && self.selected_entry.and_then(|entry| self.methods.get(entry))
+                            .is_some_and(|method| method.syntax.params().iter().any(|(ty, parameter)| {
+                                parameter == root && matches!(ty, JavaType::Array(item)
+                                    if crate::normalized::java_int(item))
+                            }));
+                    if admitted {
+                        self.budget()?;
+                        return Ok(Some(super::source_arrays::borrowed_array_length(root)));
+                    }
                 }
                 Ok(None)
             }
@@ -640,12 +656,13 @@ impl Engine<'_> {
                     let value = self.java_expr(element, id, env, active)?;
                     need(value.ty() == Ty::Integer, "expected Java int for local array")?;
                 }
-                Ok(Some(elements.len() as i64))
+                Ok(Some(b::lit_int(elements.len() as i64)))
             }
             J::ArrayAllocation { element_type, length } => {
                 self.budget()?;
                 let path = self.normal_path(path);
-                Ok(Some(self.evaluate_local_array_allocation(element_type, length, id, env, path)?.length()))
+                let length = self.evaluate_local_array_allocation(element_type, length, id, env, path)?.length();
+                Ok(Some(b::lit_int(length)))
             }
             _ => Ok(None),
         }
@@ -710,8 +727,8 @@ impl Engine<'_> {
             }
             J::FieldAccess { target, field } => {
                 if field == "length" {
-                    if let Some(length) = self.local_java_array_length(target, id, env, path.clone())? {
-                        return Ok(Value::Term(Ty::Integer, b::lit_int(length)));
+                    if let Some(length) = self.source_java_array_length(target, id, env, path.clone())? {
+                        return Ok(Value::Term(Ty::Integer, length));
                     }
                 }
                 self.source_field(target, field, id)?;
@@ -830,11 +847,8 @@ impl Engine<'_> {
                 need(v.ty() == Ty::Bool, "not requires bool")?;
                 Ok(Value::Term(Ty::Bool, b::not(v.scalar()?)))
             }
-            J::Cast {
-                target_type,
-                operand,
-            } if matches!(target_type, JavaType::Primitive(n) if n == "long") =>
-            {
+            // Source admission only accepts the integral widening cast.
+            J::Cast { operand, .. } => {
                 let operand = self.java_expr(operand, id, env, path)?;
                 need(
                     operand.ty() == Ty::Integer,
@@ -1092,15 +1106,62 @@ impl Engine<'_> {
         }
     }
     fn acquired_integer_receipt(&self, value: &Expr, path: &Expr) -> bool {
-        let Some(SymVarOrigin::External { binding_id, path: fields, primitive_type }) = value.as_sym_var() else {
+        enum Observation<'a> {
+            Scalar(u64),
+            Field(u64, &'a str),
+            ProjectedField(&'a Expr, &'a str),
+        }
+
+        let observation = if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
+            if primitive_type != "integer" {
+                return false;
+            }
+            match path.as_slice() {
+                [] => Observation::Scalar(*binding_id),
+                [field] => Observation::Field(*binding_id, field),
+                _ => return false,
+            }
+        } else if let Some((key, [record, field])) = value.as_call() {
+            if math::domains::composite::field_intrinsic_result(key) != Some(math::Primitive::Number) {
+                return false;
+            }
+            let Some(math::Lit::Str(field)) = field.as_lit() else {
+                return false;
+            };
+            Observation::ProjectedField(record, field)
+        } else {
             return false;
         };
-        if primitive_type != "integer" || !fields.is_empty() { return false; }
+
+        let path = self.normal_path(path.clone());
         self.realtime_effects.events().iter().any(|event| {
             let realtime_state::EffectOperation::Port { id, receipt } = &event.operation else { return false; };
-            receipt.binding_id() == *binding_id
-                && self.project.source_ports.get(id).is_some_and(|port| port.throws.is_empty())
-                && b::path_implies(&self.normal_path(path.clone()), &event.guard)
+            // A bare integer is only minted for a nonthrowing source port.
+            // For fields, prove the declared integer and the exact response
+            // before attributing that observation to this occurrence.
+            let field = match observation {
+                Observation::Scalar(binding) =>
+                    return receipt.binding_id() == binding && b::path_implies(&path, &event.guard),
+                Observation::Field(binding, field) if receipt.binding_id() == binding => field,
+                Observation::ProjectedField(_, field) => field,
+                _ => return false,
+            };
+            let Some(port) = self.checked_ports.get(id) else { return false; };
+            let spec = &port.completion;
+            let Ty::Record(fields) = &spec.returns else { return false; };
+            if fields.get(field) != Some(&Ty::Integer) {
+                return false;
+            }
+            let response = receipt.response();
+            match observation {
+                Observation::Field(..) if !spec.throwing() =>
+                    b::path_implies(&path, &event.guard),
+                Observation::ProjectedField(record, _) if record == &spec.normal_value(response) => {
+                    let acquired = b::and(event.guard.clone(), spec.normal_condition(response));
+                    b::path_implies(&path, &acquired)
+                }
+                _ => false,
+            }
         })
     }
 

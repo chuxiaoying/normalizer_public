@@ -70,3 +70,18 @@
           WHEN value <= 0 THEN 2
           ELSE 1
         END
+- name: acquired-exact-input-subtracts-to-zero
+  edits:
+    - { from: 'return value + base;', to: 'return value - value;' }
+  expect:
+    - { path: [R], value: '0' }
+- name: acquired-exact-input-cancels-in-each-case-arm
+  edits:
+    - { from: 'return value + base;', to: 'return (value > 0 ? value : value + 2) - value;' }
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN value <= 0 THEN 2
+          ELSE 0
+        END

@@ -370,8 +370,15 @@ impl Project {
         if let Some((ty, _)) = java_carrier_atom(t) {
             return Ok(ty);
         }
-        if self.direct_source && (crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t)) {
-            return Ok(Ty::Decimal);
+        if self.direct_source {
+            // Java source admission recognizes the qualified builtin. The
+            // generated adapter carrier ABI still requires its ordinary spelling.
+            if matches!(t, JavaType::Class(name) if name == "java.lang.String") {
+                return Ok(Ty::Text);
+            }
+            if crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t) {
+                return Ok(Ty::Decimal);
+            }
         }
         match t {
             JavaType::Void => Ok(Ty::Unit),

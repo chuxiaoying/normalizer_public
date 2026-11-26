@@ -120,7 +120,9 @@ function mapEntries(node, names) {
 
 const numericOperators = {
   '+': ['number', 'add'],
-  '>': ['bool', 'gt'], '<': ['bool', 'gt'], '===': ['bool', 'eq'],
+  '>': ['bool', 'gt'], '<': ['bool', 'gt', true],
+  '>=': ['bool', 'gt', true, true], '<=': ['bool', 'gt', false, true],
+  '===': ['bool', 'eq'], '!==': ['bool', 'eq', false, true],
 };
 
 function compile(source, file, entry, physicalPath) {
@@ -174,16 +176,25 @@ function compile(source, file, entry, physicalPath) {
       const type = scalar(expr.type);
       return {type, node: internal('const', {type, value: expr.value})};
     }
+    if (expr.op === 'signed-number' && Number.isSafeInteger(expr.value)) {
+      return {type: 'number', node: internal('const', {type: 'number', value: expr.value})};
+    }
     if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
-      const [type, operator] = numericOperators[expr.operator];
+      const [type, operator, swap, negate] = numericOperators[expr.operator];
       const left = expression(expr.left), right = expression(expr.right);
+      // Negating an ordered comparison is valid on exact business numbers,
+      // not on unrestricted JS values (which may include NaN or coercion).
       if (left.type !== 'number' || right.type !== 'number') fail('scalar arithmetic and comparison require two business numbers');
-      const [a, b] = expr.operator === '<' ? [right, left] : [left, right];
-      return {type, node: internal(operator, {left: a.node, right: b.node})};
+      const [a, b] = swap ? [right, left] : [left, right];
+      const node = internal(operator, {left: a.node, right: b.node});
+      return {type, node: negate ? internal('not', {value: node}) : node};
     }
     if (expr.op === 'read') {
-      const [name] = expr.target;
+      const [name, field] = expr.target;
       const binding = names.get(name);
+      if (expr.target.length !== 2 || field !== 'length' || binding?.type !== 'number[]') {
+        fail('length requires a direct declared non-null readonly Vector');
+      }
       return {type: 'number', node: internal('value.field', {value: internal('var', {name: binding.name}), name: 'length'})};
     }
     if (expr.op === 'array') {
