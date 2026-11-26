@@ -66,3 +66,17 @@
     - {from: 'return empty;', to: 'return true;'}
   expect:
     - {path: [R], value: 'true'}
+
+- name: an-extra-record-field-does-not-change-stack-matching
+  edits:
+    - {from: 'class Task { int id; }', to: 'class Task { int id; int rank; }'}
+  expect:
+    - {path: [types, Task, fields, rank], add: number}
+
+- name: swapping-open-and-close-sources-reverses-the-failure-direction
+  edits:
+    - {from: 'fold opened from []', to: 'fold closed from []'}
+    - {from: 'fold closed from stack', to: 'fold opened from stack'}
+  expect:
+    - path: [throws, 0, when]
+      value: LENGTH(opened) > LENGTH(closed) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE opened[i].id != closed[LENGTH(closed) - 1 - i].id)

@@ -85,3 +85,20 @@
     - { from: 'int i = 0; i < 3; i++', to: 'i = 0; i < 3; i++' }
     - { from: 'return sum;', to: 'return sum * 10 + i;' }
   reject: ['[NORM-LOOP]', 'kind=PREPROCESS_REQUIRED', 'assignment counter needs an already initialized int/long local']
+
+- name: reversing-the-comparison-operands-keeps-the-same-finite-range
+  edits:
+    - {from: 'int i = 0; i < 3; i++', to: 'int i = 0; 3 > i; i++'}
+
+- name: an-early-return-uses-only-the-completed-iteration-prefix
+  edits:
+    - {from: 'for (int i = 0; i < 3; i++) sum += i;', to: 'for (int i = 0; i < 3; i++) { sum += i; if (i == 1) return sum + 10; }'}
+  expect:
+    - {path: [R], value: '11'}
+
+- name: a-local-loop-counter-does-not-advance-when-returning-from-the-body
+  edits:
+    - {from: 'int sum = 0;', to: 'int i = 99; int sum = 0;'}
+    - {from: 'for (int i = 0; i < 3; i++) sum += i;', to: 'for (i = 0; i < 3; i++) { sum += i; if (i == 1) return 10 * i + sum; }'}
+  expect:
+    - {path: [R], value: '11'}

@@ -12,3 +12,20 @@
   expect:
     - path: [R]
       value: COALESCE(SUM(SELECT profile.score + 1 FROM profiles AS profile), 0)
+- name: count-record-rows-not-their-numeric-field
+  edits:
+    - {from: 'sum from profiles as profile yield profile.score', to: 'count from profiles as profile'}
+  expect:
+    - {path: [R], value: 'COALESCE(SUM(SELECT 1 FROM profiles AS profile), 0)'}
+
+- name: a-row-filter-applies-before-record-count
+  edits:
+    - {from: 'sum from profiles as profile yield profile.score', to: 'count from profiles as profile where profile.score > 0'}
+  expect:
+    - {path: [R], value: 'COALESCE(SUM(SELECT 1 FROM profiles AS profile WHERE profile.score > 0), 0)'}
+
+- name: a-known-false-row-filter-counts-zero
+  edits:
+    - {from: 'sum from profiles as profile yield profile.score', to: 'count from profiles as profile where false'}
+  expect:
+    - {path: [R], value: '0'}
