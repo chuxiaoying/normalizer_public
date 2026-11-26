@@ -74,3 +74,21 @@
   - path:
     - R
     value: "CASE\n  WHEN a == null THEN MAP([])\n  ELSE MAP([[\"a\", a], [\"b\", a], [\"c\", a]])\nEND"
+
+- name: an-array-result-is-not-a-built-in-ordered-map
+  edits:
+  - from: 'return new Map(['
+    to: 'return Object.freeze(['
+  reject: ['[NORM-JS-MODULE]', 'readonly Map requires one built-in Map construction with literal entry assembly']
+
+- name: unconditionally-inserting-a-nullable-value-is-not-a-null-guard
+  edits:
+  - from: '...(b === null ? [] : [[''b'', b]]),'
+    to: '[''b'', b],'
+  reject: ['[NORM-JS-MODULE]', 'readonly Map requires explicitly null-guarded literal text entries']
+
+- name: a-text-literal-is-not-the-input-protected-by-the-null-guard
+  edits:
+  - from: 'b === null ? [] : [[''b'', b]]'
+    to: 'b === null ? [] : [[''b'', ''b'']]'
+  reject: ['[NORM-JS-MODULE]', 'readonly Map requires each null guard to protect the inserted value']

@@ -265,3 +265,21 @@
     - {from: 'notices.notify()', to: 'notices.inform()'}
   expect:
     - {path: [S, 1, call, external], value: notices.inform}
+
+- name: registered-callback-cannot-introduce-an-argument-slot
+  edits:
+  - from: 'listen(() => { notices.notify(); return "callback-only" })'
+    to: 'listen((_ticket?: string) => { notices.notify(); return "callback-only" })'
+  reject: ['[NORM-TS-MODULE]', 'listener needs a closed synchronous entry, callback slot and registration']
+
+- name: a-runtime-string-is-not-a-closed-dispatch-boolean
+  edits:
+  - from: 'if (deliver) pending!()'
+    to: 'if (deliver ? "send" : "") pending!()'
+  reject: ['[NORM-TS-MODULE]', 'listener dispatch condition must be a closed Boolean']
+
+- name: alternate-effect-branch-is-not-a-single-guarded-dispatch
+  edits:
+  - from: 'if (deliver) pending!()'
+    to: 'if (deliver) pending!(); else audit.registered()'
+  reject: ['[NORM-TS-MODULE]', 'listener dispatch requires a single guarded branch']

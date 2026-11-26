@@ -163,3 +163,19 @@
               else {}
           }
           if (failed) return ["offline"]
+
+- name: a-number-slot-does-not-stand-in-for-the-error-text
+  edits:
+  - from: 'error: string | undefined'
+    to: 'error: number | undefined'
+  - from: 'return ["offline"]'
+    to: 'return [7]'
+  reject: ['[NORM-TS-MODULE]', 'tuple requires literal slots or distinct constant Boolean record fields']
+
+- name: receipt-record-fields-cannot-publish-nonboolean-payload
+  edits:
+  - from: 'type Reply = { ok: boolean }'
+    to: 'type Reply = { ok: boolean; diagnostic?: string }'
+  - from: '{ ok: true }, "sent", "ack"'
+    to: '{ ok: true, diagnostic: "sent" }, "sent", "ack"'
+  reject: ['[NORM-TS-MODULE]', 'tuple requires literal slots or distinct constant Boolean record fields']
