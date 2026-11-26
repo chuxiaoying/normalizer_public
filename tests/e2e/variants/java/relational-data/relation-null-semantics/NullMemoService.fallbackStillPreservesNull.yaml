@@ -13,3 +13,14 @@
 - name: empty-text-fallback-does-not-coerce-a-selected-null
   edits:
     - {from: 'String value = "missing";', to: 'String value = "";'}
+
+- name: nonnull-fallback-is-observed-only-when-there-is-no-selected-row
+  edits:
+    - {from: 'return value == null;', to: 'return value != null;'}
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) != null
+          ELSE true
+        END
