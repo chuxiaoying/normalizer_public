@@ -64,16 +64,6 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
 /// Emptiness of an identical input implies emptiness of any strict chain
 /// of selections over that input. Do not infer row identity from aliases.
 pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
-    let (Some(source), Some(mut candidate)) = (
-        relation_not_exists_true_relation(left),
-        relation_not_exists_true_relation(right),
-    ) else {
-        return false;
-    };
-    while let RelationExpr::Select { input, .. } = candidate {
-        if input.as_ref() == source { return true; }
-        candidate = input;
-    }
     false
 }
 
@@ -81,16 +71,7 @@ pub(super) fn relation_cardinality_input_matches(
     left: &RelationExpr,
     right: &RelationExpr,
 ) -> bool {
-    if left == right {
-        return true;
-    }
-    matches!(
-        (left, right),
-        (
-            RelationExpr::Base { name: left_name, .. },
-            RelationExpr::Base { name: right_name, .. }
-        ) if left_name == right_name
-    )
+    left == right
 }
 
 pub(super) fn relation_exists_true_relation(
@@ -101,9 +82,6 @@ pub(super) fn relation_exists_true_relation(
     else {
         return None;
     };
-    if select_expr.and_then(|expr| expr.as_bool()) != Some(true) || default_expr.is_some() {
-        return None;
-    }
     Some(relation)
 }
 

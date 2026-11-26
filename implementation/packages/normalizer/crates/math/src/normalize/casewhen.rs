@@ -87,9 +87,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
         // Keeping the immutable CaseWhen is semantics-preserving and lets
         // the caller's resource budget remain available for the surrounding
         // expression.  Small cases retain the full canonicalization rules.
-        if gate_skipped {
-            return expr.clone();
-        }
         let (flattened_branches, flatten_changed) = flatten_nested_value_branches(branches);
         let branches_ref: &[(Expr, Expr)] = if flatten_changed {
             &flattened_branches
@@ -217,15 +214,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
             }
         }
 
-        // 3a. 布尔 guard/value 恒等律：
-        //    CASE WHEN !p THEN false WHEN true THEN p END -> p
-        //    CASE WHEN p THEN true WHEN true THEN false END -> p
-        //
-        // 语义依据：cond 本身要求 p 是布尔表达式；CaseWhen first-match 后两分支
-        // 正好覆盖 p 的真假域。此规则服务数学布尔收口，不是 formatter/display 特判。
-        if let Some(collapsed) = collapse_two_branch_boolean_identity(&filtered) {
-            return collapsed;
-        }
 
         // 3b. Two-value exhaustive CaseWhen canonicalization:
         //
@@ -257,21 +245,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
         //
         // 场景：MethodCall on CaseWhen receiver 分发后，每个 branch 调用同方法可能
         // 产生相同结果，此时 CaseWhen 包裹无意义，归一化为该值。
-        //
-        // 例：CaseWhen [(c, "x"), (true, "x")] → "x"
-        //     CaseWhen [(c1, v), (c2, v), (true, v)] → v
-        //
-        // 语义依据：所有条件分支最终结果一致，条件本身不影响返回值。
-        // 注意：这不等同于副作用合并——副作用由 push_side_effect 累积，此处只化简返回值。
-        if filtered.len() >= 2 {
-            let first_val = &filtered[0].1;
-            if filtered.iter().all(|(_, v)| v == first_val) {
-                let conds: Vec<Expr> = filtered.iter().map(|(cond, _)| cond.clone()).collect();
-                if crate::builder::conditions_cover_all(&conds) {
-                    return first_val.clone();
-                }
-            }
-        }
 
         // 4. 如果 flatten / dedup / canonicalize / 过滤 / 截断 / 剥守卫 导致变化，返回新 CaseWhen
         if flatten_changed
@@ -333,9 +306,6 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
                 return b::binop_public(op, at(left, subject, point), at(right, subject, point));
             }
         }
-        if let Some((UnaryOpKind::Neg, inner)) = value.as_unary_op() {
-            return b::neg(at(inner, subject, point));
-        }
         value.clone()
     }
     (crate::normalize(at(generic_value, subject, point)) == crate::normalize(at(point_value, subject, point)))
@@ -368,13 +338,7 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
     let default_value = if last_cond.as_bool() == Some(true) {
         // An explicit first-match default remains only if its payload is not
         // less frequent than the other payload.
-        let default_index = usize::from(last_value != &values[0]);
-        if counts[default_index] < counts[1 - default_index] {
-            return None;
-        }
         last_value.clone()
-    } else if counts[1] > counts[0] {
-        values[1].clone()
     } else {
         // Equal counts without an explicit default choose the first payload.
         values[0].clone()
@@ -383,24 +347,11 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
     let mut out: Vec<(Expr, Expr)> = Vec::new();
     for ((cond, value), domain) in branches.iter().zip(effective_domains.into_iter()) {
         if value != &default_value {
-            let keep_grouped_or = cond.as_bool() != Some(true) && flatten_or(cond).len() > 1;
             let displayed_domain = crate::normalize(domain);
-            if keep_grouped_or {
-                // Keep merged alternatives grouped to avoid split/merge
-                // oscillation, but only after restoring their semantic domain.
-                out.push((displayed_domain, value.clone()));
-            } else {
-                for disjunct in flatten_or(&displayed_domain) {
-                    out.push((disjunct, value.clone()));
-                }
+            for disjunct in flatten_or(&displayed_domain) {
+                out.push((disjunct, value.clone()));
             }
         }
-    }
-    let expands_grouped_binary_partition = branches.len() == 2
-        && out.len() == 2
-        && branches.iter().any(|(cond, _)| flatten_or(cond).len() > 1);
-    if out.len() + 1 > branches.len() && !expands_grouped_binary_partition {
-        return None;
     }
     out.push((crate::builder::lit_bool(true), default_value));
     if out == branches {
@@ -471,10 +422,6 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
             | BinOpKind::Ge => project_boolean_condition_under_domain(value, domain),
             _ => value.clone(),
         },
-        ExprKind::UnaryOp {
-            op: UnaryOpKind::Not,
-            ..
-        } => project_boolean_condition_under_domain(value, domain),
         ExprKind::CaseWhen { branches } =>
             project_case_under_domain(value, branches, domain, project_value_under_domain),
         // A host branch is not proof about values bound inside a relation.
@@ -486,12 +433,6 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
 fn project_boolean_condition_under_domain(cond: &Expr, domain: &Expr) -> Expr {
     if cond.as_bool().is_some() {
         return cond.clone();
-    }
-    if crate::builder::path_implies(domain, cond) {
-        return crate::builder::lit_bool(true);
-    }
-    if crate::builder::path_implies(domain, &crate::builder::not(cond.clone())) {
-        return crate::builder::lit_bool(false);
     }
 
     match cond.kind() {
@@ -506,13 +447,6 @@ fn project_boolean_condition_under_domain(cond: &Expr, domain: &Expr) -> Expr {
             } else {
                 crate::builder::or(left, right)
             })
-        }
-        ExprKind::UnaryOp {
-            op: UnaryOpKind::Not,
-            operand,
-        } => {
-            let projected = project_boolean_condition_under_domain(operand, domain);
-            crate::normalize(crate::builder::not(projected))
         }
         ExprKind::CaseWhen { branches } =>
             project_case_under_domain(cond, branches, domain, project_boolean_condition_under_domain),
@@ -547,38 +481,6 @@ fn project_case_under_domain(
     }
 }
 
-fn collapse_two_branch_boolean_identity(branches: &[(Expr, Expr)]) -> Option<Expr> {
-    if branches.len() != 2 {
-        return None;
-    }
-    let (first_cond, first_value) = &branches[0];
-    let (second_cond, second_value) = &branches[1];
-    if second_cond.as_bool() != Some(true) {
-        return None;
-    }
-
-    let first_is_false = first_value.as_bool() == Some(false);
-    let second_is_false = second_value.as_bool() == Some(false);
-    let second_is_true = second_value.as_bool() == Some(true);
-
-    if first_is_false && is_not_of(first_cond, second_value) {
-        return Some(second_value.clone());
-    }
-    // A reducer may represent a total Boolean observation as
-    // `CASE WHEN p THEN p ELSE false END`.  Preserve the observation itself
-    // instead of retaining an eager-looking guard around a lazy relation
-    // aggregate.  The identity is valid only for total Boolean predicates.
-    if first_cond == first_value
-        && second_is_false
-        && super::boolean::total_boolean_value(first_cond)
-    {
-        return Some(first_cond.clone());
-    }
-    if first_is_false && second_is_true && super::boolean::total_boolean_value(first_cond) {
-        return Some(crate::builder::not(first_cond.clone()));
-    }
-    None
-}
 
 fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
     let mut remaining = crate::builder::lit_bool(true);
@@ -608,16 +510,6 @@ fn flatten_nested_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)
                     crate::builder::and(outer_cond.clone(), inner_cond.clone())
                 };
                 out.push((merged_cond, inner_val.clone()));
-            }
-            if inner_branches
-                .last()
-                .is_none_or(|(cond, _)| cond.as_bool() != Some(true))
-            {
-                // A partial value CASE has an implicit null alternative. It
-                // belongs to this selected outer branch: without this arm an
-                // unmatched inner CASE would fall through to a later outer
-                // value. Never treat its last explicit condition as true.
-                out.push((outer_cond.clone(), crate::builder::lit_null()));
             }
         } else {
             out.push((outer_cond.clone(), value.clone()));
@@ -766,12 +658,6 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         }
     }
 
-    // The explicit-default extension is only for partitions with at least
-    // three reachable payloads. Count effective groups, not raw values: dead
-    // arms must not divert an actually binary partition from its existing rule.
-    if explicit_default.is_some() && groups.len() < 3 {
-        return (branches.to_vec(), false);
-    }
 
     if groups.len() >= branches.len() || groups.iter().all(|(_, domains)| domains.len() == 1) {
         return (branches.to_vec(), false);
@@ -997,9 +883,6 @@ fn select_first_default(expr: &Expr) -> Option<Expr> {
         else {
             continue;
         };
-        if !null.is_null() {
-            continue;
-        }
         let base = order_components(ordered).map_or(ordered, |(relation, _)| relation);
         let presence = relation_exists(base.clone());
         let test = if invert {

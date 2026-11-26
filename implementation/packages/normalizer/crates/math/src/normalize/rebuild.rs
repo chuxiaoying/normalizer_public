@@ -111,11 +111,7 @@ pub(crate) fn rebuild_with_children_simplified(
         // 可能含 BinOp/Call 等需要化简的子表达式。
         ExprKind::ArrayLit(items) => {
             let new_items: Vec<Expr> = items.iter().map(|a| recurse(a)).collect();
-            if new_items == *items {
-                expr.clone()
-            } else {
-                Expr::new(ExprKind::ArrayLit(new_items))
-            }
+            expr.clone()
         }
     }
 }

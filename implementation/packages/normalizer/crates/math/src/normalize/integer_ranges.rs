@@ -24,7 +24,6 @@ enum Guard {
     Compare(fn(&BigInt, &BigInt) -> bool, BigInt),
     And(Box<Guard>, Box<Guard>),
     Or(Box<Guard>, Box<Guard>),
-    Not(Box<Guard>),
 }
 impl Guard {
     fn at(&self, x: &BigInt) -> bool {
@@ -33,16 +32,12 @@ impl Guard {
             Self::Compare(test, n) => test(x, n),
             Self::And(a, b) => a.at(x) && b.at(x),
             Self::Or(a, b) => a.at(x) || b.at(x),
-            Self::Not(a) => !a.at(x),
         }
     }
 }
 fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option<Guard> {
     if let Some(v) = e.as_bool() {
         return Some(Guard::Bool(v));
-    }
-    if let Some((crate::UnaryOpKind::Not, v)) = e.as_unary_op() {
-        return Some(Guard::Not(Box::new(guard(v, subject, cuts)?)));
     }
     let (op, a, z) = e.as_binop()?;
     if matches!(op, B::And | B::Or) {

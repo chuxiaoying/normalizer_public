@@ -158,7 +158,6 @@ pub fn lit_null() -> Expr {
 /// 通用 Lit 构造器：包装任意 Lit 为 Expr（P2 方案 B：evaluator 返回值使用）
 pub fn lit(l: Lit) -> Expr {
     match l {
-        Lit::BigInt(value) => lit_integer(value),
         other => Expr::new(ExprKind::Lit(other)),
     }
 }
@@ -602,14 +601,6 @@ fn conditions_have_direct_complement_pair(conds: &[Expr]) -> bool {
 }
 
 fn normalized_disjunction_for_conditions(conds: &[Expr]) -> Expr {
-    if let Some(cached) = conditions_cover_disjunction_cache_get(conds) {
-        crate::profile::count(
-            &CONDITIONS_COVER_DISJUNCTION_CACHE_HITS,
-            "math.proof.conditions_cover_all.disjunction_cache_hit",
-            |_| format!("conds={}", conds.len()),
-        );
-        return cached;
-    }
 
     crate::profile::count(
         &CONDITIONS_COVER_DISJUNCTION_CACHE_MISSES,
@@ -771,27 +762,6 @@ fn independent_condition_groups(conds: &[Expr]) -> Option<Vec<Vec<Expr>>> {
         return None;
     }
 
-    // Merge transitive interactions: A~B and B~C means all three belong to the
-    // same proof component even if A and C do not directly share symbols.
-    let mut changed = true;
-    while changed {
-        changed = false;
-        'outer: for i in 0..groups.len() {
-            for j in (i + 1)..groups.len() {
-                let interacts = groups[i].iter().any(|left| {
-                    groups[j]
-                        .iter()
-                        .any(|right| proof_inputs_may_interact(left, right))
-                });
-                if interacts {
-                    let mut merged = groups.remove(j);
-                    groups[i].append(&mut merged);
-                    changed = true;
-                    break 'outer;
-                }
-            }
-        }
-    }
 
     (groups.len() > 1).then_some(groups)
 }
@@ -804,9 +774,6 @@ fn independent_condition_groups(conds: &[Expr]) -> Option<Vec<Vec<Expr>>> {
 /// be proved by path-domain reasoning.  Returning "not proved" here is
 /// conservative: tautologies may be missed, but no false proof is introduced.
 fn proof_inputs_may_interact(left: &Expr, right: &Expr) -> bool {
-    if left == right {
-        return true;
-    }
     if !left.vars().is_disjoint(right.vars()) {
         return true;
     }
@@ -853,13 +820,6 @@ fn exact_active_facts(active: &Expr, facts: &mut HashMap<Expr, bool>) -> bool {
         return exact_active_facts(left, facts) && exact_active_facts(right, facts);
     }
     if let Some((UnaryOpKind::Not, operand)) = active.as_unary_op() {
-        if operand.as_bool().is_some()
-            || operand
-                .as_binop()
-                .is_some_and(|(op, _, _)| matches!(op, BinOpKind::And | BinOpKind::Or))
-        {
-            return false;
-        }
         facts.insert(operand.clone(), false);
         facts.insert(not(operand.clone()), true);
         return true;
@@ -911,9 +871,6 @@ fn evaluate_with_exact_facts(expression: &Expr, facts: &HashMap<Expr, bool>) -> 
                 return Some(true);
             }
             let right = evaluate_with_exact_facts(right, facts);
-            if right == Some(true) {
-                return Some(true);
-            }
             match (left, right) {
                 (Some(false), Some(false)) => Some(false),
                 _ => None,
@@ -1348,9 +1305,6 @@ fn boolean_conditions_have_independent_model(conditions: &[Expr; 2]) -> bool {
             atoms.push(atom);
         }
     }
-    if atoms.len() > 32 {
-        return false;
-    }
     for (index, atom) in atoms.iter().enumerate() {
         if atom.vars().is_empty() || atom.has_case_when() {
             return false;
@@ -1400,17 +1354,7 @@ fn comparison_atom_key(left: &Expr, right: &Expr) -> String {
 
 /// 构造已注册函数的调用。
 ///
-/// # Panics
-/// args 长度与 func 注册的 arity 不符。
 pub fn call(key: FuncKey, args: Vec<Expr>) -> Expr {
-    let declared = func_arity(key);
-    assert_eq!(
-        args.len(),
-        declared,
-        "[MATH-BUILDER] call arity mismatch: func expects {} args, got {}",
-        declared,
-        args.len()
-    );
     Expr::new(ExprKind::Call {
         key,
         args,

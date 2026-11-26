@@ -150,9 +150,6 @@ pub fn preferred_complement(
     no: &Expr,
     context: &dyn SortContext,
 ) -> Option<Expr> {
-    if yes.as_case_when().is_some() || no.as_case_when().is_some() {
-        return None;
-    }
     preferred_complement_for_shape(condition, yes, no, context, || {
         selection_comparison(condition, yes, no).is_some()
     })

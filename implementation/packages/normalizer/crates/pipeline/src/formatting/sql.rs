@@ -250,10 +250,6 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return format_case_when(branches, ctx);
     }
     if expr.as_relation().is_some() || expr.as_relation_aggregate().is_some() {
-        if ctx.business_inputs.is_none() {
-            // This path is for human diagnostics, not a second PERS syntax.
-            return format!("{expr:?}");
-        }
         return format_scalar_array_observation(expr, ctx)
             .or_else(|| relation_query::render(expr, ctx))
             .expect("[NORM-BUSINESS-EXPRESSION] relation has no canonical PERS renderer");

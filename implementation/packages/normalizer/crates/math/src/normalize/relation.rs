@@ -31,8 +31,6 @@ fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     Some(match op {
         Eq | Le => builder::not(exists()),
         Ne | Gt => exists(),
-        Lt => builder::lit_bool(false),
-        Ge => builder::lit_bool(true),
         _ => return None,
     })
 }
@@ -67,7 +65,6 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
     fn ordered_row_alias(relation: &RelationExpr) -> Option<&str> {
         match relation {
             RelationExpr::Base { alias, .. } => Some(alias),
-            RelationExpr::Select { input, .. } => ordered_row_alias(input),
             // Distinct has no stable-order declaration. Project has its
             // own composition rule; multi-input and MapKv layouts cannot
             // borrow a guessed alias from one of their inputs.

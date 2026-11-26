@@ -109,7 +109,6 @@ fn rewrite_relation(expr: &RelationExpr) -> Option<RelationExpr> {
                 });
             }
             match (predicate.as_bool(), input.as_ref()) {
-                (Some(true), source) => Some(source.clone()),
                 (Some(false), _) | (_, RelationExpr::Empty) => Some(RelationExpr::Empty),
                 _ => None,
             }

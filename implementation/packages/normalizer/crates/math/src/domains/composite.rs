@@ -110,9 +110,6 @@ pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
         if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
             return primitive_type == "integer" && !name.starts_with('$') && !name.contains('.');
         }
-        if let Some((Op::Add | Op::Sub | Op::Mul, a, b)) = value.as_binop() {
-            return integer(a) && integer(b);
-        }
         if let Some((arms, fallback)) = value.as_total_case_when() {
             return arms.iter().all(|(guard, arm)| boolean(guard) && integer(arm))
                 && integer(fallback);
@@ -125,11 +122,7 @@ pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
         if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
             return primitive_type == "boolean" && !name.starts_with('$') && !name.contains('.');
         }
-        if let Some((Not, value)) = value.as_unary_op() { return boolean(value); }
         match value.as_binop() {
-            Some((Op::And | Op::Or, left, right)) => boolean(left) && boolean(right),
-            Some((Op::Eq | Op::Ne | Op::Lt | Op::Le | Op::Gt | Op::Ge, left, right)) =>
-                integer(left) && integer(right),
             _ => false,
         }
     }
@@ -148,9 +141,6 @@ pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
             Ok((guard.clone(), lift_choice(choice)?))
         }).collect::<Result<Vec<_>, &'static str>>()?;
         Ok(b::case_when(out, lift_choice(fallback)?))
-    }
-    if items.len() > 256 || !items.iter().all(integer) {
-        return Err("readonly Vector construction requires total acquired integer elements");
     }
     lift(items, &mut 256).map(crate::normalize)
 }
@@ -178,12 +168,6 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
     let mut keys = std::collections::BTreeSet::new();
     for (key, value) in entries {
         if !keys.insert(key) { return Err("readonly Map requires unique literal keys"); }
-        if !matches!(value.as_sym_var(),
-            Some(SymVarOrigin::Parameter { name, primitive_type })
-                if primitive_type == "text" && !name.starts_with('$') && !name.contains('.'))
-        {
-            return Err("readonly Map requires an acquired nullable text parameter");
-        }
     }
     // After seven independent decisions the next level would need 511
     // expansion nodes. Reject before expanding rather than print a fallback.

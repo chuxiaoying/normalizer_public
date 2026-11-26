@@ -56,36 +56,14 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
 /// Boolean values on their defined input domain. Never equate null with false.
 pub(crate) fn total_boolean_value(expr: &Expr) -> bool {
     match expr.kind() {
-        ExprKind::Lit(Lit::Bool(_)) => true,
         ExprKind::SymVar { origin } => origin.primitive_type() == "boolean",
-        ExprKind::BinOp {
-            op: BinOpKind::And | BinOpKind::Or,
-            left,
-            right,
-        } => total_boolean_value(left) && total_boolean_value(right),
         ExprKind::BinOp { op, .. } => op.swapped_comparison().is_some(),
-        ExprKind::UnaryOp {
-            op: UnaryOpKind::Not,
-            operand,
-        } => total_boolean_value(operand),
-        ExprKind::RelationAggregate {
-            kind: RelationAggregateKind::Exists,
-            ..
-        } => true,
-        ExprKind::CaseWhen { branches } => {
-            builder::conditions_cover_all(
-                &branches.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>(),
-            ) && branches.iter().all(|(_, v)| total_boolean_value(v))
-        }
         _ => false,
     }
 }
 fn boolean_literal_equality(op: BinOpKind, left: &Expr, right: &Expr) -> Option<Expr> {
     let (op, value, literal) =
         super::constraint::comparison_literal_rhs((op, left, right), Expr::as_bool)?;
-    if !total_boolean_value(value) {
-        return None;
-    }
     Some(if literal == (op == BinOpKind::Eq) {
         value.clone()
     } else {
@@ -124,19 +102,7 @@ fn simplify_or_under_and_context(or_expr: &Expr, context: &[Expr]) -> Option<Exp
         if conjuncts.len() > 1 {
             // The whole disjunct is already known not to be entirely true
             // and to contain no contradicted conjunct under this context.
-            let mut reduced: Vec<Expr> = Vec::with_capacity(conjuncts.len());
-            for conjunct in conjuncts {
-                if expr_is_true_under_and_context(&conjunct, context) {
-                    changed = true;
-                    continue;
-                }
-                reduced.push(conjunct);
-            }
-            let reduced_expr = rebuild_and(&reduced);
-            if reduced_expr != disjunct {
-                changed = true;
-            }
-            kept.push(reduced_expr);
+            kept.push(disjunct);
         } else {
             kept.push(disjunct);
         }
@@ -146,9 +112,6 @@ fn simplify_or_under_and_context(or_expr: &Expr, context: &[Expr]) -> Option<Exp
 }
 
 fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
-    if matches!(expr.kind(), ExprKind::Lit(Lit::Bool(true))) {
-        return true;
-    }
     if context.iter().any(|c| {
         c == expr
             || (!profile_pair_can_skip_proof_check(c, expr)
@@ -177,9 +140,6 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
 }
 
 fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
-    if matches!(expr.kind(), ExprKind::Lit(Lit::Bool(false))) {
-        return true;
-    }
     if context.iter().any(|c| {
         !profile_pair_can_skip_proof_check(c, expr)
             && (is_complement(c, expr) || relation_cardinality_contradicts(c, expr))
@@ -189,24 +149,6 @@ fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     // 线性约束矛盾检测：x > 4 下 x < 4 恒 false
     if super::constraint::expr_contradicts_linear_context(expr, context) {
         return true;
-    }
-    // Primitive predicate null-behavior contradiction:
-    //   (x == null) && !isBlank(x) -> false, when isBlank(null)=true
-    //   (x == null) && isNotBlank(x) -> false, when isNotBlank(null)=false
-    //
-    // `!isBlank(x)` / `isNotBlank(x)` already proves `x != null` by the
-    // registered Primitive Function null_behavior.  This local proof lets OR
-    // branches such as `(x == null || y == null)` collapse under an AND context
-    // that has already established both predicates, instead of leaking
-    // impossible NPE/throw domains from source-visible helpers.
-    if let Some(null_subject) = null_comparison_subject(expr, BinOpKind::Eq) {
-        if context.iter().any(|c| {
-            predicate_subject_at_null(c, false)
-                .as_ref()
-                .is_some_and(|subject| subject == &null_subject)
-        }) {
-            return true;
-        }
     }
     if let ExprKind::UnaryOp {
         op: UnaryOpKind::Not,
@@ -317,14 +259,7 @@ fn factor_common_or_disjunct_under_and(conjuncts: &[Expr]) -> Option<Expr> {
             let right_expr = rebuild_or(&right_rest);
             let replacement = builder::or(common_expr, builder::and(left_expr, right_expr));
 
-            let mut next = Vec::with_capacity(conjuncts.len() - 1);
-            for (idx, conjunct) in conjuncts.iter().enumerate() {
-                if idx != i && idx != j {
-                    next.push(conjunct.clone());
-                }
-            }
-            next.push(replacement);
-            return Some(rebuild_and(&next));
+            return Some(replacement);
         }
     }
 
@@ -355,11 +290,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         if out.iter().any(|e| e == item) {
             continue;
         }
-        // A row alias does not change whether the same relation is empty.
-        // The same complement used by OR coverage also refutes conjunctions.
-        if out.iter().any(|existing| relation_exists_complements(existing, item)) {
-            return Some(builder::lit_bool(false));
-        }
         // The context proof checks direct complements and exact Count/Exists
         // contradictions on this same pair before checking nested conditions.
         if expr_is_false_under_and_context(item, &out)
@@ -369,11 +299,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         {
             return Some(builder::lit_bool(false));
         }
-        // Ordinary compact intervals were checked by the context proof above.
-        // Keep the direct rule's narrower literal-subject fallback in place.
-        if super::constraint::literal_subject_intervals_conflict(item, &out) {
-            return Some(builder::lit_bool(false));
-        }
 
         // A concrete literal and a positive allocation identity each form
         // their own closed equality class. Do not cross the domains.
@@ -381,21 +306,11 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         for domain in [EqualityAtomDomain::Literal, EqualityAtomDomain::Allocated] {
             let Some((op, subject, atom)) = equality_atom(item, domain) else { continue; };
             if op == BinOpKind::Eq {
-                let mut contradiction = false;
                 out.retain(|existing| {
                     let Some((op, other_subject, other)) = equality_atom(existing, domain) else { return true; };
                     if other_subject != subject { return true; }
-                    if op == BinOpKind::Eq {
-                        contradiction |= atom != other;
-                        true
-                    } else if atom == other {
-                        contradiction = true;
-                        true
-                    } else {
-                        false
-                    }
+                    op == BinOpKind::Eq || atom == other
                 });
-                if contradiction { return Some(builder::lit_bool(false)); }
                 if matches!(domain, EqualityAtomDomain::Allocated) {
                     discard_null_guard(&mut out, BinOpKind::Ne, &subject);
                 }
@@ -412,26 +327,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }
         if skip_item { continue; }
 
-        // Primitive predicate null-behavior absorption:
-        //   x != null && !isBlank(x)  ->  !isBlank(x), when isBlank(null)=true
-        //   x != null && isNotBlank(x) ->  isNotBlank(x), when isNotBlank(null)=false
-        //
-        // This is a math-level consequence of the registered Primitive Function
-        // null_behavior.  The predicate itself already proves non-nullness of
-        // its subject; keeping the Java implementation guard inflates large
-        // business conditions such as route-channel response checks.
-        if let Some(non_null_subject) = null_comparison_subject(item, BinOpKind::Ne) {
-            if out.iter().any(|existing| {
-                predicate_subject_at_null(existing, false)
-                    .as_ref()
-                    .is_some_and(|subject| subject == &non_null_subject)
-                    || heap_ref_eq_ne_comparison(existing).is_some_and(|(op, subj, id)| {
-                        op == BinOpKind::Eq && id > 0 && subj == non_null_subject
-                    })
-            }) {
-                continue;
-            }
-        }
         if let Some(predicate_subject) = predicate_subject_at_null(item, false) {
             discard_null_guard(&mut out, BinOpKind::Ne, &predicate_subject);
         }
@@ -561,9 +456,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
                 .collect();
             if let Some(simplified) = simplify_or_under_and_context(item, &context) {
                 context_changed = true;
-                if let ExprKind::Lit(Lit::Bool(false)) = simplified.kind() {
-                    return Some(builder::lit_bool(false));
-                }
                 if !matches!(simplified.kind(), ExprKind::Lit(Lit::Bool(true))) {
                     context_simplified.push(simplified);
                 }
@@ -603,25 +495,9 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         if let ExprKind::Lit(Lit::Bool(false)) = item.kind() {
             continue;
         }
-        // 幂等去重
-        if out.iter().any(|e| e == item) {
-            continue;
-        }
         // 互补检测：x || NOT(x) → true.
         if out.iter().any(|e| !profile_pair_can_skip_proof_check(e, item) && is_complement(e, item)) {
             return Some(builder::lit_bool(true));
-        }
-        // A single pure value cannot equal two distinct exact integers.
-        // This dual of equality contradiction also makes path implication
-        // prove x=5 => x!=0 without requiring a particular term spelling.
-        if let Some((BinOpKind::Ne, subject, Lit::Int(value))) = literal_eq_ne_comparison(item) {
-            if out.iter().any(|other| {
-                matches!(literal_eq_ne_comparison(other),
-                Some((BinOpKind::Ne, ref other_subject, Lit::Int(other_value)))
-                    if *other_subject == subject && other_value != value)
-            }) {
-                return Some(builder::lit_bool(true));
-            }
         }
         // Primitive predicate null-behavior absorption:
         //   x == null || isBlank(x)   ->  isBlank(x), when isBlank(null)=true
@@ -631,33 +507,8 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         // null_behavior.  The predicate already covers the null case, so the
         // explicit Java implementation guard is redundant.  Do not encode
         // function names here; only consume FuncSemantics.
-        if let Some(null_subject) = null_comparison_subject(item, BinOpKind::Eq) {
-            if out.iter().any(|existing| {
-                predicate_subject_at_null(existing, true)
-                    .as_ref()
-                    .is_some_and(|subject| subject == &null_subject)
-            }) {
-                continue;
-            }
-        }
         if let Some(predicate_subject) = predicate_subject_at_null(item, true) {
             discard_null_guard(&mut out, BinOpKind::Eq, &predicate_subject);
-            if out.iter().any(|existing| {
-                null_comparison_subject(existing, BinOpKind::Ne)
-                    .as_ref()
-                    .is_some_and(|subject| subject == &predicate_subject)
-            }) {
-                return Some(builder::lit_bool(true));
-            }
-        }
-        if let Some(non_null_subject) = null_comparison_subject(item, BinOpKind::Ne) {
-            if out.iter().any(|existing| {
-                predicate_subject_at_null(existing, true)
-                    .as_ref()
-                    .is_some_and(|subject| subject == &non_null_subject)
-            }) {
-                return Some(builder::lit_bool(true));
-            }
         }
         out.push(item.clone());
     }
@@ -742,23 +593,6 @@ fn sort_commutative(
 // =============================================================================
 
 fn simplify_not(operand: &Expr) -> Option<Expr> {
-    // NOT over a boolean CaseWhen is a boolean CaseWhen with negated branch
-    // payloads. This is deliberately restricted to all-boolean payloads:
-    // non-boolean/null CaseWhen values may carry Java null/unboxing semantics
-    // and must not be treated as false.
-    if let ExprKind::CaseWhen { branches } = operand.kind() {
-        if branches
-            .iter()
-            .all(|(_, value)| super::boolean_casewhen::is_boolean_expr(value))
-        {
-            return Some(Expr::new(ExprKind::CaseWhen {
-                branches: branches
-                    .iter()
-                    .map(|(cond, value)| (cond.clone(), builder::not(value.clone())))
-                    .collect(),
-            }));
-        }
-    }
 
     // not(not(x)) => x
     if let ExprKind::UnaryOp {
@@ -933,9 +767,6 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
 
         let mut group = vec![i];
         for j in (i + 1)..items.len() {
-            if consumed[j] {
-                continue;
-            }
             let Some((other_subject, other_interval)) = ordered_comparison_interval(&items[j])
             else {
                 continue;
@@ -967,11 +798,6 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
         return None;
     }
 
-    for (idx, item) in items.iter().enumerate() {
-        if !consumed[idx] {
-            solved.push(item.clone());
-        }
-    }
     Some(solved)
 }
 
@@ -1168,7 +994,6 @@ fn absorb_two_ordered_comparisons(a: &Expr, b: &Expr) -> Option<Expr> {
 
     let rhs = match op_a {
         BinOpKind::Le | BinOpKind::Lt => builder::lit_int((*ra).max(*rb)),
-        BinOpKind::Ge | BinOpKind::Gt => builder::lit_int((*ra).min(*rb)),
         _ => return None,
     };
     Some(builder::binop_public(*op_a, left_a.clone(), rhs))

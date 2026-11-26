@@ -44,9 +44,6 @@ fn fold_call(
     args: &[Expr],
 ) -> Option<Expr> {
     let sem = crate::domains::primitive::registry::func_semantics(func_key);
-    if !sem.pure {
-        return None;
-    }
     if let Some(null_behavior) = &sem.null_behavior {
         if null_behavior.trigger_positions.iter().any(|&position| {
             args.get(position).is_some_and(Expr::is_null)

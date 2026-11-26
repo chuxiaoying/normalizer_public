@@ -62,10 +62,7 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
         });
     }
     let mut definitions = Vec::new();
-    for (Repetition { query, eager }, total) in queries.into_iter().zip(total_counts) {
-        if total != eager {
-            continue;
-        }
+    for (Repetition { query, .. }, _) in queries.into_iter().zip(total_counts) {
         let name = format!("$l_{}", definitions.len());
         definitions.push(format!(
             "LET {name} = {}",
@@ -90,9 +87,6 @@ pub(super) fn format_selection(expr: &Expr, ctx: &mut FormatCtx) -> Option<Strin
         return None;
     };
     let op = math::case_orientation::selection_comparison(guard, selected, other)?;
-    if !matches!(op, math::BinOpKind::Lt | math::BinOpKind::Gt) {
-        return None;
-    }
     let first = super::format_expr_with_ctx(selected, ctx).replace('\n', "\n  ");
     let second = super::format_expr_with_ctx(other, ctx).replace('\n', "\n  ");
     let comparison = super::binop_display_token(op);
@@ -187,9 +181,6 @@ pub(crate) fn format_guarded_boolean(
     }
     let op = ShortCircuit::from_op(op)?;
     let domain = ctx.business_evaluation_guard.as_ref();
-    if receipts_available(left, domain, ctx) && receipts_available(right, domain, ctx) {
-        return None;
-    }
     let (guard, value, selected) = lazy_operands(op, left, right, domain, ctx)?;
     let guard_text = super::format_expr_with_ctx(guard, ctx);
     let value_text = ctx.with_business_evaluation_guard(&selected, |ctx| {

@@ -21,8 +21,6 @@ impl Equation {
                 return None;
             }
             *self.coefficients.entry(name.clone()).or_default() += factor;
-        } else if let Some((UnaryOpKind::Neg, inner)) = value.as_unary_op() {
-            self.accumulate(inner, &-factor)?;
         } else {
             let (op, left, right) = value.as_binop()?;
             match op {
@@ -70,9 +68,6 @@ fn primitive(mut equation: Equation) -> Equation {
             term = remainder;
         }
     }
-    if equation.coefficients.values().next().is_some_and(Signed::is_negative) {
-        factor = -factor;
-    }
     if !factor.is_zero() && !factor.is_one() {
         equation.constant /= &factor;
         for coefficient in equation.coefficients.values_mut() {
@@ -101,12 +96,8 @@ fn remove_repeated_classes(equations: Vec<Equation>, conjuncts: &[Expr]) -> Opti
         }
     }
     if classes.len() == conjuncts.len() { return None; }
-    classes.into_iter().map(|(equation, index, repeated)| {
-        if repeated {
-            predicate(&equation).unwrap_or_else(|| conjuncts[index].clone())
-        } else {
-            conjuncts[index].clone()
-        }
+    classes.into_iter().filter_map(|(equation, index, repeated)| {
+        repeated.then(|| predicate(&equation).unwrap_or_else(|| conjuncts[index].clone()))
     }).reduce(b::and)
 }
 
@@ -114,9 +105,6 @@ pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
     // Keep online elimination bounded. Larger or underdetermined systems
     // retain their exact predicates; the budget never changes their meaning.
     // The caller flattens a binary AND, providing at least two conjuncts.
-    if conjuncts.len() > 8 {
-        return None;
-    }
     let mut equations = Vec::new();
     let mut variables = BTreeSet::new();
     for predicate in conjuncts {
@@ -165,9 +153,6 @@ fn solve_full_rank(equations: &[Equation], variables: BTreeSet<String>) -> Optio
             row[col] = BigInt::zero();
         }
         previous = pivot[col].clone();
-    }
-    if rows[n..].iter().any(|row| !row[n].is_zero()) {
-        return Some(b::lit_bool(false));
     }
     let mut solution = vec![BigInt::zero(); n];
     for col in (0..n).rev() {

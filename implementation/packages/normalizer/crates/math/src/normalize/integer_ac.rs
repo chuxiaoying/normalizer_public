@@ -39,10 +39,6 @@ fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
             left,
             right,
         } => total_with_temporals(left, ctx) && total_with_temporals(right, ctx),
-        ExprKind::UnaryOp {
-            op: UnaryOpKind::Neg,
-            operand,
-        } => total_with_temporals(operand, ctx),
         // A numeric result annotation does not prove totality. In particular,
         // E/T and CASE values may exist only on an acquisition/completion domain.
         // Word and IEEE operations retain their own explicit operator contracts.
@@ -69,10 +65,6 @@ fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
             left,
             right,
         } => exact_business_integer(left, ctx) && exact_business_integer(right, ctx),
-        ExprKind::UnaryOp {
-            op: UnaryOpKind::Neg,
-            operand,
-        } => exact_business_integer(operand, ctx),
         _ => false,
     }
 }
@@ -164,9 +156,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         } else {
             terms.push(leaf);
         }
-    }
-    if *op == B::Mul && constant.is_zero() {
-        return b::lit_int(0);
     }
     let identity = if *op == B::Add {
         constant.is_zero()

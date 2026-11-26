@@ -67,9 +67,6 @@ fn simplify_identity(expr: &Expr) -> Option<Expr> {
                 return Some(left.clone());
             }
             if super::integer_ac::total_integer(expr) {
-                if left == right {
-                    return Some(crate::builder::lit_int(0));
-                }
                 if let Some(value) = remove_additive_term(left, right)
                     .or_else(|| combine_acquired_row_literals(left, right))
                 {
@@ -79,14 +76,8 @@ fn simplify_identity(expr: &Expr) -> Option<Expr> {
             // 0 - x 不处理：需引入 UnaryOp::Neg push-down，本模块不扩展
         }
         BinOpKind::Mul => {
-            if is_lit_int_zero(left) || is_lit_int_zero(right) {
-                return Some(crate::builder::lit_int(0));
-            }
             if is_lit_int_one(left) {
                 return Some(right.clone());
-            }
-            if is_lit_int_one(right) {
-                return Some(left.clone());
             }
         }
         _ => {}
@@ -118,14 +109,7 @@ fn combine_acquired_row_literals(left: &Expr, right: &Expr) -> Option<Expr> {
     });
     if !has_acquired_row { return None; }
     let rest = left - right;
-    use num_traits::{Signed, Zero};
-    if rest.is_zero() {
-        Some(base.clone())
-    } else if rest.is_negative() {
-        Some(crate::builder::sub(base.clone(), crate::builder::lit_integer(-rest)))
-    } else {
-        Some(crate::builder::add(base.clone(), crate::builder::lit_integer(rest)))
-    }
+    Some(crate::builder::add(base.clone(), crate::builder::lit_integer(rest)))
 }
 
 fn is_lit_int_one(expr: &Expr) -> bool {
@@ -192,16 +176,7 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
     fn decompose(e: &Expr) -> (&Expr, num_bigint::BigInt) {
         if let ExprKind::BinOp { op, left, right } = e.kind() {
             if let Some(c) = right.as_lit().and_then(Lit::as_integer) {
-                match op {
-                    BinOpKind::Add => return (left, c),
-                    BinOpKind::Sub => return (left, -c),
-                    _ => {}
-                }
-            }
-            if matches!(op, BinOpKind::Add) {
-                if let Some(c) = left.as_lit().and_then(Lit::as_integer) {
-                    return (right, c);
-                }
+                if *op == BinOpKind::Add { return (left, c); }
             }
         }
         (e, 0.into())

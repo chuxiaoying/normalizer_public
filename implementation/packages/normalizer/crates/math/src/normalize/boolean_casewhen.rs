@@ -93,9 +93,6 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     // path implication / CaseWhen first-match / 后续局部投影在上下文中化简。
     // 典型场景是 catch 变量由多条 throw path 组成，随后 equals/getter 把
     // code CaseWhen 当 boolean condition 消费；无条件 DNF 会把 throw-domain 摊爆。
-    if arms.len() >= 3 && expanded.size() > expr.size() {
-        return expr.clone();
-    }
 
     expanded
 }
