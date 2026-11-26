@@ -15,6 +15,9 @@
 3. [数学化简：把业务条件算出来](chapters/03-mathematical-simplification.md)
 4. [AI 救赎](chapters/04-ai-boundary.md)
 5. [关系代数：让 SQL 和集合运算一起化简](chapters/05-relational-algebra.md)
+6. [业务至上](chapters/06-business-semantics.md)
+
+[Normalizer 扩展语义参考](extension-semantics-reference.md)集中列出标准操作、声明标记和关系指令。
 
 设计种子和派生案例的覆盖原则见[种子覆盖审查](seed-coverage-audit.md)。
 
