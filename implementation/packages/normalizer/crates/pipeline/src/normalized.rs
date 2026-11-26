@@ -876,6 +876,12 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 | normalizer_ir::local::LocalIr::MemberChoice { .. }
                 | normalizer_ir::local::LocalIr::Stack(_)) => {}
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
+            S::For { cond, body, .. } if fixed_for::FixedFieldFor::from_for(stmt).is_some() => {
+                // The proof admits just one literal store and a unit update.
+                // The typed source pass checks both field lvalues.
+                expr(cond.as_ref().unwrap(), at, calls)?;
+                statements(body, at, calls, catch_admission, inside_finally)?;
+            }
             S::For {init,cond,update,body}
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {
                 if let Some(S::Block(declarations)) = init.as_deref() {

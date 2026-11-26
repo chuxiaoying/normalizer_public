@@ -124,6 +124,68 @@ impl<'a> FixedFor<'a> {
     }
 }
 
+/// Closed scalar induction on a private local object's field. The source
+/// header certifies finite motion; execution must independently bind all
+/// three receiver names to the same fresh object.
+pub(crate) struct FixedFieldFor<'a> {
+    pub receivers: [&'a str; 3],
+    pub field: &'a str,
+    pub start: i128,
+    pub step: i128,
+    pub count: i128,
+}
+
+impl<'a> FixedFieldFor<'a> {
+    pub fn from_for(statement: &'a S) -> Option<Self> {
+        fn field(expr: &E) -> Option<(&str, &str)> {
+            let E::FieldAccess { target, field } = expr else { return None; };
+            let E::Ident(receiver) = target.as_ref() else { return None; };
+            Some((receiver, field))
+        }
+        let S::For { init, cond, update, body } = statement else { return None; };
+        let S::ExprStmt(E::Assign { target, value, is_compound: false }) = init.as_deref()? else { return None; };
+        let (start_root, member) = field(target)?;
+        let E::BinOp { op, left, right } = cond.as_ref()? else { return None; };
+        let ((test_root, tested), op, end) = if let Some(field) = field(left) {
+            (field, *op, literal(right)?)
+        } else {
+            let swap = match op { B::Lt => B::Gt, B::Le => B::Ge, B::Gt => B::Lt, B::Ge => B::Le, _ => return None };
+            (field(right)?, swap, literal(left)?)
+        };
+        let E::UnaryOp { op: change, operand } = update.as_ref()? else { return None; };
+        let (step_root, stepped) = field(operand)?;
+        if member != tested || member != stepped { return None; }
+        let (step, inclusive) = match (op, change) {
+            (B::Lt, U::PostInc | U::PreInc) => (1, false),
+            (B::Le, U::PostInc | U::PreInc) => (1, true),
+            (B::Gt, U::PostDec | U::PreDec) => (-1, false),
+            (B::Ge, U::PostDec | U::PreDec) => (-1, true),
+            _ => return None,
+        };
+        let receivers = [start_root, test_root, step_root];
+        fn integer_scalar(expr: &E, receivers: [&str; 3], member: &str) -> bool {
+            if literal(expr).is_some() { return true; }
+            match expr {
+                E::Ident(name) => !receivers.contains(&name.as_str()),
+                E::FieldAccess { .. } => field(expr).is_some_and(|(root, access)|
+                    receivers.contains(&root) && access == member),
+                E::BinOp { op: B::Add | B::Sub | B::Mul, left, right } =>
+                    integer_scalar(left, receivers, member) && integer_scalar(right, receivers, member),
+                _ => false,
+            }
+        }
+        // No call, receiver assignment, field write, or nested loop can
+        // mutate this counter behind the verified header update.
+        if !body.iter().all(|stmt| matches!(stmt,
+            S::Assign { target: E::Ident(name), value, .. }
+                if !receivers.contains(&name.as_str()) && integer_scalar(value, receivers, member)
+        )) { return None; }
+        let start = literal(value)?;
+        let count = ((end - start) * step + i128::from(inclusive)).max(0);
+        (count <= 256).then_some(Self { receivers, field: member, start, step, count })
+    }
+}
+
 /// A rectangular nest of unit-increment loops with independent exact
 /// integer bounds and one constant update to a separate local accumulator.
 pub(crate) struct RectangularCounter<'a> {

@@ -585,6 +585,10 @@ impl<'a> Engine<'a> {
                     self.source_switch(selector.scalar()?, cases, default, id, env, path)?;
                 }
                 S::For {init,cond,update,body} => {
+                    if let Some(field) = crate::normalized::fixed_for::FixedFieldFor::from_for(s) {
+                        self.execute_fixed_field_for(field, body, id, env, path)?;
+                        continue;
+                    }
                     if let Some(rectangle) = crate::normalized::fixed_for::RectangularCounter::from_for(s) {
                         self.execute_rectangular_counter(rectangle, env)?;
                         continue;

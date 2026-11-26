@@ -6,6 +6,7 @@ use super::{
 };
 use normalizer_ir::local::IntegerOperand;
 use simulator_parser::ast::CatchClause;
+use simulator_parser::JavaType;
 
 impl Engine<'_> {
     /// A lexical child can update an outer binding, but cannot export its own
@@ -200,6 +201,44 @@ impl Engine<'_> {
             binding.to_owned(),
             Value::Term(Ty::Integer, math::normalize(value)),
         );
+        Ok(())
+    }
+
+    pub(super) fn execute_fixed_field_for(
+        &mut self, header: crate::normalized::fixed_for::FixedFieldFor<'_>,
+        body: &[S], id: &str, env: &mut Env, path: Expr,
+    ) -> Result<()> {
+        let unproved = || crate::preprocess::required(
+            "NORM-LOOP", id, "field induction needs one acquired private allocation for initialization, test and update",
+            "确认循环头的每个接收者都指向同一个本地对象。",
+        );
+        let get = |name: &str| env.get(name).and_then(|value| value.scalar().ok()).ok_or_else(unproved);
+        let [init, test, update] = header.receivers;
+        let reference = get(init)?;
+        if get(test)? != reference || get(update)? != reference {
+            return Err(unproved().into());
+        }
+        let owner = self.source_objects.allocation_owner(&reference).ok_or_else(unproved)?;
+        let field = self.program.find_class(owner).and_then(|class| class.fields().iter().find(|f| f.name() == header.field))
+            .ok_or_else(unproved)?;
+        let final_value = header.start + header.count * header.step;
+        let stores_fit = |value| match field.java_type() {
+            JavaType::Primitive(name) if name == "int" => i32::try_from(value).is_ok(),
+            JavaType::Primitive(name) if name == "long" => i64::try_from(value).is_ok(),
+            _ => false,
+        };
+        if field.is_static() || field.is_final() || !stores_fit(header.start) || !stores_fit(final_value) {
+            return Err(unproved().into());
+        }
+        let value = |counter| Value::Term(Ty::Integer, b::lit_integer(counter));
+        // The header store happens even for a zero-trip loop.
+        self.write_source_field(&reference, header.field, value(header.start), path.clone())?;
+        for offset in 0..header.count {
+            self.budget()?;
+            self.source_steps(body, id, env, path.clone())?;
+            let next = header.start + (offset + 1) * header.step;
+            self.write_source_field(&reference, header.field, value(next), path.clone())?;
+        }
         Ok(())
     }
 
