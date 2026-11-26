@@ -1,0 +1,62 @@
+- name: add-one-after-alias
+  edits:
+  - from: return alias.value;
+    to: return alias.value + 1;
+  expect:
+  - path:
+    - R
+    value: box.value + 1
+- name: direct-state-projection
+  edits:
+  - from: return alias.value;
+    to: return this.box.value;
+- name: field-write-through-alias-is-visible-through-the-original-root
+  edits:
+  - from: return alias.value;
+    to: alias.value = 9; return this.box.value;
+  expect:
+  - path:
+    - R
+    value: '9'
+  - path:
+    - S
+    add:
+    - write:
+        target: box.value
+        value: '9'
+- name: different-field-does-not-override-a-state-read
+  edits:
+  - from: int value;
+    to: int value; int other;
+  - from: return alias.value;
+    to: alias.other = 9; return this.box.value;
+  expect:
+  - path:
+    - E
+    - box
+    - fields
+    - other
+    add: number
+  - path:
+    - S
+    add:
+    - write:
+        target: box.other
+        value: '9'
+- name: two-writes-through-one-record-alias-read-the-new-field-in-order
+  edits:
+  - from: return alias.value;
+    to: alias.value = alias.value + 2; alias.value = alias.value - 1; return this.box.value;
+  expect:
+  - path:
+    - R
+    value: box.value + 1
+  - path:
+    - S
+    add:
+    - write:
+        target: box.value
+        value: box.value + 2
+    - write:
+        target: box.value
+        value: box.value + 1

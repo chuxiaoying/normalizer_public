@@ -189,26 +189,26 @@ groups:
     java-lifo-release:
     - TaskBatch.complete
     java-state-alias:
-    - Account.reset
+    - Beans.ENTRY.reset
     state-call-to-call:
-    - Counter.increment
-    - Counter.read
-    - Counter.incrementThenRead
+    - Beans.ENTRY.increment
+    - Beans.ENTRY.read
+    - Beans.ENTRY.incrementThenRead
     state-collection-mutation:
-    - StateList.update
+    - Beans.ENTRY.update
     state-cycle-and-observable-output:
-    - CycleState.read
+    - Beans.ENTRY.read
     - LocalCycle.readSelf
     - LocalCycle.exportSelf
     state-explicit-marker:
-    - Counter.read
-    - Counter.readPair
+    - Beans.ENTRY.read
+    - Beans.ENTRY.readPair
     state-multi-write-read-order:
-    - Ledger.delta
-    - StoreRoute.next
+    - Beans.ENTRY.delta
+    - Beans.ENTRY.next
     - StoreRoute.local
     state-nested-alias:
-    - Alias.read
+    - Beans.ENTRY.read
   java/unified-canonical-form:
     canonical-binary-case:
     - CanonicalCount.clamp

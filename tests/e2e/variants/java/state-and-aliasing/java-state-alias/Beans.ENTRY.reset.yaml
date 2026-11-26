@@ -1,7 +1,12 @@
 - name: null-read-before-write-prevents-the-same-write
   edits:
-  - from: "quota.units = 7;\n        return observer.units;"
-    to: "int prior = observer.units;\n        quota.units = 7;\n        return observer == quota ? 7 : prior;"
+  - from: |-
+      quota.units = 7;
+              return observer.units;
+    to: |-
+      int prior = observer.units;
+              quota.units = 7;
+              return observer == quota ? 7 : prior;
   expect:
   - path:
     - S
@@ -24,7 +29,11 @@
     value: '11'
   - path:
     - R
-    value: "CASE\n  WHEN observer == quota THEN 11\n  ELSE observer.units\nEND"
+    value: |-
+      CASE
+        WHEN observer == quota THEN 11
+        ELSE observer.units
+      END
 - name: source-parameter-is-not-the-declared-write-root
   edits:
   - from: quota.units = 7;
@@ -60,30 +69,30 @@
     absent: true
 - name: nullable-marker-with-empty-parentheses-keeps-the-same-contract
   edits:
-  - from: '@normalizer.annotations.Nullable '
-    to: '@normalizer.annotations.Nullable() '
+  - from: '@N.Nullable '
+    to: '@N.Nullable() '
 - name: a-comment-does-not-count-as-a-marker-argument
   edits:
-  - from: '@normalizer.annotations.Nullable '
-    to: '@normalizer.annotations.Nullable(/* marker only */) '
+  - from: '@N.Nullable '
+    to: '@N.Nullable(/* marker only */) '
 - name: annotation-comma-is-not-an-empty-marker
   edits:
-  - from: '@normalizer.annotations.Nullable '
-    to: '@normalizer.annotations.Nullable(,) '
+  - from: '@N.Nullable '
+    to: '@N.Nullable(,) '
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
   - unsupported source parameter annotation normalizer.annotations.Nullable
 - name: marker-does-not-treat-quoted-commas-as-missing-arguments
   edits:
-  - from: '@normalizer.annotations.Nullable '
-    to: '@normalizer.annotations.Nullable(reason="审核,(参数)") '
+  - from: '@N.Nullable '
+    to: '@N.Nullable(reason="审核,(参数)") '
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
   - unsupported source parameter annotation normalizer.annotations.Nullable
 - name: repeated-nullable-markers-do-not-become-a-double-nullable-type
   edits:
-  - from: '@normalizer.annotations.Nullable '
-    to: '@normalizer.annotations.Nullable @normalizer.annotations.Nullable '
+  - from: '@N.Nullable '
+    to: '@N.Nullable @N.Nullable '
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
   - Account.reset.observer
@@ -91,15 +100,15 @@
 - name: illegal-annotation-on-an-unused-helper-is-not-ignored
   edits:
   - from: class Account {
-    to: class Account { static int helper(@normalizer.annotations.Nullable int amount) { return amount; }
+    to: class Account { static int helper(@N.Nullable int amount) { return amount; }
   reject:
   - '[NORM-SOURCE-ANNOTATION]'
   - Account.helper.amount
   - unsupported source parameter annotation normalizer.annotations.Nullable
 - name: unicode-escaped-nullable-marker-binds-like-its-raw-spelling
   edits:
-  - from: '@normalizer.annotations.Nullable '
-    to: '@normalizer.annotations.\u004eullable '
+  - from: '@N.Nullable '
+    to: '@N.\u004eullable '
 - name: catching-null-uses-the-type-and-preserves-the-prior-write
   edits:
   - from: return observer.units;
@@ -107,7 +116,12 @@
   expect:
   - path:
     - R
-    value: "CASE\n  WHEN observer != null AND observer == quota THEN 7\n  WHEN observer == null THEN 11\n  ELSE observer.units\nEND"
+    value: |-
+      CASE
+        WHEN observer == null THEN 11
+        WHEN observer == quota THEN 7
+        ELSE observer.units
+      END
   - path:
     - throws
     absent: true
