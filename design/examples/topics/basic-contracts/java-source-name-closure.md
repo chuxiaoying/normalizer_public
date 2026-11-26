@@ -57,3 +57,5 @@ R: '12'
 | 所选 Class.method 新增有不同签名的同名方法 | 现行源码入口没有签名选择信息，须拒绝，不使用声明顺序推断。这不是 Java 语言禁用重载 |
 | 所选入口被改名、旧入口不存在 | 拒绝且无 PERS，不退回其他同名方法 |
 | 声明存在但实际调用的源码缺失 | 比名义歧义更晚的阶段；按[无源码合同](java-unsupported-source-boundary.md)和[非法声明、未执行 native 对照](java-invalid-declaration.md)，到达非法无源码时内核 Panic，不造 S |
+
+同一类型内的两个字段也必须能唯一声明；未使用类型中的 `int code; int code;` 是非法 Java，不能只因为不会执行到就选其中一个，也不输出 PERS。

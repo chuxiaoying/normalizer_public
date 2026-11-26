@@ -34,3 +34,7 @@
   edits:
     - { from: 'static int price() { return Price.price(); }', to: 'static int renamed() { return Price.price(); }' }
   reject: ['[NORM-ENTRY]', 'kind=PREPROCESS_REQUIRED', 'location=Catalog.price']
+- name: duplicate-fields-in-an-unused-type-cannot-be-merged-by-name
+  edits:
+    - { from: 'class Catalog {', to: 'class DuplicateField { int code; int code; } class Catalog {' }
+  reject: ['[NORM-FIELD-DECLARATION]', 'location=DuplicateField']

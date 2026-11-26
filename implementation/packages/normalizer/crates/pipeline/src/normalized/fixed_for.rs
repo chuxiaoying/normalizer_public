@@ -8,6 +8,7 @@ pub(crate) struct FixedFor<'a> {
     pub start: i128,
     pub step: i128,
     pub count: i128,
+    pub assigns_outer: bool,
 }
 
 fn literal(expr: &E) -> Option<i128> {
@@ -22,20 +23,46 @@ fn literal(expr: &E) -> Option<i128> {
     }
 }
 
+pub(super) fn assignment_init(init: Option<&S>) -> Option<(&str, &E, &E)> {
+    let S::ExprStmt(E::Assign { target, value, is_compound: false }) = init? else {
+        return None;
+    };
+    let E::Ident(name) = target.as_ref() else { return None; };
+    Some((name, target, value))
+}
+
+pub(super) fn may_write_counter(body: &[S], counter: &str) -> bool {
+    body.iter().any(|stmt| match stmt {
+        S::Assign { target: E::Ident(name), .. } => name == counter,
+        S::For { init, body, .. } => assignment_init(init.as_deref())
+            .is_some_and(|(name, ..)| name == counter) || may_write_counter(body, counter),
+        S::Block(body) | S::ForEach { body, .. } =>
+            may_write_counter(body, counter),
+        S::If { then_block, else_block, .. } => may_write_counter(then_block, counter)
+            || else_block.as_ref().is_some_and(|body| may_write_counter(body, counter)),
+        S::Try { body, catches, finally_block } => may_write_counter(body, counter)
+            || catches.iter().any(|handler| may_write_counter(handler.body(), counter))
+            || finally_block.as_ref().is_some_and(|body| may_write_counter(body, counter)),
+        // Directives carry their own writes, not the Java lvalue above.
+        S::LocalIr(_) => true,
+        _ => false,
+    })
+}
+
 impl<'a> FixedFor<'a> {
     pub fn from_header(init: Option<&'a S>, cond: Option<&E>, update: Option<&E>) -> Option<Self> {
-        let S::VarDecl {
-            java_type: JavaType::Primitive(ty),
-            name,
-            initializer: Some(value),
-            ..
-        } = init?
-        else {
-            return None;
+        let (name, value, assigns_outer) = match init? {
+            S::VarDecl {
+                java_type: JavaType::Primitive(ty),
+                name,
+                initializer: Some(value),
+                ..
+            } if matches!(ty.as_str(), "int" | "long") => (name.as_str(), value, false),
+            init => {
+                let (name, _, value) = assignment_init(Some(init))?;
+                (name, value, true)
+            }
         };
-        if !matches!(ty.as_str(), "int" | "long") {
-            return None;
-        }
         let E::BinOp { op, left, right } = cond? else {
             return None;
         };
@@ -65,6 +92,7 @@ impl<'a> FixedFor<'a> {
             start,
             step,
             count: ((end - start) * step + extra).max(0),
+            assigns_outer,
         })
     }
 }

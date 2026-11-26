@@ -95,11 +95,12 @@ type Scope = BTreeMap<String, Binding>;
 struct Binding {
     ty: JavaType,
     initialized_final: bool,
+    initialized_local: bool,
 }
 
 impl Binding {
     fn plain(ty: JavaType) -> Self {
-        Self { ty, initialized_final: false }
+        Self { ty, initialized_final: false, initialized_local: false }
     }
 }
 
@@ -402,7 +403,7 @@ impl Admission<'_> {
         // variable. Scope excludes fields; an initialized final may be a
         // constant, so leave it to a separate constant-expression proof.
         if let (Some(JavaType::Primitive(target)), E::Ident(name)) = (expected, value) {
-            if let Some(Binding { ty: JavaType::Primitive(source), initialized_final: false }) = scope.get(name) {
+            if let Some(Binding { ty: JavaType::Primitive(source), initialized_final: false, .. }) = scope.get(name) {
                 if matches!((source.as_str(), target.as_str()), ("int", "byte" | "short") | ("short", "byte")) {
                     return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
                         "{label}: nonconstant {source} binding {name} cannot implicitly narrow to Java {target}")));
@@ -449,6 +450,22 @@ impl Admission<'_> {
         Ok(())
     }
 
+    fn prove_initialized_counter(&self, name: &str, body: &[S], scope: &Scope) -> Result<(), String> {
+        let not_proven = |detail: &str| crate::preprocess::required(
+            "NORM-LOOP", self.id, detail,
+            "当前固定次数循环只证明已初始化的可变 int/long 局部计数器；保留合法源码，不要编造初值。",
+        );
+        if !scope.get(name).is_some_and(|binding| binding.initialized_local
+            && matches!(&binding.ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
+        {
+            return Err(not_proven("assignment counter needs an already initialized int/long local"));
+        }
+        if super::fixed_for::may_write_counter(body, name) {
+            return Err(not_proven(&format!("body must preserve proven induction counter {name}")));
+        }
+        Ok(())
+    }
+
     fn block(&self, body: &[S], scope: &mut Scope) -> Result<(), String> {
         for statement in body {
             match statement {
@@ -461,7 +478,9 @@ impl Admission<'_> {
                         self.compatible(Kind::declared(java_type), actual, &label)?;
                     }
                     scope.insert(name.clone(), Binding {
-                        ty: java_type.clone(), initialized_final: *is_final && initializer.is_some(),
+                        ty: java_type.clone(),
+                        initialized_final: *is_final && initializer.is_some(),
+                        initialized_local: initializer.is_some(),
                     });
                 }
                 S::Assign { target, value, is_compound } => {
@@ -494,9 +513,17 @@ impl Admission<'_> {
                 // source contract. Visit native bodies with their lexical bindings.
                 S::For { init, update, body, .. } => {
                     let mut loop_scope = scope.clone();
-                    if let Some(init) = init { self.block(std::slice::from_ref(init.as_ref()), &mut loop_scope)?; }
+                    let assignment = super::fixed_for::assignment_init(init.as_deref());
+                    if let Some((_, target, value)) = assignment {
+                        self.assignment(target, value, false, scope)?;
+                    } else if let Some(init) = init {
+                        self.block(std::slice::from_ref(init.as_ref()), &mut loop_scope)?;
+                    }
                     if let Some(update) = update { self.expression(update, &loop_scope)?; }
                     self.block(body, &mut loop_scope)?;
+                    if let Some((name, ..)) = assignment {
+                        self.prove_initialized_counter(name, body, scope)?;
+                    }
                 }
                 S::ForEach { var_type, var_name, iterable, body } => {
                     self.expression(iterable, scope)?;

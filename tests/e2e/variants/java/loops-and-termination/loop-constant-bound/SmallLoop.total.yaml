@@ -37,3 +37,30 @@
   edits:
     - { from: 'int i = 0; i < 3; i++', to: 'int i = 0; i < 3; i--' }
   reject: ['[NORM-LOOP]', 'SmallLoop.total']
+- name: an-assigned-outer-counter-retains-the-last-update
+  edits:
+    - { from: 'int sum = 0;', to: 'int i = 99; int sum = 0;' }
+    - { from: 'int i = 0; i < 3; i++', to: 'i = 0; i < 3; i++' }
+    - { from: 'return sum;', to: 'return sum * 10 + i;' }
+  expect:
+    - { path: [R], value: '33' }
+- name: a-zero-trip-assigned-header-still-overwrites-the-outer-counter
+  edits:
+    - { from: 'int sum = 0;', to: 'int i = 99; int sum = 0;' }
+    - { from: 'for (int i = 0; i < 3; i++) sum += i;', to: 'for (i = 4; i < 4; i++) {}' }
+    - { from: 'return sum;', to: 'return i;' }
+  expect:
+    - { path: [R], value: '4' }
+- name: a-legal-assigned-header-cannot-hide-an-illegal-prior-store
+  edits:
+    - { from: 'int sum = 0;', to: 'int i = 99; i = 99L; int sum = 0;' }
+    - { from: 'int i = 0; i < 3; i++', to: 'i = 0; i < 3; i++' }
+  reject: ['[NORM-SOURCE-TYPE]', 'assignment to i', 'cannot implicitly narrow']
+- name: a-native-int-array-foreach-preserves-the-long-offset
+  edits:
+    - { from: 'static int total()', to: 'static long total(int[] items)' }
+    - { from: 'int sum = 0;', to: 'long sum = 0L;' }
+    - { from: 'for (int i = 0; i < 3; i++) sum += i;', to: 'for (int v : items) sum += v + 1L;' }
+  expect:
+    - { path: [P, parameters, items], add: { position: 0, type: 'number[]' } }
+    - { path: [R], value: 'COALESCE(SUM(SELECT value + 1 FROM items), 0)' }

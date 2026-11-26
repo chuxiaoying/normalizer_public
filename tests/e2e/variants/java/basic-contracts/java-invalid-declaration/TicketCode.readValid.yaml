@@ -427,3 +427,14 @@
   - file: src/TicketCode.java
     from: static native int booleanValue
     to: static synchronized native int booleanValue
+- name: a-missing-if-delimiter-in-unused-source-is-an-ingress-error
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { static int unused() { if (true { return 1; } return 0; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', "expected ')' after if condition"]
+- name: an-empty-integer-radix-prefix-in-unused-source-is-an-ingress-error
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { static int unused() { return 0x; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', 'expected digit after integer radix prefix']
+- name: a-marker-like-comment-is-still-ordinary-java-trivia
+  edits:
+    - { from: 'return value;', to: '/* @normalizer-irSuffix ordinary trivia */ return value;' }

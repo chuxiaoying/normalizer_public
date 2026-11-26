@@ -193,7 +193,13 @@ impl Engine<'_> {
         env: &mut Env,
         path: Expr,
     ) -> Result<()> {
-        need(!env.contains_key(header.counter), "duplicate loop variable")?;
+        let counter_value = |value| Value::Term(Ty::Integer, b::lit_integer(value));
+        if header.assigns_outer {
+            *env.get_mut(header.counter).expect("verified initialized loop counter") =
+                counter_value(header.start);
+        } else {
+            need(!env.contains_key(header.counter), "duplicate loop variable")?;
+        }
         let mut locals = env.clone();
         for index in 0..header.count {
             self.budget()?;
@@ -214,6 +220,10 @@ impl Engine<'_> {
                 locals[header.counter].scalar()? == counter,
                 "loop body changes its proven induction variable",
             )?;
+            if header.assigns_outer && self.realtime_completion.continuing_guard().as_bool() != Some(false) {
+                // Return/throw paths already captured the pre-update counter.
+                locals.insert(header.counter.into(), counter_value(header.start + (index + 1) * header.step));
+            }
             for (name, value) in env.iter_mut() {
                 *value = locals[name].clone();
             }
