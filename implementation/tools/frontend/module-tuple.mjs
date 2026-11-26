@@ -67,24 +67,24 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     expr = unwrap(expr);
     if (ts.isIdentifier(expr) && expr.text === 'undefined') return {kind: 'undefined'};
     if (ts.isStringLiteral(expr)) return {kind: 'text', value: expr.text};
-    if (!ts.isObjectLiteralExpression(expr)) fail('tuple literal requires text, undefined, or a closed Boolean record');
     const fields = Object.create(null);
-    for (const prop of expr.properties) {
+    const closedRecord = ts.isObjectLiteralExpression(expr) && expr.properties.every((prop) => {
       if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name) || !uid(prop.name.text)
           || prop.name.text === '__proto__' || Object.hasOwn(fields, prop.name.text)
-          || ![ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(prop.initializer.kind)) {
-        fail('tuple record requires distinct constant Boolean fields');
-      }
+          || ![ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(prop.initializer.kind)) return false;
       fields[prop.name.text] = prop.initializer.kind === ts.SyntaxKind.TrueKeyword;
-    }
-    return {kind: 'record', fields};
+      return true;
+    });
+    if (closedRecord) return {kind: 'record', fields};
+    fail('tuple requires literal slots or distinct constant Boolean record fields');
   }
   function tupleReturn(st) {
-    if (ts.isBlock(st) && st.statements.length === 1) return tupleReturn(st.statements[0]);
-    if (!ts.isReturnStatement(st) || !st.expression || !ts.isArrayLiteralExpression(unwrap(st.expression))) {
-      fail('tuple helper path must return a literal tuple');
+    while (ts.isBlock(st) && st.statements.length === 1) st = st.statements[0];
+    const expression = ts.isReturnStatement(st) && st.expression && unwrap(st.expression);
+    if (expression && ts.isArrayLiteralExpression(expression)) {
+      return {kind: 'literal', items: expression.elements.map(slot)};
     }
-    return {kind: 'literal', items: unwrap(st.expression).elements.map(slot)};
+    fail('tuple helper path must return a literal tuple');
   }
   function plan(statements, fallthrough = () => fail('tuple helper has no return on a path')) {
     const [head, ...tail] = statements;
@@ -131,13 +131,16 @@ export function compileTypedTuple(physicalPath, sf, fn) {
   };
   function truth(expr) {
     expr = unwrap(expr);
+    const simple = lowerBool(expr, inputScope);
+    if (simple) return simple;
     if (ts.isBinaryExpression(expr)) {
       if (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
         return choose(truth(expr.left), truth(expr.right), literal('bool', false));
       }
       if ([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(expr.operatorToken.kind)) {
-        const isUndefined = value => ts.isIdentifier(unwrap(value)) && unwrap(value).text === 'undefined';
-        const subject = isUndefined(expr.left) ? expr.right : isUndefined(expr.right) ? expr.left : undefined;
+        const sides = [unwrap(expr.left), unwrap(expr.right)];
+        const undefinedPosition = sides.findIndex((value) => ts.isIdentifier(value) && value.text === 'undefined');
+        const subject = sides[1 - undefinedPosition];
         const item = subject && position(subject);
         if (!item || item.rest) fail('undefined test needs one tuple slot');
         const tested = observe('is_undefined', {index: item.index});
@@ -156,7 +159,7 @@ export function compileTypedTuple(physicalPath, sf, fn) {
       }
       return observe('optional_flag', {index: item.index, field: expr.name.text});
     }
-    return simpleBool(expr, inputScope);
+    fail('unsupported tuple helper Boolean expression');
   }
   function numeric(expr) {
     expr = unwrap(expr);

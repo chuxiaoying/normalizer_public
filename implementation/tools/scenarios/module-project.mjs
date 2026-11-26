@@ -9,7 +9,7 @@ import { vueScenario } from './registry.mjs';
 
 const carriers = {
   bool: ['boolean', 'bool'], text: ['String', 'text?'],
-  number: ['int', 'number'],
+  number: ['int', 'number'], void: ['void', 'unit'],
 };
 
 function compileProjection(projection) {
@@ -54,18 +54,15 @@ function compileProjection(projection) {
     }
     if (expr.op === 'literal') {
       const type = { number: 'number', boolean: 'bool', string: 'text' }[expr.type];
-      if (!type || type === 'number' && !Number.isSafeInteger(expr.value)) {
-        throw new Error('SCENARIO_MODULE_INPUT: literal outside supported projection domain');
+      if (type && (type !== 'number' || Number.isSafeInteger(expr.value))) {
+        return { type, body: { op: 'const', type: carriers[type][1], value: expr.value } };
       }
-      return { type, body: { op: 'const', type: carriers[type][1], value: expr.value } };
     }
     if (expr.op === 'select') {
-      const test = compile(expr.condition);
-      const yes = compile(expr.whenTrue);
-      const no = compile(expr.whenFalse);
-      const type = yes.type;
-      if (test.type !== 'bool' || !type || type !== no.type) throw new Error('SCENARIO_MODULE_INPUT: incompatible types in conditional projection');
-      return { type, body: { op: 'if', cond: test.body, then: yes.body, else: no.body } };
+      const test = compile(expr.condition), yes = compile(expr.whenTrue), no = compile(expr.whenFalse);
+      if (test.type === 'bool' && yes.type && yes.type === no.type) {
+        return { type: yes.type, body: { op: 'if', cond: test.body, then: yes.body, else: no.body } };
+      }
     }
     throw new Error(`SCENARIO_MODULE_INPUT: unsupported component projection operation ${expr.op}`);
   }
@@ -127,7 +124,6 @@ function eventContract(modulePath, moduleText, name, original) {
   const source = 'class T { static native void run(); }\n';
   function kernelType(domain, seen = new Set()) {
     if (domain.endsWith('[]')) return `vector<${kernelType(domain.slice(0, -2), seen)}>`;
-    if (domain === 'void') return 'unit';
     if (Object.hasOwn(carriers, domain)) return carriers[domain][1];
     const record = event.types[domain];
     if (!record || seen.has(domain)) throw new Error(`SCENARIO_MODULE_INPUT: unknown or recursive entry type ${domain}`);
@@ -161,16 +157,15 @@ function eventContract(modulePath, moduleText, name, original) {
 }
 
 export function buildModuleProject({ scene, root, file, name, original, directory }) {
-  if (extname(original) !== '.vue' || extname(file) !== '.mjs') {
-    throw new Error('SCENARIO_MODULE_INPUT: expected a Vue source and its prepared .mjs module');
+  const build = {event: eventContract, projection: projectionContract}[vueScenario(scene)];
+  if (!build || extname(original) !== '.vue' || extname(file) !== '.mjs') {
+    throw new Error('SCENARIO_MODULE_INPUT: expected a supported scenario with its Vue source and prepared .mjs module');
   }
   const source = projectSources(root);
   const component = source(original);
   const module = source(file);
   accessSync(component.path, constants.R_OK);
   const moduleText = readFileSync(module.path, 'utf8');
-  const build = {event: eventContract, projection: projectionContract}[vueScenario(scene)];
-  if (!build) throw new Error('SCENARIO_MODULE_INPUT: unsupported component scenario');
   const project = build(module.declared, moduleText, name, component.name);
   const [entry] = project.entries;
   writeFileSync(join(directory, 'Normalized.java'), project.source_text);
