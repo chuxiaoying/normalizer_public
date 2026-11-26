@@ -35,3 +35,13 @@
     - from: 'row.memo IS NULL'
       to: 'row.memo == "x" OR row.memo != "x"'
   reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'OR is not supported in local relation predicates']
+
+- name: filtered-row-count-cannot-be-negative
+  edits:
+    - { from: 'return count;', to: 'if (0 > count) return 99; return count;' }
+- name: known-empty-row-count-reaches-the-zero-guard
+  edits:
+    - { from: 'where b.account_id == accountId', to: 'where b.account_id == accountId and false' }
+    - { from: 'return count;', to: 'if (count == 0) return 99; return count;' }
+  expect:
+    - { path: [R], value: '99' }

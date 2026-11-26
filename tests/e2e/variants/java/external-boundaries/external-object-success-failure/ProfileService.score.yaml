@@ -25,3 +25,37 @@
   expect:
     - path: [R]
       value: $e_0.score + 1
+
+- name: projected-receipts-sort-by-numeric-id-without-moving-calls
+  edits:
+    - { from: 'Profile fetch(int accountId) throws ProfileUnavailable;', to: 'Profile fetch(int accountId);' }
+    - from: 'return client.fetch(accountId).score;'
+      to: |-
+        Profile reply0 = client.fetch(accountId);
+        Profile reply1 = client.fetch(accountId + 1);
+        Profile reply2 = client.fetch(accountId + 2);
+        Profile reply3 = client.fetch(accountId + 3);
+        Profile reply4 = client.fetch(accountId + 4);
+        Profile reply5 = client.fetch(accountId + 5);
+        Profile reply6 = client.fetch(accountId + 6);
+        Profile reply7 = client.fetch(accountId + 7);
+        Profile reply8 = client.fetch(accountId + 8);
+        Profile reply9 = client.fetch(accountId + 9);
+        Profile reply10 = client.fetch(accountId + 10);
+        return reply10.score + reply2.score;
+  expect:
+    - { path: [R], value: '$e_2.score + $e_10.score' }
+    - path: [S]
+      value:
+        - call: { external: client.fetch, args: ["accountId"], returns: Profile, result: $e_0 }
+        - call: { external: client.fetch, args: ["accountId + 1"], returns: Profile, result: $e_1 }
+        - call: { external: client.fetch, args: ["accountId + 2"], returns: Profile, result: $e_2 }
+        - call: { external: client.fetch, args: ["accountId + 3"], returns: Profile, result: $e_3 }
+        - call: { external: client.fetch, args: ["accountId + 4"], returns: Profile, result: $e_4 }
+        - call: { external: client.fetch, args: ["accountId + 5"], returns: Profile, result: $e_5 }
+        - call: { external: client.fetch, args: ["accountId + 6"], returns: Profile, result: $e_6 }
+        - call: { external: client.fetch, args: ["accountId + 7"], returns: Profile, result: $e_7 }
+        - call: { external: client.fetch, args: ["accountId + 8"], returns: Profile, result: $e_8 }
+        - call: { external: client.fetch, args: ["accountId + 9"], returns: Profile, result: $e_9 }
+        - call: { external: client.fetch, args: ["accountId + 10"], returns: Profile, result: $e_10 }
+    - { path: [throws], absent: true }
