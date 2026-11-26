@@ -32,6 +32,22 @@ function codeBlock(code, lang) {
 }
 md.renderer.rules.fence = (tokens, i) => codeBlock(tokens[i].content, tokens[i].info.trim().split(/\s+/)[0]);
 
+// Color only the explicitly annotated before/after columns, in live and exported pages.
+md.core.ruler.after('inline', 'rewrite_columns', ({ tokens }) => {
+  const styles = new Map([['🟠 原式', 'rewrite-before'], ['🟢 改写后', 'rewrite-after']]);
+  let columns, index;
+  for (const [i, token] of tokens.entries()) {
+    if (token.type === 'table_open') columns = [];
+    if (token.type === 'table_close') columns = undefined;
+    if (!columns) continue;
+    if (token.type === 'tr_open') index = 0;
+    if (token.type !== 'th_open' && token.type !== 'td_open') continue;
+    if (token.type === 'th_open') columns[index] = styles.get(tokens[i + 1]?.content);
+    if (columns[index]) token.attrJoin('class', columns[index]);
+    index++;
+  }
+});
+
 async function designFiles(root, folder) {
   const files = [];
   for (const entry of await readdir(join(root, folder), { withFileTypes: true })) {

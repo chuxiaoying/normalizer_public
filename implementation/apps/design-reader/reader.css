@@ -73,6 +73,9 @@ kbd { font: 11px/17px var(--mono); border: 1px solid var(--line); border-radius:
 #article :not(pre)>code { color: #224f52; background: #e9eee7; border-radius: 3px; padding: 1px 4px; overflow-wrap: anywhere; }
 .table-wrap { overflow-x: auto; margin: 15px 0 20px; }
 #article table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.7; }
+#article table .rewrite-before { background: #fff4e6; color: #68340e; }
+#article table .rewrite-after { background: #e9f6ef; color: #164f37; }
+#article table .rewrite-before code, #article table .rewrite-after code { color: inherit; background: transparent; }
 #article th, #article td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 #article th { color: var(--ink); background: #ebeee5; font-size: 12px; font-weight: 650; border-top: 1px solid var(--line); }
 #article td a { font-weight: 550; }
