@@ -471,29 +471,8 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
         } => project_boolean_condition_under_domain(value, domain),
         ExprKind::CaseWhen { branches } =>
             project_case_under_domain(value, branches, domain, project_value_under_domain),
-        ExprKind::RelationAggregate {
-            kind,
-            relation,
-            select_expr,
-            default_expr,
-        } => {
-            let projected_select = select_expr
-                .as_ref()
-                .map(|expr| project_value_under_domain(expr, domain));
-            let projected_default = default_expr
-                .as_ref()
-                .map(|expr| project_value_under_domain(expr, domain));
-            if projected_select != *select_expr || projected_default != *default_expr {
-                Expr::new(ExprKind::RelationAggregate {
-                    kind: *kind,
-                    relation: relation.clone(),
-                    select_expr: projected_select,
-                    default_expr: projected_default,
-                })
-            } else {
-                value.clone()
-            }
-        }
+        // A host branch is not proof about values bound inside a relation.
+        // Relation projection has its own same-row proof.
         _ => value.clone(),
     }
 }
@@ -848,10 +827,8 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         out.push((crate::builder::lit_bool(true), default));
     }
 
-    if out.len() >= branches.len() {
-        return (branches.to_vec(), false);
-    }
-
+    // A merged reachable group removes one arm. If the old default was
+    // unreachable, losing that original arm pays for reattaching it.
     (out, true)
 }
 

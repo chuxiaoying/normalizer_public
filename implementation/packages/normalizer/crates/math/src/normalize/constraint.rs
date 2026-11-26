@@ -76,53 +76,26 @@ pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint>
 ///
 /// 前提：调用方已确认 `a.subject == b.subject`。
 pub(crate) fn bounds_contradict(a: ConstraintBound, b: ConstraintBound) -> bool {
-    // 对称性：检查 (a, b) 和 (b, a)
-    check_ordered_contradiction(a, b) || check_ordered_contradiction(b, a)
+    use ConstraintBound::*;
+    match (a, b) {
+        (Eq(point), bound) | (bound, Eq(point)) => !point_satisfies(bound, point),
+        (Gt(lo), Lt(hi)) | (Lt(hi), Gt(lo))
+        | (Gt(lo), Le(hi)) | (Le(hi), Gt(lo))
+        | (Ge(lo), Lt(hi)) | (Lt(hi), Ge(lo)) => hi <= lo,
+        (Ge(lo), Le(hi)) | (Le(hi), Ge(lo)) => hi < lo,
+        _ => false,
+    }
 }
 
-/// 单向矛盾检查（不对称部分）。
-fn check_ordered_contradiction(existing: ConstraintBound, new: ConstraintBound) -> bool {
+fn point_satisfies(bound: ConstraintBound, point: i64) -> bool {
     use ConstraintBound::*;
-
-    match existing {
-        // existing: subject > a
-        Gt(a) => match new {
-            Lt(b) => b <= a, // x > a && x < b: 矛盾当 b <= a  (e.g. x>4 && x<4, x>4 && x<3)
-            Le(b) => b <= a, // x > a && x <= b: 矛盾当 b <= a (e.g. x>4 && x<=4)
-            _ => false,
-        },
-        // existing: subject >= a
-        Ge(a) => match new {
-            Lt(b) => b <= a, // x >= a && x < b: 矛盾当 b <= a (e.g. x>=4 && x<4)
-            Le(b) => b < a,  // x >= a && x <= b: 矛盾当 b < a (e.g. x>=4 && x<=3)
-            _ => false,
-        },
-        // existing: subject < a
-        Lt(a) => match new {
-            Gt(b) => b >= a, // x < a && x > b: 矛盾当 b >= a (e.g. x<4 && x>4, x<4 && x>5)
-            Ge(b) => b >= a, // x < a && x >= b: 矛盾当 b >= a (e.g. x<4 && x>=4)
-            _ => false,
-        },
-        // existing: subject <= a
-        Le(a) => match new {
-            Gt(b) => b >= a, // x <= a && x > b: 矛盾当 b >= a (e.g. x<=4 && x>4)
-            Ge(b) => b > a,  // x <= a && x >= b: 矛盾当 b > a (e.g. x<=4 && x>=5)
-            _ => false,
-        },
-        // existing: subject == a
-        Eq(a) => match new {
-            Ne(b) => b == a, // x == a && x != a
-            Eq(b) => b != a, // x == a && x == b (a != b)
-            Gt(b) => a <= b, // x == a && x > b: 矛盾当 a <= b (e.g. x==4 && x>4)
-            Ge(b) => a < b,  // x == a && x >= b: 矛盾当 a < b (e.g. x==4 && x>=5)
-            Lt(b) => a >= b, // x == a && x < b: 矛盾当 a >= b (e.g. x==4 && x<4)
-            Le(b) => a > b,  // x == a && x <= b: 矛盾当 a > b (e.g. x==4 && x<=3)
-        },
-        // existing: subject != a
-        Ne(a) => match new {
-            Eq(b) => b == a, // x != a && x == a
-            _ => false,
-        },
+    match bound {
+        Gt(value) => point > value,
+        Ge(value) => point >= value,
+        Lt(value) => point < value,
+        Le(value) => point <= value,
+        Eq(value) => point == value,
+        Ne(value) => point != value,
     }
 }
 
@@ -131,47 +104,16 @@ fn check_ordered_contradiction(existing: ConstraintBound, new: ConstraintBound) 
 /// 前提：调用方已确认 subject 相同。
 pub(crate) fn bound_implies(existing: ConstraintBound, target: ConstraintBound) -> bool {
     use ConstraintBound::*;
-
-    match existing {
-        // x > a implies:
-        Gt(a) => match target {
-            Gt(b) => a >= b, // x > a → x > b when a >= b (e.g. x>5 → x>4)
-            Ge(b) => a >= b, // x > a → x >= b when a >= b (e.g. x>5 → x>=5)
-            Ne(b) => b <= a, // x > a → x != b when b <= a (e.g. x>5 → x!=5, x!=4)
-            Lt(_) | Le(_) | Eq(_) => false,
-        },
-        // x >= a implies:
-        Ge(a) => match target {
-            Gt(b) => a > b,  // x >= a → x > b when a > b (e.g. x>=5 → x>4)
-            Ge(b) => a >= b, // x >= a → x >= b when a >= b (e.g. x>=5 → x>=4)
-            Ne(b) => b < a,  // x >= a → x != b when b < a (e.g. x>=5 → x!=4)
-            Lt(_) | Le(_) | Eq(_) => false,
-        },
-        // x < a implies:
-        Lt(a) => match target {
-            Lt(b) => a <= b, // x < a → x < b when a <= b (e.g. x<4 → x<5)
-            Le(b) => i128::from(a) <= i128::from(b) + 1, // x < a → x <= b when a <= b+1 (e.g. x<5 → x<=4)
-            Ne(b) => b >= a, // x < a → x != b when b >= a (e.g. x<4 → x!=4, x!=5)
-            Gt(_) | Ge(_) | Eq(_) => false,
-        },
-        // x <= a implies:
-        Le(a) => match target {
-            Lt(b) => a < b,  // x <= a → x < b when a < b (e.g. x<=4 → x<5)
-            Le(b) => a <= b, // x <= a → x <= b when a <= b (e.g. x<=4 → x<=5)
-            Ne(b) => b > a,  // x <= a → x != b when b > a (e.g. x<=4 → x!=5)
-            Gt(_) | Ge(_) | Eq(_) => false,
-        },
-        // x == a implies:
-        Eq(a) => match target {
-            Eq(b) => a == b, // x == a → x == b when a == b
-            Ne(b) => a != b, // x == a → x != b when a != b
-            Gt(b) => a > b,  // x == a → x > b when a > b (e.g. x==5 → x>4)
-            Ge(b) => a >= b, // x == a → x >= b when a >= b
-            Lt(b) => a < b,  // x == a → x < b when a < b (e.g. x==3 → x<4)
-            Le(b) => a <= b, // x == a → x <= b when a <= b
-        },
-        // x != a: very limited implication
-        Ne(_) => false,
+    match (existing, target) {
+        (Eq(point), required) => point_satisfies(required, point),
+        (Ne(_), _) => false,
+        (known, Ne(point)) => !point_satisfies(known, point),
+        (Gt(a), Gt(b) | Ge(b)) | (Ge(a), Ge(b)) => a >= b,
+        (Ge(a), Gt(b)) => a > b,
+        (Lt(a), Lt(b)) | (Le(a), Le(b)) => a <= b,
+        (Lt(a), Le(b)) => i128::from(a) <= i128::from(b) + 1,
+        (Le(a), Lt(b)) => a < b,
+        _ => false,
     }
 }
 

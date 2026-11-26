@@ -27,16 +27,10 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     if let Some(r) = simplify_reflexive_equality(expr) {
         return r;
     }
-    if let Some(r) = simplify_positive_heap_ref_identity(expr) {
+    if let Some(r) = simplify_reference_comparison(expr) {
         return r;
     }
     if let Some(r) = simplify_same_subject_offset_comparison(expr) {
-        return r;
-    }
-    if let Some(r) = simplify_symmetric_eq_ne_null_orientation(expr) {
-        return r;
-    }
-    if let Some(r) = simplify_positive_heap_ref_compare_null(expr) {
         return r;
     }
     if let Some(r) = simplify_sub_compare_zero(expr) {
@@ -163,24 +157,22 @@ fn simplify_reflexive_equality(expr: &Expr) -> Option<Expr> {
     }
 }
 
-/// Concrete positive HeapRefs carry executor-established object identity.
-/// Distinct positive ids are unequal, while different negative ids remain
-/// symbolic nullable references and must not be compared by shape alone.
-fn simplify_positive_heap_ref_identity(expr: &Expr) -> Option<Expr> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    let (Some(left_id), Some(right_id)) = (left.as_heap_ref(), right.as_heap_ref()) else {
-        return None;
-    };
-    if left_id <= 0 || right_id <= 0 || left_id == right_id {
+/// Only fresh positive HeapRefs prove nonnull identity; negative HeapRefs
+/// remain potentially aliased and nullable. Otherwise give null one direction.
+fn simplify_reference_comparison(expr: &Expr) -> Option<Expr> {
+    let (op, left, right) = expr.as_binop()?;
+    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
         return None;
     }
-    match op {
-        BinOpKind::Eq => Some(crate::builder::lit_bool(false)),
-        BinOpKind::Ne => Some(crate::builder::lit_bool(true)),
-        _ => None,
+    let positive = |value: &Expr| value.as_heap_ref().filter(|id| *id > 0);
+    let distinct_positive =
+        matches!((positive(left), positive(right)), (Some(a), Some(b)) if a != b);
+    let positive_vs_null = (left.is_null() && positive(right).is_some())
+        || (right.is_null() && positive(left).is_some());
+    if distinct_positive || positive_vs_null {
+        return Some(crate::builder::lit_bool(op == BinOpKind::Ne));
     }
+    (left.is_null() && !right.is_null()).then(|| binop(op, right.clone(), left.clone()))
 }
 
 /// 同 subject 偏移量比较化简。
@@ -227,61 +219,6 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
         _ => return None,
     };
     Some(crate::builder::lit_bool(result))
-}
-
-/// 对称 Eq/Ne 的 null 方向规范化。
-///
-/// `x == null` 与 `null == x` 在 Java/PERST 语义下等价；`!=` 同理。
-/// 将 null literal 固定到右侧，可让后续布尔吸收、互补判定和 CaseWhen
-/// first-match normal form 使用结构相等命中同一数学事实，例如：
-///
-/// `x == null || (null == x && flag) -> x == null`
-fn simplify_symmetric_eq_ne_null_orientation(expr: &Expr) -> Option<Expr> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-        return None;
-    }
-    if left.is_null() && !right.is_null() {
-        return Some(Expr::new(ExprKind::BinOp {
-            op: *op,
-            left: right.clone(),
-            right: left.clone(),
-        }));
-    }
-    None
-}
-
-/// Positive HeapRef values are executor-created Java objects and therefore non-null.
-///
-/// HeapRef sign is part of the executor/math contract: positive ids denote fresh
-/// concrete objects created by `new`/runtime materialization, while negative ids
-/// denote symbolic P/E references that may be null.  Once a positive HeapRef has
-/// reached math as a value atom, comparing it with null is a Java reference
-/// identity tautology/contradiction.  This removes object-snapshot null guards
-/// such as `null == {billId: row.item}` after row-scope heap absorption without
-/// guessing anything about negative external references.
-fn simplify_positive_heap_ref_compare_null(expr: &Expr) -> Option<Expr> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-        return None;
-    }
-
-    // The preceding Eq/Ne orientation owns null on the left.
-    if !right.is_null() {
-        return None;
-    }
-    let Some(heap_id) = left.as_heap_ref() else {
-        return None;
-    };
-    if heap_id <= 0 {
-        return None;
-    }
-
-    Some(crate::builder::lit_bool(matches!(op, BinOpKind::Ne)))
 }
 
 /// `(x - y) op 0 → x op y`。
