@@ -28,3 +28,9 @@
   edits:
     - { from: 'return (Upper) + 1;', to: 'return (long[]) +1;' }
   reject: ['[SOURCE-PARSE-FAILED]', 'expected expression']
+- name: primitive-prefix-identifiers-start-grouped-values
+  edits:
+    - { from: 'long Upper = value;', to: 'long longValue = value, long_value = 2, long$value = 3;' }
+    - { from: 'return (Upper) + 1;', to: 'return (longValue) + (long_value) + (long$value);' }
+  expect:
+    - { path: [R], value: 'value + 5' }

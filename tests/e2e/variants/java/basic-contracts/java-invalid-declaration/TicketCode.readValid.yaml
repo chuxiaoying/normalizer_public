@@ -438,3 +438,19 @@
 - name: a-marker-like-comment-is-still-ordinary-java-trivia
   edits:
     - { from: 'return value;', to: '/* @normalizer-irSuffix ordinary trivia */ return value;' }
+- name: dollar-can-start-or-continue-a-java-local
+  edits:
+    - { from: 'return value;', to: 'int $left = 1; int right$ = 2; return value + $left + right$;' }
+  expect:
+    - { path: [R], value: 'value + 3' }
+- name: final-line-comment-does-not-need-a-line-terminator
+  edits:
+    - from: "    static native int booleanValue();\n}\n"
+      to: "    static native int booleanValue();\n} // comment at EOF"
+- name: unicode-text-keeps-escaped-quote-and-comment-delimiters
+  edits:
+    - from: 'static int readValid(int value) { return value; }'
+      to: 'static String readValid(int value) { return "甲\"/* } */ //"; }'
+  expect:
+    - { path: [entry, returns], value: text }
+    - { path: [R], value: '"甲\"/* } */ //"' }

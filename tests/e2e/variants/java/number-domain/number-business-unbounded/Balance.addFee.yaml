@@ -307,3 +307,15 @@
       to: "return (balance + 1.0) - (balance + 1);"
   expect:
     - { path: [R], value: '0' }
+- name: signed-integer-minimum-prefix-with-float-suffix-is-one-float
+  edits:
+    - { from: 'static int addFee', to: 'static float addFee' }
+    - { from: 'return balance + fee;', to: 'return -2147483648f;' }
+  expect:
+    - { path: [R], value: '-2147483648' }
+- name: signed-integer-minimum-prefix-with-decimal-point-is-one-double
+  edits:
+    - { from: 'static int addFee', to: 'static double addFee' }
+    - { from: 'return balance + fee;', to: 'return -2147483648.0;' }
+  expect:
+    - { path: [R], value: '-2147483648' }
