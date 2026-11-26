@@ -702,24 +702,11 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
         } if matches!(target_type, JavaType::Primitive(n) if n == "long") => {
             expr(operand, at, calls)?
         }
-        E::BinOp { op, left, right }
-            if matches!(
-                op,
-                B::Eq
-                    | B::Ne
-                    | B::Lt
-                    | B::Le
-                    | B::Gt
-                    | B::Ge
-                    | B::And
-                    | B::Or
-                    | B::Add
-                    | B::Sub
-                    | B::Mul
-                    | B::Div
-                    | B::Mod
-            ) =>
-        {
+        E::BinOp {
+            op: B::Eq | B::Ne | B::Lt | B::Le | B::Gt | B::Ge | B::And | B::Or
+                | B::Add | B::Sub | B::Mul | B::Div | B::Mod,
+            left, right,
+        } => {
             expr(left, at, calls)?;
             expr(right, at, calls)?;
         }

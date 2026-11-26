@@ -282,87 +282,36 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(crate) fn skip_string_lit(&mut self) {
+    fn skip_quoted(&mut self, delimiter: u8) {
         self.pos += 1;
         while let Some(c) = self.peek() {
-            if c == b'\\' {
-                self.pos += 2;
-                continue;
-            }
             self.pos += 1;
-            if c == b'"' {
-                break;
-            }
-        }
-    }
-
-    pub(crate) fn skip_char_lit(&mut self) {
-        self.pos += 1;
-        while let Some(c) = self.peek() {
-            if c == b'\\' {
-                self.pos += 2;
-                continue;
-            }
-            self.pos += 1;
-            if c == b'\'' {
-                break;
+            match c {
+                b'\\' => self.pos += 1,
+                c if c == delimiter => break,
+                _ => {}
             }
         }
     }
 
     pub(crate) fn skip_balanced_braces(&mut self) -> Result<&'a str, ParseError> {
         self.require_delimiter(b'{', "expected '{'")?;
-        let start = self.pos;
-        let mut depth: i32 = 1;
-        while let Some(c) = self.peek() {
-            match c {
-                b'{' => {
-                    depth += 1;
-                    self.pos += 1;
-                }
-                b'}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        // ASCII braces delimit a slice of the already decoded source.
-                        let body = &self.source[start..self.pos];
-                        self.pos += 1;
-                        return Ok(body);
-                    }
-                    self.pos += 1;
-                }
-                b'"' => {
-                    self.skip_string_lit();
-                }
-                b'\'' => {
-                    self.skip_char_lit();
-                }
-                b'/' if self.peek_at(1) == Some(b'/') => {
-                    // line comment: skip to end of line
-                    self.skip_line_comment();
-                }
-                b'/' if self.peek_at(1) == Some(b'*') => {
-                    // block comment (incl. JavaDoc): skip to */
-                    self.skip_block_comment()?;
-                }
-                _ => {
-                    self.pos += 1;
-                }
-            }
-        }
-        Err(self.err("unclosed '{'"))
+        self.skip_balanced_body(b'{', b'}', "unclosed '{'")
     }
 
-    fn skip_balanced_parens(&mut self) -> Result<&'a str, ParseError> {
-        self.pos += 1; // read_annotations has already matched the opening parenthesis.
+    // Both callers have consumed their ASCII opener in the decoded source.
+    fn skip_balanced_body(
+        &mut self, opening: u8, closing: u8, unclosed: &str,
+    ) -> Result<&'a str, ParseError> {
         let start = self.pos;
-        let mut depth: i32 = 1;
+        let mut depth = 1i32;
         while let Some(c) = self.peek() {
             match c {
-                b'(' => {
+                c if c == opening => {
                     depth += 1;
                     self.pos += 1;
                 }
-                b')' => {
+                c if c == closing => {
                     depth -= 1;
                     if depth == 0 {
                         let body = &self.source[start..self.pos];
@@ -371,24 +320,13 @@ impl<'a> Parser<'a> {
                     }
                     self.pos += 1;
                 }
-                b'"' => {
-                    self.skip_string_lit();
-                }
-                b'\'' => {
-                    self.skip_char_lit();
-                }
-                b'/' if self.peek_at(1) == Some(b'/') => {
-                    self.skip_line_comment();
-                }
-                b'/' if self.peek_at(1) == Some(b'*') => {
-                    self.skip_block_comment()?;
-                }
-                _ => {
-                    self.pos += 1;
-                }
+                b'"' | b'\'' => self.skip_quoted(c),
+                b'/' if self.peek_at(1) == Some(b'/') => self.skip_line_comment(),
+                b'/' if self.peek_at(1) == Some(b'*') => self.skip_block_comment()?,
+                _ => self.pos += 1,
             }
         }
-        Err(self.err("unclosed '('"))
+        Err(self.err(unclosed))
     }
 
     fn parse_nominal_base(&mut self) -> Result<String, ParseError> {
@@ -444,7 +382,8 @@ impl<'a> Parser<'a> {
                 .ok_or_else(|| self.err("expected annotation name"))?;
             self.skip_ws();
             let has_arguments = if self.peek() == Some(b'(') {
-                let inner = self.skip_balanced_parens()?;
+                self.pos += 1;
+                let inner = self.skip_balanced_body(b'(', b')', "unclosed '('")?;
                 let mut contents = Parser::new(inner, &self.file);
                 contents.skip_ws();
                 contents.peek().is_some()
@@ -499,42 +438,26 @@ impl<'a> Parser<'a> {
         Ok(JavaProgram { classes })
     }
 
+    fn take_class_kind(&mut self) -> Result<Option<bool>, ParseError> {
+        if self.eat_keyword("class") {
+            Ok(Some(false))
+        } else if self.eat_keyword("interface") {
+            Ok(Some(true))
+        } else if self.eat_keyword("enum") {
+            Err(self.err("enum requires explicit preprocessing"))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_class(&mut self) -> Result<JavaClass, ParseError> {
         let annotations = self.read_annotations()?;
-
-        loop {
-            self.skip_ws();
-            let mut consumed = false;
-            for kw in &[
-                "public",
-                "private",
-                "protected",
-                "static",
-                "final",
-                "abstract",
-                "sealed",
-                "strictfp",
-            ] {
-                if self.eat_keyword(kw) {
-                    consumed = true;
-                    break;
-                }
-            }
-            if !consumed {
-                break;
-            }
-        }
-
-        self.skip_ws();
-        let is_interface = if self.eat_keyword("class") {
-            false
-        } else if self.eat_keyword("interface") {
-            true
-        } else if self.eat_keyword("enum") {
-            return Err(self.err("enum requires explicit preprocessing"));
-        } else {
-            return Err(self.err("expected class or interface declaration"));
-        };
+        let modifiers = [
+            "public", "private", "protected", "static", "final", "abstract", "sealed", "strictfp",
+        ];
+        while modifiers.iter().any(|keyword| self.eat_keyword(keyword)) {}
+        let is_interface = self.take_class_kind()?
+            .ok_or_else(|| self.err("expected class or interface declaration"))?;
 
         let simple_name = self
             .read_ident()
@@ -666,16 +589,7 @@ fn parse_class_body(
         if let Some(at) = synchronized_at.filter(|_| !is_native) {
             return Err(p.err_at(at, "[JAVA-MONITOR] synchronized method requires explicit preprocessing"));
         }
-        let nested_kind = if p.eat_keyword("class") {
-            Some(false)
-        } else if p.eat_keyword("interface") {
-            Some(true)
-        } else if p.eat_keyword("enum") {
-            return Err(p.err("enum requires explicit preprocessing"));
-        } else {
-            None
-        };
-        if let Some(nested_is_interface) = nested_kind {
+        if let Some(nested_is_interface) = p.take_class_kind()? {
             if is_native {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] a nested type cannot be native"));
             }
