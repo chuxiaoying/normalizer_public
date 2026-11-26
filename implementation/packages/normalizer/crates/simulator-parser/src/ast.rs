@@ -229,10 +229,15 @@ pub enum JavaStatement {
         java_type: JavaType,
         name: String,
         initializer: Option<JavaExpr>,
+        is_final: bool,
     },
 
     /// 赋值：`x = expr;` / `obj.field = expr;` / `arr[i] = expr;`
-    Assign { target: JavaExpr, value: JavaExpr },
+    Assign {
+        target: JavaExpr,
+        value: JavaExpr,
+        is_compound: bool,
+    },
 
     /// 纯表达式语句：`foo();` / `x++;`
     ExprStmt(JavaExpr),
@@ -361,6 +366,9 @@ pub enum JavaExpr {
     Assign {
         target: Box<JavaExpr>,
         value: Box<JavaExpr>,
+        // The value is lowered to a binary expression for compound assignments.
+        // Source admission still needs the original assignment conversion.
+        is_compound: bool,
     },
 
     /// 一元运算。

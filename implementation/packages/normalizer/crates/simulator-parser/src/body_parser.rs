@@ -118,11 +118,12 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         // 赋值表达式在 statement 位置仍归一为 JavaStatement::Assign，
         // 让 loop lift / 静态分析等 statement-level 语义继续看到赋值信号。
-        if let JavaExpr::Assign { target, value } = expr {
+        if let JavaExpr::Assign { target, value, is_compound } = expr {
             self.require_semicolon("assignment")?;
             return Ok(JavaStatement::Assign {
                 target: *target,
                 value: *value,
+                is_compound,
             });
         }
         self.require_semicolon("expression statement")?;
@@ -423,7 +424,8 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let annotation_at = self.pos;
         let mut annotations = self.read_annotations()?;
-        if self.eat_keyword("final") {
+        let is_final = self.eat_keyword("final");
+        if is_final {
             annotations.extend(self.read_annotations()?);
         }
         if annotations.iter().any(|annotation| annotation.name() != "java.lang.SuppressWarnings") {
@@ -489,6 +491,7 @@ impl<'a> Parser<'a> {
                 name: n2,
                 java_type: ty2,
                 initializer: i2,
+                is_final,
             });
             self.skip_ws();
         }
@@ -498,6 +501,7 @@ impl<'a> Parser<'a> {
             name,
             java_type: ty,
             initializer: init,
+            is_final,
         };
         Ok(Some((main, extras)))
     }
@@ -519,6 +523,7 @@ impl<'a> Parser<'a> {
             return Ok(JavaExpr::Assign {
                 target: Box::new(target),
                 value: Box::new(value),
+                is_compound: false,
             });
         }
         if let Some(op) = self.try_compound_assign_op() {
@@ -531,6 +536,7 @@ impl<'a> Parser<'a> {
             return Ok(JavaExpr::Assign {
                 target: Box::new(target),
                 value: Box::new(value),
+                is_compound: true,
             });
         }
         Ok(target)

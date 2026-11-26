@@ -1,0 +1,43 @@
+- name: simple-assignment-is-not-the-compound-conversion
+  edits:
+    - { from: 'value += 99L;', to: 'value = value + 99L;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'assignment to value', 'cannot implicitly narrow']
+- name: overwriting-an-illegal-assignment-does-not-make-source-valid
+  edits:
+    - { from: 'value += 99L;', to: 'value = 99L; value = 1;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'assignment to value', 'cannot implicitly narrow']
+- name: an-illegal-declaration-initializer-is-not-masked
+  edits:
+    - { from: 'int value = 99;', to: 'int value = 99L;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'initializer for value', 'cannot implicitly narrow']
+- name: a-long-return-cannot-implicitly-narrow-to-int
+  edits:
+    - { from: 'return value;', to: 'return value + 1L;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'return cannot implicitly narrow']
+- name: array-element-initialization-uses-the-same-conversion
+  edits:
+    - { from: 'value += 99L;', to: 'int[] slots = new int[] { 99L };' }
+  reject: ['[NORM-SOURCE-TYPE]', 'array initializer cannot implicitly narrow']
+- name: using-long-throughout-is-legal
+  edits:
+    - { from: 'static int read()', to: 'static long read()' }
+    - { from: 'int value = 99;', to: 'long value = 99L;' }
+- name: legal-byte-compound-assignment-has-no-business-wrap
+  edits:
+    - { from: 'int value = 99;', to: 'byte value = 127;' }
+    - { from: 'value += 99L;', to: 'value += 1;' }
+  expect:
+    - { path: [R], value: '128' }
+- name: an-initialized-final-local-cannot-be-assigned-again
+  edits:
+    - { from: 'int value = 99;', to: 'final int value = 99;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'cannot update final local value']
+- name: a-finite-loop-still-cannot-increment-final
+  edits:
+    - { from: 'value += 99L;', to: 'for (final int i = 1; i < 4; i++) value += i;' }
+  reject: ['[NORM-SOURCE-TYPE]', 'cannot update final local i']
+- name: an-otherwise-identical-mutable-loop-counter-is-valid
+  edits:
+    - { from: 'value += 99L;', to: 'for (int i = 1; i < 4; i++) value += i;' }
+  expect:
+    - { path: [R], value: '105' }

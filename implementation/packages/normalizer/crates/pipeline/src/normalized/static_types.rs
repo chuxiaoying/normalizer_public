@@ -89,7 +89,40 @@ fn native_literal_compiles(digits: &str, radix: u32, power: i32, single: bool) -
     (&num << tiny) > den && num < overflow_midpoint * den
 }
 
-type Scope = BTreeMap<String, JavaType>;
+type Scope = BTreeMap<String, Binding>;
+
+#[derive(Clone)]
+struct Binding {
+    ty: JavaType,
+    initialized_final: bool,
+}
+
+impl Binding {
+    fn plain(ty: JavaType) -> Self {
+        Self { ty, initialized_final: false }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IntegerWidth {
+    IntFamily,
+    Long,
+}
+
+impl IntegerWidth {
+    fn declared(ty: &JavaType) -> Option<Self> {
+        match ty {
+            JavaType::Primitive(name) if name == "long" => Some(Self::Long),
+            JavaType::Primitive(name) if matches!(name.as_str(), "byte" | "short" | "char" | "int") =>
+                Some(Self::IntFamily),
+            _ => None,
+        }
+    }
+
+    fn promote(self, other: Self) -> Self {
+        if self == Self::Long || other == Self::Long { Self::Long } else { Self::IntFamily }
+    }
+}
 
 struct Admission<'a> {
     program: &'a JavaProgram,
@@ -107,7 +140,7 @@ impl Admission<'_> {
     }
 
     fn binding<'a>(&'a self, name: &str, scope: &'a Scope) -> Option<&'a JavaType> {
-        scope.get(name).or_else(|| {
+        scope.get(name).map(|binding| &binding.ty).or_else(|| {
             self.class.fields().iter().find(|field| {
                 field.name() == name && (!self.method.is_static() || field.is_static())
             }).map(|field| field.java_type())
@@ -190,8 +223,11 @@ impl Admission<'_> {
                 for arg in args { self.expression(arg, scope)?; }
                 declared()
             }
-            E::ArrayInitializer { elements, .. } => {
-                for element in elements { self.expression(element, scope)?; }
+            E::ArrayInitializer { element_type, elements } => {
+                for element in elements {
+                    self.expression(element, scope)?;
+                    self.reject_long_narrowing(Some(element_type), element, scope, "array initializer")?;
+                }
                 Kind::Sequence
             }
             E::ArrayAllocation { length, .. } => {
@@ -235,6 +271,9 @@ impl Admission<'_> {
             // Structural source admission rejects expression-level assignment.
             E::Assign { .. } => Kind::Unresolved,
             E::UnaryOp { op, operand } => {
+                if matches!(*op, U::PreInc | U::PreDec | U::PostInc | U::PostDec) {
+                    self.check_writable(operand, scope)?;
+                }
                 let kind = self.expression(operand, scope)?;
                 if kind == Kind::DecimalCarrier {
                     return Err(self.diagnostic("NORM-DECIMAL-OP", "Java unary operators do not perform BigDecimal arithmetic"));
@@ -287,32 +326,79 @@ impl Admission<'_> {
         Ok(())
     }
 
-    fn assignment(&self, target: &E, expected: Kind, actual: Kind) -> Result<(), String> {
+    // Source width proves assignment conversion before evaluation. It never
+    // changes the normalized, exact business-number representation.
+    fn integer_width(&self, expr: &E, scope: &Scope) -> Option<IntegerWidth> {
+        match expr {
+            E::Lit(JavaLit::Int(_) | JavaLit::Char(_)) => Some(IntegerWidth::IntFamily),
+            E::Lit(JavaLit::Long(_)) => Some(IntegerWidth::Long),
+            E::UnaryOp { op: U::Neg, operand } => self.integer_width(operand, scope),
+            E::BinOp { op: B::Add | B::Sub | B::Mul | B::Div | B::Mod, left, right } =>
+                Some(self.integer_width(left, scope)?.promote(self.integer_width(right, scope)?)),
+            E::Ternary { then_expr, else_expr, .. } =>
+                Some(self.integer_width(then_expr, scope)?.promote(self.integer_width(else_expr, scope)?)),
+            E::Ident(_) | E::ArrayAccess { .. } | E::FieldAccess { .. }
+                | E::MethodCall { .. } | E::Cast { .. } =>
+                IntegerWidth::declared(&self.declared_type(expr, scope)?),
+            _ => None,
+        }
+    }
+
+    fn reject_long_narrowing(&self, expected: Option<&JavaType>, value: &E, scope: &Scope, label: &str) -> Result<(), String> {
+        if expected.and_then(IntegerWidth::declared) == Some(IntegerWidth::IntFamily)
+            && self.integer_width(value, scope) == Some(IntegerWidth::Long)
+        {
+            return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                "{label} cannot implicitly narrow a long expression")));
+        }
+        Ok(())
+    }
+
+    fn check_writable(&self, target: &E, scope: &Scope) -> Result<(), String> {
+        if let E::Ident(name) = target {
+            if scope.get(name).is_some_and(|binding| binding.initialized_final) {
+                return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                    "cannot update final local {name}")));
+            }
+        }
+        Ok(())
+    }
+
+    fn assignment(&self, target: &E, value: &E, is_compound: bool, scope: &Scope) -> Result<(), String> {
+        self.check_writable(target, scope)?;
+        let expected = self.expression(target, scope)?;
+        let actual = self.expression(value, scope)?;
         let label = match target {
             E::Ident(name) => format!("assignment to {name}"),
             E::FieldAccess { field, .. } => format!("assignment to {field}"),
             _ => "assignment".into(),
         };
+        if !is_compound {
+            self.reject_long_narrowing(self.declared_type(target, scope).as_ref(), value, scope, &label)?;
+        }
         self.compatible(expected, actual, &label)
     }
 
     fn block(&self, body: &[S], scope: &mut Scope) -> Result<(), String> {
         for statement in body {
             match statement {
-                S::VarDecl { java_type, name, initializer } => {
+                S::VarDecl { java_type, name, initializer, is_final } => {
                     if let Some(value) = initializer {
                         let actual = self.expression(value, scope)?;
-                        self.compatible(Kind::declared(java_type), actual, &format!("initializer for {name}"))?;
+                        let label = format!("initializer for {name}");
+                        self.reject_long_narrowing(Some(java_type), value, scope, &label)?;
+                        self.compatible(Kind::declared(java_type), actual, &label)?;
                     }
-                    scope.insert(name.clone(), java_type.clone());
+                    scope.insert(name.clone(), Binding {
+                        ty: java_type.clone(), initialized_final: *is_final && initializer.is_some(),
+                    });
                 }
-                S::Assign { target, value } => {
-                    let expected = self.expression(target, scope)?;
-                    let actual = self.expression(value, scope)?;
-                    self.assignment(target, expected, actual)?;
+                S::Assign { target, value, is_compound } => {
+                    self.assignment(target, value, *is_compound, scope)?;
                 }
                 S::Return(Some(value)) => {
                     let actual = self.expression(value, scope)?;
+                    self.reject_long_narrowing(Some(self.method.return_type()), value, scope, "return")?;
                     self.compatible(Kind::declared(self.method.return_type()), actual, "return")?;
                 }
                 S::If { cond, then_block, else_block } => {
@@ -324,7 +410,7 @@ impl Admission<'_> {
                     self.block(body, &mut scope.clone())?;
                     for handler in catches {
                         let mut handler_scope = scope.clone();
-                        handler_scope.insert(handler.var_name().into(), JavaType::Class(handler.exception_class().into()));
+                        handler_scope.insert(handler.var_name().into(), Binding::plain(JavaType::Class(handler.exception_class().into())));
                         self.block(handler.body(), &mut handler_scope)?;
                     }
                     if let Some(body) = finally_block { self.block(body, &mut scope.clone())?; }
@@ -333,15 +419,16 @@ impl Admission<'_> {
                 S::Throw(value) | S::ExprStmt(value) => { self.expression(value, scope)?; }
                 // Fixed-loop headers and lifted directives have their own
                 // source contract. Visit native bodies with their lexical bindings.
-                S::For { init, body, .. } => {
+                S::For { init, update, body, .. } => {
                     let mut loop_scope = scope.clone();
                     if let Some(init) = init { self.block(std::slice::from_ref(init.as_ref()), &mut loop_scope)?; }
+                    if let Some(update) = update { self.expression(update, &loop_scope)?; }
                     self.block(body, &mut loop_scope)?;
                 }
                 S::ForEach { var_type, var_name, iterable, body } => {
                     self.expression(iterable, scope)?;
                     let mut loop_scope = scope.clone();
-                    loop_scope.insert(var_name.clone(), var_type.clone());
+                    loop_scope.insert(var_name.clone(), Binding::plain(var_type.clone()));
                     self.block(body, &mut loop_scope)?;
                 }
                 // Raw while statements are rejected by structural source admission.
@@ -353,6 +440,6 @@ impl Admission<'_> {
 }
 
 pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S]) -> Result<(), String> {
-    let mut scope = method.params().iter().map(|(ty, name)| (name.clone(), ty.clone())).collect();
+    let mut scope = method.params().iter().map(|(ty, name)| (name.clone(), Binding::plain(ty.clone()))).collect();
     Admission { program, class, method, id }.block(body, &mut scope)
 }

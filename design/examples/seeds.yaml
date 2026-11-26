@@ -19,6 +19,7 @@ java-eager-first: topics/collections/java-eager-first.md
 java-explicit-rollover: topics/number-domain/java-explicit-rollover.md
 java-independent-choice: topics/collections/java-independent-choice.md
 java-invalid-declaration: topics/basic-contracts/java-invalid-declaration.md
+java-assignment-conversion: topics/basic-contracts/java-assignment-conversion.md
 java-grouping-signed-operand: topics/basic-contracts/java-grouping-signed-operand.md
 java-source-name-closure: topics/basic-contracts/java-source-name-closure.md
 java-conditional-type-admission: topics/basic-contracts/java-conditional-type-admission.md

@@ -9,7 +9,7 @@ impl Engine<'_> {
         let [
             S::LocalIr(LocalIr::Stack(Action::PushAll { stack, source: opens })),
             S::LocalIr(LocalIr::Stack(Action::CheckAndPop { stack: popped, source: closes, field, exception })),
-            S::VarDecl { java_type, name, initializer: None },
+            S::VarDecl { java_type, name, initializer: None, .. },
             S::LocalIr(LocalIr::Stack(Action::IsEmpty { stack: tested, binding })),
             ..
         ] = statements else {

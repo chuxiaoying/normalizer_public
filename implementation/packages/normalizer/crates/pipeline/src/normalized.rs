@@ -585,7 +585,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             } if scalar(java_type) || native_decimal_type(java_type) || matches!(java_type, JavaType::Class(_)) || numeric_array(java_type) => {
                 expr(e, at, calls)?
             }
-            S::Assign { target: E::ArrayAccess { target, index }, value }
+            S::Assign { target: E::ArrayAccess { target, index }, value, .. }
                 if constant_array_address(target, index) => {
                 expr(target, at, calls)?;
                 expr(index, at, calls)?;
@@ -594,6 +594,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             S::Assign {
                 target: E::FieldAccess { target, .. },
                 value,
+                ..
             } if matches!(target.as_ref(), E::Ident(_)) => {
                 expr(target, at, calls)?;
                 expr(value, at, calls)?;
@@ -601,6 +602,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             S::Assign {
                 target: E::Ident(_),
                 value,
+                ..
             } => expr(value, at, calls)?,
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
@@ -639,7 +641,7 @@ fn constant_array_address(target: &E, index: &E) -> bool {
 
 // Only a single exact sum update with an element coefficient of one.
 pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)> {
-    let [S::Assign { target: E::Ident(total), value: E::BinOp { op: B::Add, left, right } }] = body else {
+    let [S::Assign { target: E::Ident(total), value: E::BinOp { op: B::Add, left, right }, .. }] = body else {
         return None;
     };
     if item == total || !matches!(left.as_ref(), E::Ident(name) if name == total) {

@@ -378,6 +378,7 @@ impl Engine<'_> {
                     java_type,
                     name,
                     initializer: None,
+                    ..
                 } => {
                     let binds = match body.get(i+1) {
                         Some(S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding })) =>
@@ -403,7 +404,7 @@ impl Engine<'_> {
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding }) => {
                     need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
-                        Some(S::VarDecl { name, java_type, initializer: None }) if name == binding
+                        Some(S::VarDecl { name, java_type, initializer: None, .. }) if name == binding
                             && super::source_map::declared_map(java_type)), "local map requires a fresh typed local declaration")?;
                     env.insert(binding.clone(), Value::LocalTextMap(Default::default()));
                 }
@@ -416,7 +417,7 @@ impl Engine<'_> {
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapGet { binding, source, key, fallback }) => {
                     need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
-                        Some(S::VarDecl { name, java_type, initializer: None }) if name == binding
+                        Some(S::VarDecl { name, java_type, initializer: None, .. }) if name == binding
                             && super::source_map::declared_text(java_type)), "local map read requires an uninitialized text local")?;
                     let method = self.methods[id];
                     let owner = id.rsplit_once('.').and_then(|(owner, _)| self.program.find_class(owner));
@@ -480,14 +481,14 @@ impl Engine<'_> {
                     )?;
                     env.insert(name.clone(), v);
                 }
-                S::Assign { target: J::ArrayAccess { target, index }, value } => {
+                S::Assign { target: J::ArrayAccess { target, index }, value, .. } => {
                     let array = self.java_expr(target, id, env, path.clone())?;
                     let index = self.java_expr(index, id, env, path.clone())?;
                     // A simple store evaluates its RHS before its bounds check.
                     let rhs = self.java_expr(value, id, env, path.clone())?;
                     self.source_array_store(array, index, rhs, path)?;
                 }
-                S::Assign {target: J::Ident(name), value} => {
+                S::Assign {target: J::Ident(name), value, ..} => {
                     if let Some(local) = env.get(name) {
                         let ty = local.ty();
                         need(ty != Ty::LocalTextMap, "local map binding cannot be reassigned as a Java alias")?;
@@ -509,6 +510,7 @@ impl Engine<'_> {
                 S::Assign {
                     target: J::FieldAccess { target, field },
                     value,
+                    ..
                 } => {
                     self.source_field(target, field, id)?;
                     if matches!(target.as_ref(), J::Ident(name) if name == "this") && !env.contains_key("this") {
@@ -548,7 +550,7 @@ impl Engine<'_> {
                     self.execute_source_try(body,catches,finally_block.as_deref(),id,env,path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
-                    let Some(S::VarDecl { name, java_type, initializer: None }) = i.checked_sub(1).and_then(|i| body.get(i)) else {
+                    let Some(S::VarDecl { name, java_type, initializer: None, .. }) = i.checked_sub(1).and_then(|i| body.get(i)) else {
                         return Err(fail("member choice must follow its uninitialized local declaration"));
                     };
                     need(name == binding, "member choice must follow its uninitialized local declaration")?;

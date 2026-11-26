@@ -16,6 +16,8 @@ groups:
     - TicketCode.Nested.readNested
     java-source-name-closure:
     - Catalog.price
+    java-assignment-conversion:
+    - AssignmentConversion.read
     java-grouping-signed-operand:
     - SignedGrouping.read
     java-conditional-type-admission:

@@ -28,6 +28,7 @@ impl<'a> FixedFor<'a> {
             java_type: JavaType::Primitive(ty),
             name,
             initializer: Some(value),
+            ..
         } = init?
         else {
             return None;
@@ -80,7 +81,7 @@ impl<'a> RectangularCounter<'a> {
         let mut bounds = Vec::new();
         let mut counters = std::collections::BTreeSet::<&str>::new();
         while let S::For { init, cond, update, body } = statement {
-            let S::VarDecl { java_type, name, initializer: Some(start) } = init.as_deref()? else { return None; };
+            let S::VarDecl { java_type, name, initializer: Some(start), .. } = init.as_deref()? else { return None; };
             if !super::integral(java_type) || literal(start)? != 0 || !counters.insert(name) { return None; }
             let E::BinOp { op, left, right } = cond.as_ref()? else { return None; };
             let E::Ident(end) = right.as_ref() else { return None; };
@@ -93,7 +94,7 @@ impl<'a> RectangularCounter<'a> {
             let [inner] = body.as_slice() else { return None; };
             statement = inner;
         }
-        let S::Assign { target: E::Ident(target), value: E::BinOp { op: B::Add, left, right } } = statement else { return None; };
+        let S::Assign { target: E::Ident(target), value: E::BinOp { op: B::Add, left, right }, .. } = statement else { return None; };
         if bounds.len() < 2 || counters.contains(target.as_str())
             || bounds.iter().any(|(end, _)| counters.contains(end) || end == target)
         {

@@ -14,6 +14,7 @@
       value: balance + fee + 2
 - name: concrete-intermediate-above-i128-retains-the-full-integer
   edits:
+    - { from: 'static int addFee', to: 'static long addFee' }
     - from: 'return balance + fee;'
       to: |-
         long base = 9223372036854775807L;
