@@ -61,16 +61,7 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
 }
 
 impl Engine<'_> {
-    fn task_id(&self, task: &Value) -> Result<u64> {
-        need(matches!(task.ty(), Ty::Task(_)), "expected a task handle")?;
-        match task.scalar()?.as_sym_var() {
-            Some(SymVarOrigin::Temporal { binding_id, .. }) => Ok(*binding_id),
-            _ => Err(fail("task identity is not closed at this operation")),
-        }
-    }
-
-    fn task_outcome(&self, task: &Value) -> Result<Completion> {
-        let bind = self.task_id(task)?;
+    fn task_outcome(&self, bind: u64) -> Result<Completion> {
         let spec = self.pending_ports.get(&bind).ok_or_else(|| fail("unknown task handle"))?;
         let response = b::external_completion(bind);
         let mut outcome = Completion::Continue;
@@ -119,7 +110,11 @@ impl Engine<'_> {
         let Ty::Task(ty) = task.ty() else {
             return Err(fail("task_wait requires task<T>"));
         };
-        let outcome = self.task_outcome(&task)?;
+        let handle = task.scalar()?;
+        let Some(SymVarOrigin::Temporal { binding_id, .. }) = handle.as_sym_var() else {
+            return Err(fail("task identity is not closed at this operation"));
+        };
+        let outcome = self.task_outcome(*binding_id)?;
         let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);
         self.realtime_completion = self
             .realtime_completion

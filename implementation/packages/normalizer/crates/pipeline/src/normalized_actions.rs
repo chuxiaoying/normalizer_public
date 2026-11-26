@@ -218,11 +218,11 @@ impl Engine<'_> {
         let parent_settled = std::mem::replace(&mut self.settled_task_frame, settled);
         let caller_action_path = self.action_path.clone();
         self.action_path = path;
-        let done = self.action_steps(steps, &mut env.clone(), &ty);
+        let executed = self.action_steps(steps, &mut env.clone(), &ty);
         self.async_depth = caller_async_depth;
         self.settled_task_frame = parent_settled;
         self.action_path = caller_action_path;
-        done?;
+        executed?;
         let local_completion = self.realtime_completion.clone();
         let terminal = local_completion.terminal_alternatives()
             .ok_or_else(|| fail("action has a normal path without method return"))?;
@@ -338,9 +338,8 @@ impl Engine<'_> {
         steps: &[Action],
         env: &mut Env,
         returns: &Ty,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let entry_path = self.action_path.clone();
-        let mut done = false;
         for action in steps {
             self.action_path = math::normalize(b::and(
                 entry_path.clone(),
@@ -350,7 +349,6 @@ impl Engine<'_> {
                 break;
             }
             self.budget()?;
-            need(!done, "unreachable action after completion")?;
             match action {
                 Action::LocalIr { source } => {
                     let normalizer_ir::local::LocalIr::Relation(query) =
@@ -481,32 +479,29 @@ impl Engine<'_> {
                     self.realtime_completion = parent
                         .replace_continue(realtime_state::Completion::from_alternatives(exits));
                     self.realtime_effects.merge_writes_since(start_effects);
-                    done = self.realtime_completion.continuing_guard().as_bool() == Some(false);
                 }
                 Action::Return { value } => {
                     let v = self.action_value(value, env)?;
                     need(v.ty() == *returns, "action return type mismatch")?;
                     let value = v.scalar()?;
                     self.realtime_completion = self.realtime_completion.replace_continue(
-                        realtime_state::Completion::Return(value.clone()),
+                        realtime_state::Completion::Return(value),
                     );
-                    done = true;
+                    break;
                 }
                 Action::Rethrow => {
                     let caught = self
                         .caught_exceptions
                         .as_ref()
                         .ok_or_else(|| fail("rethrow requires an enclosing catch handler"))?;
-                    if !caught.is_empty() {
-                        self.realtime_completion = self.realtime_completion.replace_continue(
-                            realtime_state::Completion::from_alternatives(caught.clone()),
-                        );
-                    }
-                    done = true;
+                    self.realtime_completion = self.realtime_completion.replace_continue(
+                        realtime_state::Completion::from_alternatives(caught.clone()),
+                    );
+                    break;
                 }
             }
         }
         self.action_path = entry_path;
-        Ok(done)
+        Ok(())
     }
 }
