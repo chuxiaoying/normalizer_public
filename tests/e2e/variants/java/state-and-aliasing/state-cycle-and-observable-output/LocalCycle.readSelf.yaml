@@ -1,3 +1,19 @@
 - name: write-another-scalar
   edits: [{ from: 'root.value = 7;', to: 'root.value = 8;' }]
   expect: [{ path: [R], value: '8' }]
+- name: distinct-nodes-with-a-back-edge-keep-the-nearest-field-owner
+  edits:
+    - from: 'root.next = root;'
+      to: 'Node child = new Node(); child.value = 8; root.next = child; child.next = root;'
+    - {from: 'return root.next.value;', to: 'return root.next.value - root.next.next.value;'}
+  expect:
+    - {path: [R], value: '1'}
+
+- name: shared-local-child-is-not-a-cycle-or-an-independent-copy
+  edits:
+    - {from: 'class Node { Node next; int value; }', to: 'class Node { Node next; Node other; int value; }'}
+    - from: 'root.next = root;'
+      to: 'Node leaf = new Node(); root.next = leaf; root.other = leaf; root.next.value = 12;'
+    - {from: 'return root.next.value;', to: 'return root.other.value;'}
+  expect:
+    - {path: [R], value: '12'}

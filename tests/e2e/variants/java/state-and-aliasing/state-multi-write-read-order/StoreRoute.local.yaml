@@ -1,3 +1,15 @@
 - name: an-equivalent-reversed-comparison-preserves-write-conditions
   edits:
     - { from: 'amount > 0', to: '0 < amount' }
+- name: branch-returns-through-the-alias-without-publishing-a-local-write
+  edits:
+    - from: 'RouteBox box = new RouteBox();'
+      to: 'RouteBox box = new RouteBox(); RouteBox alias = box;'
+    - from: 'if (amount > 0) box.amount = amount;'
+      to: 'if (amount > 0) { alias.amount = amount; return box.amount; }'
+    - from: |-
+        }
+                return box.amount;
+      to: |-
+        }
+                return alias.amount;

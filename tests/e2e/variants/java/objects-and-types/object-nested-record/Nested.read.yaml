@@ -12,3 +12,14 @@
   expect:
     - path: [R]
       value: outer.inner.value - 1
+- name: local-alias-keeps-the-complete-borrowed-path
+  edits:
+    - {from: 'return outer.inner.value;', to: 'Inner borrowed = outer.inner; return borrowed.value;'}
+
+- name: adjacent-children-with-the-same-member-name-keep-their-owners
+  edits:
+    - {from: 'Inner inner;', to: 'Inner inner; Inner alternate;'}
+    - {from: 'return outer.inner.value;', to: 'Inner a = outer.inner; Inner b = outer.alternate; return a.value - b.value;'}
+  expect:
+    - {path: [types, Outer, fields, alternate], add: Inner}
+    - {path: [R], value: 'outer.inner.value - outer.alternate.value'}
