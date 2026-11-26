@@ -469,30 +469,8 @@ pub(super) fn project_value_under_domain(value: &Expr, domain: &Expr) -> Expr {
             op: UnaryOpKind::Not,
             ..
         } => project_boolean_condition_under_domain(value, domain),
-        ExprKind::CaseWhen { branches } => {
-            let nested_domains = first_match_effective_domains(branches);
-            let mut changed = false;
-            let mut out = Vec::with_capacity(branches.len());
-            for ((cond, branch_value), nested_effective) in
-                branches.iter().zip(nested_domains.iter())
-            {
-                let combined_domain = crate::normalize(crate::builder::and(
-                    domain.clone(),
-                    nested_effective.clone(),
-                ));
-                let projected_cond = project_boolean_condition_under_domain(cond, domain);
-                let projected_value = project_value_under_domain(branch_value, &combined_domain);
-                if projected_cond != *cond || projected_value != *branch_value {
-                    changed = true;
-                }
-                out.push((projected_cond, projected_value));
-            }
-            if changed {
-                Expr::new(ExprKind::CaseWhen { branches: out })
-            } else {
-                value.clone()
-            }
-        }
+        ExprKind::CaseWhen { branches } =>
+            project_case_under_domain(value, branches, domain, project_value_under_domain),
         ExprKind::RelationAggregate {
             kind,
             relation,
@@ -580,32 +558,36 @@ fn project_boolean_condition_under_domain(cond: &Expr, domain: &Expr) -> Expr {
             let projected = project_boolean_condition_under_domain(operand, domain);
             crate::normalize(crate::builder::not(projected))
         }
-        ExprKind::CaseWhen { branches } => {
-            let nested_domains = first_match_effective_domains(branches);
-            let mut changed = false;
-            let mut out = Vec::with_capacity(branches.len());
-            for ((branch_cond, branch_value), nested_effective) in
-                branches.iter().zip(nested_domains.iter())
-            {
-                let combined_domain = crate::normalize(crate::builder::and(
-                    domain.clone(),
-                    nested_effective.clone(),
-                ));
-                let projected_cond = project_boolean_condition_under_domain(branch_cond, domain);
-                let projected_value =
-                    project_boolean_condition_under_domain(branch_value, &combined_domain);
-                if projected_cond != *branch_cond || projected_value != *branch_value {
-                    changed = true;
-                }
-                out.push((projected_cond, projected_value));
-            }
-            if changed {
-                Expr::new(ExprKind::CaseWhen { branches: out })
-            } else {
-                cond.clone()
-            }
-        }
+        ExprKind::CaseWhen { branches } =>
+            project_case_under_domain(cond, branches, domain, project_boolean_condition_under_domain),
         _ => cond.clone(),
+    }
+}
+
+/// Scope each original first-match arm before projecting its typed payload.
+fn project_case_under_domain(
+    original: &Expr,
+    branches: &[(Expr, Expr)],
+    domain: &Expr,
+    project_payload: fn(&Expr, &Expr) -> Expr,
+) -> Expr {
+    let nested_domains = first_match_effective_domains(branches);
+    let mut changed = false;
+    let mut out = Vec::with_capacity(branches.len());
+    for ((cond, value), nested_effective) in branches.iter().zip(nested_domains.iter()) {
+        let combined_domain = crate::normalize(crate::builder::and(
+            domain.clone(),
+            nested_effective.clone(),
+        ));
+        let projected_cond = project_boolean_condition_under_domain(cond, domain);
+        let projected_value = project_payload(value, &combined_domain);
+        changed |= projected_cond != *cond || projected_value != *value;
+        out.push((projected_cond, projected_value));
+    }
+    if changed {
+        Expr::new(ExprKind::CaseWhen { branches: out })
+    } else {
+        original.clone()
     }
 }
 

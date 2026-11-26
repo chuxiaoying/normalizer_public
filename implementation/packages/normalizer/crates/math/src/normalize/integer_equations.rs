@@ -117,7 +117,8 @@ fn remove_repeated_classes(equations: Vec<Equation>, conjuncts: &[Expr]) -> Opti
 pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
     // Keep online elimination bounded. Larger or underdetermined systems
     // retain their exact predicates; the budget never changes their meaning.
-    if !(2..=8).contains(&conjuncts.len()) {
+    // The caller flattens a binary AND, providing at least two conjuncts.
+    if conjuncts.len() > 8 {
         return None;
     }
     let mut equations = Vec::new();
