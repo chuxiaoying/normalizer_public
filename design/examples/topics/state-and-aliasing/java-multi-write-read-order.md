@@ -143,10 +143,12 @@ S:
 R: |-
   CASE
     WHEN NOT (replace) THEN 2
-    WHEN units <= 0 THEN quota.units
-    ELSE units
+    WHEN units > 0 THEN units
+    ELSE quota.units
   END
 ```
+
+先命中 `NOT (replace)` 时，本次写入并读取 2。该臂没命中时，只剩下整数的正／非正二分，以 `units > 0` 作基准：正数路径读到本次写入的值，非正路径读原快照。它不改变两次写入在 S 中的执行顺序。
 
 ## 对照：分支内写入局部对象
 
