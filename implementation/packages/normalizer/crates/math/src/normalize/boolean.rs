@@ -95,13 +95,8 @@ pub(crate) fn total_boolean_value(expr: &Expr) -> bool {
     }
 }
 fn boolean_literal_equality(op: BinOpKind, left: &Expr, right: &Expr) -> Option<Expr> {
-    let (value, literal) = if let Some(v) = right.as_bool() {
-        (left, v)
-    } else if let Some(v) = left.as_bool() {
-        (right, v)
-    } else {
-        return None;
-    };
+    let (op, value, literal) =
+        super::constraint::comparison_literal_rhs((op, left, right), Expr::as_bool)?;
     if !total_boolean_value(value) {
         return None;
     }
@@ -1084,20 +1079,18 @@ fn equality_atom(expr: &Expr, domain: EqualityAtomDomain) -> Option<(BinOpKind, 
     }
 }
 
-fn literal_eq_ne_comparison(expr: &Expr) -> Option<(BinOpKind, Expr, Lit)> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
+fn eq_ne_comparison<T>(
+    expr: &Expr, operand: impl Fn(&Expr) -> Option<T>,
+) -> Option<(BinOpKind, Expr, T)> {
+    let comparison @ (BinOpKind::Eq | BinOpKind::Ne, ..) = expr.as_binop()? else {
         return None;
     };
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-        return None;
-    }
-    if let Some(lit) = right.as_lit() {
-        return Some((*op, left.clone(), lit.clone()));
-    }
-    if let Some(lit) = left.as_lit() {
-        return Some((*op, right.clone(), lit.clone()));
-    }
-    None
+    let (op, subject, value) = super::constraint::comparison_literal_rhs(comparison, operand)?;
+    Some((op, subject.clone(), value))
+}
+
+fn literal_eq_ne_comparison(expr: &Expr) -> Option<(BinOpKind, Expr, Lit)> {
+    eq_ne_comparison(expr, |operand| operand.as_lit().cloned())
 }
 
 fn literal_equality_implies_literal_inequality(left: &Expr, right: &Expr) -> bool {
@@ -1115,19 +1108,7 @@ fn literal_equality_implies_literal_inequality(left: &Expr, right: &Expr) -> boo
 
 /// Extract a HeapRef equality/inequality comparison: `x == HeapRef(id)` or `x != HeapRef(id)`.
 fn heap_ref_eq_ne_comparison(expr: &Expr) -> Option<(BinOpKind, Expr, i64)> {
-    let ExprKind::BinOp { op, left, right } = expr.kind() else {
-        return None;
-    };
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-        return None;
-    }
-    if let Some(id) = right.as_heap_ref() {
-        return Some((*op, left.clone(), id));
-    }
-    if let Some(id) = left.as_heap_ref() {
-        return Some((*op, right.clone(), id));
-    }
-    None
+    eq_ne_comparison(expr, Expr::as_heap_ref)
 }
 
 /// Lift an already-proven leaf implication over every alternative of an OR.
