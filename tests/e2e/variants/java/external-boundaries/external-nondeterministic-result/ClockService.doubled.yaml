@@ -63,3 +63,25 @@
         - call: { external: clock.now, args: [], returns: number, result: $e_10 }
     - path: [R]
       value: $e_2 + $e_10
+
+- name: subtraction-of-two-independent-acquisitions-cannot-cancel
+  edits:
+    - from: 'return reading + reading;'
+      to: 'int next = clock.now(); return reading - next;'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: clock.now, args: [], returns: number, result: '$e_0'}
+        - call: {external: clock.now, args: [], returns: number, result: '$e_1'}
+    - {path: [R], value: '$e_0 - $e_1'}
+
+- name: only-the-same-second-acquisition-cancels
+  edits:
+    - from: 'return reading + reading;'
+      to: 'int next = clock.now(); return next - next;'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: clock.now, args: [], returns: number, result: '$e_0'}
+        - call: {external: clock.now, args: [], returns: number, result: '$e_1'}
+    - {path: [R], value: '0'}

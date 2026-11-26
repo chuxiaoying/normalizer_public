@@ -68,3 +68,35 @@
                 return reply.score - reply.score;
   expect:
     - { path: [R], value: '0' }
+
+- name: earlier-scalar-receipt-is-not-the-throwing-record
+  edits:
+    - from: 'Profile fetch(int accountId) throws ProfileUnavailable;'
+      to: 'int preview(int accountId); Profile fetch(int accountId) throws ProfileUnavailable;'
+    - from: 'return client.fetch(accountId).score;'
+      to: 'int ignored = client.preview(accountId); Profile selected = client.fetch(accountId); return selected.score;'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: client.preview, args: [accountId], returns: number, result: '$e_0'}
+        - call: {external: client.fetch, args: [accountId], returns: Profile, result: '$e_1'}
+    - {path: [R], value: '$e_1.score'}
+    - path: [throws]
+      value:
+        - {type: ProfileUnavailable, when: 'completion.is_throw($e_1, ProfileUnavailable)'}
+
+- name: same-typed-earlier-record-is-not-the-selected-throwing-record
+  edits:
+    - from: 'Profile fetch(int accountId) throws ProfileUnavailable;'
+      to: 'Profile preview(int accountId); Profile fetch(int accountId) throws ProfileUnavailable;'
+    - from: 'return client.fetch(accountId).score;'
+      to: 'Profile previous = client.preview(accountId); Profile selected = client.fetch(accountId); return previous.score - selected.score;'
+  expect:
+    - path: [S]
+      value:
+        - call: {external: client.preview, args: [accountId], returns: Profile, result: '$e_0'}
+        - call: {external: client.fetch, args: [accountId], returns: Profile, result: '$e_1'}
+    - {path: [R], value: '$e_0.score - $e_1.score'}
+    - path: [throws]
+      value:
+        - {type: ProfileUnavailable, when: 'completion.is_throw($e_1, ProfileUnavailable)'}
