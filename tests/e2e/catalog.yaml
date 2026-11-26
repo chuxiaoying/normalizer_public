@@ -132,7 +132,7 @@ groups:
     - Money.toMinorUnits
   java/objects-and-boundaries:
     java-external-library:
-    - LabelService.normalizeLabel
+    - Beans.ENTRY.normalizeLabel
     java-name-collision:
     - QuotaService.INSTANCE.difference
     java-static-object:
@@ -141,7 +141,7 @@ groups:
     object-collection-records:
     - ProfileScores.total
     object-external-return-type:
-    - ProfileService.load
+    - Beans.ENTRY.load
     object-nested-record:
     - Nested.read
     object-optional-field:

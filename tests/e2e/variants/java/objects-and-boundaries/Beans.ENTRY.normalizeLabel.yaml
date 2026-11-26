@@ -1,0 +1,121 @@
+- name: trim-idempotence-on-null-and-text
+  edits:
+  - from: N.trim(raw)
+    to: N.trim(N.trim(raw))
+- name: preserve-surrounding-nonblank-text
+  edits:
+  - from: N.trim(raw)
+    to: raw
+  expect:
+  - path:
+    - R
+    value: |-
+      CASE
+        WHEN blank(raw) THEN fallback
+        ELSE raw
+      END
+- name: trim-literal-visible-text
+  edits:
+  - from: N.trim(raw)
+    to: N.trim("  item  ")
+  expect:
+  - path:
+    - R
+    value: '"item"'
+- name: unicode-blank-literal-uses-fallback
+  edits:
+  - from: N.trim(raw)
+    to: N.trim(" ")
+  expect:
+  - path:
+    - R
+    value: fallback
+- name: nonbreaking-space-literal-stays-visible
+  edits:
+  - from: N.trim(raw)
+    to: N.trim(" ")
+  expect:
+  - path:
+    - R
+    value: '" "'
+- name: null-literal-uses-fallback
+  edits:
+  - from: N.trim(raw)
+    to: N.trim(null)
+  expect:
+  - path:
+    - R
+    value: fallback
+- name: empty-literal-uses-fallback
+  edits:
+  - from: N.trim(raw)
+    to: N.trim("")
+  expect:
+  - path:
+    - R
+    value: fallback
+- name: decode-escaped-whitespace
+  edits:
+  - from: N.trim(raw)
+    to: N.trim("\sitem\040")
+  expect:
+  - path:
+    - R
+    value: '"item"'
+- name: invalid-string-escape-rejects
+  edits:
+  - from: N.trim(raw)
+    to: N.trim("\q")
+  reject:
+  - '[SOURCE-PARSE-FAILED]'
+  - kind=PREPROCESS_REQUIRED
+  - invalid Java literal escape
+- name: octal-literal-accepts-full-byte-range
+  edits:
+  - from: N.trim(raw)
+    to: N.trim("\377")
+  expect:
+  - path:
+    - R
+    value: '"ÿ"'
+- name: retains-cjk-and-supplementary-text
+  edits:
+  - from: N.trim(raw)
+    to: N.trim("  上海🙂  ")
+  expect:
+  - path:
+    - R
+    value: '"上海🙂"'
+- name: explicit-null-guard-uses-the-registered-blank-predicate
+  edits:
+  - from: return N.defaultIfBlank(
+    to: 'return raw == null ? fallback : N.defaultIfBlank('
+  - from: N.trim(raw)
+    to: raw
+  expect:
+  - path:
+    - R
+    value: |-
+      CASE
+        WHEN blank(raw) THEN fallback
+        ELSE raw
+      END
+- name: direct-null-first-argument-is-not-an-unbound-receiver
+  edits:
+  - from: N.trim(raw)
+    to: 'null'
+  expect:
+  - path:
+    - R
+    value: fallback
+- name: a-non-selected-well-typed-fallback-does-not-change-the-result
+  edits:
+  - from: N.trim(raw),
+    to: '"label",'
+  - from: |2
+                  fallback
+    to: '            "other"'
+  expect:
+  - path:
+    - R
+    value: '"label"'

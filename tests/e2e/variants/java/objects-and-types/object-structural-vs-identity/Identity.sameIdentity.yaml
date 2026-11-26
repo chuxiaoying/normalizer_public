@@ -1,165 +1,401 @@
 - name: negate-identity-check
   edits:
-    - from: "return left == right;"
-      to: "return left != right;"
+  - from: return left == right;
+    to: return left != right;
   expect:
-    - path: [R]
-      value: left != right
+  - path:
+    - R
+    value: left != right
 - name: reverse-identity-operands
   edits:
-    - from: 'return left == right;'
-      to: 'return right == left;'
+  - from: return left == right;
+    to: return right == left;
 - name: public-names-before-allocation-order
   edits:
-    - from: 'static boolean sameIdentity(Box left, Box right) {'
-      to: 'static boolean sameIdentity(Box right, Box left) {'
+  - from: static boolean sameIdentity(Box left, Box right) {
+    to: static boolean sameIdentity(Box right, Box left) {
   expect:
-    - path: [P, parameters, left, position]
-      value: 1
-    - path: [P, parameters, right, position]
-      value: 0
+  - path:
+    - P
+    - parameters
+    - left
+    - position
+    value: 1
+  - path:
+    - P
+    - parameters
+    - right
+    - position
+    value: 0
 - name: fresh-allocation-is-distinct-from-an-entry-reference
   edits:
-    - { from: 'return left == right;', to: 'Box created = new Box(); return left == created;' }
+  - from: return left == right;
+    to: Box created = new Box(); return left == created;
   expect:
-    - { path: [R], value: 'false' }
+  - path:
+    - R
+    value: 'false'
 - name: freshness-is-symmetric-and-preserves-the-inequality
   edits:
-    - { from: 'return left == right;', to: 'Box created = new Box(); return created != left;' }
+  - from: return left == right;
+    to: Box created = new Box(); return created != left;
   expect:
-    - { path: [R], value: 'true' }
+  - path:
+    - R
+    value: 'true'
 - name: a-local-alias-of-the-same-allocation-is-equal
   edits:
-    - { from: 'return left == right;', to: 'Box created = new Box(); Box alias = created; return created == alias;' }
+  - from: return left == right;
+    to: Box created = new Box(); Box alias = created; return created == alias;
   expect:
-    - { path: [R], value: 'true' }
+  - path:
+    - R
+    value: 'true'
 - name: equal-fields-do-not-merge-two-fresh-allocations
   edits:
-    - { from: 'return left == right;', to: 'Box first = new Box(); Box second = new Box(); first.value = 7; second.value = 7; return first == second;' }
+  - from: return left == right;
+    to: Box first = new Box(); Box second = new Box(); first.value = 7; second.value = 7; return first == second;
   expect:
-    - { path: [R], value: 'false' }
+  - path:
+    - R
+    value: 'false'
 - name: fresh-replacement-identity-is-decided-by-the-source-branch
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = new Box(); } return alias == left;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = new Box(); } return alias == left;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: 'NOT (replace)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: NOT (replace)
 - name: acquired-replacement-keeps-the-original-input-alias-test
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = right; } return left == alias;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = right; } return left == alias;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: 'left == right OR NOT (replace)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: left == right OR NOT (replace)
 - name: a-definitely-fresh-replacement-is-the-only-inequality-path
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = new Box(); } return left != alias;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = new Box(); } return left != alias;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: replace }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: replace
 - name: null-replacement-is-not-the-same-as-a-nonnull-input
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return alias == left;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = null; } return alias == left;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: 'NOT (replace)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: NOT (replace)
 - name: a-null-replacement-uses-the-original-input-nullability
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return left == alias;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(@N.Nullable Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = null; } return left == alias;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: 'Box?' }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: 'left == null OR NOT (replace)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box?
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: left == null OR NOT (replace)
 - name: a-local-conditional-reference-keeps-its-null-guard
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return alias == null;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = null; } return alias == null;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: replace }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: replace
 - name: null-inequality-keeps-the-complement-of-the-real-branch
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box alias = left; if (replace) { alias = null; } return null != alias;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box alias = left; if (replace) { alias = null; } return null != alias;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: 'NOT (replace)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: NOT (replace)
 - name: two-replacements-on-the-same-guard-are-distinct-allocations
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean replace)' }
-    - { from: 'return left == right;', to: 'Box a = left; if (replace) { a = new Box(); } Box b = left; if (replace) { b = new Box(); } return a == b;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean replace)
+  - from: return left == right;
+    to: Box a = left; if (replace) { a = new Box(); } Box b = left; if (replace) { b = new Box(); } return a ==
+      b;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, replace: { position: 2, type: bool } }
-    - { path: [R], value: 'NOT (replace)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: NOT (replace)
 - name: two-acquired-identity-partitions-use-stable-guard-order
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB)' }
-    - { from: 'return left == right;', to: 'Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return a == b;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB)
+  - from: return left == right;
+    to: Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return a == b;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, chooseA: { position: 2, type: bool }, chooseB: { position: 3, type: bool } }
-    - { path: [R], value: 'chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      chooseA:
+        position: 2
+        type: bool
+      chooseB:
+        position: 3
+        type: bool
+  - path:
+    - R
+    value: chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)
 - name: swapping-complete-identity-partitions-keeps-the-exact-formula
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB)' }
-    - { from: 'return left == right;', to: 'Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return b == a;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB)
+  - from: return left == right;
+    to: Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return b == a;
   expect:
-    - path: [P, parameters]
-      value: { left: { position: 0, type: Box }, right: { position: 1, type: Box }, chooseA: { position: 2, type: bool }, chooseB: { position: 3, type: bool } }
-    - { path: [R], value: 'chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)' }
+  - path:
+    - P
+    - parameters
+    value:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      chooseA:
+        position: 2
+        type: bool
+      chooseB:
+        position: 3
+        type: bool
+  - path:
+    - R
+    value: chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)
 - name: independent-guards-selecting-distinct-allocations-only-match-on-the-original
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box prior, boolean p, boolean q)' }
-    - { from: 'return left == right;', to: 'Box x = new Box(); Box y = new Box(); Box a = prior; if (p) { a = x; } Box b = prior; if (q) { b = y; } return a == b;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(@N.Nullable Box prior, boolean p, boolean q)
+  - from: return left == right;
+    to: Box x = new Box(); Box y = new Box(); Box a = prior; if (p) { a = x; } Box b = prior; if (q) { b = y; }
+      return a == b;
   expect:
-    - path: [P, parameters]
-      value: { prior: { position: 0, type: 'Box?' }, p: { position: 1, type: bool }, q: { position: 2, type: bool } }
-    - { path: [R], value: 'NOT (p) AND NOT (q)' }
+  - path:
+    - P
+    - parameters
+    value:
+      prior:
+        position: 0
+        type: Box?
+      p:
+        position: 1
+        type: bool
+      q:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: NOT (p) AND NOT (q)
 - name: independent-guards-selecting-the-same-allocation-match-on-both-diagonals
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box prior, boolean p, boolean q)' }
-    - { from: 'return left == right;', to: 'Box x = new Box(); Box a = prior; if (p) { a = x; } Box b = prior; if (q) { b = x; } return a == b;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(@N.Nullable Box prior, boolean p, boolean q)
+  - from: return left == right;
+    to: Box x = new Box(); Box a = prior; if (p) { a = x; } Box b = prior; if (q) { b = x; } return a == b;
   expect:
-    - path: [P, parameters]
-      value: { prior: { position: 0, type: 'Box?' }, p: { position: 1, type: bool }, q: { position: 2, type: bool } }
-    - { path: [R], value: 'p AND q OR NOT (p) AND NOT (q)' }
+  - path:
+    - P
+    - parameters
+    value:
+      prior:
+        position: 0
+        type: Box?
+      p:
+        position: 1
+        type: bool
+      q:
+        position: 2
+        type: bool
+  - path:
+    - R
+    value: p AND q OR NOT (p) AND NOT (q)
 - name: null-first-cannot-equal-a-fresh-object
   edits:
-    - { from: 'return left == right;', to: 'Box created = new Box(); return null == created;' }
+  - from: return left == right;
+    to: Box created = new Box(); return null == created;
   expect:
-    - { path: [R], value: 'false' }
+  - path:
+    - R
+    value: 'false'
 - name: fresh-object-is-not-null-with-null-second
   edits:
-    - { from: 'return left == right;', to: 'Box created = new Box(); return created != null;' }
+  - from: return left == right;
+    to: Box created = new Box(); return created != null;
   expect:
-    - { path: [R], value: 'true' }
+  - path:
+    - R
+    value: 'true'
 - name: null-first-equality-keeps-the-borrowed-nullability
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box left, Box right)' }
-    - { from: 'return left == right;', to: 'return null == left;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(@N.Nullable Box left, Box right)
+  - from: return left == right;
+    to: return null == left;
   expect:
-    - { path: [P, parameters, left, type], value: 'Box?' }
-    - { path: [R], value: 'left == null' }
+  - path:
+    - P
+    - parameters
+    - left
+    - type
+    value: Box?
+  - path:
+    - R
+    value: left == null
 - name: null-second-inequality-keeps-the-borrowed-nullability
   edits:
-    - { from: 'static boolean sameIdentity(Box left, Box right)', to: 'static boolean sameIdentity(@normalizer.annotations.Nullable Box left, Box right)' }
-    - { from: 'return left == right;', to: 'return left != null;' }
+  - from: static boolean sameIdentity(Box left, Box right)
+    to: static boolean sameIdentity(@N.Nullable Box left, Box right)
+  - from: return left == right;
+    to: return left != null;
   expect:
-    - { path: [P, parameters, left, type], value: 'Box?' }
-    - { path: [R], value: 'left != null' }
+  - path:
+    - P
+    - parameters
+    - left
+    - type
+    value: Box?
+  - path:
+    - R
+    value: left != null
 - name: null-stored-in-a-local-is-still-distinct-from-a-nonnull-input
   edits:
-    - { from: 'return left == right;', to: 'Object missing = null; return left != missing;' }
+  - from: return left == right;
+    to: Object missing = null; return left != missing;
   expect:
-    - { path: [R], value: 'true' }
+  - path:
+    - R
+    value: 'true'

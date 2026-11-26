@@ -1,57 +1,74 @@
 - name: reverse-null-condition
   edits:
-    - from: "return profile.label == null ? 0 : 1;"
-      to: "return profile.label != null ? 1 : 0;"
+  - from: 'return profile.label == null ? 0 : 1;'
+    to: 'return profile.label != null ? 1 : 0;'
 - name: change-present-value
   edits:
-    - from: "return profile.label == null ? 0 : 1;"
-      to: "return profile.label == null ? 0 : 2;"
+  - from: 'return profile.label == null ? 0 : 1;'
+    to: 'return profile.label == null ? 0 : 2;'
   expect:
-    - path: [R]
-      value: |-
-        CASE
-          WHEN profile.label == null THEN 0
-          ELSE 2
-        END
-
+  - path:
+    - R
+    value: |-
+      CASE
+        WHEN profile.label == null THEN 0
+        ELSE 2
+      END
 - name: qualified-nullable-string-is-the-same-text-field
   edits:
-    - from: 'String label;'
-      to: 'java.lang.String label;'
+  - from: String label;
+    to: java.lang.String label;
 - name: a-fresh-object-has-a-null-label-without-an-extra-input
   edits:
-    - from: 'return profile.label == null ? 0 : 1;'
-      to: 'Profile fresh = new Profile(); return fresh.label == null ? 0 : 1;'
+  - from: 'return profile.label == null ? 0 : 1;'
+    to: 'Profile fresh = new Profile(); return fresh.label == null ? 0 : 1;'
   expect:
-    - { path: [R], value: '0' }
+  - path:
+    - R
+    value: '0'
 - name: an-ordinary-static-field-needs-an-explicit-source-boundary
   edits:
-    - from: 'class OptionalField {'
-      to: |-
-        class OptionalField {
-            static int unsupportedSharedCount;
-  reject: ['[NORM-FIELD-DECLARATION]', 'kind=PREPROCESS_REQUIRED', 'OptionalField']
+  - from: class OptionalField {
+    to: |-
+      class OptionalField {
+          static int unsupportedSharedCount;
+  - from: 'return profile.label == null ? 0 : 1;'
+    to: return unsupportedSharedCount;
+  reject:
+  - '[NORM-FIELD-DECLARATION]'
+  - kind=PREPROCESS_REQUIRED
+  - OptionalField
 - name: final-record-content-includes-an-uninitialized-nullable-text-field
   edits:
-    - { from: 'static int hasLabel(', to: 'static Profile hasLabel(' }
-    - { from: 'return profile.label == null ? 0 : 1;', to: 'return new Profile();' }
+  - from: static int hasLabel(
+    to: static Profile hasLabel(
+  - from: 'return profile.label == null ? 0 : 1;'
+    to: return new Profile();
   expect:
-    - { path: [entry, returns], value: Profile }
-    - path: [R]
-      value: |-
-        {
-          label: null
-        }
-
+  - path:
+    - entry
+    - returns
+    value: Profile
+  - path:
+    - R
+    value: |-
+      {
+        label: null
+      }
 - name: final-record-content-distinguishes-empty-text-from-null
   edits:
-    - { from: 'static int hasLabel(', to: 'static Profile hasLabel(' }
-    - from: 'return profile.label == null ? 0 : 1;'
-      to: 'Profile out = new Profile(); out.label = ""; return out;'
+  - from: static int hasLabel(
+    to: static Profile hasLabel(
+  - from: 'return profile.label == null ? 0 : 1;'
+    to: Profile out = new Profile(); out.label = ""; return out;
   expect:
-    - { path: [entry, returns], value: Profile }
-    - path: [R]
-      value: |-
-        {
-          label: ""
-        }
+  - path:
+    - entry
+    - returns
+    value: Profile
+  - path:
+    - R
+    value: |-
+      {
+        label: ""
+      }

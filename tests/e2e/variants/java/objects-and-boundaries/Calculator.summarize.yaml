@@ -1,25 +1,26 @@
 - name: write-delta-after-construction
   edits:
-    - from: return new Summary(raised, selected, delta);
-      to: |-
-        Summary result = new Summary(raised, selected, 0);
-                result.delta = delta;
-                return result;
+  - from: return new Summary(raised, selected, delta);
+    to: |-
+      Summary result = new Summary(raised, selected, 0);
+              result.delta = delta;
+              return result;
 - name: include-limit-in-raised-selection
   edits:
-    - from: raised > request.limit
-      to: raised >= request.limit
+  - from: raised > request.limit
+    to: raised >= request.limit
   expect:
-    - path: [R]
-      value: |-
-        {
-          raised: request.value + 1,
-          selected: CASE
-            WHEN request.limit <= request.value + 1 THEN request.value + 1
-            ELSE request.fallback
-          END,
-          delta: CASE
-            WHEN request.limit <= request.value + 1 THEN 0
-            ELSE request.fallback - (request.value + 1)
-          END
-        }
+  - path:
+    - R
+    value: |-
+      {
+        raised: request.value + 1,
+        selected: CASE
+          WHEN request.limit > request.value + 1 THEN request.fallback
+          ELSE request.value + 1
+        END,
+        delta: CASE
+          WHEN request.limit > request.value + 1 THEN request.fallback - (request.value + 1)
+          ELSE 0
+        END
+      }
