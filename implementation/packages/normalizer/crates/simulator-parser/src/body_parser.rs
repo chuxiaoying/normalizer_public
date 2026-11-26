@@ -980,23 +980,17 @@ impl<'a> Parser<'a> {
         if self.surrogates.at(self.pos).is_some() {
             return Err(self.err("[JAVA-UNICODE-REPRESENTATION] isolated UTF-16 code unit has no current scalar text representation"));
         }
-        let first = self.peek().ok_or_else(|| self.err("unexpected end in Java literal"))?;
-        match first {
-            b'\n' | b'\r' => Err(self.err("line terminator in Java literal")),
-            b'\\' => {
+        let value = self.source.get(self.pos..)
+            .and_then(|rest| rest.chars().next())
+            .ok_or_else(|| self.err("unexpected end in Java literal"))?;
+        match value {
+            '\n' | '\r' => Err(self.err("line terminator in Java literal")),
+            '\\' => {
                 self.pos += 1;
                 self.read_literal_escape()
             }
-            ascii if ascii.is_ascii() => {
-                self.pos += 1;
-                Ok(char::from(ascii))
-            }
-            utf8 => {
-                let end = self.pos + utf8.leading_ones() as usize;
-                let value = self.source.get(self.pos..end)
-                    .and_then(|text| text.chars().next())
-                    .ok_or_else(|| self.err("invalid UTF-8 in Java literal"))?;
-                self.pos = end;
+            value => {
+                self.pos += value.len_utf8();
                 Ok(value)
             }
         }

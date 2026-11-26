@@ -223,15 +223,12 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
             external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
             total_temporals: None, temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
         };
-        if let Some((display_op, flip)) =
-            math::canonical_order_ordered_comparison(op, left, right, &public)
-        {
-            let (lhs, rhs) = if flip { (right, left) } else { (left, right) };
-            let l = format_expr_with_ctx(lhs, ctx);
-            let r = format_expr_with_ctx(rhs, ctx);
-            return format!("{} {} {}", l, binop_display_token(display_op), r);
-        }
-
+        // Only an actual reversal changes the original operands. Both
+        // orientations use the established binary rendering below.
+        let (op, left, right) = match math::canonical_order_ordered_comparison(op, left, right, &public) {
+            Some((reversed, true)) => (reversed, right, left),
+            _ => (op, left, right),
+        };
         let l = format_binop_child_with_precedence(op, left, false, ctx);
         let r = format_binop_child_with_precedence(op, right, true, ctx);
         let token = match (op, ctx.business_inputs.is_some()) {

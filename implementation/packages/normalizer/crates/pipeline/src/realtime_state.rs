@@ -176,16 +176,14 @@ impl Completion {
         {
             return Self::Continue;
         }
-        if covered
-            && alternatives
-                .iter()
-                .all(|alternative| matches!(alternative.outcome, CompletionOutcome::Return(_)))
-        {
-            let returns = alternatives.iter().filter_map(|alternative| match &alternative.outcome {
+        if covered {
+            // Certify and extract in one pass. Non-return alternatives never
+            // enter the return-only collapse, even on a covered domain.
+            let returns = alternatives.iter().map(|alternative| match &alternative.outcome {
                 CompletionOutcome::Return(value) => Some((&alternative.guard, value)),
                 _ => None,
-            });
-            if let Some(value) = collapse_return_values(returns) {
+            }).collect::<Option<Vec<_>>>();
+            if let Some(value) = returns.and_then(|returns| collapse_return_values(returns.into_iter())) {
                 return Self::Return(value);
             }
         }

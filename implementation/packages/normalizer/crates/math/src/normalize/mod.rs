@@ -484,9 +484,7 @@ pub fn normalize(expr: Expr) -> Expr {
             if nested {
                 ACTIVE_BUDGET_ABORT.with(|abort| {
                     let mut abort = abort.borrow_mut();
-                    if abort.is_none() {
-                        *abort = Some(error);
-                    }
+                    abort.get_or_insert(error);
                 });
                 return key;
             }
