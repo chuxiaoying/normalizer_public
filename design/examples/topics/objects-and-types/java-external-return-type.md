@@ -16,6 +16,8 @@ class Profile {
 class ProfileService {
     private final ProfileClient client;
 
+    ProfileService(ProfileClient client) { this.client = client; }
+
     Profile load(int accountId) {
         return client.fetch(accountId);
     }
@@ -28,23 +30,40 @@ interface ProfileClient {
 
 ## AI 预处理结果
 
-AI 在外部端口声明处增加 Normalizer 自身的 `@External` 标记。调用、对象类型和返回语句保持原生 Java，不把外部返回对象拆成新的 P 参数，也不替工程实现 `ProfileClient`。
+AI 在外部端口声明处增加 `@N.External` 标记并显式装配入口接收者。调用、对象类型和返回语句保持原生 Java，不把外部返回对象拆成新的 P 参数，也不替工程实现 `ProfileClient`。
 
 **预处理要点**：外部对象的实现细节由边界合同封闭，预处理只补充 Normalizer 自身的边界身份，类型和返回关系交给 parser 与内核处理。
 
 ```diff
 --- a/src/ProfileService.java
 +++ b/src/ProfileService.java
-@@ -1,6 +1,9 @@
-+import normalizer.annotations.External;
+@@ -1,17 +1,24 @@
++import normalizer.intrinsics.N;
 +
  class Profile {
      int score;
  }
 
  class ProfileService {
-+    @External
++    @N.External
      private final ProfileClient client;
+
+     ProfileService(ProfileClient client) { this.client = client; }
+
+     Profile load(int accountId) {
+         return client.fetch(accountId);
+     }
+ }
+
+-interface ProfileClient {
+-    Profile fetch(int accountId);
++class ProfileClient {
++    native Profile fetch(int accountId);
+ }
++
++class Beans {
++    static final ProfileService ENTRY = new ProfileService(new ProfileClient());
++}
 ```
 
 ## 归一化最终结果
@@ -58,7 +77,7 @@ types:
       score: number
 
 entry:
-  function: src/ProfileService.java#ProfileService.load
+  function: src/ProfileService.java#Beans.ENTRY.load
   returns: Profile
 
 P:
@@ -69,7 +88,7 @@ P:
 
 S:
   - call:
-      external: client.fetch
+      external: src/ProfileService.java#Beans.ENTRY.client.fetch
       args:
         - accountId
       returns: Profile

@@ -11,17 +11,15 @@
 统计指定账户对应的 OPEN 账单数量。账户没有匹配账单时返回零。
 
 ```java
-import java.util.List;
-
 class AccountJoinRow { int id; }
 class BillJoinRow { int account_id; String status; }
 class JoinService {
     static int openBillCount(int accountId) {
-        List<AccountJoinRow> accounts;
+        AccountJoinRow[] accounts;
         /* @normalizer-ir
            accounts = from account as row yield { id: row.id }
         */
-        List<BillJoinRow> bills;
+        BillJoinRow[] bills;
         /* @normalizer-ir
            bills = from bill as row yield { account_id: row.account_id, status: row.status }
         */
@@ -38,7 +36,7 @@ class JoinService {
 
 ## AI 预处理结果
 
-**原样通过。** 局部关系 IR 显式交付连接键、账户过滤、账单过滤和空结果计数。AI 不把 JOIN 改成两个互不相关的查询。
+**原样通过。** 工程声明的行类以数组承载查询结果，不在分析副本依赖 JDK 集合类。 局部关系 IR 显式交付连接键、账户过滤、账单过滤和空结果计数。AI 不把 JOIN 改成两个互不相关的查询。
 
 **预处理要点**：JOIN 的匹配条件是业务规则的一部分，不能只按表名拼接，也不能在预处理阶段丢掉未匹配行语义。
 

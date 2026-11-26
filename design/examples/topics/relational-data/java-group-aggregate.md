@@ -11,15 +11,13 @@
 统计账单关系中不同状态的数量。没有账单时返回零。
 
 ```java
-import java.util.List;
-
 class BillGroupRow {
     String status;
     int account_id;
 }
 class GroupService {
     static int statusGroupCount() {
-        List<BillGroupRow> bills;
+        BillGroupRow[] bills;
         /* @normalizer-ir
            bills = from bill as row yield { status: row.status, account_id: row.account_id }
         */
@@ -34,7 +32,7 @@ class GroupService {
 
 ## AI 预处理结果
 
-**原样通过。** 局部关系 IR 明确交付分组键和组数聚合。AI 不把分组结果展开成固定状态列表。
+**原样通过。** 工程声明的行类以数组承载查询结果，不在分析副本依赖 JDK 集合类。 局部关系 IR 明确交付分组键和组数聚合。AI 不把分组结果展开成固定状态列表。
 
 **预处理要点**：分组键、组内聚合和空关系结果必须分别进入关系表达，不能从当前样例碰巧出现的状态值反推出固定分支。
 

@@ -82,20 +82,24 @@ class BillRow {
 
 ### AI 预处理结果
 
-给 Profile 字段添加端口标记。把 Mapper SQL 的列别名、筛选和投影绑定到 openBills，再局部替换 Stream 聚合；原额度判断保留给内核。
+以 `ArrearsBeans.SERVICE` 显式交付已装配的服务实例，给实际 ProfileClient 接收字段加入 `@N.External`，并保留原成功与失败接口合同。数据库行用工程声明的行类数组承载。把 Mapper SQL 的列别名、筛选和投影绑定到 openBills，再局部替换 Stream 聚合；原额度判断保留给内核。
 
 ```diff
 --- a/src/ArrearsService.java
 +++ b/src/ArrearsService.java
-@@ -1,34 +1,37 @@
-+import normalizer.annotations.External;
- import java.util.List;
+@@ -1,67 +1,59 @@
+-import java.util.List;
 -import org.apache.ibatis.annotations.Select;
++import normalizer.intrinsics.N;
 
  class ProfileFetchError extends RuntimeException {}
 
++class ArrearsBeans {
++    static final ArrearsService SERVICE = new ArrearsService(new ProfileClient());
++}
++
  class ArrearsService {
-+    @External
++    @N.External
      private final ProfileClient profileClient;
 -    private final BillMapper billMapper;
 
@@ -114,7 +118,7 @@ class BillRow {
 
 -        List<BillRow> openBills =
 -            billMapper.selectOpenBills(accountId);
-+        List<BillRow> openBills;
++        BillRow[] openBills;
 +        /* @normalizer-ir
 +           openBills = from bill as b
 +               where b.account_id == accountId and b.status == "OPEN"
@@ -141,10 +145,10 @@ class BillRow {
 
          return total > profile.quota ? profile.quota : total;
      }
-@@ -36,20 +39,6 @@
+ }
 
- interface ProfileClient {
-     Profile fetchProfile(int accountId) throws ProfileFetchError;
+-interface ProfileClient {
+-    Profile fetchProfile(int accountId) throws ProfileFetchError;
 -}
 -
 -interface BillMapper {
@@ -159,9 +163,23 @@ class BillRow {
 -          AND status = 'OPEN'
 -    """)
 -    List<BillRow> selectOpenBills(int accountId);
++class ProfileClient {
++    native Profile fetchProfile(int accountId) throws ProfileFetchError;
  }
 
  class Profile {
+     int accountId;
+     int minPriority;
+     int quota;
+ }
+
+ class BillRow {
+     int accountId;
+     int dueDate;
+     int amount;
+     int waivedAmount;
+     int priority;
+ }
 ```
 
 **预处理要点**：外部交互前后取得的数据可能不同，读取位置属于业务因果。预处理不能把调用后的查询改成入口快照；局部 IR 的通用分工见[关系聚合基础例](../loops-and-termination/java-loop-fold.md)。
@@ -181,7 +199,7 @@ types:
       quota: number
 
 entry:
-  function: src/ArrearsService.java#ArrearsService.calculatePayable
+  function: src/ArrearsService.java#ArrearsBeans.SERVICE.calculatePayable
   returns: number
 
 P:
@@ -207,7 +225,7 @@ E:
 
 S:
   - call:
-      external: profileClient.fetchProfile
+      external: src/ArrearsService.java#ArrearsBeans.SERVICE.profileClient.fetchProfile
       args:
         - accountId
       returns: Profile
@@ -306,7 +324,8 @@ interface PayableMapper {
 -        this.payableMapper = payableMapper;
 -    }
 -
-     int recordPayable(int accountId, int amount) throws DatabaseWriteError {
+-    int recordPayable(int accountId, int amount) throws DatabaseWriteError {
++    static int recordPayable(int accountId, int amount) throws DatabaseWriteError {
          if (amount <= 0) return 0;
 -        return payableMapper.insertPayable(accountId, amount);
 +        int affected;
@@ -443,8 +462,9 @@ interface BillMapper {
 -        this.billMapper = billMapper;
 -    }
 -
-     int setOpenBillWaiver(int accountId, int waivedAmount) throws DatabaseWriteError {
+-    int setOpenBillWaiver(int accountId, int waivedAmount) throws DatabaseWriteError {
 -        return billMapper.updateOpenBills(accountId, waivedAmount);
++    static int setOpenBillWaiver(int accountId, int waivedAmount) throws DatabaseWriteError {
 +        int affected;
 +        /* @normalizer-ir
 +           affected = update bill as b

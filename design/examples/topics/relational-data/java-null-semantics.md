@@ -13,16 +13,15 @@
 入口统计本账户中 memo 为 SQL NULL 的账单行数。空集合返回零。
 
 ```java
-import java.util.List;
-import normalizer.annotations.Nullable;
+import normalizer.intrinsics.N;
 
 class BillMemoRow {
     int accountId;
-    @Nullable String memo;
+    @N.Nullable String memo;
 }
 class NullMemoService {
     static int missingMemoCount(int accountId) {
-        List<BillMemoRow> bills;
+        BillMemoRow[] bills;
         /* @normalizer-ir
            bills = from bill as b
                where b.account_id == accountId
@@ -39,7 +38,7 @@ class NullMemoService {
 
 ## AI 预处理结果
 
-**原样通过。** 局部关系语义保留 SQL `IS NULL`，没有把 NULL 转成 Java 普通 false，也没有把空集合误认为一条空记录。
+**原样通过。** 工程声明的行类以数组承载查询结果，不在分析副本依赖 JDK 集合类。 局部关系语义保留 SQL `IS NULL`，没有把 NULL 转成 Java 普通 false，也没有把空集合误认为一条空记录。
 
 **预处理要点**：SQL NULL 的取得和比较规则属于关系合同，必须在预处理交接中显式保留，不能按宿主语言布尔值猜测。
 
@@ -83,21 +82,20 @@ R: |-
 ## 选中的首条记录为空值不是没有记录
 
 ```java
-import java.util.List;
-import normalizer.annotations.Nullable;
+import normalizer.intrinsics.N;
 class BillMemoRow {
     int id;
-    @Nullable String memo;
+    @N.Nullable String memo;
 }
 class NullMemoService {
     static boolean firstRowHasNullMemo(int accountId) {
-        List<BillMemoRow> bills;
+        BillMemoRow[] bills;
         /* @normalizer-ir
            bills = from bill as b
                where b.account_id == accountId
                yield { id: b.id, memo: b.memo }
         */
-        BillMemoRow match;
+        @N.Nullable BillMemoRow match;
         /* @normalizer-ir
            match = first from bills as row
                order by row.id
@@ -109,7 +107,7 @@ class NullMemoService {
 }
 ```
 
-**原样通过。** 判断必须同时满足“确实有记录”和“有序首条的 memo 为 null”。关系已取得不等于首条记录已取得；后者只在存在性保护臂内。按[宿主保护 CASE](../../../secondary/CASE 的取得域与等价化简.md#宿主保护-case)保留这个取得域，不展开为可能把首项判断提前的 AND。`FIRST` 的空集结果是 null，但不能代替独立的存在性判断。输入没有记录返回 false；首条 memo 确实为 null 返回 true；首条非 null 即便后续某条为 null 也返回 false。
+**原样通过。** 判断必须同时满足“确实有记录”和“有序首条的 memo 为 null”。关系已取得不等于首条记录已取得；后者只在存在性保护臂内。按[宿主保护 CASE](../../../secondary/CASE%20的取得域与等价化简.md#宿主保护-case)保留这个取得域，不展开为可能把首项判断提前的 AND。`FIRST` 的空集结果是 null，但不能代替独立的存在性判断。输入没有记录返回 false；首条 memo 确实为 null 返回 true；首条非 null 即便后续某条为 null 也返回 false。
 
 ```yaml
 schema: normalizer.pers/1
@@ -132,27 +130,26 @@ R: |-
 ## 显式缺省只用于没有首条记录
 
 ```java
-import java.util.List;
-import normalizer.annotations.Nullable;
+import normalizer.intrinsics.N;
 class BillMemoRow {
     int id;
-    @Nullable String memo;
+    @N.Nullable String memo;
 }
 class NullMemoService {
     static boolean fallbackStillPreservesNull(int accountId) {
-        List<BillMemoRow> bills;
+        BillMemoRow[] bills;
         /* @normalizer-ir
            bills = from bill as b
                where b.account_id == accountId
                yield { id: b.id, memo: b.memo }
         */
-        BillMemoRow match;
+        @N.Nullable BillMemoRow match;
         /* @normalizer-ir
            match = first from bills as row
                order by row.id
                yield row else null
         */
-        String value = "missing";
+        @N.Nullable String value = "missing";
         if (match != null) {
             value = match.memo;
         }
@@ -161,7 +158,7 @@ class NullMemoService {
 }
 ```
 
-**原样通过。** 取得首条记录后，即使其 memo 为 null，也已经确实做了赋值；非空缺省只用于没有首条记录。对可空字段，`COALESCE(首项, 缺省)` 会把两种情况混在一起，不能作为规范输出。缺省即使是空字符串也不是 null；反过来只观察是否存在时，NULL 或 NOT NULL 筛选保留，但不需读取首行字段或为存在性排序。直接观察首条非 null 的字段仍须先确认存在，不能把无行判为非空。
+**原样通过。** 取得首条记录后，即使其 memo 为 null，也已经确实做了赋值；非空缺省只用于没有首条记录。对可空字段，`COALESCE(首项, 缺省)` 会把两种情况混在一起，不能作为规范输出。缺省即使是空字符串也不是 null；反过来只观察是否存在时，NULL 或 NOT NULL 筛选保留，但不需读取首行字段或为存在性排序。直接观察首条非 null 的字段仍须先确认存在，不能把无行判为非空。这里最终只问 value 是否为 null，因此无行时 `"missing" == null` 折叠为 false，和上例在同一域归到同一个 R；不提前取得首条记录。
 
 ```yaml
 schema: normalizer.pers/1
@@ -174,5 +171,9 @@ E:
     kind: table
     source: bill
     columns: { account_id: number, id: number, memo: 'text?' }
-R: (CASE WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) ELSE "missing" END) == null
+R: |-
+  CASE
+    WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) == null
+    ELSE false
+  END
 ```

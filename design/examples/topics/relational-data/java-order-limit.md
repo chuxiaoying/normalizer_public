@@ -11,8 +11,6 @@
 从账单关系中按到期日和主键选择最早一行。行声明明确三个字段都是非空业务整数；没有匹配行时返回零。
 
 ```java
-import java.util.List;
-
 class BillOrderRow {
     int accountId;
     int dueDate;
@@ -20,7 +18,7 @@ class BillOrderRow {
 }
 class DueDateService {
     static int firstDueDate(int accountId) {
-        List<BillOrderRow> bills;
+        BillOrderRow[] bills;
         /* @normalizer-ir
            bills = from bill as b
                where b.account_id == accountId
@@ -39,7 +37,7 @@ class DueDateService {
 
 ## AI 预处理结果
 
-**原样通过。** 局部关系 IR 已经保留排序键、首项选择和空结果默认值。AI 不把排序改成字符串比较，也不把首项改成无序任意选择。
+**原样通过。** 工程声明的行类以数组承载查询结果，不在分析副本依赖 JDK 集合类。 局部关系 IR 已经保留排序键、首项选择和空结果默认值。AI 不把排序改成字符串比较，也不把首项改成无序任意选择。
 
 **预处理要点**：关系首项的稳定顺序是业务语义，必须由 `ORDER BY` 和 `LIMIT 1` 一起表达，不能只保留“取一行”。
 

@@ -50,8 +50,9 @@ interface PayableMapper {
 -    private final PayableMapper mapper;
 -    PayableService(PayableMapper mapper) { this.mapper = mapper; }
 -
-     int close(int accountId, int amount) throws DatabaseWriteError {
+-    int close(int accountId, int amount) throws DatabaseWriteError {
 -        if (amount > 0) mapper.close(accountId, amount);
++    static int close(int accountId, int amount) throws DatabaseWriteError {
 +        if (amount > 0) {
 +            int affected;
 +            /* @normalizer-ir
@@ -117,7 +118,7 @@ class AuditInsertError extends RuntimeException {}
 class CloseUpdateError extends RuntimeException {}
 
 class PayableAudit {
-    int closeWithAudit(int accountId, int amount)
+    static int closeWithAudit(int accountId, int amount)
         throws AuditInsertError, CloseUpdateError {
         int inserted;
         /* @normalizer-ir

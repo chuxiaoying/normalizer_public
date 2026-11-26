@@ -14,7 +14,7 @@
 class DatabaseWriteError extends RuntimeException {}
 
 class CleanupService {
-    int removeClosed(int accountId) {
+    static int removeClosed(int accountId) {
         int affected;
         /* @normalizer-ir
            affected = delete from bill as b
@@ -29,7 +29,7 @@ class CleanupService {
 
 ## AI 预处理结果
 
-**原样通过。** 这段源码已经是保持 Java 合法的局部关系语义交付。AI 不把删除改成普通 external，也不把受影响行数预先写成常量。
+**原样通过。** 这段源码已经是保持 Java 声明和控制流的分析副本，交由 Normalizer 按扩展规则校验。AI 不把删除改成普通 external，也不把受影响行数预先写成常量。
 
 **预处理要点**：SQL 写入的目标关系、条件、返回行数和原子性必须作为完整效果合同交给内核，不能只保留 Mapper 方法名。
 

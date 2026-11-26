@@ -1,45 +1,57 @@
-# Hello World：除零合同未闭合时拒绝归一化
+# Hello World：除零保护与真实异常完成
 
 ## 设计意图
 
-区分已知非零且合法、证明为零、未知但受到 guard 保护，以及源码的除零合同未闭合。没有足够合同不可输出部分答案；不能仅为通过验收跳过危险域。
+区分证明除数非零和真实可达的除零错误。已取得的精确整数除自身，只有在该操作确实能正常完成的路径上才可化为一。入口不得依赖 AI 猜测除零规则，也不能用正常值覆盖逃逸异常。
 
 ## 输入原始代码
 
-源码显式保护了除数为零的路径，但正常路径仍需要当前尚未闭合的符号化除法。两端都能实际求得的整数有独立的[具体商与余数规则](../unified-canonical-form/java-constant-quotient.md)，不是本例中依赖调用方实参的情况。
-
 ```java
 class Ratio {
-    static int safeDivide(int total, int divisor) {
+    static int safeDivide(int divisor) {
         if (divisor == 0) return 0;
-        return total / divisor;
+        return divisor / divisor;
+    }
+
+    static int unchecked(int divisor) {
+        return divisor / divisor;
     }
 }
 ```
 
 ## AI 预处理结果
 
-**拒绝。** AI 不能把 `total / divisor` 偷换成乘倒数、固定结果或外部黑盒。要继续归一化，必须先提供除法及其除零行为的明确业务合同。
-
-```text
-PREPROCESS_REQUIRED
-
-safeDivide:
-  expression: total / divisor
-  required: an explicit division and zero-divisor contract
-```
+**原样通过。** 整数除法和保护条件都是 Java 原生语义。源码除法失败时抛出 `java.lang.ArithmeticException`，不由预处理移除除法或补默认值；内核先取得操作数，再应用非零域的化简规则。
 
 ## 归一化最终结果
 
-未生成 PERS。CLI 应以非零状态返回 `PREPROCESS_REQUIRED`，stdout 为空。
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/Ratio.java#Ratio.safeDivide, returns: number }
+P:
+  parameters:
+    divisor: { position: 0, type: number }
+R: CASE WHEN divisor == 0 THEN 0 ELSE 1 END
+```
 
-**预处理要点**：预处理只能补足可证明的语义，不能用数学猜测掩盖内核尚未支持的操作。
+0 返回 0；正负非零整数都返回 1。两个出口都是正常完成，且没有可观察动作。去掉保护时，0 路径真实抛出，不再返回：
 
-**PERS 验收要点**：除零行为属于业务合同，未定义时拒绝比输出一个看似合理的默认值更可靠。
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/Ratio.java#Ratio.unchecked, returns: number }
+P:
+  parameters:
+    divisor: { position: 0, type: number }
+R: '1'
+throws:
+  - { type: java.lang.ArithmeticException, when: divisor == 0 }
+```
+
+这里的 R 只描述正常完成域。两端是不同整数时，不能套用同值相除规则；整数商仍按趋零规则计算，参见[具体商与余数规则](../unified-canonical-form/java-constant-quotient.md)。
 
 ## 可准入的同形对照
 
-这不是用加法替换除法的预处理。它是独立入口，用已有加法合同核对相同的参数、零值守卫与早返回形态本身不应触发拒绝。
+这不是用加法替换除法的预处理。它是独立入口，用原生加法合同核对相同的参数、零值守卫与早返回形态本身不改变准入。
 
 ```java
 class AdditionControl {

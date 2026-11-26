@@ -15,10 +15,10 @@
 `Profile` 本身是普通非空输入，只有 `label` 字段允许显式空值。入口根据字段是否为空返回标记值。
 
 ```java
-import normalizer.annotations.Nullable;
+import normalizer.intrinsics.N;
 
 class Profile {
-    @Nullable
+    @N.Nullable
     String label;
 }
 
@@ -31,7 +31,7 @@ class OptionalField {
 
 ## AI 预处理结果
 
-**原样通过。** 可空性已经由 Normalizer 自身的 `@Nullable` 标记表达。AI 不把 `label` 提升成独立入口参数，也不把空值分支提前求值。
+**原样通过。** 可空性已经由 Normalizer 自身的 `@N.Nullable` 标记表达。AI 不把 `label` 提升成独立入口参数，也不把空值分支提前求值。
 
 **预处理要点**：可空性属于类型合同，预处理只保留显式声明，字段读取、空值分支和最终异常域交给统一 IR。
 
@@ -57,8 +57,8 @@ P:
 
 R: |-
   CASE
-    WHEN profile.label != null THEN 1
-    ELSE 0
+    WHEN profile.label == null THEN 0
+    ELSE 1
   END
 ```
 

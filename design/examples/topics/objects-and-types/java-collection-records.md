@@ -9,24 +9,45 @@
 集合元素是自定义记录，入口聚合每条记录的 `score` 字段。
 
 ```java
+import java.util.List;
+
 class Profile {
     int score;
 }
 
 class ProfileScores {
-    static int total(Profile[] profiles) {
-        int total;
-        /* @normalizer-ir
-           total = sum from profiles as profile yield profile.score
-        */
-        return total;
+    static int total(List<Profile> profiles) {
+        return profiles.stream().mapToInt(profile -> profile.score).sum();
     }
 }
 ```
 
 ## AI 预处理结果
 
-**原样通过。** 局部 IR 只替换集合聚合片段，保留记录声明和字段投影。
+已取得的非空 List 及其元素按原次序交为原生数组；局部指令替换集合聚合，保留记录声明、字段投影和空集返回零的合同。
+
+```diff
+--- a/src/ProfileScores.java
++++ b/src/ProfileScores.java
+@@ -1,11 +1,13 @@
+-import java.util.List;
+-
+ class Profile {
+     int score;
+ }
+
+ class ProfileScores {
+-    static int total(List<Profile> profiles) {
+-        return profiles.stream().mapToInt(profile -> profile.score).sum();
++    static int total(Profile[] profiles) {
++        int total;
++        /* @normalizer-ir
++           total = sum from profiles as profile yield profile.score
++        */
++        return total;
+     }
+ }
+```
 
 ## 归一化最终结果
 
