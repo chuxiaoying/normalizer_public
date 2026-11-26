@@ -13,3 +13,8 @@
           WHEN profile.label == null THEN 0
           ELSE 2
         END
+
+- name: qualified-nullable-string-is-the-same-text-field
+  edits:
+    - from: 'String label;'
+      to: 'java.lang.String label;'
