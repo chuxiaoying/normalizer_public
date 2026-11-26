@@ -353,7 +353,7 @@ impl EntryContext {
     }
 
     fn render_output(&self, output: BusinessOutput, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool) -> Result<String> {
-        if self.function.is_empty() || !self.function.contains('#') { return Err("missing business entry identity".into()); }
+        if !self.function.contains('#') { return Err("missing business entry identity".into()); }
         let mut positions: Vec<_> = self.parameters.values().map(|p| p.position).collect();
         positions.sort_unstable();
         if !positions.into_iter().eq(0..self.parameters.len()) { return Err("invalid business parameter positions".into()); }

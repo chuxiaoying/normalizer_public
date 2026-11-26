@@ -451,9 +451,8 @@ impl Engine<'_> {
     }
 
     fn check_source_content_cycle(
-        &self, root: &Expr, active: &mut BTreeSet<i64>, completed: &mut BTreeSet<i64>,
+        &self, root: &Expr, id: i64, active: &mut BTreeSet<i64>, completed: &mut BTreeSet<i64>,
     ) -> Result<()> {
-        let Some(id) = root.as_heap_ref() else { return Ok(()); };
         let Some((owner, Origin::Allocation)) = self.source_objects.objects.get(&id)
             else { return Ok(()); };
         if completed.contains(&id) { return Ok(()); }
@@ -465,7 +464,9 @@ impl Engine<'_> {
         for field in class.fields() {
             if self.project.parameter_type(field.java_type())? == Ty::Ref {
                 let value = self.read_source_field(root, field.name())?.scalar()?;
-                value.as_heap_ref().map(|_| self.check_source_content_cycle(&value, active, completed)).transpose()?;
+                if let Some(id) = value.as_heap_ref() {
+                    self.check_source_content_cycle(&value, id, active, completed)?;
+                }
             }
         }
         active.remove(&id);
@@ -482,15 +483,15 @@ impl Engine<'_> {
             return Ok(None);
         };
         let reference = value.scalar()?;
-        if !self.source_objects.owns(&reference) {
+        let Some(id) = reference.as_heap_ref().filter(|id| self.source_objects.objects.contains_key(id)) else {
             return Ok(None);
-        }
+        };
         need(
             matches!(&self.realtime_completion, realtime_state::Completion::Return(value) if value == &reference)
                 && self.realtime_throws.is_empty(),
             "object projection requires a total normal return of the same object",
         )?;
-        self.check_source_content_cycle(&reference, &mut BTreeSet::new(), &mut BTreeSet::new())?;
+        self.check_source_content_cycle(&reference, id, &mut BTreeSet::new(), &mut BTreeSet::new())?;
         let class = self
             .program
             .find_class(owner)

@@ -99,7 +99,7 @@ impl Engine<'_> {
     }
 
     pub(super) fn source_array_store(&mut self, array: Value, index: Value, rhs: Value, path: Expr) -> Result<()> {
-        need(self.project.direct_source && rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
+        need(rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
         let root = array_root(array)?;
         // Do not assume that separately supplied arrays are different
         // instances. Until cross-root alias analysis exists, a mutating source

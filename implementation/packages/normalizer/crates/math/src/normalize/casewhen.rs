@@ -225,9 +225,8 @@ fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_c
         || same_value_merged_changed
         || same_value_grouped_changed
         || covered_changed
-        || filtered.len() != branches_ref.len()
-        || filtered.len() != domain_simplified.len()
-        || filtered.len() != same_value_grouped.len()
+        // The earlier stages report any changes; this comparison certifies the
+        // last filter/truncate step against its actual input.
         || filtered.len() != covered_stripped.len()
     {
         if filtered.is_empty() {

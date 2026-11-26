@@ -623,16 +623,12 @@ fn parse_class_body(
 
         if let Some(first) = first_ident.clone() {
             p.skip_ws();
-            let simple_first = first.rsplit('.').next().unwrap_or(&first);
             let constructor_simple_name = class
                 .simple_name
                 .rsplit('.')
                 .next()
                 .unwrap_or(&class.simple_name);
-            if p.peek() == Some(b'(')
-                && simple_first == constructor_simple_name
-                && !first.contains('.')
-            {
+            if p.peek() == Some(b'(') && first == constructor_simple_name {
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
                 let (params, param_annotations) = parse_params(&mut p)?;
                 p.skip_ws();
