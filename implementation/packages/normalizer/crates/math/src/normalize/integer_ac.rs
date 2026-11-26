@@ -31,7 +31,6 @@ fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
             !name.starts_with("$e_")
                 && !name.starts_with("$t_")
                 && !name.starts_with("$h_")
-                && !name.contains(['[', ']'])
                 && primitive_type == "integer"
         }
         ExprKind::BinOp {

@@ -505,7 +505,9 @@ fn canonical_order_subject_strength(expr: &Expr) -> u8 {
         ExprKind::Call { .. } => 40,
         ExprKind::SymVar { origin } => match origin {
             crate::symvar::SymVarOrigin::Parameter { name, .. } => {
-                if name.contains('.') || name.contains('[') {
+                // Indexed observations are relation expressions, not names
+                // of scalar parameter paths.
+                if name.contains('.') {
                     100
                 } else {
                     70
