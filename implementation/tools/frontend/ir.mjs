@@ -54,6 +54,9 @@ function expr(node, sf) {
   if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
     return { op: 'boolean-not', operand: expr(node.operand, sf) };
   }
+  if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) {
+    return { op: 'literal', type: 'boolean', value: node.kind === ts.SyntaxKind.TrueKeyword };
+  }
   if (node.kind === ts.SyntaxKind.NullKeyword) return { op: 'literal', type: 'null', value: null };
   if (ts.isIdentifier(node)) return { op: 'var', name: node.text };
   if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {

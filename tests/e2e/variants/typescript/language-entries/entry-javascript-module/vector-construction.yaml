@@ -122,3 +122,14 @@
     - {from: '[enabled ? left : right, fixed]', to: '[enabled ? left : right, !enabled ? right : fixed]'}
   expect:
     - {path: [R], value: 'CASE WHEN enabled THEN [left, fixed] ELSE [right, right] END'}
+
+- name: negation-of-false-selects-the-left-number-without-inventing-an-input
+  edits:
+    - {from: '[enabled ? left : right, fixed]', to: '[!false ? left : right, fixed]'}
+  expect:
+    - {path: [R], value: '[left, fixed]'}
+- name: negation-of-true-selects-the-right-number-without-inventing-an-input
+  edits:
+    - {from: '[enabled ? left : right, fixed]', to: '[!true ? left : right, fixed]'}
+  expect:
+    - {path: [R], value: '[right, fixed]'}
