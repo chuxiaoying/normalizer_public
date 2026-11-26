@@ -318,7 +318,7 @@ impl Engine<'_> {
         )
     }
     fn block(&mut self, body: &[S], id: &str, env: &mut Env, path: Expr) -> Result<Value> {
-        let value = self.source_steps(body, id, env, path)?;
+        self.source_steps(body, id, env, path)?;
         let terminal = self.realtime_completion.terminal_alternatives();
         if let Some(result) = terminal.as_ref().and_then(|exits| exits.normal_return_value()) {
             return Ok(Value::Term(self.project.result_type(self.methods[id].return_type())?,result));
@@ -329,10 +329,10 @@ impl Engine<'_> {
             // the actual exit and enclosing catches consume that completion.
             return Ok(Value::Term(self.project.result_type(self.methods[id].return_type())?, b::lit_null()));
         }
-        value.ok_or_else(||fail("missing return"))
+        Err(fail("missing return"))
     }
 
-    pub(super) fn source_steps(&mut self, body: &[S], id: &str, env: &mut Env, entry_path: Expr) -> Result<Option<Value>> {
+    pub(super) fn source_steps(&mut self, body: &[S], id: &str, env: &mut Env, entry_path: Expr) -> Result<()> {
         let mut consumed_through = 0;
         for (i, s) in body.iter().enumerate() {
             if i < consumed_through { continue; }
@@ -355,7 +355,7 @@ impl Engine<'_> {
                     self.realtime_completion = self
                         .realtime_completion
                         .replace_continue(realtime_state::Completion::Return(realtime_value));
-                    return Ok(Some(value));
+                    return Ok(());
                 }
                 S::Throw(expr) => {
                     use crate::normalized::RuntimeThrowMessage;
@@ -579,7 +579,7 @@ impl Engine<'_> {
                 _ => return Err(fail("unsupported Java statement in pure-array-1")),
             }
         }
-        Ok(None)
+        Ok(())
     }
     fn promote_native_decimal(value: Value) -> Value {
         match value {
@@ -1039,22 +1039,14 @@ impl Engine<'_> {
         stage: &str,
         started: Instant,
         status: &str,
-        detail: impl AsRef<str>,
     ) {
         if crate::profile::enabled() {
-            let detail = detail.as_ref();
-            let detail_suffix = if detail.is_empty() {
-                String::new()
-            } else {
-                format!(" {detail}")
-            };
             crate::profile::event(
                 "kernel_execution.stage",
                 &format!(
-                    "stage={stage} elapsed_us={} {}{}",
+                    "stage={stage} elapsed_us={} {}",
                     started.elapsed().as_micros(),
                     self.profile_metrics(status),
-                    detail_suffix
                 ),
             );
         }

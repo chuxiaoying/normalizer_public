@@ -728,7 +728,6 @@ impl Loaded {
             "entry_execute",
             entry_started,
             "completed_entry_execute",
-            "",
         );
         let source_record_return = if e.realtime_completion.is_always_throwing() {
             None
@@ -890,14 +889,6 @@ fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
             return Ok(Value::Term(ty, math::normalize(extremum)));
         }
     }
-    let completion = realtime_state::join_completion(
-        c,
-        realtime_state::Completion::Return(yes.scalar()?),
-        realtime_state::Completion::Return(no.scalar()?),
-    )
-    .ok_or_else(|| fail("branch completion cannot be joined at this continuation"))?;
-    let realtime_state::Completion::Return(value) = completion else {
-        return Err(fail("pure value branch produced a non-return completion"));
-    };
+    let value = realtime_state::join_value(c, yes.scalar()?, no.scalar()?);
     Ok(Value::Term(ty, value))
 }

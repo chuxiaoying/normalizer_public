@@ -432,9 +432,6 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
         |_| format!("conds={}", conds.len()),
     );
     let profile_start = crate::profile::enabled().then(Instant::now);
-    if conds.is_empty() {
-        return false;
-    }
     if conds.iter().any(|cond| cond.as_bool() == Some(true)) {
         return true;
     }
@@ -735,11 +732,6 @@ fn conditions_have_direct_complement_pair(conds: &[Expr]) -> bool {
 }
 
 fn normalized_disjunction_for_conditions(conds: &[Expr]) -> Expr {
-    assert!(
-        !conds.is_empty(),
-        "[MATH-BUILDER] normalized_disjunction_for_conditions requires non-empty conds"
-    );
-
     if let Some(cached) = conditions_cover_disjunction_cache_get(conds) {
         crate::profile::count(
             &CONDITIONS_COVER_DISJUNCTION_CACHE_HITS,

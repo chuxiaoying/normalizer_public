@@ -132,16 +132,15 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
   const local = () => 'observed_' + serial++;
   const variable = (name) => ({ op: 'var', name });
   const outstanding = new Set();
-  function readInput(path, steps) {
-    const input = inputs.get(path);
-    if (!input) fail(`undeclared host input ${path}`);
+  function readInput(input, steps) {
     const name = local();
     steps.push({ op: 'read_input', name, input });
     return name;
   }
   function lower(n, steps) {
     if (ts.isParenthesizedExpression(n)) return lower(n.expression, steps);
-    if (inputs.has(n.getText())) return variable(readInput(n.getText(), steps));
+    const input = inputs.get(n.getText());
+    if (input !== undefined) return variable(readInput(input, steps));
     if (ts.isIdentifier(n)) return variable(n.text);
     if (ts.isNumericLiteral(n) && Number.isSafeInteger(Number(n.text)))
       return { op: 'const', type: 'number', value: Number(n.text) };
@@ -191,7 +190,10 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         // Host observations execute at the directive's original location.
         source = source.replace(
           /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\b/g,
-          (token) => (inputs.has(token) ? readInput(token, steps) : token),
+          (token) => {
+            const input = inputs.get(token);
+            return input === undefined ? token : readInput(input, steps);
+          },
         );
         steps.push({ op: 'local_ir', source });
         uninitialized = undefined;
