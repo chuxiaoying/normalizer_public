@@ -42,3 +42,9 @@
     - from: 'from bill as row yield'
       to: 'from bill as row where false yield'
   reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'group count currently requires an unfiltered table declaration']
+
+- name: renaming-the-projected-key-keeps-the-physical-owner
+  edits:
+    - {from: 'String status;', to: 'String category;'}
+    - {from: 'status: row.status', to: 'category: row.status'}
+    - {from: 'by b.status', to: 'by b.category'}
