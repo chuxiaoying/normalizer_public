@@ -31,9 +31,6 @@ pub struct FuncSemantics {
     /// 只有 pure=true 时才会被 math::constant_fold 调用。
     pub evaluator: Option<Arc<dyn Fn(&[Lit]) -> Option<Lit> + Send + Sync>>,
 
-    /// f(f(x)) = f(x) for an already registered pure unary function.
-    pub unary_idempotent: bool,
-
 }
 
 #[derive(Clone, Debug)]
@@ -63,11 +60,6 @@ impl FuncSemantics {
             trigger_positions,
             result,
         });
-        self
-    }
-
-    pub fn with_unary_idempotence(mut self) -> Self {
-        self.unary_idempotent = true;
         self
     }
 

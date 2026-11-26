@@ -5,8 +5,10 @@ use crate::domains::primitive::registry::FuncSemantics;
 pub const KEY: &str = "normalized.text.is_blank_java17";
 pub const TRIM_KEY: &str = "normalized.text.trim_utf16";
 
+static TRIM: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
+
 pub fn trim(value: Expr) -> Expr {
-    let key = crate::register_func(
+    let key = *TRIM.get_or_init(|| crate::register_func(
         TRIM_KEY,
         vec![Primitive::String],
         Some(Primitive::String),
@@ -14,10 +16,16 @@ pub fn trim(value: Expr) -> Expr {
             .with_null_behavior(vec![0], Lit::Null)
             .with_evaluator(std::sync::Arc::new(|args| evaluate_text(args, |text| {
                 Lit::Str(text.trim_matches(|c: char| c <= '\u{20}').into())
-            })))
-            .with_unary_idempotence(),
-    );
+            }))),
+    ));
     crate::normalize(b::call(key, vec![value]))
+}
+
+/// A nested use of the same typed trim is already a complete trim.
+pub(crate) fn repeat_trim(key: crate::FuncKey, args: &[Expr]) -> Option<Expr> {
+    if TRIM.get() != Some(&key) { return None; }
+    let value = args.first()?;
+    value.as_call().is_some_and(|(inner, _)| inner == key).then(|| value.clone())
 }
 
 /// Character.isWhitespace(char), Java 17: Unicode spaces excluding NBSPs,

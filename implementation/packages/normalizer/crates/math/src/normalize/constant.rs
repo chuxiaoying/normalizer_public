@@ -57,16 +57,7 @@ fn fold_call(
             return Some(builder::lit(value));
         }
     }
-    // Return a direct child of the same registered unary Call, so the
-    // rewrite preserves the result sort and strictly decreases node count.
-    if sem.unary_idempotent {
-        if let [value] = args {
-            if value.as_call().is_some_and(|(inner, _)| inner == func_key) {
-                return Some(value.clone());
-            }
-        }
-    }
-    None
+    crate::domains::text::repeat_trim(func_key, args)
 }
 
 fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
