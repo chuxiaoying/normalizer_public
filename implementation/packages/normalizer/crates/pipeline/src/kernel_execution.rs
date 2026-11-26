@@ -36,10 +36,10 @@ enum LocalIrInitializer {
 }
 
 impl LocalIrInitializer {
-    fn binding(stmt: &S) -> Option<(&str, Self)> {
+    fn for_binding(stmt: &S, expected: &str) -> Option<Self> {
         use normalizer_ir::local::LocalIr;
         let S::LocalIr(operation) = stmt else { return None; };
-        Some(match operation {
+        let (binding, kind) = match operation {
             LocalIr::LocalMapEmpty { binding } => (binding.as_str(), Self::TextMap),
             LocalIr::LocalMapGet { binding, .. } => (binding.as_str(), Self::NullableText),
             LocalIr::MemberChoice { binding, .. } => (binding.as_str(), Self::MemberChoice),
@@ -48,7 +48,8 @@ impl LocalIrInitializer {
             LocalIr::Relation(query) if !query.accumulate => (query.binding.as_str(), Self::Relation),
             LocalIr::Decimal(decimal) => (decimal.binding.as_str(), Self::Decimal),
             _ => return None,
-        })
+        };
+        (binding == expected).then_some(kind)
     }
 }
 
@@ -374,18 +375,16 @@ impl Engine<'_> {
                     initializer: None,
                     ..
                 } => {
-                    let initializes = body.get(i + 1).and_then(LocalIrInitializer::binding);
+                    let initializes = body.get(i + 1).and_then(|stmt| LocalIrInitializer::for_binding(stmt, name));
                     let binds = match initializes {
-                        Some((binding, kind)) if binding == name.as_str() => match kind {
-                            LocalIrInitializer::TextMap => super::source_map::declared_map(java_type),
-                            LocalIrInitializer::NullableText => super::source_map::declared_text(java_type),
-                            LocalIrInitializer::MemberChoice => self.project.parameter_type(java_type)? == Ty::Integer
-                                || self.project.source_owner(java_type).is_some(),
-                            LocalIrInitializer::Integer => self.project.parameter_type(java_type)? == Ty::Integer,
-                            LocalIrInitializer::Relation => true,
-                            LocalIrInitializer::Decimal => crate::normalized::exact_decimal_type(java_type),
-                        },
-                        _ => false,
+                        Some(LocalIrInitializer::TextMap) => super::source_map::declared_map(java_type),
+                        Some(LocalIrInitializer::NullableText) => super::source_map::declared_text(java_type),
+                        Some(LocalIrInitializer::MemberChoice) => self.project.parameter_type(java_type)? == Ty::Integer
+                            || self.project.source_owner(java_type).is_some(),
+                        Some(LocalIrInitializer::Integer) => self.project.parameter_type(java_type)? == Ty::Integer,
+                        Some(LocalIrInitializer::Relation) => true,
+                        Some(LocalIrInitializer::Decimal) => crate::normalized::exact_decimal_type(java_type),
+                        None => false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
                 }
@@ -1072,12 +1071,21 @@ fn compare_integer_floor(op: BinOpKind, left: &Value, right: &Value, domain: &Ex
 }
 
 #[cfg(test)]
-mod guarded_count_comparison_contract {
+mod source_execution_contract_tests {
     use super::*;
     use BinOpKind::*;
 
     fn literal(n: i64) -> Value {
         Value::Term(Ty::Integer, b::lit_int(n))
+    }
+
+    #[test]
+    fn a_local_ir_definition_initializes_only_its_own_fresh_binding() {
+        let decimal = S::LocalIr(normalizer_ir::local::parse("amount = round(price, 2, HALF_UP)").unwrap());
+        let count = S::LocalIr(normalizer_ir::local::parse("sum += sum from items as row yield row").unwrap());
+        assert!(matches!(LocalIrInitializer::for_binding(&decimal, "amount"), Some(LocalIrInitializer::Decimal)));
+        assert!(LocalIrInitializer::for_binding(&decimal, "other").is_none());
+        assert!(LocalIrInitializer::for_binding(&count, "sum").is_none());
     }
 
     #[test]
