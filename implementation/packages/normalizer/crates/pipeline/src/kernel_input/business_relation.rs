@@ -65,7 +65,7 @@ impl Engine<'_> {
             }
             false
         }
-        predicates.into_iter().all(|p| closed(p, name, columns, entry))
+        predicates.into_iter().all(|p| closed(p, name, columns, entry.syntax))
     }
 
     fn query_row_declaration(&self, decl: &JavaType) -> Result<&simulator_parser::JavaClass> {

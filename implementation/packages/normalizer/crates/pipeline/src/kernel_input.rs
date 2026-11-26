@@ -26,6 +26,7 @@ mod realtime_state;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
+    rc::Rc,
     time::Instant,
 };
 
@@ -183,13 +184,16 @@ pub struct Project {
     parameter_value_types: BTreeMap<String, BTreeMap<String, String>>,
 
 }
-struct MethodTypes {
+struct AdmittedMethod<'a> {
+    syntax: &'a JavaMethod,
     defaults: Vec<Ty>,
     returns: Ty,
+    binding: Option<Rc<CheckedBinding<'a>>>,
 }
 
-struct CheckedBinding {
-    function: String,
+struct CheckedBinding<'a> {
+    name: &'a str,
+    function: &'a Function,
     parameters: Vec<Ty>,
 }
 
@@ -524,8 +528,6 @@ impl Loaded {
             source_array_writes: Default::default(),
             project: &self.project,
             methods: BTreeMap::new(),
-            method_types: BTreeMap::new(),
-            bindings: BTreeMap::new(),
             active: BTreeSet::new(),
             steps: 0,
             async_depth: 0,
@@ -599,8 +601,7 @@ impl Loaded {
                 let returns = self.project.result_type(m.return_type())?;
                 let defaults = m.params().iter().map(|(ty, _)| self.project.parameter_type(ty))
                     .collect::<Result<Vec<_>>>()?;
-                e.method_types.insert(id.clone(), MethodTypes { defaults, returns });
-                e.methods.insert(id, m);
+                e.methods.insert(id, AdmittedMethod { syntax: m, defaults, returns, binding: None });
             }
         }
         // Source admission already owns executable/native declaration
@@ -619,10 +620,9 @@ impl Loaded {
                 .java
                 .split_once('(')
                 .ok_or_else(|| fail("binding requires full signature"))?;
-            let m = *e
-                .methods
-                .get(id)
+            let declared = e.methods.get_mut(id)
                 .ok_or_else(|| fail(format!("binding has no Java declaration: {id}")))?;
+            let m = declared.syntax;
             need(signature.ends_with(')'), "invalid signature")?;
             let java_types: Vec<_> = m
                 .params()
@@ -633,7 +633,6 @@ impl Loaded {
                 signature == format!("{})", java_types.join(",")),
                 "Java parameter signature mismatch",
             )?;
-            let declared = &e.method_types[id];
             need(
                 f.params.len() == m.params().len()
                     && Ty::parse(&f.returns)? == declared.returns,
@@ -652,12 +651,12 @@ impl Loaded {
                 parameters.push(ty);
             }
             need(
-                e.bindings.insert(id.to_string(), CheckedBinding { function: name.clone(), parameters }).is_none(),
+                declared.binding.replace(Rc::new(CheckedBinding { name, function: f, parameters })).is_none(),
                 "duplicate binding",
             )?;
         }
-        for id in e.methods.keys() {
-            need(e.bindings.contains_key(id), "unbound bodyless method")?;
+        for method in e.methods.values() {
+            need(method.binding.is_some(), "unbound bodyless method")?;
         }
         Ok(e)
     }
@@ -676,7 +675,7 @@ impl Loaded {
             .ok_or_else(|| fail("entry not declared"))?;
         e.selected_entry = Some(selected.as_str());
         e.entry_context = self.project.entry_contexts.get(entry);
-        let m = *e.methods.get(entry).ok_or_else(|| fail("entry method missing"))?;
+        let m = e.methods.get(entry).ok_or_else(|| fail("entry method missing"))?.syntax;
         let args = m
             .params()
             .iter()
@@ -712,7 +711,7 @@ impl Loaded {
             source_identity_parameters: e.source_objects.compared_parameters,
             source_identity_states: e.source_objects.compared_states,
             source_record_return,
-            entry_return_type: e.method_types[entry].returns.clone(),
+            entry_return_type: e.methods[entry].returns.clone(),
             host_state_roots: e.state_roots.into_values().collect(),
             source_tables: e.source_relations.tables,
             realtime_store: e.realtime_store,

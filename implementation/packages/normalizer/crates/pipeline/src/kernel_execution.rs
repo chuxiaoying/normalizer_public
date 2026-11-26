@@ -29,9 +29,7 @@ pub(super) struct Engine<'a> {
     pub(super) node_depth: usize,
     pub(super) max_node_depth: usize,
     pub(super) project: &'a Project,
-    pub(super) methods: BTreeMap<String, &'a JavaMethod>,
-    pub(super) method_types: BTreeMap<String, MethodTypes>,
-    pub(super) bindings: BTreeMap<String, CheckedBinding>,
+    pub(super) methods: BTreeMap<String, AdmittedMethod<'a>>,
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
     pub(super) async_depth: usize,
@@ -223,7 +221,7 @@ impl Engine<'_> {
             .ok_or_else(|| fail("missing method owner"))?
             .0;
         match expression {
-            J::Ident(n) if n == "this" && !self.methods[id].is_static() => {
+            J::Ident(n) if n == "this" && !self.methods[id].syntax.is_static() => {
                 return Ok(JavaType::Class(owner.into()))
             }
             J::New { java_type, .. } => return Ok(java_type.clone()),
@@ -252,7 +250,7 @@ impl Engine<'_> {
                 "source field receiver must be a declared local or parameter",
             ));
         };
-        let method = self.methods[id];
+        let method = self.methods[id].syntax;
         if let Some((ty, _)) = method.params().iter().find(|(_, n)| n == name) {
             return Ok(ty.clone());
         }
@@ -319,13 +317,13 @@ impl Engine<'_> {
         self.source_steps(body, id, env, path)?;
         let terminal = self.realtime_completion.terminal_alternatives();
         if let Some(result) = terminal.as_ref().and_then(|exits| exits.normal_return_value()) {
-            return Ok(Value::Term(self.method_types[id].returns.clone(),result));
+            return Ok(Value::Term(self.methods[id].returns.clone(),result));
         }
-        if self.methods[id].is_constructor() { return Ok(Value::Term(Ty::Unit,b::lit_null())); }
+        if self.methods[id].syntax.is_constructor() { return Ok(Value::Term(Ty::Unit,b::lit_null())); }
         if terminal.as_ref().is_some_and(|exits| exits.is_always_throwing()) {
             // No expression can observe this carrier; the completion records
             // the actual exit and enclosing catches consume that completion.
-            return Ok(Value::Term(self.method_types[id].returns.clone(), b::lit_null()));
+            return Ok(Value::Term(self.methods[id].returns.clone(), b::lit_null()));
         }
         Err(fail("missing return"))
     }
@@ -344,9 +342,9 @@ impl Engine<'_> {
                         i + 1 == body.len(),
                         "unreachable supplied statements must be removed",
                     )?;
-                    self.source_reference_assignment(self.methods[id].return_type(), expr, id)?;
+                    self.source_reference_assignment(self.methods[id].syntax.return_type(), expr, id)?;
                     let value = self.java_expr(expr, id, env, path)?;
-                    let value = if crate::normalized::native_decimal_type(self.methods[id].return_type()) {
+                    let value = if crate::normalized::native_decimal_type(self.methods[id].syntax.return_type()) {
                         Self::promote_native_decimal(value)
                     } else { value };
                     let realtime_value = value.scalar()?;
@@ -417,7 +415,7 @@ impl Engine<'_> {
                     need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
                         Some(S::VarDecl { name, java_type, initializer: None, .. }) if name == binding
                             && super::source_map::declared_text(java_type)), "local map read requires an uninitialized text local")?;
-                    let method = self.methods[id];
+                    let method = self.methods[id].syntax;
                     let owner = id.rsplit_once('.').and_then(|(owner, _)| self.program.find_class(owner));
                     need(owner.is_some_and(|owner| crate::normalized::nullable_text_return(owner, method)),
                         "local map text result must declare a nullable return")?;
@@ -496,7 +494,7 @@ impl Engine<'_> {
                         value.check_java_array_component(java_component.as_deref())?;
                         need(value.ty() == ty,"local assignment type mismatch")?;
                         env.insert(name.clone(),value);
-                    } else if !self.methods[id].is_static() && !env.contains_key("this")
+                    } else if !self.methods[id].syntax.is_static() && !env.contains_key("this")
                         && self.is_entry_state(id.rsplit_once('.').unwrap().0, name)
                     {
                         let value = self.java_expr(value,id,env,path.clone())?;
@@ -709,7 +707,7 @@ impl Engine<'_> {
             J::Ident(n) => {
                 if let Some(value) = env.get(n) { return Ok(value.clone()); }
                 let owner = id.rsplit_once('.').unwrap().0;
-                if !self.methods[id].is_static() && !env.contains_key("this") && self.is_entry_state(owner, n) {
+                if !self.methods[id].syntax.is_static() && !env.contains_key("this") && self.is_entry_state(owner, n) {
                     return self.read_entry_state(owner, n, &path);
                 }
                 Err(fail(format!("undefined Java variable {n}")))
@@ -822,7 +820,7 @@ impl Engine<'_> {
                 let callee = format!("{owner}.{method}");
                 let port = format!("{}.{}", id.rsplit_once('.').unwrap().0, callee);
                 if self.project.source_ports.contains_key(&port) {
-                    need(target.is_some() && !self.methods[id].is_static(), "external instance field requires a bound receiver")?;
+                    need(target.is_some() && !self.methods[id].syntax.is_static(), "external instance field requires a bound receiver")?;
                     let values = args.iter()
                         .map(|arg| self.java_expr(arg, id, env, path.clone()))
                         .collect::<Result<_>>()?;
@@ -830,7 +828,7 @@ impl Engine<'_> {
                 }
                 need(!field_receiver, "field receiver is not a declared external port")?;
                 if let Some(declaration) = self.methods.get(&callee) {
-                    for ((expected, _), actual) in declaration.params().iter().zip(args) {
+                    for ((expected, _), actual) in declaration.syntax.params().iter().zip(args) {
                         self.source_reference_assignment(expected, actual, id)?;
                     }
                 }
@@ -865,7 +863,7 @@ impl Engine<'_> {
                     };
                     return Ok(Value::Term(Ty::Text, math::normalize(expr)));
                 }
-                if target.is_none() && !self.methods[id].is_static() {
+                if target.is_none() && !self.methods[id].syntax.is_static() {
                     return self.java_call_with_receiver(&callee, vs, path, env.get("this").cloned(), true);
                 }
                 self.java_call(&callee, vs, path)
@@ -1259,8 +1257,9 @@ impl Engine<'_> {
     }
 
     pub(super) fn method_parameter_type(&self, id: &str, index: usize, name: &str) -> Result<Ty> {
-        if let Some(binding) = self.bindings.get(id) {
-            let semantic = &self.project.functions[&binding.function].params[index];
+        let method = &self.methods[id];
+        if let Some(binding) = &method.binding {
+            let semantic = &binding.function.params[index];
             if semantic.name == name {
                 return Ok(binding.parameters[index].clone());
             }
@@ -1270,7 +1269,7 @@ impl Engine<'_> {
                 return Ok(ty);
             }
         }
-        Ok(self.method_types[id].defaults[index].clone())
+        Ok(method.defaults[index].clone())
     }
 
     fn java_call_with_receiver(
@@ -1285,10 +1284,9 @@ impl Engine<'_> {
             self.active.insert(format!("java:{id}")),
             "recursive Java call",
         )?;
-        let m = *self
-            .methods
-            .get(id)
-            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id));
+        let m = self.methods.get(id)
+            .unwrap_or_else(|| crate::preprocess::out_of_source(self.selected_entry.unwrap_or("Java execution"), id))
+            .syntax;
         need(m.params().len() == args.len(), "Java arity mismatch")?;
         for (index, ((t, name), v)) in m.params().iter().zip(&mut args).enumerate() {
             let expected = self.method_parameter_type(id, index, name)?;
@@ -1304,8 +1302,8 @@ impl Engine<'_> {
             }
             need(expected == v.ty(), "Java argument type mismatch")?;
         }
-        let value = if self.bindings.contains_key(id) {
-            self.call(id, args, path)?
+        let value = if let Some(binding) = self.methods[id].binding.clone() {
+            self.call(id, &binding, args, path)?
         } else {
             need(
                 m.is_static()
@@ -1327,7 +1325,7 @@ impl Engine<'_> {
             self.block(body, id, &mut env, path)?
         };
         need(
-            value.ty() == self.method_types[id].returns,
+            value.ty() == self.methods[id].returns,
             "Java return type mismatch",
         )?;
         let callee_completion = self.realtime_completion.clone();
@@ -1339,16 +1337,15 @@ impl Engine<'_> {
         self.active.remove(&format!("java:{id}"));
         Ok(value)
     }
-    fn call(&mut self, id: &str, args: Vec<Value>, path: Expr) -> Result<Value> {
+    fn call(&mut self, id: &str, binding: &CheckedBinding<'_>, args: Vec<Value>, path: Expr) -> Result<Value> {
         self.budget()?;
         self.semantic_calls += 1;
-        let binding = &self.bindings[id];
-        let name = binding.function.clone();
+        let name = binding.name;
         need(
             self.active.insert(format!("semantic:{name}")),
             "recursive semantic call",
         )?;
-        let f = &self.project.functions[&name];
+        let f = binding.function;
         need(f.params.len() == args.len(), "semantic arity mismatch")?;
         for (ty, v) in binding.parameters.iter().zip(&args) {
             need(*ty == v.ty(), "semantic argument type mismatch")?;
@@ -1372,7 +1369,7 @@ impl Engine<'_> {
                 &(context + "\nresult=not-produced"),
             )
         })?;
-        let expected = &self.method_types[id].returns;
+        let expected = &self.methods[id].returns;
         let actual = value.ty();
         if actual != *expected {
             return Err(fail(format!(

@@ -61,7 +61,7 @@ impl Engine<'_> {
                 }
             },
             Some(Value::Sequence {item: Ty::Integer, name, ..}) => {
-                need(self.methods[method].params().iter().any(|(ty, param)|
+                need(self.methods[method].syntax.params().iter().any(|(ty, param)|
                     param == name && crate::normalized::numeric_array(ty)),
                     "member choice requires an acquired entry array")?;
                 Choice::Independent(Candidates::Input(name.clone()))
@@ -88,7 +88,7 @@ impl Engine<'_> {
     ) -> Result<()> {
         let Some(Value::Sequence {item: Ty::Ref, name, ..}) =
             env.get(members) else { return Err(fail("record choice requires a declared record array parameter")); };
-        need(self.methods[method].params().iter().any(|(ty, param)|
+        need(self.methods[method].syntax.params().iter().any(|(ty, param)|
             param == name && matches!(ty, JavaType::Array(item) if self.project.source_owner(item) == Some(owner))),
             "record choice requires an array of its declared record type")?;
         let MemberChoiceFallback::Local(fallback) = empty else {
@@ -97,9 +97,9 @@ impl Engine<'_> {
         let fallback = env.get(fallback).ok_or_else(|| fail("unbound record choice fallback"))?.scalar()?;
         let (fallback_owner, fallback_name) = self.source_objects.borrowed_parameter(&fallback)
             .ok_or_else(|| fail("record choice needs a same-type record parameter fallback"))?;
-        need(fallback_owner == owner && self.methods[method].params().iter()
+        need(fallback_owner == owner && self.methods[method].syntax.params().iter()
             .any(|(ty, name)| name == fallback_name && self.project.source_owner(ty) == Some(owner))
-            && self.methods[method].param_annotations(fallback_name).is_empty(),
+            && self.methods[method].syntax.param_annotations(fallback_name).is_empty(),
             "record choice needs a same-type nonnullable record parameter fallback")?;
         let class = self.program.find_class(owner).ok_or_else(|| fail("missing record choice layout"))?;
         let fields = class.fields().iter().map(|field| {
