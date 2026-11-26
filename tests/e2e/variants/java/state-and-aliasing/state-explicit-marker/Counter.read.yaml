@@ -9,3 +9,14 @@
   edits:
     - from: "return this.value + 1;"
       to: "int result = this.value + 1;\n        return result;"
+
+- name: explicit-this-write-is-visible-through-the-same-state
+  edits:
+    - from: 'return this.value + 1;'
+      to: |-
+        this.value = this.value + 1;
+                return this.value;
+  expect:
+    - path: [S]
+      add:
+        - write: {target: value, value: value + 1}

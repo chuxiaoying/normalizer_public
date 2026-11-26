@@ -16,3 +16,13 @@
           WHEN amount >= 0 THEN completion.is_throw($e_0, DatabaseWriteError)
           ELSE false
         END
+
+- name: atomic-update-preserves-an-exact-integer-literal
+  edits:
+    - {from: 'closed_amount: amount', to: 'closed_amount: 7'}
+  expect:
+    - path: [S, 0, sql]
+      value: |-
+        UPDATE payable
+        SET closed_amount = 7, status = 'CLOSED'
+        WHERE payable.account_id = accountId
