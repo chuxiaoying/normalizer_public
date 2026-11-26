@@ -13,3 +13,14 @@
   expect:
     - {path: [R], value: "CASE\n  WHEN divisor == 0 THEN -1\n  ELSE 1\nEND"}
     - {path: [throws], absent: true}
+
+- name: remainder-of-a-value-by-itself-keeps-the-zero-divisor-exception
+  edits:
+    - from: |-
+        static int unchecked(int divisor) {
+                return divisor / divisor;
+      to: |-
+        static int unchecked(int divisor) {
+                return divisor % divisor;
+  expect:
+    - {path: [R], value: '0'}

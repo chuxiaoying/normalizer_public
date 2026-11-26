@@ -79,3 +79,5 @@ R: |-
     ELSE operand + total
   END
 ```
+
+无保护的同值取余 `divisor % divisor` 与同值相除共享真实的除零域：divisor 为 0 仍抛 `java.lang.ArithmeticException`，非零域内余数恒为 0 而不是 1。R 只描述该正常域。
