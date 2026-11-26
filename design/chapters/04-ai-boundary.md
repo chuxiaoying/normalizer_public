@@ -2,7 +2,11 @@
 
 一个 Spring controller 在正常请求里能调用注入好的 service。但如果只拿 controller 的 Java 源码来执行，模拟器看不到 Spring 什么时候创建了 service，又把它装到了哪里。**预处理要补的，就是这些原程序依赖、却没写在可执行源码里的步骤。**
 
-交给模拟器的是一份**原语言的纯源码工程**。「纯」不是说程序不能改状态或调用外部服务，而是说：**从选定入口开始，凡是需要模拟器亲自执行的代码，都在原语言源码里看得见。** Java 仍用 Java 表达，Vue 里的业务逻辑可以抽成普通 JS 或 TS 模块。已经写清楚的原生程序直接交给工程，AI 不再改写一遍。
+交给模拟器的是一份**原语言的纯源码工程**。「纯」不是说程序不能改状态或调用外部服务，而是说：**从选定入口开始，凡是需要模拟器亲自执行的代码，都在原语言源码里看得见。** Java 仍用 Java 表达。已经符合源码和类型要求的程序直接交给工程，AI 不再改写一遍。
+
+**交付还必须是强类型的。** 前端原项目即使写的是 JavaScript，交给工程的分析源码也统一用 TypeScript，开启严格类型检查，并禁止显式和隐式的 `any`。类型能可靠推断就不用重复写；需要声明时，直接写在参数、返回值、字段或相关类型上，不另用注释声明类型。
+
+未知的是值，不是运算的含义。比如 `x + 0` 可以是数值加法，也可能把字符串 `"5"` 拼成 `"50"`。AI 只能根据源码、输入合同或已有的类型检查来确定是哪一种；原程序允许两种情况时，必须保留两种行为；只有能等价区分它们，才分别交付已定类型的运算。不能靠 `as number` 猜类型，也不能为了让 TypeScript 通过就丢掉原本允许的输入。没有足够依据时，明确指出缺的类型合同。
 
 ## 一、先把入口和运行环境写清楚
 
@@ -67,13 +71,103 @@ Beans.QUOTE_CONTROLLER.quote(units)
 
 项目里 Bean 多了，也用同一个结构：从选定入口出发，按实际生效的配置找出会影响它的 Bean，再把确认过的装配集中生成到 `Beans.java`，不用把全应用手抄一遍。这里的静态实例代表**当前分析的一个容器里的单例**；请求级对象仍按请求创建，原来要求构造器注入的也不用硬改成 setter。若鉴权、事务代理或初始化动作会改变结果，就要显式保留那一步，不能因为对象装上了就当它们不存在。
 
+### JavaScript → TypeScript：沿全仓的对象流还原类型
+
+单看 `checkout(fulfillment)`，里面只是把对象转交给另一个函数。单看消费方的 `fulfillment.address`，也不能知道它是必填、可空，还是有些对象根本没有。**要确定一个对象的类型，得回到整个工程里看它从哪里来、经过哪里、最后怎么用。**
+
+这个工程有门店自提和送货两条路径。为选定的 `checkout` 入口做分析时，AI 先解析跨文件的导入和调用，再核对所有能到达这个入口的构造、字段写入、转发和别名。下面这三处证据缺一不可：
+
+| 在哪里找到证据 | 它说明什么 |
+| --- | --- |
+| `checkout.js` 的请求处理 | 两个调用分支都经过原有的字符串检查。进入工厂的值确实是字符串，不是因为参数名叫 `address`。 |
+| `fulfillment.js` 的两个工厂 | 自提对象一定有 `kind: "pickup"` 和 `storeId`；送货对象一定有 `kind: "delivery"` 和 `address`。本例没有其他构造来源或后续写入改变对象形状。 |
+| `summary.js` 的字段读取 | 按 `kind` 分支，自提才读 `storeId`，送货才读 `address`。不能把两种对象糊成一个「所有字段都可选」的对象。 |
+
+因此定义一个共享的 `Fulfillment`：是两种明确形状中的一种，`kind` 决定本次是哪种。下面的三个 diff 是同一次重构。
+
+**先在对象创建处声明两种形状。**
+
+```diff
+diff --git a/src/fulfillment.js b/src/fulfillment.ts
+rename from src/fulfillment.js
+rename to src/fulfillment.ts
+--- a/src/fulfillment.js
++++ b/src/fulfillment.ts
+@@ -1,7 +1,11 @@
+-export function pickup(storeId) {
++export type Fulfillment =
++    | { kind: "pickup"; storeId: string }
++    | { kind: "delivery"; address: string };
++
++export function pickup(storeId: string): Fulfillment {
+     return { kind: "pickup", storeId };
+ }
+
+-export function delivery(address) {
++export function delivery(address: string): Fulfillment {
+     return { kind: "delivery", address };
+ }
+```
+
+**再把共享类型沿着调用链传给入口。** 请求处理器的原始输入仍是 `unknown`，保留原来的检查和拒绝行为。只有验证过的值才能构造成 `Fulfillment`，进入 `checkout`。
+
+```diff
+diff --git a/src/checkout.js b/src/checkout.ts
+rename from src/checkout.js
+rename to src/checkout.ts
+--- a/src/checkout.js
++++ b/src/checkout.ts
+@@ -1,13 +1,14 @@
+ import { pickup, delivery } from "./fulfillment.js";
++import type { Fulfillment } from "./fulfillment.js";
+ import { summarize } from "./summary.js";
+
+-function checkout(fulfillment) {
++function checkout(fulfillment: Fulfillment): string {
+     return summarize(fulfillment);
+ }
+
+-export function handleOrder(mode, value) {
++export function handleOrder(mode: unknown, value: unknown): string {
+     if (typeof value !== "string") throw new Error("Expected text");
+     if (mode === "pickup") return checkout(pickup(value));
+     if (mode === "delivery") return checkout(delivery(value));
+     throw new Error("Unknown mode");
+ }
+```
+
+**最后让消费方使用同一个类型。** 原有的 `kind` 判断就足以让 TypeScript 在各分支确认能读哪个字段，不用强制断言。示例使用会在构建后保留 `.js` 导入路径的 ESM 配置。
+
+```diff
+diff --git a/src/summary.js b/src/summary.ts
+rename from src/summary.js
+rename to src/summary.ts
+--- a/src/summary.js
++++ b/src/summary.ts
+@@ -1,4 +1,6 @@
+-export function summarize(fulfillment) {
++import type { Fulfillment } from "./fulfillment.js";
++
++export function summarize(fulfillment: Fulfillment): string {
+     if (fulfillment.kind === "pickup") return "门店：" + fulfillment.storeId;
+     return "送达：" + fulfillment.address;
+ }
+```
+
+类型要沿这条链闭合，不是让 AI 根据某一行读字段就猜接口，再把编译报错改到消失。实际排查时还要查工厂是否被别处调用、对象传给哪些回调、有没有通过别名改字段，以及请求、插件等仓库外来源有无可核实的合同。找到了不同形状，就让类型反映这些形状；找不到证据，不能用 `any` 或类型断言补洞。
+
+**只要弱类型让可达路径上的值类型或运算含义无法确定，Normalizer 就必须主动 Panic。** 比如某个可达的插件也能把对象交给 `checkout`，但既没有校验，也没有能核实的返回合同，那就指出该调用点及无法确定的字段，不假定全仓里看见的两个本地工厂就是全部来源。预处理先报告这类缺口，工程也要自行校验；拒绝时非零退出，不输出 PERS 或半份结果。这里的 Panic 是归一化拒绝，不是原业务程序抛出的错误。
+
 ### 前端入口：动作、入口输入和实例状态别混在一起
 
 这次分析的是「点击重置按钮」，不是挂载页面或渲染按钮。原来由 Vue 在用户点击时调用 `onReset`，而这个函数修改的是**当前组件本来就有的计数**。预处理把处理器导出，并用 `@entryState` 标出组件状态：
 
 ```diff
+diff --git a/src/Counter.js b/src/Counter.ts
+rename from src/Counter.js
+rename to src/Counter.ts
 --- a/src/Counter.js
-+++ b/src/Counter.js
++++ b/src/Counter.ts
 @@ -1,11 +1,6 @@
 -import { defineComponent, h, ref } from "vue";
 +/** @entryState */
@@ -88,7 +182,7 @@ Beans.QUOTE_CONTROLLER.quote(units)
 -        return () => h("button", { onClick: onReset }, String(count.value));
 -    }
 -});
-+export async function onReset() {
++export async function onReset(): Promise<void> {
 +    counter.count = 0;
 +}
 ```
@@ -100,6 +194,9 @@ Beans.QUOTE_CONTROLLER.quote(units)
 **真正属于 P 的输入，直接写在入口函数的参数列表里。** 比如页面启动一次加载时，宿主已经给这次动作选定了账户和计费日。截取这段业务入口，预处理把这两个值放进签名，不再让处理器从宿主对象里找它们：
 
 ```diff
+diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
+rename from src/ArrearsPage.vue
+rename to src/ArrearsPage.ts
 --- a/src/ArrearsPage.vue
 +++ b/src/ArrearsPage.ts
 @@ -1,7 +1,5 @@
@@ -108,23 +205,23 @@ Beans.QUOTE_CONTROLLER.quote(units)
 -async function onLoad() {
 -    const todayAtEntry = props.today;
 -    const bills = await loadBills(props.accountId);
-+export async function onLoad(accountId: number, today: number) {
++export async function onLoad(accountId: number, today: number): Promise<void> {
 +    const todayAtEntry = today;
 +    const bills = await loadBills(accountId);
      updateSummary(bills, todayAtEntry);
  }
 ```
 
-**P 是本次调用的不可变输入。** 上例的 `accountId` 和 `today` 是进入时绑定的值，等完 `await` 也还是这两个值。下一次调用可以传新的值。对象型输入也一样：不能把仍会变化的宿主对象当成不可变入参。如果原程序在 `await` 之后会重新读取会变的 `props.today`，就必须保留那一步读取及它的时机，不能用入口参数把它冻结。这里展示的是入口函数签名应有的形状，不是在声明当前 Vue 适配器已经支持这种签名。
+**P 是本次调用的不可变输入。** 上例的 `accountId` 和 `today` 是进入时绑定的值，等完 `await` 也还是这两个值。下一次调用可以传新的值。对象型输入也一样：不能把仍会变化的宿主对象当成不可变入参。如果原程序在 `await` 之后会重新读取会变的 `props.today`，就必须保留那一步读取及它的时机，不能用入口参数把它冻结。本节的 TypeScript 是目标交付形态，不是在声明当前 Vue 适配器已经支持这些入口。
 
 入口也不一定是动作。分析模板给金额卡片传了什么，就把绑定表达式提成一个无参函数。实例状态仍然用 `@entryState`，用 `@componentProp` 指明这是哪个组件实例的哪个属性。例如同一个金额卡片有两个绑定，提取后各有自己的入口：
 
 ```diff
-diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.mjs
+diff --git a/src/ArrearsPage.vue b/src/ArrearsPage.ts
 rename from src/ArrearsPage.vue
-rename to src/ArrearsPage.mjs
+rename to src/ArrearsPage.ts
 --- a/src/ArrearsPage.vue
-+++ b/src/ArrearsPage.mjs
++++ b/src/ArrearsPage.ts
 @@ -1,17 +1,15 @@
 -<template>
 -  <PayableCard
@@ -148,12 +245,12 @@ rename to src/ArrearsPage.mjs
 +}
 +
 +/** @componentProp PayableCard#balance.amount */
-+export function amount() {
++export function amount(): number {
 +  return arrears.status.ready ? arrears.summary.payable : 0
 +}
 +
 +/** @componentProp PayableCard#balance.caption */
-+export function caption() {
++export function caption(): string {
 +  return arrears.status.loading ? '加载中' : '应付金额'
 +}
 ```
