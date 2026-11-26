@@ -108,28 +108,24 @@ fn external_call(
     {
         return None;
     }
-    let receiver_type = match receiver.as_ref() {
-        JavaExpr::Ident(name) => *bindings.get(name.as_str())?,
-        JavaExpr::FieldAccess { target, field } if matches!(target.as_ref(), JavaExpr::Ident(name) if name == "this") => {
-            owner
-                .fields()
-                .iter()
-                .find(|f| f.name() == field)?
-                .java_type()
-        }
-        _ => return None,
+    // Keep lexical binding and explicit field lookup distinct while
+    // sharing the admitted receiver syntax with other port calls.
+    let receiver_name = super::source_ports::receiver(receiver)?;
+    let receiver_type = if matches!(receiver.as_ref(), JavaExpr::Ident(_)) {
+        *bindings.get(receiver_name)?
+    } else {
+        owner.fields().iter().find(|f| f.name() == receiver_name)?.java_type()
     };
-    let JavaType::Class(name) = receiver_type else {
+    let JavaType::Class(qualified) = receiver_type else {
         return None;
     };
-    let qualified = name.clone();
-    let interface = program.find_class(&qualified)?;
+    let interface = program.find_class(qualified)?;
     if !interface.is_interface()
         || program.classes().iter().any(|class| {
             class
                 .interfaces()
                 .iter()
-                .any(|ty| ty == &qualified || ty == interface.simple_name())
+                .any(|ty| ty == qualified || ty == interface.simple_name())
         })
     {
         return None;
