@@ -257,11 +257,8 @@ impl Admission<'_> {
                     loop_scope.insert(var_name.clone(), var_type.clone());
                     self.block(body, &mut loop_scope)?;
                 }
-                S::While { cond, body } => {
-                    self.condition(self.expression(cond, scope)?, "while condition")?;
-                    self.block(body, &mut scope.clone())?;
-                }
-                S::LocalIr(_) | S::Return(None) => {}
+                // Raw while statements are rejected by structural source admission.
+                S::While { .. } | S::LocalIr(_) | S::Return(None) => {}
             }
         }
         Ok(())

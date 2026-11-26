@@ -620,6 +620,7 @@ impl Loaded {
             for m in c.methods() {
                 let id = format!("{}.{}", c.full_name(), m.name());
                 if !self.project.direct_source {
+                    need(m.body().is_none(), "adapter signature carriers must not contain Java method bodies")?;
                     need(m.annotations().is_empty(), "unsupported method shape")?;
                     need(!e.methods.contains_key(&id), "duplicate/overloaded method")?;
                 }

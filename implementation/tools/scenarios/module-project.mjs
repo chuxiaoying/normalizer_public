@@ -101,8 +101,7 @@ function projectionContract(modulePath, moduleText, name, original) {
   const declarations = params.map((param, index) => `${javaParams[index]} ${param.name}`).join(', ');
   const returns = carriers[type][1];
   const javaReturn = carriers[type][0];
-  const source = `class T { static ${javaReturn} run(${declarations}) { return M.run(${params.map(param => param.name).join(', ')}); } }\n` +
-    `class M { static native ${javaReturn} run(${declarations}); }\n`;
+  const source = `class T { static native ${javaReturn} run(${declarations}); }\n`;
   const entry = 'T.run';
   const project = {
     schema: 'normalizer.kernel-input/1',
@@ -113,7 +112,7 @@ function projectionContract(modulePath, moduleText, name, original) {
       bindings: Object.fromEntries(reads.map(read => [read.name, read.path])),
     } },
     functions: { run: {
-      java: `M.run(${javaParams.join(',')})`, params, returns,
+      java: `T.run(${javaParams.join(',')})`, params, returns,
       origin: { path: 'Prepared.mjs', excerpt: `function ${name}` }, body,
     } },
   };

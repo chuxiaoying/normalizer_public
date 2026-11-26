@@ -569,9 +569,6 @@ impl Engine<'_> {
                     let sum = self.source_array_sum(array, prior.scalar()?, offset, path)?;
                     env.insert(total.into(), sum);
                 }
-                S::ForEach { .. } | S::While { .. } => {
-                    return Err(fail("raw loop: provide a semantic definition"))
-                }
                 _ => return Err(fail("unsupported Java statement in pure-array-1")),
             }
         }
