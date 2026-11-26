@@ -37,7 +37,7 @@ R: address AND balance AND consent
 
 ## 布尔互补表达式必须选同一个 CASE
 
-两个已取得的整数都为零时选择 10，其他情况选择 20。两个条件均为总值；两种写法都观察相同输入。按[二分 CASE 的结构键](../../../unified-canonical-form.md#等价候选复杂度不变与唯一代表)比较 AND 与其 De Morgan 补的 OR，使用 AND 取向；不是由宿主看到一次取反就决定写 OR。
+两个已取得的整数都为零时选择 10，其他情况选择 20。两个条件均为总值；两种写法都观察相同输入。按[二分 CASE 的结构键](../../../secondary/完整二分%20CASE%20怎么选方向.md)比较 AND 与其 De Morgan 补的 OR，使用 AND 取向；不是由宿主看到一次取反就决定写 OR。
 
 ```java
 class CanonicalChecks {

@@ -30,12 +30,13 @@
 - [完整二分 CASE 怎么选方向](secondary/完整二分%20CASE%20怎么选方向.md)
 - [观察身份与稳定编号](secondary/观察身份与稳定编号.md)
 - [什么时候可以引入 LET](secondary/什么时候可以引入%20LET.md)
+- [精确数值与区间怎样化简](secondary/精确数值与区间怎样化简.md)
+- [有序序列的长度与首项](secondary/有序序列的长度与首项.md)
+- [CASE 的取得域与等价化简](secondary/CASE 的取得域与等价化简.md)
 
 先选一个你熟悉的例子，按原始代码、AI 预处理结果、理想归一化结果的顺序读。比如一个函数只做加一，AI 可以原样交付源码，最终 PERS 的返回表达式就是 `value + 1`。若对结果有不同理解，可以指出一组输入，看看两种写法在哪一步产生不同的业务结果。
 
 [三模块的工程职责与交接](../implementation/docs/architecture-three-modules.md)补充说明 AI、多语言解析器和归一化内核如何分工。 想从同一项业务观察追到最终 PERS，可接着读[Java 端口与重试](examples/topics/loops-and-termination/java-loop-bounded-retry.md)和[TypeScript 的登记与实际派发](examples/topics/external-boundaries/frontend-deferred-listener.md)：声明或登记本身不是调用，实际发生的动作才进入 PERS。
-
-[定形规则与验收细则](unified-canonical-form.md)规定哪些等价表达式必须归到同一种形态，以及排序、CASE WHEN 和观察边界如何验收。
 
 [设计种子目录](examples/README.md)按基础主题和联合主题组织案例。其中的覆盖模型说明应该覆盖哪些语义场景。[种子清单](examples/seeds.yaml)给每篇案例一个稳定 ID，[种子语义清单](examples/seed-manifest.yaml)记录主主题和关联主题；[测试区](../tests/README.md)按这个 ID 关联入口与变体。移动案例时更新清单里的路径，保留 ID。
 

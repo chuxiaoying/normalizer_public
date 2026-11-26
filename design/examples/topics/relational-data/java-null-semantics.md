@@ -109,7 +109,7 @@ class NullMemoService {
 }
 ```
 
-**原样通过。** 判断必须同时满足“确实有记录”和“有序首条的 memo 为 null”。关系已取得不等于首条记录已取得；后者只在存在性保护臂内。按[宿主保护 CASE](../../../unified-canonical-form.md#结构排序与改写方向)保留这个取得域，不展开为可能把首项判断提前的 AND。`FIRST` 的空集结果是 null，但不能代替独立的存在性判断。输入没有记录返回 false；首条 memo 确实为 null 返回 true；首条非 null 即便后续某条为 null 也返回 false。
+**原样通过。** 判断必须同时满足“确实有记录”和“有序首条的 memo 为 null”。关系已取得不等于首条记录已取得；后者只在存在性保护臂内。按[宿主保护 CASE](../../../secondary/CASE 的取得域与等价化简.md#宿主保护-case)保留这个取得域，不展开为可能把首项判断提前的 AND。`FIRST` 的空集结果是 null，但不能代替独立的存在性判断。输入没有记录返回 false；首条 memo 确实为 null 返回 true；首条非 null 即便后续某条为 null 也返回 false。
 
 ```yaml
 schema: normalizer.pers/1

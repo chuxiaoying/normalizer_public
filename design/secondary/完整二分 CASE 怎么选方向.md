@@ -14,3 +14,9 @@ CASE WHEN NOT(p) THEN right ELSE left END
 对普通二分值，**不因为某一臂是 `null` 就另改方向**。例如 `CASE WHEN p THEN null ELSE value END` 和 `CASE WHEN NOT(p) THEN value ELSE null END` 都收成前者；`p` 为真时得到 `null`。只取反却不换两臂的写法改变业务结果，必须通过负例排除。
 
 对有保护的读取，要核对有效域而非空值位置。例如 `hasReply` 为真才允许读取 `reply.ok`。不论用哪个方向表达，都须保留这个限制；不能把它改写成允许任意重排的布尔项。精确计数的 `count > 0` 与 `count <= 0` 可以互补；可能出现 NaN 的浮点比较不能凭拼写套用同一推论。
+
+## 精确计数的非正／正二分
+
+已取得的普通精确整数中，`count <= 0` 和 `count > 0` 互补。若正计数返回原计数、其余返回零，两种等价输入都归到 `CASE WHEN count > 0 THEN count ELSE 0 END`。不是因为某一臂为零而换方向，而是依据基准比较。不要混入只读 Vector 长度的自然域证明、word 运算或 IEEE 浮点。
+
+`AND` 与其 De Morgan 补 `OR` 在已取得的总布尔条件下可能形成互补方向。先按第八章比较整个值的复杂度；只有同复杂度、同取得域，才用共享结构键在基准候选中裁决。见[总布尔守卫的结构对照](../examples/topics/unified-canonical-form/java-total-boolean-order.md)。

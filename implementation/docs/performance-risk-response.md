@@ -13,7 +13,7 @@
 
 - `NORMALIZER_PROFILE_LOG` 写入流水线阶段和当前启用的执行计数。需要细粒度采样时使用 `NORMALIZER_DEBUG_CATEGORIES` 与 `NORMALIZER_DEBUG_MAX_EVENTS`。
 - `NORMALIZER_MATH_PROFILE_LOG` 开启数学内核事件，`NORMALIZER_MATH_PROFILE_SLOW_MS` 调整慢事件阈值。默认不打开采样。
-- 数学化简的资源预算与规范形式见[统一正则规范](../../design/unified-canonical-form.md)。临时提高预算只能辅助定位，不能当作修复。
+- 数学化简的资源预算与规范形式见[统一正则规范](../../design/chapters/第八章%20·%20统一定形规范.md)。临时提高预算只能辅助定位，不能当作修复。
 - 数学记忆表有固定条目上限；达到上限时回收一部分键，最多导致下次重算，不改变归一化结果。工具可通过文档里的数学日志核对 `math.cache.evict`。
 - 规范工程表达式的结构深度在加载时受限，过深时 CLI 不产生 PERS。执行期仍限制 Java 活跃调用栈与总工作量；性能日志记录真实表达式访问深度，不再另设不可达的语义函数递归上限。
 
