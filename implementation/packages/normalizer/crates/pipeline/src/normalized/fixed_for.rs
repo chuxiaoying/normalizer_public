@@ -49,49 +49,52 @@ pub(super) fn may_write_counter(body: &[S], counter: &str) -> bool {
     })
 }
 
+fn declares_counter(statement: &S) -> Option<(&str, &JavaType, &E)> {
+    let S::VarDecl { java_type, name, initializer: Some(value), .. } = statement else { return None; };
+    Some((name, java_type, value))
+}
+
+fn is_counter(expr: &E, name: &str) -> bool {
+    matches!(expr, E::Ident(key) if key == name)
+}
+
+// Return the bound, unit step and whether the bound is included.
+fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<(&'a E, i128, bool)> {
+    let (E::BinOp { op, left, right }, E::UnaryOp { op: change, operand }) = (cond?, update?) else {
+        return None;
+    };
+    if !is_counter(left, name) || !is_counter(operand, name) {
+        return None;
+    }
+    let (step, inclusive) = match (op, change) {
+        (B::Lt, U::PostInc | U::PreInc) => (1, false),
+        (B::Le, U::PostInc | U::PreInc) => (1, true),
+        (B::Gt, U::PostDec | U::PreDec) => (-1, false),
+        (B::Ge, U::PostDec | U::PreDec) => (-1, true),
+        _ => return None,
+    };
+    Some((right, step, inclusive))
+}
+
 impl<'a> FixedFor<'a> {
     pub fn from_header(init: Option<&'a S>, cond: Option<&E>, update: Option<&E>) -> Option<Self> {
-        let (name, value, assigns_outer) = match init? {
-            S::VarDecl {
-                java_type: JavaType::Primitive(ty),
-                name,
-                initializer: Some(value),
-                ..
-            } if matches!(ty.as_str(), "int" | "long") => (name.as_str(), value, false),
-            init => {
-                let (name, _, value) = assignment_init(Some(init))?;
-                (name, value, true)
-            }
-        };
-        let E::BinOp { op, left, right } = cond? else {
-            return None;
-        };
-        let E::UnaryOp {
-            op: change,
-            operand,
-        } = update?
-        else {
-            return None;
-        };
-        if !matches!(left.as_ref(),E::Ident(key) if key==name)
-            || !matches!(operand.as_ref(),E::Ident(key) if key==name)
+        let init = init?;
+        let (name, value, assigns_outer) = if let Some((name, _, value)) =
+            declares_counter(init).filter(|(_, ty, _)| matches!(ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
         {
-            return None;
-        }
-        let start = literal(value)?;
-        let end = literal(right)?;
-        let (step, extra) = match (op, change) {
-            (B::Lt, U::PostInc | U::PreInc) => (1, 0),
-            (B::Le, U::PostInc | U::PreInc) => (1, 1),
-            (B::Gt, U::PostDec | U::PreDec) => (-1, 0),
-            (B::Ge, U::PostDec | U::PreDec) => (-1, 1),
-            _ => return None,
+            (name, value, false)
+        } else {
+            let (name, _, value) = assignment_init(Some(init))?;
+            (name, value, true)
         };
+        let (bound, step, inclusive) = induction(name, cond, update)?;
+        let start = literal(value)?;
+        let end = literal(bound)?;
         Some(Self {
             counter: name,
             start,
             step,
-            count: ((end - start) * step + extra).max(0),
+            count: ((end - start) * step + i128::from(inclusive)).max(0),
             assigns_outer,
         })
     }
@@ -109,16 +112,12 @@ impl<'a> RectangularCounter<'a> {
         let mut bounds = Vec::new();
         let mut counters = std::collections::BTreeSet::<&str>::new();
         while let S::For { init, cond, update, body } = statement {
-            let S::VarDecl { java_type, name, initializer: Some(start), .. } = init.as_deref()? else { return None; };
-            if !super::integral(java_type) || literal(start)? != 0 || !counters.insert(name) { return None; }
-            let E::BinOp { op, left, right } = cond.as_ref()? else { return None; };
-            let E::Ident(end) = right.as_ref() else { return None; };
-            if !matches!(left.as_ref(), E::Ident(counter) if counter == name) || !matches!(op, B::Lt | B::Le) {
-                return None;
-            }
-            let E::UnaryOp { op: U::PreInc | U::PostInc, operand } = update.as_ref()? else { return None; };
-            if !matches!(operand.as_ref(), E::Ident(counter) if counter == name) { return None; }
-            bounds.push((end.as_str(), *op == B::Le));
+            let (name, ty, start) = declares_counter(init.as_deref()?)?;
+            if !super::integral(ty) || literal(start)? != 0 || !counters.insert(name) { return None; }
+            let (E::Ident(end), 1, inclusive) =
+                induction(name, cond.as_ref(), update.as_ref())?
+            else { return None; };
+            bounds.push((end.as_str(), inclusive));
             let [inner] = body.as_slice() else { return None; };
             statement = inner;
         }
@@ -128,9 +127,9 @@ impl<'a> RectangularCounter<'a> {
         {
             return None;
         }
-        let increment = if matches!(left.as_ref(), E::Ident(name) if name == target) { literal(right)? }
-            else if matches!(right.as_ref(), E::Ident(name) if name == target) { literal(left)? }
-            else { return None; };
+        let offset = [(left, right), (right, left)].into_iter()
+            .find_map(|(acc, offset)| is_counter(acc, target).then_some(offset))?;
+        let increment = literal(offset)?;
         Some(Self { bounds, target, increment: increment.try_into().ok()? })
     }
 }
