@@ -81,10 +81,18 @@ impl<'a> Parser<'a> {
         parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context, self.official_n, &self.imports).map_err(|error| self.rebase_slice(body_at, error))
     }
 
+    fn reject_after_direct_return(&self, earlier: &[JavaStatement]) -> Result<(), ParseError> {
+        if matches!(earlier.last(), Some(JavaStatement::Return(_))) {
+            return Err(self.err("[JAVA-UNREACHABLE-STATEMENT] statement after unconditional return"));
+        }
+        Ok(())
+    }
+
     /// Return the last statement from this source position. A local declaration
     /// with commas inserts earlier declarators into the same statement list.
     fn parse_statement(&mut self, earlier: &mut Vec<JavaStatement>) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
+        self.reject_after_direct_return(earlier)?;
 
         if let Some(start) = self.local_ir_start() {
             let end = self.source.as_bytes()[start..].windows(2).position(|part| part == b"*/")
@@ -263,6 +271,7 @@ impl<'a> Parser<'a> {
                 self.pos = next;
                 if boundary { break; }
                 if self.eat_keyword("break") {
+                    self.reject_after_direct_return(&body)?;
                     self.require_semicolon("switch break")?;
                     breaks = true;
                     break;

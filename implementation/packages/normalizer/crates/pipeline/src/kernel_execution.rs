@@ -386,10 +386,6 @@ impl<'a> Engine<'a> {
                     self.java_call_on(&target, values, path, Some(receiver))?;
                 }
                 S::Return(Some(expr)) => {
-                    need(
-                        i + 1 == body.len(),
-                        "unreachable supplied statements must be removed",
-                    )?;
                     self.source_reference_assignment(self.methods[id].syntax.return_type(), expr, id)?;
                     let value = self.java_expr(expr, id, env, path)?;
                     let value = if crate::normalized::native_decimal_type(self.methods[id].syntax.return_type()) {

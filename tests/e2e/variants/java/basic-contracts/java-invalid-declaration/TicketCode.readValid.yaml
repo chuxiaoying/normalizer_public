@@ -476,3 +476,18 @@
   edits:
     - {from: 'return value;', to: 'int ok = 1, switch = 2; return value;' }
   reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-LOCAL-NAME]', 'switch cannot declare a local binding']
+
+- name: an-unused-helper-cannot-hide-an-unreachable-statement-after-return
+  edits:
+    - {from: 'class TicketCode {', to: 'class TicketCode { static int unused() { return 0; int dead = 1; }' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-UNREACHABLE-STATEMENT]', 'statement after unconditional return']
+- name: a-statement-after-a-conditional-return-is-still-reachable
+  edits:
+    - {from: 'return value;', to: 'if (value < 0) return 1; return 2;'}
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN value < 0 THEN 1
+          ELSE 2
+        END
