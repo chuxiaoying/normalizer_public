@@ -414,9 +414,10 @@ impl Engine<'_> {
                 Action::CallSync { port, target, site, condition } => {
                     self.call_closed_sync(port.as_deref(), target, site, condition.as_ref(), env)?;
                 }
-                Action::TaskInvoke { .. } | Action::TaskWait { .. } => {
-                    self.task_action(action, env)?;
+                Action::TaskInvoke { name, port, site, args } => {
+                    self.task_invoke(name, port, site, args, env)?;
                 }
+                Action::TaskWait { name, task } => self.task_wait(name, task, env)?,
                 Action::Let { name, value } => {
                     let value = self.action_value(value, env)?;
                     Self::bind_local(env, name, value)?;

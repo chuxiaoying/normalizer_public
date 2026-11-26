@@ -80,57 +80,50 @@ impl Engine<'_> {
         Ok(outcome.replace_continue(Completion::Return(spec.awaited_value(&response)?)))
     }
 
-    pub(super) fn task_action(
+    pub(super) fn task_invoke(
         &mut self,
-        action: &Action,
+        name: &str,
+        port: &str,
+        site: &str,
+        args: &[Node],
         env: &mut Env,
     ) -> Result<()> {
-        match action {
-            Action::TaskInvoke {
-                name,
-                port,
-                site,
-                args,
-            } => {
-                let (args, ty) = self.invocation_arguments(port, site, args, env)?;
-                let spec = self.project.ports[port].completion_spec(self.project)?;
-                let bind = self.fresh_binding();
-                self.pending_ports.insert(bind, spec);
-                let guard = math::normalize(b::and(
-                    self.action_path.clone(),
-                    self.realtime_completion.continuing_guard(),
-                ));
-                self.realtime_effects.record(
-                    guard,
-                    port,
-                    site,
-                    args,
-                    Some(b::external_completion(bind)),
-                );
-                Self::bind_local(
-                    env,
-                    name,
-                    Value::Term(Ty::Task(Box::new(ty)), b::pending_task_handle(bind)),
-                )?;
-            }
-            Action::TaskWait { name, task } => {
-                need(
-                    self.async_depth > 0,
-                    "task_wait requires an async function body",
-                )?;
-                let task = self.action_value(task, env)?;
-                let Ty::Task(ty) = task.ty() else {
-                    return Err(fail("task_wait requires task<T>"));
-                };
-                let outcome = self.task_outcome(&task)?;
-                let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);
-                self.realtime_completion = self
-                    .realtime_completion
-                    .replace_continue(outcome.resume_after_normal_return());
-                Self::bind_local(env, name, Value::Term(*ty, value))?;
-            }
-            _ => unreachable!("only task actions are dispatched here"),
-        }
-        Ok(())
+        let (args, ty) = self.invocation_arguments(port, site, args, env)?;
+        let spec = self.project.ports[port].completion_spec(self.project)?;
+        let bind = self.fresh_binding();
+        self.pending_ports.insert(bind, spec);
+        let guard = math::normalize(b::and(
+            self.action_path.clone(),
+            self.realtime_completion.continuing_guard(),
+        ));
+        self.realtime_effects.record(
+            guard,
+            port,
+            site,
+            args,
+            Some(b::external_completion(bind)),
+        );
+        Self::bind_local(
+            env,
+            name,
+            Value::Term(Ty::Task(Box::new(ty)), b::pending_task_handle(bind)),
+        )
+    }
+
+    pub(super) fn task_wait(&mut self, name: &str, task: &Node, env: &mut Env) -> Result<()> {
+        need(
+            self.async_depth > 0,
+            "task_wait requires an async function body",
+        )?;
+        let task = self.action_value(task, env)?;
+        let Ty::Task(ty) = task.ty() else {
+            return Err(fail("task_wait requires task<T>"));
+        };
+        let outcome = self.task_outcome(&task)?;
+        let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);
+        self.realtime_completion = self
+            .realtime_completion
+            .replace_continue(outcome.resume_after_normal_return());
+        Self::bind_local(env, name, Value::Term(*ty, value))
     }
 }
