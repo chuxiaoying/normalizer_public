@@ -85,7 +85,8 @@ pub(super) struct CheckedPort {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum Action {
     LocalIr {
-        source: String,
+        #[serde(rename = "source", deserialize_with = "read_relation_action")]
+        query: Box<normalizer_ir::local::relation::Query>,
     },
     WriteState {
         target: Vec<String>,
@@ -126,6 +127,25 @@ pub(super) enum Action {
     },
     Rethrow,
 }
+// The wire still carries the authored AIR string. Admit only relation
+// actions at input; the executor receives an already parsed query.
+fn read_relation_action<'de, D>(
+    decoder: D,
+) -> std::result::Result<Box<normalizer_ir::local::relation::Query>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use normalizer_ir::local::{parse, LocalIr};
+    let source = String::deserialize(decoder)?;
+    match parse(&source) {
+        Ok(LocalIr::Relation(query)) => Ok(Box::new(query)),
+        Ok(_) => Err(serde::de::Error::custom("expected a typed relation query")),
+        Err(error) => Err(serde::de::Error::custom(format!(
+            "expected a typed relation query: {error}"
+        ))),
+    }
+}
+
 impl Project {
     pub(super) fn validate_state_metadata(&self) -> Result<BTreeMap<String, CheckedPort>> {
         for (name, ty) in &self.heap_fields {
@@ -376,15 +396,8 @@ impl Engine<'_> {
             }
             self.budget()?;
             match action {
-                Action::LocalIr { source } => {
-                    let normalizer_ir::local::LocalIr::Relation(query) =
-                        normalizer_ir::local::parse(source).map_err(|error| {
-                            fail(format!("expected a typed relation query: {error}"))
-                        })?
-                    else {
-                        return Err(fail("expected a typed relation query"));
-                    };
-                    self.execute_query(&query, None, env, &self.action_path.clone())?;
+                Action::LocalIr { query } => {
+                    self.execute_query(query, None, env, &self.action_path.clone())?;
                 }
                 Action::WriteState { target, value } => {
                     let (root, fields) = target
