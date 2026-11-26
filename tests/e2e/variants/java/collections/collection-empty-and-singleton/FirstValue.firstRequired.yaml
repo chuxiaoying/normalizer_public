@@ -78,3 +78,31 @@
   expect:
     - { path: [R], value: 'LENGTH(values)' }
     - { path: [throws], absent: true }
+
+- name: first-comparison-keeps-the-throw-before-reading-the-maximum
+  edits:
+    - {from: 'firstRequired(int[] values)', to: 'firstRequired(int[] values, int threshold)'}
+    - {from: 'return values[0];', to: 'int first = values[0]; return first > threshold ? first : threshold;'}
+  expect:
+    - path: [P, parameters]
+      value: { values: { position: 0, type: 'number[]' }, threshold: { position: 1, type: number } }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN threshold > FIRST(value FROM values) THEN threshold
+          ELSE FIRST(value FROM values)
+        END
+
+- name: same-maximum-with-opposite-comparison-direction
+  edits:
+    - {from: 'firstRequired(int[] values)', to: 'firstRequired(int[] values, int threshold)'}
+    - {from: 'return values[0];', to: 'int first = values[0]; return threshold > first ? threshold : first;'}
+  expect:
+    - path: [P, parameters]
+      value: { values: { position: 0, type: 'number[]' }, threshold: { position: 1, type: number } }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN threshold > FIRST(value FROM values) THEN threshold
+          ELSE FIRST(value FROM values)
+        END

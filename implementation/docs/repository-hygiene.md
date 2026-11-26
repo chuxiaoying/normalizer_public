@@ -43,6 +43,8 @@
 
 - **计数下界不足时保持比较**：正式用例验证 `count < 3`、`count > 3` 和 `count >= 3` 必须保留表、筛选和原参数；`3 > count` 与 `count < 3` 定形相同。加上符号未知的偏移不继承 COUNT 的下界。
 
+- **数组首项的分支条件**：正式[首项种子](../../design/examples/topics/collections/java-empty-singleton.md#首项参与比较越界仍先发生)同时验收两种比较方向、正常完成的最大值以及空数组的越界。带异常的读取不是带默认值的纯取首项。
+
 ### 待补回归（不属于覆盖例外）
 
 - **有序折叠的空提交前缀与隐式依赖**：沿[提前退出种子](../../design/examples/topics/loops-and-termination/java-break-continue.md)把首个可处理索引移到终止界之后，断言初值不变；沿[纯折叠定义](../../design/examples/topics/unified-canonical-form/java-pure-fold-definitions.md)让 R 只引用后一项，断言 T 仍按依赖顺序保留前项。
@@ -51,7 +53,6 @@
 - **独立 JavaScript 无源码调用与适配器启动失败**：按[无源码边界](../../design/chapters/第四章%20·%20AI%20救赎.md)，同步直接调用与 `await` 都不得把普通参数的方法变成 external，分别保留 `:call` 和 `:await` 的失败位置且不输出 PERS。适配器内核若无法启动，工程验收用隔离的可执行文件路径重现启动失败，断言退出非零且无 PERS，不伪造业务种子。
 - **证明预算和缓存边界**：按[性能治理](performance-risk-response.md)，用同一份合法 Java 嵌套条件和异常源码，分别降低证明节点上限与缓存条目体积上限，覆盖拒绝证明及跳过过大缓存项。仍要得到相同 PERS；性能探针不能把近似答案变成成功，也不计作已经补齐的正式回归。
 - **布尔 CASE、整数穷尽和相消**：按[统一正则规范](../../design/chapters/第八章%20·%20统一定形规范.md)，`(p ? q : !q) ? true : p` 归约为 `p OR NOT(q)`；`x<0`、`0<=x<=5`、`x>=6` 穷尽整数域，不残留不可达尾臂。把 `x>0?x:x+2` 的值减去 `x`，结果应为 `x<=0?2:0`，不能残留 `x-x`。最后一例已发现实现缺口，不把未化简结果当预期。
-- **数组首项的分支条件**：当 `a[0] > x` 时返回该首项，否则返回 `x`。空数组仍有越界完成；不能把带异常的首项读取当成带默认值的纯取首项。入口应断言完整正常和异常 PERS。
 - **关系连接和 LET 输出**：在[内连接计数](../../design/examples/topics/relational-data/java-join.md)中给两表匹配追加独立布尔开关；为假时结果为零，为真时保留原连接和重复行计数。按[CASE LET 种子](../../design/examples/topics/expression-simplification/java-case-let-extraction.md)区分入参数组、E 状态数组、借用记录字段和 CASE 内取反；检查完整 PERS 中重复子式究竟提取为 LET 还是保持内联，不能把未确认的读取条件冒充已取得的值。
 - **状态写入、独立字段与可空内容**：在[多次写后读](../../design/examples/topics/state-and-aliasing/java-multi-write-read-order.md)中分别验证同一对象的相邻字段、不同声明对象的同名字段。写入进 S，读取不得混到另一字段或对象；空值声明则沿[可选字段](../../design/examples/topics/objects-and-types/java-optional-field.md)断言完整 R 中保留 `null`，不省字段。
 - **合法接收者与身份**：按[多态分派](../../design/examples/topics/objects-and-types/java-polymorphic-dispatch.md)验证显式 `this.field` 读实际分派到的对象；按[内容与身份](../../design/examples/topics/objects-and-types/java-structural-vs-identity.md)验证非空入参与已绑定为 null 的局部变量不相同。比较不创造外部身份或改变 P。

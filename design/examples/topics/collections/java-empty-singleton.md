@@ -71,3 +71,7 @@ throws:
 ```
 
 长度也可在源码可见的辅助函数中观察。把已绑定的 `values` 传给以 `items` 为形参名的长度函数，返回 `LENGTH(values)`；辅助函数形参名不能覆盖借用来源，也不能凭空产生数组读写、越界或 S。
+
+## 首项参与比较，越界仍先发生
+
+先把 `values[0]` 读入局部，再返回它和 `threshold` 中较大的值。空数组连比较都不能执行，仍在第一次读取处抛出越界，不能返回 threshold。单元素分别为 2、3、4 且 threshold 为 3 时，正常结果依次为 3、3、4。两值相等时两臂都是同一个数，可统一为 `CASE WHEN threshold > FIRST(value FROM values) THEN threshold ELSE FIRST(value FROM values) END`，不因源码把哪一臂放前面而改变。只把首项表达成 FIRST，不增加 E 或 S。
