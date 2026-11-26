@@ -298,12 +298,10 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
 fn array_cardinality_name(expr: &Expr, expected: RelationAggregateKind) -> Option<&str> {
     use math::domains::relation::RelationExpr::Base;
     use RelationAggregateKind::{Count, Exists};
-    let (kind, Base { name, .. }, select, None) = expr.as_relation_aggregate()? else {
-        return None;
-    };
-    match (expected, kind, select) {
-        (Count, Count, None) => Some(name),
-        (Exists, Exists, select) if unfiltered_exists_projection(select) => Some(name),
+    match (expected, expr.as_relation_aggregate()?) {
+        (Count, (Count, Base { name, .. }, None, None)) => Some(name),
+        (Exists, (Exists, Base { name, .. }, select, None))
+            if unfiltered_exists_projection(select) => Some(name),
         _ => None,
     }
 }

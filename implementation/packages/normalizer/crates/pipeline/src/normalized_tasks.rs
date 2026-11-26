@@ -36,21 +36,13 @@ impl<'de> Deserialize<'de> for SettledSteps {
     }
 }
 
-/// Sync scopes never consume a task. Their nested catch arms belong to
-/// the same scope; a nested action expression is admitted independently.
+/// The synchronous adapter projection binds locals and returns a value.
 pub(super) fn read_sync_steps<'de, D: serde::Deserializer<'de>>(
     reader: D,
 ) -> std::result::Result<Vec<Action>, D::Error> {
-    fn has_wait(steps: &[Action]) -> bool {
-        steps.iter().any(|action| match action {
-            Action::TaskWait { .. } => true,
-            Action::Catch { body, handler, .. } => has_wait(body) || has_wait(handler),
-            _ => false,
-        })
-    }
     let steps = Vec::<Action>::deserialize(reader)?;
-    if has_wait(&steps) {
-        return Err(serde::de::Error::custom("task_wait requires an async function body"));
+    if steps.iter().any(|action| !matches!(action, Action::Let { .. } | Action::Return { .. })) {
+        return Err(serde::de::Error::custom("synchronous projection accepts only local bindings and return"));
     }
     Ok(steps)
 }

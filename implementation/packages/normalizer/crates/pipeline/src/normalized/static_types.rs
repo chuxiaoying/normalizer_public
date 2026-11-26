@@ -138,9 +138,12 @@ impl Admission<'_> {
 
     fn binding<'a>(&'a self, name: &str, scope: &'a Scope) -> Option<&'a JavaType> {
         scope.get(name).map(|binding| &binding.ty).or_else(|| {
-            self.class.fields().iter().find(|field| {
-                field.name() == name && (!self.method.is_static() || field.is_static())
-            }).map(|field| field.java_type())
+            // Source layout and port admission do not allow static fields.
+            if self.method.is_static() {
+                return None;
+            }
+            self.class.fields().iter().find(|field| field.name() == name)
+                .map(|field| field.java_type())
         })
     }
 
@@ -448,12 +451,12 @@ impl Admission<'_> {
     fn prove_initialized_counter(&self, name: &str, body: &[S], scope: &Scope) -> Result<(), String> {
         let not_proven = |detail: &str| crate::preprocess::required(
             "NORM-LOOP", self.id, detail,
-            "当前固定次数循环只证明已初始化的可变 int/long 局部计数器；保留合法源码，不要编造初值。",
+            "当前赋值初始化循环只证明已初始化的可变 int 局部计数器；保留合法源码，不要编造初值。",
         );
         if !scope.get(name).is_some_and(|binding| binding.initialized_local
-            && matches!(&binding.ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
+            && super::java_int(&binding.ty))
         {
-            return Err(not_proven("assignment counter needs an already initialized int/long local"));
+            return Err(not_proven("assignment counter needs an already initialized int local"));
         }
         if !super::fixed_for::preserves_assignment_counter(body, name) {
             return Err(not_proven(&format!("body must preserve proven induction counter {name}")));

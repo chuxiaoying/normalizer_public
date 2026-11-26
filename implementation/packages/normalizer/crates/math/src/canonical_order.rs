@@ -165,10 +165,11 @@ fn binop_subject_key(op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortCon
             Some(_) => 1,
             None => 0,
         };
-        match subject_rank(left).cmp(&subject_rank(right)) {
-            std::cmp::Ordering::Less => return subject_key(left, ctx),
-            std::cmp::Ordering::Greater => return subject_key(right, ctx),
-            std::cmp::Ordering::Equal => {}
+        let left_rank = subject_rank(left);
+        let right_rank = subject_rank(right);
+        if left_rank != right_rank {
+            let subject = if left_rank < right_rank { left } else { right };
+            return subject_key(subject, ctx);
         }
     }
     subject_key(left, ctx).min(subject_key(right, ctx))

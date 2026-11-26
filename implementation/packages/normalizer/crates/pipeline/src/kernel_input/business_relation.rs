@@ -287,30 +287,30 @@ impl<'a> Engine<'a> {
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
         if let Operation::OnRows(RowOperation::EagerPath { link, leaf }) = &query.operation {
-            if matches!(decl, Some(JavaType::Array(item)) if crate::normalized::integral(item)) {
-                let Some(Value::Sequence { item: Ty::Ref, name, .. }) =
-                    env.get(&query.source) else { return Err(fail("eager projection requires a directly bound record array")); };
-                let root = name.clone();
-                let row = self.source_relations.record_inputs.get(&root).and_then(|owner| self.program.find_class(owner))
-                    .ok_or_else(|| fail("eager projection requires its declared record element"))?;
-                let member = row.fields().iter().find(|field| field.name() == link)
-                    .ok_or_else(|| fail("undeclared eager projection member"))?;
-                need(crate::normalized::source_nullable_field(row, member),
-                    "eager projection member requires an explicit nullable record declaration")?;
-                let child = self.project.source_owner(member.java_type()).and_then(|owner| self.program.find_class(owner))
-                    .ok_or_else(|| fail("eager projection member must be a declared record"))?;
-                need(child.fields().iter().any(|field| field.name() == leaf && crate::normalized::integral(field.java_type())),
-                    "eager projection leaf must be a declared integer")?;
-                let base = RelationExpr::base(&root, "r");
-                let missing = b::eq(b::row_value(format!("r.{link}")), b::lit_null());
-                // This is the completion of the entire projection, not of a single selected row.
-                let exception = r::relation_exists(RelationExpr::select(missing, base.clone()));
-                self.throw_source_on_path(b::and(guard.clone(), exception), "java.lang.NullPointerException");
-                env.insert(query.binding.clone(), Value::EagerIntProjection {
-                    base, selected: b::row_value(format!("r.{link}.{leaf}")),
-                });
-                return Ok(());
-            }
+            need(matches!(decl, Some(JavaType::Array(item)) if crate::normalized::integral(item)),
+                "eager projection requires a declared integer array result")?;
+            let Some(Value::Sequence { item: Ty::Ref, name, .. }) =
+                env.get(&query.source) else { return Err(fail("eager projection requires a directly bound record array")); };
+            let root = name.clone();
+            let row = self.source_relations.record_inputs.get(&root).and_then(|owner| self.program.find_class(owner))
+                .ok_or_else(|| fail("eager projection requires its declared record element"))?;
+            let member = row.fields().iter().find(|field| field.name() == link)
+                .ok_or_else(|| fail("undeclared eager projection member"))?;
+            need(crate::normalized::source_nullable_field(row, member),
+                "eager projection member requires an explicit nullable record declaration")?;
+            let child = self.project.source_owner(member.java_type()).and_then(|owner| self.program.find_class(owner))
+                .ok_or_else(|| fail("eager projection member must be a declared record"))?;
+            need(child.fields().iter().any(|field| field.name() == leaf && crate::normalized::integral(field.java_type())),
+                "eager projection leaf must be a declared integer")?;
+            let base = RelationExpr::base(&root, "r");
+            let missing = b::eq(b::row_value(format!("r.{link}")), b::lit_null());
+            // This is the completion of the entire projection, not of a single selected row.
+            let exception = r::relation_exists(RelationExpr::select(missing, base.clone()));
+            self.throw_source_on_path(b::and(guard.clone(), exception), "java.lang.NullPointerException");
+            env.insert(query.binding.clone(), Value::EagerIntProjection {
+                base, selected: b::row_value(format!("r.{link}.{leaf}")),
+            });
+            return Ok(());
         }
         let operation = match &query.operation {
             Operation::FirstArray { offset, fallback } => {
@@ -462,16 +462,13 @@ impl<'a> Engine<'a> {
                 }
             }
             None => {
-                let projection = match operation {
-                    RowOperation::Project(fields) => Some(fields.as_slice()),
-                    RowOperation::EagerPath { .. } => None,
-                    _ => return Err(fail("aggregate source is not bound")),
+                let RowOperation::Project(fields) = operation else {
+                    return Err(fail("aggregate source is not bound"));
                 };
                 let row = self.query_row_declaration(
                     decl.ok_or_else(|| fail("table query needs a row declaration"))?,
                 )?;
                 let types = self.query_row_types(row)?;
-                let fields = projection.ok_or_else(|| fail("table rows require a record projection"))?;
                 self.table_rows(query, row, types, fields, env)?
             }
         };
@@ -592,29 +589,19 @@ impl<'a> Engine<'a> {
                 Value::Term(Ty::Integer, r::relation_sum(distinct, b::lit_int(1)))
             }
             RowOperation::Fold { accumulator, initial, body } => {
-                // In exact arithmetic a fold a := a +/- term(row) equals the
-                // initial value +/- the bag sum. No commutation rule applies to
-                // word, IEEE, arbitrary recurrences or partial per-row terms.
+                // The direct row-element recurrence has a bag-sum form.
+                // Other supported arithmetic uses the ordered fold path.
                 need(rows.fields.contains_key(""), "reduce requires a bound numeric array")?;
-                let mut row_locals = locals.clone();
-                row_locals.remove(accumulator);
                 let start = self.query_value(initial, "", &BTreeMap::new(), env, guard)?;
                 need(start.ty() == Ty::Integer, "reduce needs an exact integer initial value")?;
-                fn has_accumulator(term: &Scalar, accumulator: &str) -> bool {
-                    match term {
-                        Scalar::Path(parts) => parts.first().is_some_and(|name| name == accumulator),
-                        Scalar::Binary(_, l, r) => has_accumulator(l, accumulator) || has_accumulator(r, accumulator),
-                        Scalar::NullPredicate { owner, .. } => owner == accumulator,
-                        Scalar::Integer(_) | Scalar::Text(_) | Scalar::Bool(_) => false,
-                    }
-                }
                 match body {
                     Scalar::Binary(op @ (Op::Add | Op::Sub), left, term)
                         if matches!(left.as_ref(), Scalar::Path(parts)
                             if parts.as_slice() == std::slice::from_ref(accumulator))
-                            && !has_accumulator(term, accumulator) =>
+                            && matches!(term.as_ref(), Scalar::Path(parts)
+                                if parts.as_slice() == std::slice::from_ref(&query.alias)) =>
                     {
-                        let term = self.query_value(term, &query.alias, &rows.fields, &row_locals, guard)?;
+                        let term = self.query_value(term, &query.alias, &rows.fields, &locals, guard)?;
                         need(term.ty() == Ty::Integer, "reduce needs exact integer elements")?;
                         let sum = r::relation_sum(rows.input, term.scalar()?);
                         let value = if *op == Op::Add { b::add(start.scalar()?, sum) } else { b::sub(start.scalar()?, sum) };

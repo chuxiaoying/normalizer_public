@@ -112,6 +112,14 @@ impl<'a> Tokens<'a> {
             .ok_or_else(|| format!("expected {token}"))
     }
 
+    fn end(&self, diagnostic: &str) -> Result<(), String> {
+        self.rest().is_empty().then_some(()).ok_or_else(|| diagnostic.into())
+    }
+
+    fn bound(&mut self, expected: &str, diagnostic: &str) -> Result<(), String> {
+        (self.name()? == expected).then_some(()).ok_or_else(|| diagnostic.into())
+    }
+
     fn name(&mut self) -> Result<String, String> {
         let source = self.rest();
         let n = source
@@ -244,7 +252,7 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         tokens.expect(")")?;
         tokens.expect("as")?;
         tokens.name()?; // The binder ranges over each integer; count needs no projection.
-        if !tokens.rest().is_empty() { return Err("trailing count-range clauses".into()); }
+        tokens.end("trailing count-range clauses")?;
         let lower = IntegerOperand::parse(lower, "count range endpoints must be integers")?;
         let upper = IntegerOperand::parse(upper, "count range endpoints must be integers")?;
         return Ok(LocalIr::CountRange { binding, accumulate, lower, upper });
@@ -259,7 +267,7 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
             ScalarOperand::Integer(value) => MemberChoiceFallback::Integer(value),
             ScalarOperand::Text(_) => return Err("member choice requires one integer empty fallback".into()),
         };
-        if !tokens.rest().is_empty() { return Err("trailing member choice clauses".into()); }
+        tokens.end("trailing member choice clauses")?;
         return Ok(LocalIr::MemberChoice { binding, members, empty });
     }
     if tokens.take("fold") {
@@ -278,22 +286,19 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         if index == binding || upper == index || upper == binding {
             return Err("indexed fold needs separate bound, accumulator and index".into());
         }
-        let counter = |t: &mut Tokens<'_>| {
-            if t.name()? == index { Ok(()) } else { Err("unbound indexed fold variable".to_owned()) }
-        };
         tokens.expect("when")?;
-        counter(&mut tokens)?;
+        tokens.bound(&index, "unbound indexed fold variable")?;
         tokens.expect("<")?;
         let skip_before = integer(&mut tokens)?;
         tokens.expect("continue")?;
         tokens.expect("when")?;
-        counter(&mut tokens)?;
+        tokens.bound(&index, "unbound indexed fold variable")?;
         tokens.expect(">")?;
         let stop_after = integer(&mut tokens)?;
         tokens.expect("break")?;
         tokens.expect("yield")?;
-        counter(&mut tokens)?;
-        if !tokens.rest().is_empty() { return Err("trailing indexed fold input".into()); }
+        tokens.bound(&index, "unbound indexed fold variable")?;
+        tokens.end("trailing indexed fold input")?;
         return Ok(LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after });
     }
     if let Some(query) = relation::parse(binding.clone(), accumulate, &mut tokens)? {
@@ -339,9 +344,7 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         let mut predicates = Vec::new();
         if tokens.take("where") {
             loop {
-                if tokens.name()? != alias {
-                    return Err("unbound table alias in where".into());
-                }
+                tokens.bound(&alias, "unbound table alias in where")?;
                 tokens.expect(".")?;
                 let column = tokens.name()?;
                 tokens.expect("==")?;
@@ -363,9 +366,7 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
     tokens.expect("atomic")?;
     tokens.expect("throws")?;
     let exception = tokens.name()?;
-    if !tokens.rest().is_empty() {
-        return Err("trailing input in SQL write".into());
-    }
+    tokens.end("trailing input in SQL write")?;
     Ok(LocalIr::SqlWrite(SqlWrite {
         binding,
         table,

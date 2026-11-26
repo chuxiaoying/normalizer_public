@@ -61,7 +61,7 @@ pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignme
             })
         } else { None };
         t.expect(")")?;
-        if !t.rest().is_empty() { return Err("trailing decimal round input".into()); }
+        t.end("trailing decimal round input")?;
         return Ok(Some(Assignment { binding: binding.into(), value, round: Some((scale, mode)) }));
     }
     let Ok(name) = t.name() else { return Ok(None) };

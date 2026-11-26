@@ -9,12 +9,6 @@ pub enum Action {
 }
 
 pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Action>, String> {
-    let same = |t: &mut Tokens<'_>, expected: &str| -> Result<(), String> {
-        if t.name()? == expected { Ok(()) } else { Err("unbound local stack operand".into()) }
-    };
-    let finish = |t: &Tokens<'_>| {
-        if t.rest().is_empty() { Ok(()) } else { Err("unexpected local stack clauses".to_owned()) }
-    };
     let op = |t: &mut Tokens<'_>, name: &str| -> Result<(), String> {
         t.expect("value")?;
         t.expect(".")?;
@@ -27,7 +21,7 @@ pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Act
         tokens.expect(")")?;
         tokens.expect("==")?;
         tokens.expect("0")?;
-        finish(tokens)?;
+        tokens.end("unexpected local stack clauses")?;
         return Ok(Some(Action::IsEmpty { binding: binding.into(), stack }));
     }
     if !tokens.take("fold") || tokens.rest().starts_with('[') { return Ok(None); }
@@ -35,7 +29,7 @@ pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Act
     tokens.expect("from")?;
     let initialize = tokens.take("[");
     if initialize { tokens.expect("]")?; }
-    else { same(tokens, binding)?; }
+    else { tokens.bound(binding, "unbound local stack operand")?; }
     tokens.expect("as")?;
     tokens.expect("(")?;
     let accumulator = tokens.name()?;
@@ -50,16 +44,16 @@ pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Act
     if initialize {
         tokens.expect("yield")?;
         op(tokens, "push")?;
-        same(tokens, &accumulator)?;
+        tokens.bound(&accumulator, "unbound local stack operand")?;
         tokens.expect(",")?;
-        same(tokens, &item)?;
+        tokens.bound(&item, "unbound local stack operand")?;
         tokens.expect(")")?;
-        finish(tokens)?;
+        tokens.end("unexpected local stack clauses")?;
         return Ok(Some(Action::PushAll { stack: binding.into(), source }));
     }
     tokens.expect("when")?;
     op(tokens, "length")?;
-    same(tokens, &accumulator)?;
+    tokens.bound(&accumulator, "unbound local stack operand")?;
     tokens.expect(")")?;
     tokens.expect("==")?;
     tokens.expect("0")?;
@@ -67,22 +61,22 @@ pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Act
     let exception = tokens.name()?;
     tokens.expect("when")?;
     op(tokens, "last_or")?;
-    same(tokens, &accumulator)?;
+    tokens.bound(&accumulator, "unbound local stack operand")?;
     tokens.expect(",")?;
-    same(tokens, &item)?;
+    tokens.bound(&item, "unbound local stack operand")?;
     tokens.expect(")")?;
     tokens.expect(".")?;
     let field = tokens.name()?;
     tokens.expect("!=")?;
-    same(tokens, &item)?;
+    tokens.bound(&item, "unbound local stack operand")?;
     tokens.expect(".")?;
-    same(tokens, &field)?;
+    tokens.bound(&field, "unbound local stack operand")?;
     tokens.expect("throw")?;
-    same(tokens, &exception)?;
+    tokens.bound(&exception, "unbound local stack operand")?;
     tokens.expect("yield")?;
     op(tokens, "pop")?;
-    same(tokens, &accumulator)?;
+    tokens.bound(&accumulator, "unbound local stack operand")?;
     tokens.expect(")")?;
-    finish(tokens)?;
+    tokens.end("unexpected local stack clauses")?;
     Ok(Some(Action::CheckAndPop { stack: binding.into(), source, field, exception }))
 }

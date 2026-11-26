@@ -168,7 +168,7 @@ pub(super) fn parse(
         if accumulator == alias { return Err("reduce has duplicate binders".into()); }
         t.expect("yield")?;
         let body = scalar(t)?;
-        if !t.rest().is_empty() { return Err("trailing reduce relation input".into()); }
+        t.end("trailing reduce relation input")?;
         return Ok(Some(Query { binding, accumulate, source, alias, clauses: vec![],
             operation: Operation::OnRows(RowOperation::Fold { accumulator, initial, body }) }));
     }
@@ -219,7 +219,7 @@ fn parse_query_tail(
         if offset.is_some() || t.rest().starts_with("else") {
             t.expect("else")?;
             let default = scalar(t)?;
-            if !t.rest().is_empty() { return Err("trailing scalar first input".into()); }
+            t.end("trailing scalar first input")?;
             return Ok(Query {
                 binding, accumulate, source, alias: String::new(), clauses: vec![],
                 operation: Operation::FirstArray { offset: offset.unwrap_or_default(), fallback: default },
@@ -234,7 +234,7 @@ fn parse_query_tail(
         while t.take(",") {
             keys.push(scalar(t)?);
         }
-        if !t.rest().is_empty() { return Err("trailing group key clauses".into()); }
+        t.end("trailing group key clauses")?;
         return Ok(Query { binding, accumulate, source, alias, clauses: vec![],
             operation: Operation::OnRows(RowOperation::GroupCount(keys)) });
     }
@@ -250,7 +250,7 @@ fn parse_query_tail(
             filters.push(scalar(t)?);
             while t.take("and") { filters.push(scalar(t)?); }
         }
-        if !t.rest().is_empty() { return Err("trailing join count input".into()); }
+        t.end("trailing join count input")?;
         return Ok(Query {
             binding, accumulate, source, alias, clauses: vec![],
             operation: Operation::JoinCount { source: right, alias: right_alias, on, filters },
@@ -341,9 +341,7 @@ fn parse_query_tail(
     } else {
         projection
     };
-    if !t.rest().is_empty() {
-        return Err(format!("trailing relation input: {}", t.rest()));
-    }
+    t.end("trailing relation input").map_err(|error| format!("{error}: {}", t.rest()))?;
     let operation = match (kind, projection) {
         (Kind::Rows, Yield::Fields(fields)) => RowOperation::Project(fields),
         (Kind::Rows, Yield::Value(Scalar::Path(path))) => {

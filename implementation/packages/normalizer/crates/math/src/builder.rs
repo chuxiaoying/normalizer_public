@@ -914,37 +914,25 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
         "math.proof.path_implies.cache_miss",
         |_| format!("active_size={} expr_size={}", active.size(), expr.size()),
     );
-    if !crate::normalize::consume_proof_budget(proof_input_size, proof_input_size) {
+    // The run budget limits cumulative proof work; the input threshold
+    // additionally stops any one fallback from copying very large guards.
+    let run_budget_skipped =
+        !crate::normalize::consume_proof_budget(proof_input_size, proof_input_size);
+    if run_budget_skipped || proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
+        let reason = if run_budget_skipped { "run_proof_budget" } else { "input_size_budget" };
         crate::profile::count(
             &PATH_IMPLIES_BUDGET_SKIPS,
             "math.proof.path_implies.budget_skip",
             |_| {
-                format!(
-                    "active_size={} expr_size={} reason=run_proof_budget",
-                    active.size(),
-                    expr.size()
-                )
+                let context = if run_budget_skipped {
+                    "reason=run_proof_budget".to_owned()
+                } else {
+                    format!("size_budget={MAX_TRUTH_TABLE_INPUT_SIZE}")
+                };
+                format!("active_size={} expr_size={} {context}", active.size(), expr.size())
             },
         );
-        return finish(false, Some("run_proof_budget"), true);
-    }
-    // Path implication is also an optimization proof. Avoid constructing a
-    // second copy of very large merged guards for the arithmetic fallback;
-    // failure to prove implication conservatively retains the branch.
-    if proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
-        crate::profile::count(
-            &PATH_IMPLIES_BUDGET_SKIPS,
-            "math.proof.path_implies.budget_skip",
-            |_| {
-                format!(
-                    "active_size={} expr_size={} size_budget={}",
-                    active.size(),
-                    expr.size(),
-                    MAX_TRUTH_TABLE_INPUT_SIZE
-                )
-            },
-        );
-        return finish(false, Some("input_size_budget"), true);
+        return finish(false, Some(reason), true);
     }
     // Only an exact negative table result replaces the downstream proof.
     // The synthetic NOT adds one node to the measured input.

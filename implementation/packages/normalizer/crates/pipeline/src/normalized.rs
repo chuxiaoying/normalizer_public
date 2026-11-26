@@ -511,7 +511,7 @@ pub(crate) enum RuntimeThrowMessage<'a> {
 
 pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
     let E::New { java_type: JavaType::Class(class), args } = e else { return None; };
-    if !matches!(class.as_str(), "RuntimeException" | RUNTIME_EXCEPTION) { return None; }
+    if class != "RuntimeException" { return None; }
     match args.as_slice() {
         [] => Some(RuntimeThrowMessage::Absent),
         [E::Lit(JavaLit::Str(text))] => Some(RuntimeThrowMessage::Text(text)),
@@ -650,7 +650,7 @@ fn constant_array_address(target: &E, index: &E) -> bool {
 
 // Read from a bound local or local construction with a signed int literal.
 fn source_array_read(target: &E, index: &E) -> bool {
-    (matches!(target, E::Ident(_)) || local_array_construction(target)) && signed_literal_index(index)
+    (matches!(target, E::Ident(_)) || inline_int_array_initializer(target)) && signed_literal_index(index)
 }
 
 // Match one full accumulator update and reject every other loop shape at
@@ -687,9 +687,8 @@ pub(crate) fn java_int(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Primitive(name) if name == "int")
 }
 
-fn local_array_construction(e: &E) -> bool {
-    matches!(e, E::ArrayInitializer { element_type, .. } | E::ArrayAllocation { element_type, .. }
-        if java_int(element_type))
+fn inline_int_array_initializer(e: &E) -> bool {
+    matches!(e, E::ArrayInitializer { element_type, .. } if java_int(element_type))
 }
 
 fn signed_literal_index(e: &E) -> bool {
