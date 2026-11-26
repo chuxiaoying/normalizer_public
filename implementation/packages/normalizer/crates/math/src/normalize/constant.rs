@@ -63,92 +63,16 @@ fn fold_call(
             return Some(builder::lit(value));
         }
     }
-    sem.symbolic_reducer.as_ref().and_then(|reducer| symbolic_equation(func_key, args, reducer))
-}
-
-thread_local! {
-    static ACTIVE_SYMBOLIC: std::cell::RefCell<std::collections::HashSet<Expr>> = Default::default();
-}
-struct SymbolicGuard(Expr);
-impl Drop for SymbolicGuard {
-    fn drop(&mut self) {
-        ACTIVE_SYMBOLIC.with(|active| {
-            active.borrow_mut().remove(&self.0);
-        });
-    }
-}
-/// Multiset extension of strict natural-number descent. Only calls with a
-/// registered symbolic equation contribute; boolean guards may grow while
-/// blank(concat(a,b)) becomes blank(a), blank(b) on strictly smaller arguments.
-fn symbolic_rank(value: &Expr) -> Vec<usize> {
-    let mut rank: Vec<usize> = vec![];
-    value.walk(&mut |part| {
-        if let Some((key, args)) = part.as_call() {
-            let semantics = crate::domains::primitive::registry::func_semantics(key);
-            if semantics.pure && semantics.symbolic_reducer.is_some() {
-                rank.push(args.iter().map(Expr::size).sum::<usize>());
+    // Return a direct child of the same registered unary Call, so the
+    // rewrite preserves the result sort and strictly decreases node count.
+    if sem.unary_idempotent {
+        if let [value] = args {
+            if value.as_call().is_some_and(|(inner, _)| inner == func_key) {
+                return Some(value.clone());
             }
         }
-    });
-    rank.sort_unstable_by(|a, b| b.cmp(a));
-    rank
-}
-fn symbolic_equation(
-    key: crate::FuncKey,
-    args: &[Expr],
-    reducer: &std::sync::Arc<dyn Fn(crate::FuncKey, &[Expr]) -> Option<Expr> + Send + Sync>,
-) -> Option<Expr> {
-    // Boolean and nullable text have complete scalar result sorts. Number
-    // does not encode source word width, and composite/ref equations need a
-    // separate type-preserving contract before admission.
-    let (is_result, invalid_result): (fn(&Expr) -> bool, &str) =
-        match crate::domains::primitive::registry::func_return_type(key) {
-            Some(crate::Primitive::Boolean) => (
-                super::boolean_casewhen::is_boolean_expr,
-                "[MATH-SYMBOLIC-TYPE] predicate equation returned a non-boolean expression",
-            ),
-            Some(crate::Primitive::String) => (
-                is_symbolic_text,
-                "[MATH-SYMBOLIC-TYPE] text equation returned an untyped or non-text expression",
-            ),
-            _ => panic!("[MATH-SYMBOLIC-TYPE] symbolic equations require Boolean or String return type"),
-        };
-    let original = builder::call(key, args.to_vec());
-    let entered = ACTIVE_SYMBOLIC.with(|active| active.borrow_mut().insert(original.clone()));
-    assert!(entered, "[MATH-SYMBOLIC-CYCLE] reentrant symbolic equation");
-    let _guard = SymbolicGuard(original.clone());
-    let result = reducer(key, args)?;
-    if result == original {
-        return None;
     }
-    assert!(
-        symbolic_rank(&result) < symbolic_rank(&original),
-        "[MATH-SYMBOLIC-NONDECREASING] symbolic equation must strictly decrease its call rank"
-    );
-    assert!(is_result(&result), "{invalid_result}");
-    Some(result)
-}
-
-// Do not infer a text sort for undeclared row, relation, or structural values.
-fn is_symbolic_text(value: &Expr) -> bool {
-    match value.kind() {
-        ExprKind::Lit(Lit::Str(_) | Lit::Null) => true,
-        ExprKind::SymVar { origin } => {
-            let ty = match origin {
-                crate::SymVarOrigin::Parameter { primitive_type, .. }
-                | crate::SymVarOrigin::Temporal { primitive_type, .. }
-                | crate::SymVarOrigin::External { primitive_type, .. } => primitive_type,
-            };
-            ty == "text"
-        }
-        ExprKind::Call { key, .. } =>
-            crate::domains::primitive::registry::func_return_type(*key)
-                    == Some(crate::Primitive::String),
-        ExprKind::CaseWhen { branches } =>
-            branches.last().is_some_and(|(c, _)| c.as_bool() == Some(true))
-                && branches.iter().all(|(_, value)| is_symbolic_text(value)),
-        _ => false,
-    }
+    None
 }
 
 fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
@@ -173,16 +97,9 @@ fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
         // 归一化纪律："ok: " + "default" → "ok: default" 不应保留为 BinOp。
         (Add, Str(x), Str(y)) => Some(builder::lit_str(format!("{}{}", x, y))),
 
-        (Eq, Str(x), Str(y)) => Some(builder::lit_bool(x == y)),
-        (Ne, Str(x), Str(y)) => Some(builder::lit_bool(x != y)),
-        (Eq, Bool(x), Bool(y)) => Some(builder::lit_bool(x == y)),
-        (Ne, Bool(x), Bool(y)) => Some(builder::lit_bool(x != y)),
-        (Eq, Null, Null) => Some(builder::lit_bool(true)),
-        (Ne, Null, Null) => Some(builder::lit_bool(false)),
-        (Eq, Null, Str(_) | Int(_) | BigInt(_) | Bool(_)) => Some(builder::lit_bool(false)),
-        (Eq, Str(_) | Int(_) | BigInt(_) | Bool(_), Null) => Some(builder::lit_bool(false)),
-        (Ne, Null, Str(_) | Int(_) | BigInt(_) | Bool(_)) => Some(builder::lit_bool(true)),
-        (Ne, Str(_) | Int(_) | BigInt(_) | Bool(_), Null) => Some(builder::lit_bool(true)),
+        (Eq | Ne, Null, _) | (Eq | Ne, _, Null)
+        | (Eq | Ne, Str(_), Str(_)) | (Eq | Ne, Bool(_), Bool(_)) =>
+            Some(builder::lit_bool((a == b) == (op == Eq))),
 
         (And, Bool(x), Bool(y)) => Some(builder::lit_bool(*x && *y)),
         (Or, Bool(x), Bool(y)) => Some(builder::lit_bool(*x || *y)),

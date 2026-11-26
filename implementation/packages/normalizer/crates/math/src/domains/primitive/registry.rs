@@ -31,15 +31,8 @@ pub struct FuncSemantics {
     /// 只有 pure=true 时才会被 math::constant_fold 调用。
     pub evaluator: Option<Arc<dyn Fn(&[Lit]) -> Option<Lit> + Send + Sync>>,
 
-    /// A closed symbolic equation supplied with this exact function signature.
-    /// Restricted to pure functions returning Boolean or String; String
-    /// equations preserve their result sort. Other sorts
-    /// fail explicitly rather than losing complete type metadata.
-    /// Every accepted rewrite must
-    /// strictly decrease the normalizer's registered-call argument rank;
-    /// recursive/cyclic definitions are reported as internal contract errors.
-    pub symbolic_reducer:
-        Option<Arc<dyn Fn(FuncKey, &[crate::Expr]) -> Option<crate::Expr> + Send + Sync>>,
+    /// f(f(x)) = f(x) for an already registered pure unary function.
+    pub unary_idempotent: bool,
 
 }
 
@@ -73,13 +66,8 @@ impl FuncSemantics {
         self
     }
 
-    /// Attach an equation to the already declared closed signature. This does
-    /// not certify an otherwise unknown function for final PERS admission.
-    pub fn with_symbolic_reducer(
-        mut self,
-        reducer: Arc<dyn Fn(FuncKey, &[crate::Expr]) -> Option<crate::Expr> + Send + Sync>,
-    ) -> Self {
-        self.symbolic_reducer = Some(reducer);
+    pub fn with_unary_idempotence(mut self) -> Self {
+        self.unary_idempotent = true;
         self
     }
 
@@ -203,8 +191,8 @@ pub fn register_func(
 }
 
 fn semantics_equivalent(a: &FuncSemantics, b: &FuncSemantics) -> bool {
-    a.pure == b.pure
-    // Concrete evaluators and equations are installed by their owning domains.
+    a.pure == b.pure && a.unary_idempotent == b.unary_idempotent
+    // Concrete evaluators are installed by their owning domains.
 }
 
 /// 查询 FuncKey 对应的函数名（用于 Display）。

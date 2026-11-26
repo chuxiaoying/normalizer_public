@@ -34,11 +34,7 @@ pub fn trim(value: Expr) -> Expr {
                 [Lit::Str(s)] => Some(Lit::Str(s.trim_matches(|c: char| c <= '\u{20}').into())),
                 _ => None,
             }))
-            .with_symbolic_reducer(std::sync::Arc::new(|trim, args| {
-                let [value] = args else { return None; };
-                let (inner, _) = value.as_call()?;
-                (inner == trim).then(|| value.clone())
-            })),
+            .with_unary_idempotence(),
     );
     math::normalize(b::call(key, vec![value]))
 }
