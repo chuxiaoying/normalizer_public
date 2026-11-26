@@ -291,6 +291,9 @@ pub(super) fn observations(
             }
         }
     }
+    for (_, _, guard) in &mut exceptions {
+        *guard = math::normalize::canonical_terminal_guard(guard.clone());
+    }
     if exceptions.iter().any(|(_, payload, _)| payload.is_some()) {
         for (i, (_, left, left_guard)) in exceptions.iter().enumerate() {
             for (_, right, right_guard) in &exceptions[i + 1..] {

@@ -21,6 +21,12 @@ pub(crate) mod constraint;
 mod integer_ac;
 mod integer_equations;
 mod integer_ranges;
+
+/// Canonicalize a closed, exact integer condition at its terminal boundary.
+pub fn canonical_terminal_guard(value: Expr) -> Expr {
+    integer_ranges::canonical_terminal_guard(&value).map(normalize).unwrap_or(value)
+}
+
 mod logical_chain;
 mod rebuild;
 pub(crate) mod relation;

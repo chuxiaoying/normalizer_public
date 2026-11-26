@@ -94,6 +94,53 @@ pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {
     })
 }
 
+/// Settle a small enumeration or exclusion of points before publishing a
+/// terminal outcome. The source integer must already be acquired and total.
+/// Existing ordered predicates need no conversion, and an interval spelling
+/// that expands the guard is not a simplification.
+pub(crate) fn canonical_terminal_guard(expr: &Expr) -> Option<Expr> {
+    fn enumerates_points(value: &Expr) -> bool {
+        match value.as_binop() {
+            Some((B::And | B::Or, left, right)) => enumerates_points(left) && enumerates_points(right),
+            Some((B::Eq | B::Ne, _, _)) => true,
+            _ => false,
+        }
+    }
+    if expr.size() > 64 || !matches!(expr.as_binop(), Some((B::And | B::Or, _, _)))
+        || !enumerates_points(expr)
+    {
+        return None;
+    }
+    let mut subject = None;
+    let mut cuts = Vec::new();
+    let predicate = guard(expr, &mut subject, &mut cuts)?;
+    if cuts.len() > 32 { return None; }
+    let subject = subject?;
+    let mut intervals: Vec<(Endpoint, Endpoint)> = Vec::new();
+    let mut contiguous = false;
+    for (lo, hi) in cells(cuts) {
+        if !predicate.at(&cell_representative(&lo, &hi)) {
+            contiguous = false;
+            continue;
+        }
+        if contiguous {
+            intervals.last_mut()?.1 = hi;
+        } else {
+            intervals.push((lo, hi));
+        }
+        contiguous = true;
+    }
+    let candidate = intervals.into_iter().map(|(lo, hi)| {
+        if let (Some(lo), Some(hi)) = (&lo, &hi) {
+            if lo == hi { return b::eq(subject.clone(), b::lit_integer(lo.clone())); }
+        }
+        let lower = lo.map(|n| b::ge(subject.clone(), b::lit_integer(n)));
+        let upper = hi.map(|n| b::le(subject.clone(), b::lit_integer(n)));
+        lower.into_iter().chain(upper).reduce(b::and).unwrap_or_else(|| b::lit_bool(true))
+    }).reduce(b::or).unwrap_or_else(|| b::lit_bool(false));
+    (candidate.size() <= expr.size()).then_some(candidate)
+}
+
 pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)>, Expr)> {
     if branches.len() < 3
         || !branches.last()?.0.as_bool().is_some_and(|b| b)
@@ -175,6 +222,20 @@ mod domain_boundary_tests {
         }
         assert!(is_input_integer(&x));
         assert!(!is_input_integer(&b::param("fraction", ScalarSymbolType::ExactDecimal)));
+    }
+
+    #[test]
+    fn terminal_interval_uses_exact_adjacent_points_without_expanding_holes() {
+        let n = integer("value");
+        let p = |value| b::eq(n.clone(), b::lit_int(value));
+        let adjacent = b::or(p(4), p(5));
+        assert_eq!(canonical_terminal_guard(&adjacent), Some(b::and(
+            b::ge(n.clone(), b::lit_int(4)), b::le(n.clone(), b::lit_int(5)))));
+        let hole = b::ne(n.clone(), b::lit_int(4));
+        assert_eq!(canonical_terminal_guard(&hole), None);
+        let e = b::sym_e(1, ScalarSymbolType::Integer);
+        assert_eq!(canonical_terminal_guard(&b::or(
+            b::eq(e.clone(), b::lit_int(4)), b::eq(e, b::lit_int(5)))), None);
     }
 
     #[test]
