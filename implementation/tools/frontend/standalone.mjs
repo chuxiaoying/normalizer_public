@@ -60,17 +60,14 @@ function leadingParameterCall(fn, params) {
   const top = first && (ts.isVariableStatement(first)
     ? first.declarationList.declarations[0]?.initializer : first.expression);
   const declared = new Set(params);
-  const closedPrefix = nodes.every((statement, index) => {
-    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) {
-      return ts.isReturnStatement(statement) && index === nodes.length - 1;
-    }
-    return statement.declarationList.declarations.every(({name, initializer}) => {
-      if (!ts.isIdentifier(name) || !initializer || declared.has(name.text)) return false;
+  for (const [index, statement] of nodes.entries()) {
+    if (ts.isReturnStatement(statement) && index === nodes.length - 1) break;
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) return;
+    for (const {name, initializer} of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(name) || !initializer || declared.has(name.text)) return;
       declared.add(name.text);
-      return true;
-    });
-  });
-  if (!closedPrefix) return;
+    }
+  }
   const expression = unwrap(top);
   const awaited = ts.isAwaitExpression(expression);
   const call = awaited ? unwrap(expression.expression) : expression;
@@ -122,7 +119,7 @@ function mapEntries(node, names) {
 }
 
 const numericOperators = {
-  '+': ['number', 'add'], '-': ['number', 'subtract'],
+  '+': ['number', 'add'],
   '>': ['bool', 'gt'], '<': ['bool', 'gt'], '===': ['bool', 'eq'],
 };
 

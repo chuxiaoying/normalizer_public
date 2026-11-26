@@ -136,7 +136,6 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
         [ts.SyntaxKind.GreaterThanToken, 'gt'],
         [ts.SyntaxKind.EqualsEqualsEqualsToken, 'eq'],
         [ts.SyntaxKind.PlusToken, 'add'],
-        [ts.SyntaxKind.MinusToken, 'subtract'],
       ]).get(n.operatorToken.kind);
       if (op) return { op, left: lowerValue(n.left, readP), right: lowerValue(n.right, readP) };
     }

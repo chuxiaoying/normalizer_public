@@ -124,12 +124,11 @@ impl Engine<'_> {
             Node::Settled { returns, steps } =>
                 self.action_scope(returns, steps.as_slice(), env, path, true),
             Node::Action { returns, steps } => self.action_scope(returns, steps, env, path, false),
-            Node::Add { left, right } | Node::Subtract { left, right } => {
+            Node::Add { left, right } => {
                 let left = self.node(left, env, path.clone())?;
                 let right = self.node(right, env, path)?;
                 need(left.ty() == Ty::Integer && right.ty() == Ty::Integer, "exact arithmetic requires business numbers")?;
-                let operation = if matches!(n, Node::Subtract { .. }) { b::sub } else { b::add };
-                Ok(Value::Term(Ty::Integer, math::normalize(operation(left.scalar()?, right.scalar()?))))
+                Ok(Value::Term(Ty::Integer, math::normalize(b::add(left.scalar()?, right.scalar()?))))
             }
             Node::Var { name } => env
                 .get(name)

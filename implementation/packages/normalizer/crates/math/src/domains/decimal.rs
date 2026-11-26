@@ -119,14 +119,15 @@ pub fn binary(op: crate::BinOpKind, left: Expr, right: Expr) -> Expr {
         let scale = s.max(t);
         let a = a * BigInt::from(10).pow(scale - s);
         let b = b * BigInt::from(10).pow(scale - t);
-        return match op {
-            Add => literal(a + b, scale),
-            Sub => literal(a - b, scale),
-            _ => match op.comparison_test() {
-                Some(compare) => b::lit_bool(compare(&a, &b)),
-                None => b::binop_public(op, left, right),
-            },
-        };
+        match op {
+            Add => return literal(a + b, scale),
+            Sub => return literal(a - b, scale),
+            _ => {
+                if let Some(compare) = op.comparison_test() {
+                    return b::lit_bool(compare(&a, &b));
+                }
+            }
+        }
     }
     b::binop_public(op, left, right)
 }

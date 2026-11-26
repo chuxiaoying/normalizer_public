@@ -597,7 +597,6 @@ fn strip_redundant_path_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>,
             .filter(|c| {
                 !is_not_of_any(c, prev_conds)
                     && !is_not_conj_implied_by_prev_failure(c, &conjuncts, prev_conds)
-                    && !is_demorgan_conj_implied_by_prev_failure(c, &conjuncts, prev_conds)
             })
             .cloned()
             .collect();
@@ -658,47 +657,6 @@ fn is_not_conj_implied_by_prev_failure(
         prev_conjuncts
             .iter()
             .all(|pc| pc == complemented_prev || current_without_cond.iter().any(|cc| *cc == pc))
-    })
-}
-
-/// 检查当前分支中的某个 conjunct 是否属于“前序 OR 分支失败”推出的 De Morgan 补集。
-///
-/// CaseWhen 按序匹配：进入 branch[k] 时，所有 prev_cond 都为 false。
-/// 若某个 prev_cond = `A || B`，而当前 cond = `NOT(A) && NOT(B) && C`，
-/// 则 `NOT(A) && NOT(B)` 只是“前序分支失败”的展开形式，在当前分支上冗余，
-/// 可剥除为 `C`。
-///
-/// 这不是排序/合并 CaseWhen arms，也不是隐藏 default；只是把 first-match
-/// 语义中已经隐含的“前序 OR 失败”从后续分支 guard 里删除。
-fn is_demorgan_conj_implied_by_prev_failure(
-    cond: &Expr,
-    current_conjuncts: &[Expr],
-    prev_conds: &[&Expr],
-) -> bool {
-    prev_conds.iter().any(|prev| {
-        let prev_disjuncts = flatten_or(prev);
-        if prev_disjuncts.len() <= 1 {
-            return false;
-        }
-
-        let mut used = vec![false; current_conjuncts.len()];
-        let mut contains = false;
-
-        for prev_disjunct in &prev_disjuncts {
-            let Some(idx) = current_conjuncts
-                .iter()
-                .enumerate()
-                .find_map(|(idx, current)| {
-                    (!used[idx] && is_not_of(current, prev_disjunct)).then_some(idx)
-                })
-            else {
-                return false;
-            };
-            used[idx] = true;
-            contains |= &current_conjuncts[idx] == cond;
-        }
-
-        contains
     })
 }
 

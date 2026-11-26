@@ -302,10 +302,6 @@ enum Node {
         left: Box<Node>,
         right: Box<Node>,
     },
-    Subtract {
-        left: Box<Node>,
-        right: Box<Node>,
-    },
     Var {
         name: String,
     },
@@ -618,7 +614,7 @@ impl Loaded {
                         && !c.is_interface()
                         && c.fields().is_empty()
                         && c.annotations().is_empty()
-                        && (c.imports().is_empty() || crate::normalized::supported_source_imports(c))
+                        && c.imports().is_empty()
                         && !c.has_unbound_imports(),
                     "unsupported class shape",
                 )?;

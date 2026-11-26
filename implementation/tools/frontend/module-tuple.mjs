@@ -66,16 +66,16 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     expr = unwrap(expr);
     if (ts.isIdentifier(expr) && expr.text === 'undefined') return {kind: 'undefined'};
     if (ts.isStringLiteral(expr)) return {kind: 'text', value: expr.text};
+    const invalidSlot = 'tuple requires literal slots or distinct constant Boolean record fields';
+    if (!ts.isObjectLiteralExpression(expr)) fail(invalidSlot);
     const fields = Object.create(null);
-    const closedRecord = ts.isObjectLiteralExpression(expr) && expr.properties.every((prop) => {
+    for (const prop of expr.properties) {
       if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name) || !uid(prop.name.text)
           || prop.name.text === '__proto__' || Object.hasOwn(fields, prop.name.text)
-          || ![ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(prop.initializer.kind)) return false;
+          || ![ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(prop.initializer.kind)) fail(invalidSlot);
       fields[prop.name.text] = prop.initializer.kind === ts.SyntaxKind.TrueKeyword;
-      return true;
-    });
-    if (closedRecord) return {kind: 'record', fields};
-    fail('tuple requires literal slots or distinct constant Boolean record fields');
+    }
+    return {kind: 'record', fields};
   }
   function tupleReturn(st) {
     const expression = ts.isReturnStatement(st) && st.expression && unwrap(st.expression);

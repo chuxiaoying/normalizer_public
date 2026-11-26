@@ -1,6 +1,7 @@
 //! Closure validation for a definite call lowered from standalone module
 //! source. A standalone entry supplies no external boundary contract;
 //! the type or name of an ordinary input does not provide a call body.
+use super::identifier;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
@@ -26,11 +27,6 @@ pub fn validate(input: &[u8]) -> Result<(), String> {
     let error = |problem| format!("[NORM-STANDALONE-CLOSURE] {problem}");
     if input.len() > 65_536 { return Err(error("input too large")); }
     let entry: Entry = serde_json::from_slice(input).map_err(|_| error("invalid standalone entry closure"))?;
-    let identifier = |name: &str| {
-        let mut bytes = name.bytes();
-        bytes.next().is_some_and(|x| x.is_ascii_alphabetic() || x == b'_' || x == b'$')
-            && bytes.all(|x| x.is_ascii_alphanumeric() || x == b'_' || x == b'$')
-    };
     let mut params = BTreeSet::new();
     if entry.schema != "normalizer.standalone-closure/1"
         || !entry.file.ends_with(".js")

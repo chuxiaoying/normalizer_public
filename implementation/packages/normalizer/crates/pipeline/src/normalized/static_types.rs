@@ -277,8 +277,6 @@ impl Admission<'_> {
                     _ => Kind::Unresolved,
                 }
             }
-            // Structural source admission rejects expression-level assignment.
-            E::Assign { .. } => Kind::Unresolved,
             E::UnaryOp { op, operand } => {
                 if matches!(*op, U::PreInc | U::PreDec | U::PostInc | U::PostDec) {
                     self.check_writable(operand, scope)?;
@@ -328,6 +326,7 @@ impl Admission<'_> {
                 self.expression(index, scope)?;
                 declared()
             }
+            _ => return Err(super::error("NORM-EXPRESSION", self.id)),
         })
     }
 
