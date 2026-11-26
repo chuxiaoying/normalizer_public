@@ -46,7 +46,7 @@
   edits:
     - {from: 'class Offer { String code; int price; }', to: 'class Offer { String code; int price; boolean available; }'}
   expect:
-    - {path: [types, Offer, fields, available], value: bool}
+    - {path: [types, Offer, fields, available], add: bool}
 - name: borrowed-record-alias-preserves-the-public-choice-fallback
   edits:
     - {from: 'Offer first;', to: 'Offer same = backup; Offer first;'}

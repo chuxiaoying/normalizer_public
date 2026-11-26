@@ -225,7 +225,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         _ => return None,
     };
     if scalar_array.is_some() || record_array || nested || correlated {
-        return Some(format!("COALESCE({lead}SELECT {projection} {}), {default})", clauses.join(" ")));
+        return Some(format!("COALESCE({lead}SELECT {projection} {}), {default})", inline_body(&clauses)));
     }
     Some(format!(
         "COALESCE(\n  {lead}\n    SELECT {projection}\n    {}\n  ),\n  {default}\n)",

@@ -205,8 +205,4 @@
       value:
         - {id: '$t_0', op: member_choice, when: 'NOT (enabled)', members: values, empty: backup}
     - path: [R]
-      value: |-
-        CASE
-          WHEN NOT (enabled) THEN $t_0
-          ELSE backup
-        END
+      value: 'CASE WHEN enabled THEN backup ELSE $t_0 END'

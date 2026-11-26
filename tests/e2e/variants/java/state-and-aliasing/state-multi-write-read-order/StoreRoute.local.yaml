@@ -6,10 +6,18 @@
     - from: 'RouteBox box = new RouteBox();'
       to: 'RouteBox box = new RouteBox(); RouteBox alias = box;'
     - from: 'if (amount > 0) box.amount = amount;'
-      to: 'if (amount > 0) { alias.amount = amount; return box.amount; }'
+      to: 'if (amount > 0) { alias.amount = amount; return box.amount + 1; }'
     - from: |-
         }
                 return box.amount;
       to: |-
         }
                 return alias.amount;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN amount > 0 AND replace THEN amount + 1
+          WHEN replace THEN 0
+          ELSE 2
+        END

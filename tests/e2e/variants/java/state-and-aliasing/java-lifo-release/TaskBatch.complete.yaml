@@ -79,7 +79,7 @@
     - {from: 'fold closed from stack', to: 'fold opened from stack'}
   expect:
     - path: [throws, 0, when]
-      value: LENGTH(opened) > LENGTH(closed) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE opened[i].id != closed[LENGTH(closed) - 1 - i].id)
+      value: LENGTH(closed) < LENGTH(opened) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE opened[i].id != closed[LENGTH(closed) - 1 - i].id)
 
 - name: the-same-field-name-does-not-certify-the-same-record-type
   edits:

@@ -225,4 +225,9 @@
     - from: 'attempts = attempts + 1;'
       to: 'attempts = attempts + 1; if (accountId == 0) return 42; else return 43;'
   expect:
-    - { path: [R], value: 'CASE WHEN accountId == 0 THEN 42 ELSE 43 END' }
+    - path: [R]
+      value: |-
+        CASE
+          WHEN accountId == 0 THEN 42
+          ELSE 43
+        END
