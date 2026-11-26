@@ -318,9 +318,9 @@ impl Engine<'_> {
             Origin::Parameter { path: root, .. } => b::param(format!("{root}.{name}"), scalar_origin_type(&ty)?),
             Origin::State { binding, path } => {
                 let primitive = scalar_origin_type(&ty)?;
-                path.iter().map(String::as_str).chain([name]).fold(b::sym_e(*binding, primitive), |base, field| {
-                    b::sym_e_project(&base, field, primitive)
-                })
+                let mut field_path = path.clone();
+                field_path.push(name.to_owned());
+                b::sym_e_path(*binding, field_path, primitive)
             }
         };
         Ok(Value::Term(ty, expr))

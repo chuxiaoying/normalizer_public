@@ -13,7 +13,7 @@
 //!
 //! ## P0 架构断言（20260427）
 //!
-//! 所有 SymVar 构造（param/sym_e/sym_e_project/sym_t）必须传入 primitive_type，
+//! 所有 SymVar 构造（param/sym_e/sym_e_path/sym_t）必须传入 primitive_type，
 //! 普通标量构造器校验语言适配器交付的逻辑类型，发布版本也同样校验。
 //! 业务 Pojo 必须用 HeapRef，禁止用 SymVar 表达。
 
@@ -213,46 +213,24 @@ pub fn param<N: Into<String>, T: Into<String>>(name: N, primitive_type: T) -> Ex
 /// primitive_type 必须是 primitive。Boundary 返回 Pojo 场景应改走 HeapRef
 /// （方向1独立 PR 处理）。
 pub fn sym_e<T: Into<String>>(binding_id: u64, primitive_type: T) -> Expr {
+    sym_e_path(binding_id, Vec::new(), primitive_type)
+}
+
+/// A scalar projection of a declared external binding. The caller supplies
+/// the binding and ordered field path directly, without intermediate Exprs.
+///
+/// # Panics
+/// The projected type must be a primitive symbol type.
+pub fn sym_e_path<T: Into<String>>(binding_id: u64, path: Vec<String>, primitive_type: T) -> Expr {
     let ty = primitive_type.into();
     assert_primitive_type(&ty);
     Expr::new(ExprKind::SymVar {
         origin: SymVarOrigin::External {
             binding_id,
-            path: Vec::new(),
+            path,
             primitive_type: ty,
         },
     })
-}
-
-/// 对 E 符号做字段投影，产生新的 E 符号（P0：必填投影字段的 primitive_type）。
-///
-/// # Panics
-/// - base 不是 External SymVar → panic
-/// - primitive_type 不是 primitive（assert panic，release mode 也生效）
-pub fn sym_e_project<T: Into<String>>(base: &Expr, field: &str, primitive_type: T) -> Expr {
-    let ty = primitive_type.into();
-    assert_primitive_type(&ty);
-    match base.kind() {
-        ExprKind::SymVar {
-            origin: SymVarOrigin::External {
-                binding_id, path, ..
-            },
-        } => {
-            let mut new_path = path.clone();
-            new_path.push(field.to_string());
-            Expr::new(ExprKind::SymVar {
-                origin: SymVarOrigin::External {
-                    binding_id: *binding_id,
-                    path: new_path,
-                    primitive_type: ty,
-                },
-            })
-        }
-        _ => panic!(
-            "[MATH-BUILDER] sym_e_project: base must be an External SymVar, got {:?}",
-            base
-        ),
-    }
 }
 
 /// The immutable completion of one external request. Its payload type is

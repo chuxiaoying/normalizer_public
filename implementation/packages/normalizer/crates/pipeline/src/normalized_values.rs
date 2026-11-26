@@ -141,12 +141,12 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
         // completion root. Preserve the declared integer field in math's
         // typed receipt path rather than erase it into a generic Number call.
         // Throwing ports retain their partial completion.value projection.
-        if matches!(
-            value.as_sym_var(),
-            Some(math::SymVarOrigin::External { path, primitive_type, .. })
-                if path.is_empty() && primitive_type == "normalized.completion"
-        ) {
-            return Ok(Value::Term(ty, b::sym_e_project(&value, name, "integer")));
+        if let Some(math::SymVarOrigin::External { binding_id, path, primitive_type }) =
+            value.as_sym_var()
+        {
+            if path.is_empty() && primitive_type == "normalized.completion" {
+                return Ok(Value::Term(ty, b::sym_e_path(*binding_id, vec![name.into()], "integer")));
+            }
         }
     }
     operation(
