@@ -72,3 +72,77 @@
   reject:
   - 'SCENARIO_MODULE_INPUT:'
   - '@normalizer-ir'
+
+- name: constant-guard-true-no-else
+  edits:
+  - from: |-
+      if (failed) return ["offline"]
+          if (detailed) return [undefined, { ok: true }, "sent", "ack"]
+          return [undefined, { ok: true }]
+    to: |-
+      if (true) return [undefined, { ok: true }, "sent", "ack"]
+  expect:
+  - path: [R]
+    value: '2'
+
+- name: constant-guard-false-else
+  edits:
+  - from: |-
+      if (failed) return ["offline"]
+          if (detailed) return [undefined, { ok: true }, "sent", "ack"]
+          return [undefined, { ok: true }]
+    to: |-
+      if (false) return ["offline"]
+          else return [undefined, { ok: true }, "sent"]
+  expect:
+  - path: [R]
+    value: '1'
+
+- name: constant-guard-nested-returns
+  edits:
+  - from: |-
+      if (failed) return ["offline"]
+          if (detailed) return [undefined, { ok: true }, "sent", "ack"]
+          return [undefined, { ok: true }]
+    to: |-
+      if (!!true) {
+              if (!true) return ["offline"]
+              else return [undefined, { ok: true }, "sent", "ack"]
+          }
+          return ["offline"]
+  expect:
+  - path: [R]
+    value: '2'
+
+- name: constant-guard-false-preserves-symbolic-following-conditions
+  edits:
+  - from: |-
+      if (failed) return ["offline"]
+          if (detailed) return [undefined, { ok: true }, "sent", "ack"]
+          return [undefined, { ok: true }]
+    to: |-
+      if (false) return ["offline"]
+          if (failed) return ["offline"]
+          if (detailed) return [undefined, { ok: true }, "sent", "ack"]
+          return [undefined, { ok: true }]
+
+- name: constant-guard-does-not-skip-source-type-check
+  edits:
+  - from: |-
+      if (failed) return ["offline"]
+          if (detailed) return [undefined, { ok: true }, "sent", "ack"]
+          return [undefined, { ok: true }]
+    to: |-
+      if (false) return [42]
+          return [undefined, { ok: true }, "sent"]
+  reject:
+  - '[NORM-TS-MODULE]'
+  - is not assignable to type 'string'
+
+- name: constant-call-arguments-specialize-only-the-helper
+  edits:
+  - from: 'const [error, result, ...trace] = receipt(failed, detailed)'
+    to: 'const [error, result, ...trace] = receipt(false, true)'
+  expect:
+  - path: [R]
+    value: '2'

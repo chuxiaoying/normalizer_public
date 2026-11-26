@@ -44,16 +44,26 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     fail('tuple helper needs a declared tuple type');
   }
 
-  function simpleBool(expr, scope) {
+  function lowerBool(expr, scope) {
     expr = unwrap(expr);
     if (ts.isIdentifier(expr) && scope.has(expr.text)) return scope.get(expr.text);
     if (expr.kind === ts.SyntaxKind.TrueKeyword || expr.kind === ts.SyntaxKind.FalseKeyword) {
       return literal('bool', expr.kind === ts.SyntaxKind.TrueKeyword);
     }
     if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return n('not', {value: simpleBool(expr.operand, scope)});
+      const operand = lowerBool(expr.operand, scope);
+      if (operand) return n('not', {value: operand});
     }
-    fail('unsupported tuple helper Boolean expression');
+  }
+  function simpleBool(expr, scope) {
+    return lowerBool(expr, scope) ?? fail('unsupported tuple helper Boolean expression');
+  }
+  function exactBool(expr) {
+    if (expr?.op === 'const' && expr.type === 'bool') return expr.value;
+    if (expr?.op === 'not') {
+      const operand = exactBool(expr.value);
+      if (operand !== undefined) return !operand;
+    }
   }
   const scope = new Map(helperParams.map((name, i) => [name, simpleBool(call.arguments[i], inputScope)]));
   function slot(expr) {
@@ -79,11 +89,22 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     }
     return {kind: 'literal', items: unwrap(st.expression).elements.map(slot)};
   }
-  function plan(statements) {
+  function plan(statements, fallthrough = () => fail('tuple helper has no return on a path')) {
     const [head, ...tail] = statements;
-    if (!head) fail('tuple helper has no return on a path');
-    if (ts.isIfStatement(head) && !head.elseStatement) {
-      return {kind: 'branch', cond: simpleBool(head.expression, scope), yes: tupleReturn(head.thenStatement), no: plan(tail)};
+    if (!head) return fallthrough();
+    if (ts.isIfStatement(head)) {
+      const cond = head.elseStatement ? lowerBool(head.expression, scope) : simpleBool(head.expression, scope);
+      const known = exactBool(cond);
+      const next = () => plan(tail, fallthrough);
+      if (known !== undefined) {
+        // The closed TypeScript source was checked before picking a reachable arm.
+        const picked = known ? head.thenStatement : head.elseStatement;
+        if (!picked) return next();
+        return plan(ts.isBlock(picked) ? [...picked.statements] : [picked], next);
+      }
+      if (!head.elseStatement) {
+        return {kind: 'branch', cond, yes: tupleReturn(head.thenStatement), no: next()};
+      }
     }
     if (tail.length) fail('unsupported statements after tuple return');
     return tupleReturn(head);
