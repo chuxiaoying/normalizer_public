@@ -18,6 +18,13 @@ pub(super) struct SourceReceiver {
     pub(super) assembly_fields: BTreeSet<String>,
 }
 
+/// The implicit constructor of an ordinary class has no parameters. A
+/// record instead has its canonical component parameters, even though the
+/// source parser does not synthesize a constructor declaration.
+fn has_zero_argument_implicit_constructor(class: &JavaClass) -> bool {
+    !class.is_record() || class.fields().is_empty()
+}
+
 impl SourceReceiver {
     /// Establish the identity of a pre-existing receiver, not a fresh Java
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
@@ -29,6 +36,9 @@ impl SourceReceiver {
         let constructor = constructors.next();
         if constructors.next().is_some() || class.is_interface() || class.supertype().is_some() || !class.static_initializers().is_empty() {
             return Err("unsupported receiver assembly class".into());
+        }
+        if constructor.is_none() && !has_zero_argument_implicit_constructor(class) {
+            return Err("record components require a canonical constructor; not inert receiver assembly".into());
         }
         let params = constructor.map(|m| m.params()).unwrap_or_default();
         if params.len() != args.len() || !params.iter().zip(args).all(|((ty, _), arg)| assembly_argument(program, ty, arg)) {
@@ -155,6 +165,7 @@ pub(crate) fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &Ja
     let (JavaType::Class(name), JavaExpr::New { java_type, args }) = (ty, arg) else { return false; };
     ty == java_type && args.is_empty() && program.find_class(name).is_some_and(|class|
         !class.is_interface() && class.supertype().is_none() && class.static_initializers().is_empty()
+        && has_zero_argument_implicit_constructor(class)
         && class.fields().iter().all(|f| !f.is_static() && !f.has_initializer())
         && !class.methods().iter().any(|method| method.is_constructor()))
 }
@@ -256,5 +267,39 @@ fn java_type_spelling(ty: &JavaType) -> String {
         JavaType::Generic(name, args) => format!("{name}<{}>",
             args.iter().map(java_type_spelling).collect::<Vec<_>>().join(", ")),
         JavaType::Void => "void".into(),
+    }
+}
+
+#[cfg(test)]
+mod assembly_constructor_contract {
+    use super::*;
+    use simulator_parser::{parse, ParseOptions};
+
+    #[test]
+    fn a_nonempty_record_is_not_a_default_zero_argument_producer() {
+        for (declaration, admissible) in [
+            ("class Payload { int value; }", true),
+            ("record Payload() {}", true),
+            ("record Payload(int value) {}", false),
+        ] {
+            let source = format!("{declaration} class Entry {{ static final Payload ROOT = new Payload(); }}");
+            let program = parse(&source, "Entry.java", &ParseOptions::default()).unwrap();
+            let owner = program.find_class("Entry").unwrap();
+            let field = &owner.fields()[0];
+            let initializer = field.initializer().unwrap();
+            assert_eq!(assembly_allocation(&program, field.java_type(), initializer), admissible, "{declaration}");
+            assert_eq!(inert_singleton(&program, owner, field), admissible, "{declaration}");
+        }
+
+        let source = "import normalizer.intrinsics.N;
+          record Payload(int value) {}
+          class Entry {
+            @N.EntryState Payload seed = new Payload();
+            int read() { return 0; }
+          }";
+        let program = parse(source, "Entry.java", &ParseOptions::default()).unwrap();
+        let result = crate::normalized::source_layouts(&program);
+        let error = result.expect_err("an invalid canonical constructor cannot produce acquired state");
+        assert!(error.contains("[NORM-FIELD-DECLARATION]"), "{error}");
     }
 }
