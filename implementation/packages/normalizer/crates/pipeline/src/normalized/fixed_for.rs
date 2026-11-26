@@ -134,3 +134,47 @@ impl<'a> RectangularCounter<'a> {
         Some(Self { bounds, target, increment: increment.try_into().ok()? })
     }
 }
+
+#[cfg(test)]
+mod rectangular_proof_contract {
+    use super::*;
+    use simulator_parser::{ParseOptions, parse};
+
+    fn with_loop(body: &str, inspect: impl FnOnce(&S)) {
+        let source = format!(
+            "class Grid {{ static int count(int rows, int columns) {{ int total = 0; {body} return total; }} }}"
+        );
+        let program = parse(&source, "Grid.java", &ParseOptions::default()).unwrap();
+        let method = &program.find_class("Grid").unwrap().methods()[0];
+        let [_, loop_stmt @ S::For { .. }, _] = method.body().unwrap() else {
+            panic!("the test source must contain one outer for loop");
+        };
+        inspect(loop_stmt);
+    }
+
+    #[test]
+    fn two_independent_domains_preserve_inclusive_upper_bounds_and_increment() {
+        with_loop("for (int i = 0; i < rows; i++) {
+            for (int j = 0; columns >= j; j++) { total = total + 2; }
+        }", |statement| {
+            let rectangle = RectangularCounter::from_for(statement).unwrap();
+            assert_eq!(rectangle.bounds, vec![("rows", false), ("columns", true)]);
+            assert_eq!(rectangle.target, "total");
+            assert_eq!(rectangle.increment, 2);
+        });
+    }
+
+    #[test]
+    fn triangular_and_mutating_shapes_cannot_borrow_the_rectangular_proof() {
+        for body in [
+            "for (int i = 0; i < rows; i++) { for (int j = 0; j < i; j++) { total = total + 1; } }",
+            "for (int i = 0; i < rows; i++) { for (int j = 0; j < columns; j++) { i = i + 1; } }",
+            "for (int i = 0; i < rows; i++) { for (int j = 0; j < columns; j++) { total = total - 1; } }",
+            "for (double i = 0; i < rows; i++) { for (int j = 0; j < columns; j++) { total = total + 1; } }",
+            "for (int i = 0; i < rows; i++) { total = total + 1; }",
+            "for (int i = 0; i < rows; i++) { total = total + 1; for (int j = 0; j < columns; j++) { total = total + 1; } }",
+        ] {
+            with_loop(body, |statement| assert!(RectangularCounter::from_for(statement).is_none()));
+        }
+    }
+}
