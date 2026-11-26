@@ -353,7 +353,7 @@ impl Project {
                 };
                 Ok(Ty::Seq(Box::new(ty)))
             }
-            _ => Err(fail("unsupported Java type")),
+            _ => unreachable!(),
         }
     }
     fn source_owner(&self, ty: &JavaType) -> Option<&str> {
@@ -779,7 +779,6 @@ fn java_carrier_array_component(t: &JavaType) -> Option<(Ty, &str)> {
     match t {
         // The adapter's exact semantic override still supplies vector<number>.
         JavaType::Primitive(name) if matches!(name.as_str(), "int" | "long") => Some((Ty::Integer, name)),
-        JavaType::Class(name) if name == "Object" => Some((Ty::Ref, name)),
         JavaType::Class(name) if name == "String" => Some((Ty::Text, name)),
         _ => None,
     }
@@ -794,7 +793,7 @@ fn adapter_parameter(t: &JavaType) -> Result<(Ty, String)> {
             .ok_or_else(|| fail("unsupported Java array type"))?;
         return Ok((Ty::Seq(Box::new(ty)), format!("{spelling}[]")));
     }
-    Err(fail("unsupported Java type"))
+    unreachable!()
 }
 // Unlike an external receipt, the declared initial value of an entry-state
 // scalar is available on every path. Keep it a typed math input in a separate

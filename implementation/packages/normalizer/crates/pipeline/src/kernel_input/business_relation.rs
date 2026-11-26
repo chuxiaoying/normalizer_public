@@ -144,7 +144,6 @@ impl Engine<'_> {
             if let Clause::Where(Scalar::Binary(_, a, b)) = clause {
                 for (subject, evidence) in [(&**a, &**b), (&**b, &**a)] {
                     let ty = match evidence {
-                        Scalar::Integer(_) => Some(Ty::Integer),
                         Scalar::Text(_) => Some(Ty::Text),
                         Scalar::Path(path) if path.len() == 1 => env.get(&path[0]).map(Value::ty),
                         _ => None,
@@ -348,7 +347,7 @@ impl Engine<'_> {
             }
             Operation::NestedSum { alias, clauses, value } => {
                 let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
-                    return Err(fail("nested sum requires a directly bound two-dimensional array"));
+                    unreachable!();
                 };
                 need(**element == Ty::Integer,
                     "nested sum requires exact integer elements")?;
@@ -370,7 +369,7 @@ impl Engine<'_> {
                 inner_locals.remove(&query.alias);
                 for clause in clauses {
                     let Clause::Where(p) = clause else {
-                        return Err(fail("nested sum supports scalar filters only"));
+                        unreachable!();
                     };
                     let predicate = self.query_value(p, alias, &row, &inner_locals, guard)?;
                     need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
@@ -394,10 +393,10 @@ impl Engine<'_> {
                 let mut bind = |source: &str, alias: &str| -> Result<RelationExpr> {
                     need(!env.contains_key(alias), "join alias would shadow a local value")?;
                     let Some(Value::Rows(rows)) = env.get(source) else {
-                        return Err(fail("join requires two typed table bindings"));
+                        unreachable!();
                     };
                     let RelationExpr::Base { name, alias: bound } = &rows.input else {
-                        return Err(fail("join count currently requires unfiltered table declarations"));
+                        unreachable!();
                     };
                     need(name == bound && self.source_relations.tables.contains_key(name),
                         "join count requires a declared table")?;
@@ -691,7 +690,7 @@ impl Engine<'_> {
                 return Ok(());
             }
             RowOperation::EagerPath(_) | RowOperation::Count { distinct: true } =>
-                return Err(fail("incompatible query operation and projection")),
+                unreachable!(),
         };
         if let Some(declared) = decl {
             need(

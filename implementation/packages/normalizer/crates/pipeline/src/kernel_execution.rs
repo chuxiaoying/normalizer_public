@@ -544,15 +544,14 @@ impl Engine<'_> {
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
                     let java_type = preceding_uninitialized(body, i, binding)
-                        .ok_or_else(|| fail("member choice must follow its uninitialized local declaration"))?;
+                        .unwrap();
                     self.choose_source_member(binding, members, empty, java_type, id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after }) => {
                     self.execute_index_fold(binding, lower, upper, skip_before, stop_after, env)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::CountRange {binding,accumulate,lower,upper}) => {
-                    let declared = env.get(binding).is_some_and(|value| value.ty()==Ty::Integer)
-                        || (!*accumulate && preceding_uninitialized(body, i, binding).is_some());
+                    let declared = env.get(binding).is_some_and(|value| value.ty()==Ty::Integer);
                     need(declared,"count requires a declared integer output")?;
                     self.count_range(binding,*accumulate,lower,upper,env)?;
                 }
@@ -596,12 +595,12 @@ impl Engine<'_> {
             let text = |value: Expr| match value.as_lit() {
                 Some(math::Lit::Str(_)) => Some(value),
                 Some(math::Lit::Null) => Some(b::lit_str("null")),
-                _ => None,
+                _ => unreachable!(),
             };
             if let (Some(left), Some(right)) = (text(left), text(right)) {
                 return Ok(Value::Term(Ty::Text, math::normalize(b::add(left, right))));
             }
-            return Err(fail("text concatenation requires concrete text or null operands"));
+            unreachable!();
         }
         if left.ty() == Ty::Decimal || right.ty() == Ty::Decimal {
             need(matches!(left.ty(), Ty::Integer | Ty::Decimal)

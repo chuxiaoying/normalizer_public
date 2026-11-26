@@ -112,7 +112,7 @@ impl Engine<'_> {
         };
         let handle = task.scalar()?;
         let Some(SymVarOrigin::Temporal { binding_id, .. }) = handle.as_sym_var() else {
-            return Err(fail("task identity is not closed at this operation"));
+            unreachable!();
         };
         let outcome = self.task_outcome(*binding_id)?;
         let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);

@@ -11,14 +11,14 @@ use serde_json::json;
 // Guards use the PERS condition grammar. Parentheses preserve the math tree,
 // and operands remain in their original evaluation order.
 pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
-    fn render(expr: &Expr, parent: u8, ctx: &mut crate::FormatCtx) -> String {
+    fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
         if let Some(bound) = crate::formatting::sql::format_array_failure_union(expr, ctx) {
             return bound;
         }
         if let Some((op, left, right)) = expr.as_binop() {
-            let (rank, symbol) = match op {
-                BinOpKind::Or => (1, "or"),
-                BinOpKind::And => (2, "and"),
+            let symbol = match op {
+                BinOpKind::Or => "or",
+                BinOpKind::And => "and",
                 _ => return crate::format_expr_with_ctx(expr, ctx),
             };
             if let Some(guarded) =
@@ -26,17 +26,15 @@ pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String 
             {
                 return guarded;
             }
-            let group = format!(
+            return format!(
                 "{} {symbol} {}",
-                render(left, rank, ctx),
-                render(right, rank, ctx)
+                render(left, ctx),
+                render(right, ctx)
             );
-            let _ = parent;
-            group
         }
         crate::format_expr_with_ctx(expr, ctx)
     }
-    render(expr, 0, ctx)
+    render(expr, ctx)
 }
 
 fn bind_receipt<'a>(
