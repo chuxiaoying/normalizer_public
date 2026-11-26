@@ -16,7 +16,6 @@ export function unwrapParens(node) {
 
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
-  if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
   if (ts.isPropertyAccessExpression(node)) {
     const parent = pathOf(node.expression);
     return parent ? [...parent, node.name.text] : null;
@@ -33,9 +32,6 @@ function pathOf(node) {
 // OmittedExpression nodes rather than fabricated value expressions.
 function expr(node, sf) {
   node = unwrapParens(node);
-  // These are compile-time annotations, not runtime wrappers. Keeping them
-  // opaque would hide calls underneath `await nativeRpc(...) as Reply`.
-  if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) return expr(node.expression, sf);
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return { op: 'literal', type: 'string', value: node.text };
   if (ts.isNumericLiteral(node)) return { op: 'literal', type: 'number', value: Number(node.text) };
   if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return { op: 'literal', type: 'boolean', value: node.kind === ts.SyntaxKind.TrueKeyword };
