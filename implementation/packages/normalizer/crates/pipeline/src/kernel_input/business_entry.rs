@@ -234,7 +234,7 @@ impl EntryContext {
         Ok((format!("{}.{}", self.qualified("E", &path.root), path.fields.join(".")), ty))
     }
 
-    fn declared_field_type<'a>(&'a self, mut ty: &'a str, path: impl Iterator<Item=&'a str>) -> Option<&'a str> {
+    fn declared_field_type<'a, 'path>(&'a self, mut ty: &'a str, path: impl Iterator<Item=&'path str>) -> Option<&'a str> {
         for name in path {
             ty = self.types.get(ty)?.fields.get(name)?;
         }
