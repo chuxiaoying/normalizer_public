@@ -730,6 +730,10 @@ impl Admission<'_> {
                     } else {
                         self.block(std::slice::from_ref(init.as_ref()), &mut loop_scope)?;
                     }
+                    if super::fixed_for::BoundedControlFor::from_for(statement).is_some() {
+                        let condition = cond.as_ref().expect("closed induction condition");
+                        self.condition(self.expression(condition, &loop_scope)?, "for condition")?;
+                    }
                     self.expression(update, &loop_scope)?;
                     self.block(body, &mut loop_scope)?;
                     if assignment.is_some() {
@@ -750,6 +754,7 @@ impl Admission<'_> {
                 S::LocalIr(_) if self.class.fields().iter().any(|f| self.unmodeled_receiver_field(f)) =>
                     return Err(self.diagnostic("NORM-ENTRY-STATE",
                         "cannot prove plain receiver fields are unused by local semantic directives")),
+                S::LoopBreak | S::LoopContinue => {}
                 S::While { .. } | S::For { .. } | S::LocalIr(_) | S::Return(None) => {}
             }
         }

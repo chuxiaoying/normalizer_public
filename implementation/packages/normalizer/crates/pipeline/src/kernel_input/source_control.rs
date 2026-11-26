@@ -242,6 +242,83 @@ impl Engine<'_> {
         Ok(())
     }
 
+    pub(super) fn execute_bounded_control_for(
+        &mut self, proof: crate::normalized::fixed_for::BoundedControlFor<'_>,
+        id: &str, env: &mut Env, path: Expr,
+    ) -> Result<()> {
+        let bound = proof.bound.map(|name| {
+            let value = env.get(name).ok_or_else(|| fail("unbound finite loop limit"))?;
+            need(value.ty() == Ty::Integer, "finite loop limit is not an exact integer")?;
+            value.scalar()
+        }).transpose()?;
+        let mut locals = env.clone();
+        let mut exits: Vec<(i128, Env)> = Vec::new();
+        for (index, statements) in proof.iterations {
+            self.budget()?;
+            let mut active = path.clone();
+            if let Some(limit) = &bound {
+                let cut = index - i128::from(proof.inclusive);
+                let enter = b::gt(limit.clone(), b::lit_integer(cut));
+                let enter = self.condition_under_path(enter, &path);
+                match enter.as_bool() {
+                    Some(false) => break,
+                    Some(true) => {}
+                    None => {
+                        exits.push((cut, locals.clone()));
+                        active = math::normalize(b::and(path.clone(), enter));
+                    }
+                }
+            }
+            locals.insert(proof.counter.into(), Value::Term(Ty::Integer, b::lit_integer(index)));
+            for statement in statements {
+                self.source_steps(std::slice::from_ref(statement), id, &mut locals, active.clone())?;
+            }
+        }
+        for (name, value) in env.iter_mut() {
+            let finish = &locals[name];
+            let Some(bound) = &bound else {
+                *value = finish.clone();
+                continue;
+            };
+            let mut cuts: Vec<(i128, &Value)> = Vec::new();
+            for (cut, exit) in &exits {
+                let observed = &exit[name];
+                if let Some((end, previous)) = cuts.last_mut() {
+                    if *previous == observed {
+                        *end = *cut;
+                        continue;
+                    }
+                }
+                cuts.push((*cut, observed));
+            }
+            if cuts.last().is_some_and(|(_, observed)| *observed == finish) {
+                cuts.pop();
+            }
+            if cuts.is_empty() {
+                *value = finish.clone();
+                continue;
+            }
+            // Prefix-bound domains are consecutive ordered integers. Omit
+            // already excluded lower bounds and represent a one-point
+            // middle interval as an equality, not an expanded conjunction.
+            need(finish.ty() == Ty::Integer, "native closed loop only changes exact integer local values")?;
+            let mut previous = None;
+            let mut arms = Vec::with_capacity(cuts.len());
+            for (end, observed) in cuts {
+                let point = b::lit_integer(end);
+                let guard = if previous.is_some_and(|start| start + 1 == end) {
+                    b::eq(bound.clone(), point)
+                } else {
+                    b::le(bound.clone(), point)
+                };
+                arms.push((guard, observed.scalar()?));
+                previous = Some(end);
+            }
+            *value = Value::Term(Ty::Integer, math::normalize(b::case_when(arms, finish.scalar()?)));
+        }
+        Ok(())
+    }
+
     pub(super) fn execute_fixed_for(
         &mut self,
         header: crate::normalized::fixed_for::FixedFor<'_>,

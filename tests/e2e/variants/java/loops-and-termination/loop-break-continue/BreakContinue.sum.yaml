@@ -32,3 +32,25 @@
     - {from: 'if (i > 4) break;', to: 'if (i > 1) break;'}
   expect:
     - {path: [R], value: '0'}
+- name: write-before-break-is-part-of-the-completed-prefix
+  edits:
+    - from: |-
+        if (i > 4) break;
+                    total = total + i;
+      to: |-
+        total = total + i;
+                    if (i > 4) break;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN limit <= 2 THEN 0
+          WHEN limit == 3 THEN 2
+          WHEN limit == 4 THEN 5
+          WHEN limit == 5 THEN 9
+          ELSE 14
+        END
+- name: repeated-continue-is-not-a-proof-of-a-finite-symbolic-loop
+  edits:
+    - {from: 'if (i > 4) break;', to: 'if (i > 4) continue;'}
+  reject: ['[NORM-LOOP]', 'PREPROCESS_REQUIRED']

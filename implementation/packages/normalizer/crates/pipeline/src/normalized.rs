@@ -876,6 +876,8 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 | normalizer_ir::local::LocalIr::MemberChoice { .. }
                 | normalizer_ir::local::LocalIr::Stack(_)) => {}
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
+            S::For { .. } if fixed_for::BoundedControlFor::from_for(stmt).is_some() => {}
+            S::LoopBreak | S::LoopContinue => return Err(error("NORM-LOOP", at)),
             S::For { cond, body, .. } if fixed_for::FixedFieldFor::from_for(stmt).is_some() => {
                 // The proof admits just one literal store and a unit update.
                 // The typed source pass checks both field lvalues.

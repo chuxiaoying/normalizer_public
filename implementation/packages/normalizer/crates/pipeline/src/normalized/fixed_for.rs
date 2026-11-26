@@ -124,6 +124,153 @@ impl<'a> FixedFor<'a> {
     }
 }
 
+/// A finite sequence of native loop prefixes. The header admits only one
+/// monotone integer induction; each body control decision is evaluated on
+/// its concrete counter value, without treating break/continue as both
+/// fallthrough and exit. Unknown header bounds still require a proved break.
+pub(crate) struct BoundedControlFor<'a> {
+    pub counter: &'a str,
+    pub bound: Option<&'a str>,
+    pub inclusive: bool,
+    pub iterations: Vec<(i128, Vec<&'a S>)>,
+}
+
+const PREFIX_LIMIT: usize = 256;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Transfer {
+    Fallthrough,
+    Next,
+    Exit,
+}
+
+fn inductive_guard(expr: &E, counter: &str, index: i128) -> Option<bool> {
+    use simulator_parser::JavaLit;
+    let value = |expr: &E| if is_counter(expr, counter) {
+        Some(index)
+    } else {
+        literal(expr)
+    };
+    match expr {
+        E::Lit(JavaLit::Bool(b)) => Some(*b),
+        E::UnaryOp { op: U::Not, operand } => Some(!inductive_guard(operand, counter, index)?),
+        E::BinOp { op: B::And | B::Or, left, right } => {
+            let E::BinOp { op, .. } = expr else { unreachable!() };
+            let left = inductive_guard(left, counter, index)?;
+            let right = inductive_guard(right, counter, index)?;
+            Some(if *op == B::And { left && right } else { left || right })
+        }
+        E::BinOp { op, left, right } => {
+            let (left, right) = (value(left)?, value(right)?);
+            Some(match op {
+                B::Eq => left == right,
+                B::Ne => left != right,
+                B::Lt => left < right,
+                B::Le => left <= right,
+                B::Gt => left > right,
+                B::Ge => left >= right,
+                _ => return None,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn closed_integer_value(expr: &E) -> bool {
+    literal(expr).is_some() || match expr {
+        E::Ident(_) => true,
+        E::BinOp { op: B::Add | B::Sub | B::Mul, left, right } =>
+            closed_integer_value(left) && closed_integer_value(right),
+        _ => false,
+    }
+}
+
+/// Check every source path, not only the paths visited during a prefix. No
+/// unknown expression can execute a call, create an abrupt operation, or
+/// mutate the bound regardless of which header domain is selected.
+fn closed_loop_control(body: &[S], counter: &str, bound: Option<&str>) -> Option<bool> {
+    let mut has_transfer = false;
+    for statement in body {
+        has_transfer |= match statement {
+            S::LoopBreak | S::LoopContinue => true,
+            S::Block(body) => closed_loop_control(body, counter, bound)?,
+            S::If { cond, then_block, else_block } => {
+                inductive_guard(cond, counter, 0)?;
+                closed_loop_control(then_block, counter, bound)?
+                    | closed_loop_control(else_block.as_deref().unwrap_or_default(), counter, bound)?
+            }
+            S::Assign { target: E::Ident(name), value, .. }
+                if name != counter && bound != Some(name.as_str()) && closed_integer_value(value) => false,
+            _ => return None,
+        };
+    }
+    Some(has_transfer)
+}
+
+fn loop_prefix<'a>(body: &'a [S], counter: &str, index: i128, statements: &mut Vec<&'a S>) -> Transfer {
+    for statement in body {
+        let outcome = match statement {
+            S::LoopBreak => Transfer::Exit,
+            S::LoopContinue => Transfer::Next,
+            S::Block(body) => loop_prefix(body, counter, index, statements),
+            S::If { cond, then_block, else_block } => {
+                let selected = if inductive_guard(cond, counter, index).expect("closed induction guard") {
+                    then_block
+                } else {
+                    else_block.as_deref().unwrap_or_default()
+                };
+                loop_prefix(selected, counter, index, statements)
+            }
+            S::Assign { .. } => {
+                statements.push(statement);
+                Transfer::Fallthrough
+            }
+            _ => unreachable!("closed native loop prefix"),
+        };
+        if outcome != Transfer::Fallthrough { return outcome; }
+    }
+    Transfer::Fallthrough
+}
+
+impl<'a> BoundedControlFor<'a> {
+    pub fn from_for(statement: &'a S) -> Option<Self> {
+        let S::For { init, cond, update, body } = statement else { return None; };
+        let (counter, ty, initial) = declares_counter(init.as_deref()?)?;
+        let JavaType::Primitive(host) = ty else { return None; };
+        let fits = |value| match host.as_str() {
+            "int" => i32::try_from(value).is_ok(),
+            "long" => i64::try_from(value).is_ok(),
+            _ => false,
+        };
+        let start = literal(initial)?;
+        if !fits(start) { return None; }
+        let (end, 1, inclusive) = induction(counter, cond.as_ref(), update.as_ref())? else { return None; };
+        let (bound, literal_end) = match end {
+            E::Ident(name) if name != counter => (Some(name.as_str()), None),
+            value => (None, Some(literal(value)?)),
+        };
+        if !closed_loop_control(body, counter, bound)? { return None; }
+        let mut iterations = Vec::new();
+        let mut work = 0usize;
+        for offset in 0..=PREFIX_LIMIT {
+            let index = start + offset as i128;
+            if literal_end.is_some_and(|end| index > end || (index == end && !inclusive)) {
+                return Some(Self { counter, bound, inclusive, iterations });
+            }
+            if offset == PREFIX_LIMIT || !fits(index) { return None; }
+            let mut statements = Vec::new();
+            let transfer = loop_prefix(body, counter, index, &mut statements);
+            work = work.checked_add(statements.len())?;
+            if work > 4096 { return None; }
+            iterations.push((index, statements));
+            if transfer == Transfer::Exit {
+                return Some(Self { counter, bound, inclusive, iterations });
+            }
+        }
+        None
+    }
+}
+
 /// Closed scalar induction on a private local object's field. The source
 /// header certifies finite motion; execution must independently bind all
 /// three receiver names to the same fresh object.

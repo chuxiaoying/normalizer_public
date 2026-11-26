@@ -313,6 +313,11 @@ pub enum JavaStatement {
     /// throw 语句
     Throw(JavaExpr),
 
+    /// Unlabeled native abrupt transfer. Only a certified enclosing loop
+    /// may consume it; a switch's own separating break is parsed earlier.
+    LoopBreak,
+    LoopContinue,
+
     /// 代码块
     Block(Vec<JavaStatement>),
 }

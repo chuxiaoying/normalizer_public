@@ -137,12 +137,16 @@ impl<'a> Parser<'a> {
             }
         }
         let jump_at = self.pos;
-        for keyword in ["break", "continue"] {
+        for (keyword, statement) in [
+            ("break", JavaStatement::LoopBreak),
+            ("continue", JavaStatement::LoopContinue),
+        ] {
             if self.eat_keyword(keyword) {
-                self.pos = jump_at;
-                return Err(self.err(&format!(
-                    "[JAVA-LOOP-CONTROL] raw {keyword} requires explicit loop preprocessing"
-                )));
+                if !self.eat_char(b';') {
+                    return Err(self.err_at(jump_at,
+                        "[JAVA-LOOP-CONTROL] labeled or malformed loop transfer requires explicit preprocessing"));
+                }
+                return Ok(statement);
             }
         }
         // 尝试变量声明：Type name ... 或 Type name = expr;
