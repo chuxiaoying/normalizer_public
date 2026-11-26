@@ -32,3 +32,16 @@
 - name: a-same-named-local-does-not-capture-the-explicit-state-receiver
   edits:
     - {from: 'return this.value + 1;', to: 'int value = 9; return this.value + 1;'}
+
+- name: boolean-state-write-keeps-its-declared-domain-and-original-source
+  edits:
+    - {from: 'int value;', to: 'boolean value;'}
+    - {from: 'int read()', to: 'boolean read()'}
+    - {from: 'return this.value + 1;', to: 'this.value = !this.value; return this.value;'}
+  expect:
+    - {path: [entry, returns], value: bool}
+    - {path: [E, value, type], value: bool}
+    - path: [S]
+      add:
+        - write: {target: value, value: 'NOT (value)'}
+    - {path: [R], value: 'NOT (value)'}

@@ -29,3 +29,7 @@
         - write: { target: balance, value: balance + amount + 1 }
     - path: [R]
       value: '1'
+
+- name: a-compound-write-uses-the-same-declared-scalar-state
+  edits:
+    - {from: 'balance = balance + amount;', to: 'balance += amount;'}
