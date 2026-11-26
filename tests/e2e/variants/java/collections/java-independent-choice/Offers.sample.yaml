@@ -42,3 +42,8 @@
   reject:
   - '[NORM-PROJECT]'
   - nonnullable record text field was not initialized
+- name: record-choice-retains-the-boolean-domain-of-its-declared-row
+  edits:
+    - {from: 'class Offer { String code; int price; }', to: 'class Offer { String code; int price; boolean available; }'}
+  expect:
+    - {path: [types, Offer, fields, available], value: bool}
