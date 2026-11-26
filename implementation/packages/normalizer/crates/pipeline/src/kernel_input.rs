@@ -493,13 +493,23 @@ impl Loaded {
             source == project.source_text,
             "normalized source changed; review source_text",
         )?;
+        // Function and port excerpts frequently reference the same source.
+        // Validate them against one adjacent snapshot without retaining all
+        // source files or bypassing path admission for each origin.
+        let mut origin_path = None;
+        let mut original = String::new();
         for origin in project
             .functions
             .values()
             .map(|f| &f.origin)
             .chain(project.ports.values().map(|p| &p.origin))
         {
-            let original = read(&local_path(root, &origin.path)?)?;
+            let path = local_path(root, &origin.path)?;
+            if origin_path.as_ref() != Some(&path) {
+                drop(std::mem::take(&mut original));
+                original = read(&path)?;
+                origin_path = Some(path);
+            }
             need(
                 !origin.excerpt.trim().is_empty() && original.contains(&origin.excerpt),
                 "origin excerpt missing or changed",

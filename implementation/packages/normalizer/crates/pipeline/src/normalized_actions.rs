@@ -133,6 +133,7 @@ impl Project {
             let ty = Ty::parse(ty)?;
             need(ty.state_value(), "heap field needs a closed value type")?;
         }
+        let mut exception_types = BTreeMap::new();
         for (name, ty) in &self.exceptions {
             need(
                 !name.is_empty()
@@ -143,13 +144,17 @@ impl Project {
                 "invalid/reserved exception",
             )?;
             // unit observes only the exception class; no payload is invented.
-            if ty != "unit" {
+            let payload = if ty == "unit" {
+                Ty::Unit
+            } else {
                 let ty = Ty::parse(ty)?;
                 need(
-                        ty.port_value(),
-                        "exception payload needs a closed immutable value without references",
-                    )?;
-            }
+                    ty.port_value(),
+                    "exception payload needs a closed immutable value without references",
+                )?;
+                ty
+            };
+            exception_types.insert(name.as_str(), payload);
         }
         let mut ports = BTreeMap::new();
         for (name, p) in &self.ports {
@@ -187,12 +192,11 @@ impl Project {
             let mut exceptions = BTreeMap::new();
             for exception in &p.throws {
                 need(
-                    (builtin_exception(exception) || self.exceptions.contains_key(exception))
+                    (builtin_exception(exception) || exception_types.contains_key(exception.as_str()))
                         && !exceptions.contains_key(exception),
                     "unknown/duplicate port exception",
                 )?;
-                let payload = self.exceptions.get(exception).map(|ty| Ty::parse(ty))
-                    .transpose()?.unwrap_or(Ty::Unit);
+                let payload = exception_types.get(exception.as_str()).cloned().unwrap_or(Ty::Unit);
                 exceptions.insert(exception.clone(), payload);
             }
             ports.insert(name.clone(), CheckedPort {
