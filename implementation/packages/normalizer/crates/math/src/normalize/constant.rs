@@ -83,13 +83,7 @@ fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
             Add => Some(builder::lit_integer(x + y)),
             Sub => Some(builder::lit_integer(x - y)),
             Mul => Some(builder::lit_integer(x * y)),
-            Eq => Some(builder::lit_bool(x == y)),
-            Ne => Some(builder::lit_bool(x != y)),
-            Lt => Some(builder::lit_bool(x < y)),
-            Le => Some(builder::lit_bool(x <= y)),
-            Gt => Some(builder::lit_bool(x > y)),
-            Ge => Some(builder::lit_bool(x >= y)),
-            _ => None,
+            _ => op.comparison_test().map(|compare| builder::lit_bool(compare(&x, &y))),
         };
     }
     match (op, a, b) {

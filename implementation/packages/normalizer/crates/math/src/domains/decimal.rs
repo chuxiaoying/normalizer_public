@@ -122,13 +122,10 @@ pub fn binary(op: crate::BinOpKind, left: Expr, right: Expr) -> Expr {
         return match op {
             Add => literal(a + b, scale),
             Sub => literal(a - b, scale),
-            Eq => crate::builder::lit_bool(a == b),
-            Ne => crate::builder::lit_bool(a != b),
-            Lt => crate::builder::lit_bool(a < b),
-            Le => crate::builder::lit_bool(a <= b),
-            Gt => crate::builder::lit_bool(a > b),
-            Ge => crate::builder::lit_bool(a >= b),
-            _ => b::binop_public(op, left, right),
+            _ => match op.comparison_test() {
+                Some(compare) => b::lit_bool(compare(&a, &b)),
+                None => b::binop_public(op, left, right),
+            },
         };
     }
     b::binop_public(op, left, right)

@@ -389,6 +389,12 @@ impl<'a> Parser<'a> {
         self.parse_expression()
     }
 
+    fn parse_optional_initializer(&mut self, ty: &JavaType) -> Result<Option<JavaExpr>, ParseError> {
+        self.eat_char(b'=')
+            .then(|| self.parse_initializer_expr(ty))
+            .transpose()
+    }
+
     fn try_parse_vardecl(&mut self) -> Result<Option<(JavaStatement, Vec<JavaStatement>)>, ParseError> {
         let save = self.pos;
         self.skip_ws();
@@ -409,11 +415,7 @@ impl<'a> Parser<'a> {
             return Ok(None);
         };
 
-        let init = if self.eat_char(b'=') {
-            Some(self.parse_initializer_expr(&ty)?)
-        } else {
-            None
-        };
+        let init = self.parse_optional_initializer(&ty)?;
         self.skip_ws();
 
         // Additional declarators execute in the same scope and source order.
@@ -427,11 +429,7 @@ impl<'a> Parser<'a> {
             let ty2 = parse_array_type_suffix(self, base_ty.clone())
                 .ok_or_else(|| self.err("expected ']' in array declarator"))?;
             self.skip_ws();
-            let i2 = if self.eat_char(b'=') {
-                Some(self.parse_initializer_expr(&ty2)?)
-            } else {
-                None
-            };
+            let i2 = self.parse_optional_initializer(&ty2)?;
             extras.push(JavaStatement::VarDecl {
                 name: n2,
                 java_type: ty2,
@@ -930,10 +928,8 @@ impl<'a> Parser<'a> {
             if self.eat_char(b',') {
                 continue;
             }
-            if self.eat_char(b')') {
-                break;
-            }
-            return Err(self.err("expected ',' or ')' in arg list"));
+            self.require_delimiter(b')', "expected ',' or ')' in arg list")?;
+            break;
         }
         Ok(args)
     }
@@ -1071,6 +1067,15 @@ impl<'a> Parser<'a> {
         Ok(!digits.is_empty())
     }
 
+    // The radix/significand readers validate their own digits and type suffix.
+    // Neither may leave an adjacent identifier character after the number.
+    fn check_numeric_suffix(&self, trailing_separator: bool) -> Result<(), ParseError> {
+        if trailing_separator || self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
+            return Err(self.err("invalid numeric literal suffix"));
+        }
+        Ok(())
+    }
+
     fn read_decimal_literal(
         &mut self, start: usize, digits_start: usize, hex: bool,
     ) -> Result<JavaLit, ParseError> {
@@ -1112,9 +1117,7 @@ impl<'a> Parser<'a> {
         if single || matches!(self.peek(), Some(b'd' | b'D')) {
             self.pos += 1;
         }
-        if self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
-            return Err(self.err("invalid numeric literal suffix"));
-        }
+        self.check_numeric_suffix(false)?;
         // Same bound as the explicit decimal IR spelling. Never allocate an
         // arbitrarily expanded value just from an exponent written in source.
         if self.pos - start > 4096 {
@@ -1164,11 +1167,7 @@ impl<'a> Parser<'a> {
             is_long = true;
             self.pos += 1;
         }
-        if self.source.as_bytes().get(end - 1) == Some(&b'_')
-            || self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$')
-        {
-            return Err(self.err("invalid numeric literal suffix"));
-        }
+        self.check_numeric_suffix(self.source.as_bytes().get(end - 1) == Some(&b'_'))?;
 
         let text = &self.source[start..end];
         let cleaned: String = text.chars().filter(|&c| c != '_').collect();
