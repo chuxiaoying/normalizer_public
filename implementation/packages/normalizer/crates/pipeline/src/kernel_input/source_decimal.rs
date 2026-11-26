@@ -22,7 +22,7 @@ fn decimal(expr: &Decimal, env: &Env) -> Result<Expr> {
 
 impl Engine<'_> {
     pub(super) fn execute_source_decimal(&self, op: &Assignment, declare: &JavaType, env: &mut Env) -> Result<()> {
-        need(self.project.direct_source && crate::normalized::exact_decimal_type(declare),
+        need(crate::normalized::exact_decimal_type(declare),
             "decimal IR requires a declared java.math.BigDecimal local")?;
         let value = decimal(&op.value, env)?;
         let value = match op.round {

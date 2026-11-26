@@ -103,9 +103,8 @@ impl Loaded {
     fn entry_method(&self, entry: &str) -> Result<(&simulator_parser::JavaClass, &JavaMethod)> {
         let (owner, name) = entry.rsplit_once('.').ok_or("expected Class.method")?;
         let class = self.program.find_class(owner).ok_or("entry class not found")?;
-        let mut methods = class.methods().iter().filter(|m| m.name() == name);
-        let method = methods.next().ok_or("entry method not found")?;
-        if methods.next().is_some() { return Err(format!("ambiguous entry {entry}")); }
+        // Source admission and adapter normalization each reject overloads.
+        let method = class.methods().iter().find(|m| m.name() == name).ok_or("entry method not found")?;
         Ok((class, method))
     }
 

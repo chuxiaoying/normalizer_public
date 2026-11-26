@@ -358,20 +358,17 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
         if !classes.insert(name.clone()) {
             return Err(error("NORM-DUPLICATE-CLASS", &name));
         }
-        if (c.supertype().is_some() && !exceptions.contains_key(&name))
-            || c.interfaces().iter().any(|interface| {
-                program.find_class(interface).is_none_or(|declaration| {
-                    !plain_source_interface(declaration)
-                        || declaration.methods().iter().any(|required| {
-                            c.methods().iter().filter(|method| override_matches(required, method)).count() != 1
-                        })
-                })
+        if c.interfaces().iter().any(|interface| {
+            program.find_class(interface).is_none_or(|declaration| {
+                !plain_source_interface(declaration)
+                    || declaration.methods().iter().any(|required| {
+                        c.methods().iter().filter(|method| override_matches(required, method)).count() != 1
+                    })
             })
+        })
             || (c.is_interface() && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
-            || (!c.fields().is_empty() && !layouts.contains_key(&name) && !exceptions.contains_key(&name))
             || !c.annotations().is_empty()
-
             || !supported_source_imports(c)
             || c.has_unbound_imports()
         {
