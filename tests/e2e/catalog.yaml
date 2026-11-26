@@ -93,7 +93,7 @@ groups:
     - Beans.ENTRY.quote
   java/language-entries:
     entry-java-instance:
-    - InstanceEntry.add
+    - InstanceEntry.INSTANCE.add
   java/loops:
     java-loop-bounded-retry:
     - ScoreService.fetchScore
@@ -182,7 +182,7 @@ groups:
     - BillReport.countAccounts
   java/sql:
     java-static-external-sql:
-    - ArrearsService.calculatePayable
+    - ArrearsBeans.SERVICE.calculatePayable
     - PayableService.recordPayable
     - WaiverService.setOpenBillWaiver
   java/state-and-aliasing:

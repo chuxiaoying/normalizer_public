@@ -13,7 +13,7 @@
   expect:
   - path:
     - R
-    value: "CASE\n  WHEN NOT (cleared) THEN \"queued\"\n  ELSE null\nEND"
+    value: "CASE\n  WHEN cleared THEN null\n  ELSE \"queued\"\nEND"
 - name: inserting-into-the-other-branch-keeps-the-absence-distinction
   edits:
   - from: if (cleared) {
@@ -41,8 +41,10 @@
   - local map update cannot alias to another binding
 - name: nullable-result-needs-an-explicit-return-contract
   edits:
-  - from: '@normalizer.annotations.Nullable'
-    to: ''
+  - from: |-
+      @N.Nullable
+          static String select
+    to: static String select
   reject:
   - '[NORM-PROJECT]'
   - local map text result must declare a nullable return

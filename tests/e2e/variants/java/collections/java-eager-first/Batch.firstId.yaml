@@ -28,7 +28,7 @@
   - eager record projection currently supports only its first element
 - name: missing-nullability-contract-is-not-treated-as-eager-null-check
   edits:
-  - from: '@normalizer.annotations.Nullable Ticket ticket;'
+  - from: '@N.Nullable Ticket ticket;'
     to: Ticket ticket;
   reject:
   - '[NORM-PROJECT]'

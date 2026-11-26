@@ -4,18 +4,20 @@
     to: Offer quote;
   - from: first = choose from offers
     to: quote = choose from offers
-  - from: first.code, first.price
-    to: quote.code, quote.price
+  - from: first.code(), first.price()
+    to: quote.code(), quote.price()
 - name: returning-the-second-price-uses-the-second-occurrence
   edits:
-  - from: first.code, first.price, second.code
-    to: first.code, second.price, second.code
+  - from: first.code(), first.price(), second.code()
+    to: first.code(), second.price(), second.code()
   expect:
   - path:
     - R
     value: "{\n  firstCode: $t_0.code,\n  firstPrice: $t_1.price,\n  secondCode: $t_1.code\n}"
 - name: selected-record-is-not-a-mutable-heap-reference
   edits:
+  - from: record Offer(String code, int price) {}
+    to: 'class Offer { String code; int price; String code() { return code; } int price() { return price; } }'
   - from: return new Pick
     to: first.price = 9; return new Pick
   reject:
@@ -30,21 +32,24 @@
   - record choice needs a same-type record parameter fallback
 - name: selected-record-content-does-not-certify-reference-equality
   edits:
-  - from: first.price, second.code
-    to: 'first == second ? first.price : second.price, second.code'
+  - from: first.price(), second.code()
+    to: 'first == second ? first.price() : second.price(), second.code()'
   reject:
   - '[NORM-PROJECT]'
   - member choice record has content but no Java reference identity
 - name: nonnullable-text-result-cannot-publish-a-missing-constructor-field
   edits:
-  - from: this.firstCode = firstCode;
-    to: ''
+  - from: record Pick(String firstCode, int firstPrice, String secondCode) {}
+    to: >-
+      class Pick { String firstCode; int firstPrice; String secondCode;
+      Pick(String firstCode, int firstPrice, String secondCode) {
+      this.firstPrice = firstPrice; this.secondCode = secondCode; } }
   reject:
   - '[NORM-PROJECT]'
   - nonnullable record text field was not initialized
 - name: record-choice-retains-the-boolean-domain-of-its-declared-row
   edits:
-    - {from: 'class Offer { String code; int price; }', to: 'class Offer { String code; int price; boolean available; }'}
+    - {from: 'record Offer(String code, int price) {}', to: 'record Offer(String code, int price, boolean available) {}'}
   expect:
     - {path: [types, Offer, fields, available], add: bool}
 - name: borrowed-record-alias-preserves-the-public-choice-fallback
