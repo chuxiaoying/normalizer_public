@@ -72,11 +72,16 @@ pub(super) fn compact_integer(expr: &Expr) -> Option<i64> {
 ///
 /// 返回 None 如果表达式不是上述形式。
 pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
+    let (subject, bound) = compact_bound(expr)?;
+    // An ordinary local context proof requires a nonliteral subject.
+    subject.as_lit().is_none().then(|| LinearConstraint {
+        subject: subject.clone(),
+        bound,
+    })
+}
+
+fn compact_bound(expr: &Expr) -> Option<(&Expr, ConstraintBound)> {
     let (op, subject, value) = comparison_literal_rhs(expr.as_binop()?, compact_integer)?;
-    // A local context bound requires a nonliteral subject.
-    if subject.as_lit().is_some() {
-        return None;
-    }
     use BinOpKind::*;
     let bound = match op {
         Lt => ConstraintBound::Lt(value),
@@ -87,7 +92,21 @@ pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint>
         Ne => ConstraintBound::Ne(value),
         _ => return None,
     };
-    Some(LinearConstraint { subject: subject.clone(), bound })
+    Some((subject, bound))
+}
+
+/// Preserve the direct interval check on literal subjects that were not
+/// folded as constants. Ordered intervals did not admit Ne constraints.
+pub(super) fn literal_subject_intervals_conflict(expr: &Expr, context: &[Expr]) -> bool {
+    let Some((subject, target)) = compact_bound(expr) else { return false; };
+    if subject.as_lit().is_none() || matches!(target, ConstraintBound::Ne(_)) {
+        return false;
+    }
+    context.iter().filter_map(compact_bound).any(|(other, bound)| {
+        !matches!(bound, ConstraintBound::Ne(_))
+            && subject == other
+            && bounds_contradict(bound, target)
+    })
 }
 
 /// 检查两个同 subject 约束是否矛盾（域交集为空）。

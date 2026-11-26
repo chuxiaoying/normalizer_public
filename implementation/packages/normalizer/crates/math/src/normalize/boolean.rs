@@ -386,11 +386,9 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         {
             return Some(builder::lit_bool(false));
         }
-        // Ordered comparison contradiction: (x > 0) && (x <= 0) → false.
-        // This quick local check keeps early contradiction behavior while the
-        // full same-subject interval system below computes the canonical
-        // solution constraints for all ordered comparisons in the conjunction.
-        if out.iter().any(|e| ordered_comparisons_contradict(e, item)) {
+        // Ordinary compact intervals were checked by the context proof above.
+        // Keep the direct rule's narrower literal-subject fallback in place.
+        if super::constraint::literal_subject_intervals_conflict(item, &out) {
             return Some(builder::lit_bool(false));
         }
 
@@ -948,22 +946,6 @@ fn resolution_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
 // 互补检测（复用给多元规则）
 // =============================================================================
 
-/// 判断 a 和 b 是否互补：
-/// 1. 语法级：a == not(b) 或 b == not(a)
-/// 2. Func 级：两个 Call 的 FuncKey 通过 complement 字段关联，且参数相同
-fn ordered_comparisons_contradict(a: &Expr, b: &Expr) -> bool {
-    let Some((subject_a, interval_a)) = ordered_comparison_interval(a) else {
-        return false;
-    };
-    let Some((subject_b, interval_b)) = ordered_comparison_interval(b) else {
-        return false;
-    };
-    if subject_a != subject_b {
-        return false;
-    }
-    intervals_are_disjoint(interval_a, interval_b)
-}
-
 fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
     let mut solved: Vec<Expr> = Vec::with_capacity(items.len());
     let mut changed = false;
@@ -1023,8 +1005,8 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
 
 fn intersect_intervals(left: Interval, right: Interval) -> Interval {
     Interval {
-        lower: max_lower(left.lower, right.lower),
-        upper: min_upper(left.upper, right.upper),
+        lower: tighter_bound(left.lower, right.lower, std::cmp::Ordering::Greater),
+        upper: tighter_bound(left.upper, right.upper, std::cmp::Ordering::Less),
     }
 }
 
@@ -1152,52 +1134,19 @@ fn ordered_comparison_interval(expr: &Expr) -> Option<(Expr, Interval)> {
     Some((subject.clone(), Interval { lower, upper }))
 }
 
-fn intervals_are_disjoint(a: Interval, b: Interval) -> bool {
-    if let (Some(lower), Some(upper)) = (max_lower(a.lower, b.lower), min_upper(a.upper, b.upper)) {
-        if lower.value > upper.value {
-            return true;
-        }
-        if lower.value == upper.value && (!lower.inclusive || !upper.inclusive) {
-            return true;
-        }
-    }
-    false
-}
-
-fn max_lower(a: Option<Bound>, b: Option<Bound>) -> Option<Bound> {
+fn tighter_bound(
+    a: Option<Bound>, b: Option<Bound>, preferred: std::cmp::Ordering,
+) -> Option<Bound> {
     match (a, b) {
-        (Some(x), Some(y)) => {
-            if x.value > y.value {
-                Some(x)
-            } else if y.value > x.value {
-                Some(y)
-            } else {
-                Some(Bound {
-                    value: x.value,
-                    inclusive: x.inclusive && y.inclusive,
-                })
-            }
-        }
-        (Some(x), None) | (None, Some(x)) => Some(x),
-        (None, None) => None,
-    }
-}
-
-fn min_upper(a: Option<Bound>, b: Option<Bound>) -> Option<Bound> {
-    match (a, b) {
-        (Some(x), Some(y)) => {
-            if x.value < y.value {
-                Some(x)
-            } else if y.value < x.value {
-                Some(y)
-            } else {
-                Some(Bound {
-                    value: x.value,
-                    inclusive: x.inclusive && y.inclusive,
-                })
-            }
-        }
-        (Some(x), None) | (None, Some(x)) => Some(x),
+        (Some(a), Some(b)) => Some(match a.value.cmp(&b.value) {
+            std::cmp::Ordering::Equal => Bound {
+                value: a.value,
+                inclusive: a.inclusive && b.inclusive,
+            },
+            order if order == preferred => a,
+            _ => b,
+        }),
+        (Some(bound), None) | (None, Some(bound)) => Some(bound),
         (None, None) => None,
     }
 }
@@ -1311,18 +1260,12 @@ fn predicate_covers_null_subject(expr: &Expr) -> Option<Expr> {
 }
 
 fn null_comparison_subject(expr: &Expr, expected_op: BinOpKind) -> Option<Expr> {
-    if let ExprKind::BinOp { op, left, right } = expr.kind() {
-        if *op != expected_op {
-            return None;
-        }
-        if right.is_null() {
-            return Some(left.clone());
-        }
-        if left.is_null() {
-            return Some(right.clone());
-        }
+    let comparison = expr.as_binop()?;
+    if comparison.0 != expected_op {
+        return None;
     }
-    None
+    super::constraint::comparison_literal_rhs(comparison, |value| value.is_null().then_some(()))
+        .map(|(_, subject, ())| subject.clone())
 }
 
 fn negated_call_subject_with_null_result(
