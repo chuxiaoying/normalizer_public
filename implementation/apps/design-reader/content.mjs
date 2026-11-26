@@ -61,6 +61,7 @@ async function designFiles(root, folder) {
 function group(path) {
   if (!path.startsWith('design/')) return '参考资料';
   if (path === 'design/examples/seeds.yaml' || path === 'design/examples/seed-manifest.yaml' || path === 'design/examples/seed-plan.yaml') return '种子清单';
+  if (path.startsWith('design/secondary/')) return '二级设计';
   if (path.startsWith('design/examples/topics/')) return '基础主题';
   if (path.startsWith('design/examples/compositions/')) return '联合主题';
   return '设计导览';

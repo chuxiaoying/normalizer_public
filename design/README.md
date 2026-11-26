@@ -19,6 +19,18 @@
 - [第七章 · PERS 登场](chapters/第七章%20·%20PERS%20登场.md)
 - [第八章 · 统一定形规范](chapters/第八章%20·%20统一定形规范.md)
 
+## 二级设计
+
+八章讲设计主张和分工；这里按主题查边界、写法和代表规则。
+
+- [分析副本怎样通过校验](secondary/分析副本怎样通过校验.md)
+- [标准操作与声明标记](secondary/标准操作与声明标记.md)
+- [关系指令的统一写法](secondary/关系指令的统一写法.md)
+- [回执与异常怎样进入 PERS](secondary/回执与异常怎样进入%20PERS.md)
+- [完整二分 CASE 怎么选方向](secondary/完整二分%20CASE%20怎么选方向.md)
+- [观察身份与稳定编号](secondary/观察身份与稳定编号.md)
+- [什么时候可以引入 LET](secondary/什么时候可以引入%20LET.md)
+
 [Normalizer 扩展语义参考](extension-semantics-reference.md)集中列出标准操作、声明标记和关系指令。
 
 设计种子和派生案例的覆盖原则见[种子覆盖审查](seed-coverage-audit.md)。

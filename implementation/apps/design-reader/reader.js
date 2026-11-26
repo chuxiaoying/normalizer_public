@@ -70,7 +70,7 @@
     }
     const nav = $('documents');
     nav.replaceChildren();
-    const order = ['设计导览', '基础主题', '联合主题', '种子清单', '测试用例'];
+    const order = ['设计导览', '二级设计', '基础主题', '联合主题', '种子清单', '测试用例'];
     const ranked = [...groups].sort(([a], [b]) => (order.includes(a) ? order.indexOf(a) : 9) - (order.includes(b) ? order.indexOf(b) : 9));
     const activePage = byPath.get(pagePath);
     const activeTopic = activePage && topicOf(activePage);
