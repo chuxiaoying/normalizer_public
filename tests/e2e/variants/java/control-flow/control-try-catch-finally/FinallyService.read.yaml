@@ -82,3 +82,16 @@
     add:
     - type: RemoteError
       when: 'true'
+
+- name: conditional-finally-return-only-overrides-its-domain
+  edits:
+    - from: attempts = attempts + 1;
+      to: attempts = attempts + 1; if (accountId == 0) return 42;
+  expect:
+    - path: [R]
+      value: |-
+        CASE
+          WHEN accountId == 0 THEN 42
+          WHEN completion.is_throw($e_0, RemoteError) THEN 0
+          ELSE $e_0
+        END
