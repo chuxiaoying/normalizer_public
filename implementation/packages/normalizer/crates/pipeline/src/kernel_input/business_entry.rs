@@ -138,7 +138,7 @@ impl Loaded {
         while let Some(ty) = pending.pop() {
             if let JavaType::Array(item) = ty { pending.push(item); continue; }
             let JavaType::Class(name) = ty else { continue };
-            if source_type(ty)? == "text" || crate::normalized::exact_decimal_type(ty) || crate::normalized::native_decimal_type(ty) || types.contains_key(name) { continue; }
+            if source_type(ty)? == "text" || crate::normalized::exact_decimal_type(ty) || types.contains_key(name) { continue; }
             let declaration = self.program.find_class(name).ok_or("missing named business type")?;
             let mut fields = BTreeMap::new();
             for field in declaration.fields().iter().filter(|f| !f.is_static()) {

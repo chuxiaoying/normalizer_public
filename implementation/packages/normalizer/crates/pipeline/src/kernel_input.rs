@@ -688,11 +688,11 @@ impl Loaded {
                     && Ty::parse(&f.returns)? == declared.returns,
                 "semantic return/arity mismatch",
             )?;
-            let mut names = BTreeSet::new();
+            // Matching the declaration in slot order also proves uniqueness.
             let mut parameters = Vec::with_capacity(f.params.len());
             for ((p, (_, java_name)), fallback) in f.params.iter().zip(m.params()).zip(&declared.defaults) {
                 need(
-                    names.insert(&p.name) && identifier(&p.name),
+                    identifier(&p.name),
                     "duplicate/invalid parameter",
                 )?;
                 need(&p.name == java_name, "binding parameters must match the Java declaration")?;
