@@ -88,23 +88,27 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
         return None;
     };
     let n = point.as_lit()?.as_integer()?;
-    let strict = matches!(op, Gt | Lt);
+    // A finite boundary on this discrete domain has one shared threshold:
+    // [0..k] and [k+1..] render as <= k and > k. That keeps the
+    // base predicate and its complement identical except for their polarity.
     let (op, n) = match op {
-        Gt => (Ge, n + 1),
+        Ge => (Gt, n - 1),
         Lt => (Le, n - 1),
         _ => (op, n),
     };
     let zero: crate::Integer = 0.into();
-    Some(match op {
-        Ge if n <= zero => b::lit_bool(true),
+    let canonical = match op {
+        Gt if n < zero => b::lit_bool(true),
         Le | Eq if n < zero => b::lit_bool(false),
         Ne if n < zero => b::lit_bool(true),
-        Ge if n == 1.into() => b::ne(subject.clone(), b::lit_int(0)),
+        Gt if n == zero => b::ne(subject.clone(), b::lit_int(0)),
         Le if n == zero => b::eq(subject.clone(), b::lit_int(0)),
-        Ge if strict => b::ge(subject.clone(), b::lit_integer(n)),
-        Le if strict => b::le(subject.clone(), b::lit_integer(n)),
+        Gt => b::gt(subject.clone(), b::lit_integer(n)),
+        Le => b::le(subject.clone(), b::lit_integer(n)),
         _ => return None,
-    })
+    };
+    (canonical != *expr).then_some(canonical)
+
 }
 
 // Only acquired, total values are eligible for changing a Vector's CASE
@@ -334,5 +338,28 @@ mod tests {
         let pure = b::case_when(vec![(guard, fixed.clone())], b::lit_int(7));
         let items = vec![slot, pure, fixed];
         assert_eq!(number_vector(items.clone()).as_array_lit(), Some(items.as_slice()));
+    }
+}
+
+
+#[cfg(test)]
+mod vector_threshold_tests {
+    use super::*;
+
+    #[test]
+    fn a_nonsingleton_length_threshold_keeps_one_positive_base_and_complement() {
+        let length = certified_vector_length(input("xs"));
+        let boundary = b::lit_int(1);
+        let two = b::lit_int(2);
+        let guard = b::gt(length.clone(), boundary.clone());
+        let otherwise = b::le(length.clone(), boundary);
+        assert_eq!(crate::normalize(b::ge(length.clone(), two.clone())), guard);
+        assert_eq!(crate::normalize(b::lt(length.clone(), two)), otherwise);
+        let short = b::lit_int(11);
+        let long = b::lit_int(7);
+        let canonical = b::case_when(vec![(guard, long.clone())], short.clone());
+        assert_eq!(crate::normalize(b::case_when(vec![(otherwise, short)], long)), canonical);
+        assert_eq!(crate::normalize(canonical.clone()), canonical);
+        assert_eq!(crate::normalize(b::gt(length.clone(), b::lit_int(0))), b::ne(length, b::lit_int(0)));
     }
 }
