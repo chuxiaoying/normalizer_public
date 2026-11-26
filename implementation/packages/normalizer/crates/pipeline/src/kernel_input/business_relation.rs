@@ -298,7 +298,7 @@ impl Engine<'_> {
                 return Ok(());
             }
         }
-        if let Kind::FirstScalar(offset) = query.kind {
+        if let Kind::FirstScalar(offset) = &query.kind {
             let Some(Value::Sequence { item: Ty::Integer, relation: RelationExpr::Base { name, .. }, .. }) =
                 env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };
             let relation = RelationExpr::base(name, "value");
@@ -306,9 +306,9 @@ impl Engine<'_> {
             let default = self.query_value(default, "", &BTreeMap::new(), env, guard)?;
             need(default.ty() == Ty::Integer, "scalar first requires a numeric fallback")?;
             need(decl.is_none_or(crate::normalized::integral), "scalar first requires a numeric local")?;
-            let index = b::lit_int(offset as i64);
+            let index = b::lit_integer(offset.clone());
             let length = r::relation_count(relation.clone());
-            let none = if offset == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
+            let none = if offset.bits() == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
             let nth = r::relation_nth_value(relation, index, b::lit_null());
             let value = b::case_when(vec![(none, default.scalar()?), (b::lit_bool(true), nth)]);
             env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));

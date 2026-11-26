@@ -12,3 +12,20 @@
   expect:
     - path: [R]
       value: CASE WHEN LENGTH(values) <= 1 THEN 0 ELSE values[1] END
+- name: exact-slice-offset-beyond-machine-word
+  edits:
+    - from: 'result = first from values else 0'
+      to: 'result = first from values[18446744073709551616:] else 0'
+  expect:
+    - path: [R]
+      value: CASE WHEN LENGTH(values) <= 18446744073709551616 THEN 0 ELSE values[18446744073709551616] END
+- name: negative-slice-offset-is-not-an-empty-array
+  edits:
+    - from: 'result = first from values else 0'
+      to: 'result = first from values[-1:] else 0'
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'slice offset must be nonnegative']
+- name: slice-offset-must-be-a-closed-literal
+  edits:
+    - from: 'result = first from values else 0'
+      to: 'result = first from values[cutoff:] else 0'
+  reject: ['[SOURCE-PARSE-FAILED]', 'kind=PREPROCESS_REQUIRED', 'expected a nonnegative integer slice offset']

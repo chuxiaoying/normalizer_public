@@ -43,12 +43,12 @@ pub enum Projection {
     Fold { accumulator: String, initial: Scalar, body: Scalar },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Rows,
     Sum,
     First,
-    FirstScalar(usize),
+    FirstScalar(num_bigint::BigUint),
     Reduce,
     Count,
     CountDistinct,
@@ -188,8 +188,7 @@ fn parse_query(
             let ScalarOperand::Integer(offset) = t.value()? else {
                 return Err("expected a nonnegative integer slice offset".into());
             };
-            let offset = offset.to_string().parse::<usize>().map_err(|_| "invalid slice offset")?;
-            if offset > i64::MAX as usize { return Err("slice offset outside integer range".into()); }
+            let offset = offset.to_biguint().ok_or("slice offset must be nonnegative")?;
             t.expect(":")?;
             t.expect("]")?;
             Some(offset)
@@ -201,7 +200,7 @@ fn parse_query(
             let default = scalar(t)?;
             if !t.rest().is_empty() { return Err("trailing scalar first input".into()); }
             return Ok(Some(Query {
-                binding, accumulate, kind: Kind::FirstScalar(offset.unwrap_or(0)), source,
+                binding, accumulate, kind: Kind::FirstScalar(offset.unwrap_or_default()), source,
                 alias: String::new(), clauses: vec![], projection: Projection::Value(default),
             }));
         }

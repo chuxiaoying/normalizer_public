@@ -191,7 +191,7 @@ PERS 是共享扩展语义和统一 IR 的最终业务表达。它不区分来�
 直接 Java 源入口的 `int[]` 等整数数组按已绑定、非空引用的 `number[]` 输入处理；元素属于精确业务整数域，空数组是合法值。固定宽度转换和可空数组引用不由此规则推断。类型化工程入口原有的固定宽度载体合同不变。
 
 - `sum from values as v yield expression` 使用相同关系绑定和逐元素表达式；空数组贡献零。
-- `first from values[k:] else fallback` 在长度大于非负索引 `k` 时取该元素，否则返回显式默认值。省略切片就是 `k=0`。它不是无序表上的首行选择。
+- `first from values[k:] else fallback` 在长度大于非负索引 `k` 时取该元素，否则返回显式默认值。局部 IR 的 `k` 为精确的非负整数字面量，不受宿主机器字宽限制。省略切片就是 `k=0`。它不是无序表上的首行选择。
 - `count [distinct] from values as v [where predicate]` 在过滤后计数。`where true` 保留所有项，`where false` 不保留任何项，因此计数为零。普通计数保留重复项；去重计数只合并元素值相同的项。SQL 表上的可空列不沿用数组元素非空的证明。
 - `reduce values from initial as (acc, v) yield acc + term` 和相应的减法可归约为初值加减逐元素求和，前提是 term 不依赖 acc，且初值和每个 term 都是闭合的精确整数值。这不是任意递推或浮点、定宽运算的交换规则。
 
