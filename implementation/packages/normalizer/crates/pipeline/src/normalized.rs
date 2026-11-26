@@ -45,7 +45,7 @@ pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> boo
         && class.interfaces().is_empty()
         && !class.methods().is_empty()
         && class.methods().iter().all(|method| !method.is_static() && !method.is_constructor()
-            && !method.is_varargs() && method.body().is_none() && method.throws().is_empty()
+            && method.body().is_none() && method.throws().is_empty()
             && method.annotations().is_empty()
             && scalar(method.return_type()) && method.params().iter().all(|(ty, _)| scalar(ty)))
 }
@@ -338,8 +338,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
         if !classes.insert(name.clone()) {
             return Err(error("NORM-DUPLICATE-CLASS", &name));
         }
-        if !c.package().is_empty()
-            || (c.supertype().is_some() && !exceptions.contains_key(&name))
+        if (c.supertype().is_some() && !exceptions.contains_key(&name))
             || c.interfaces().iter().any(|interface| {
                 program.find_class(interface).is_none_or(|declaration| {
                     !plain_source_interface(declaration)
@@ -366,8 +365,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
             if methods.insert(id.clone(), m).is_some() {
                 return Err(error("NORM-OVERLOAD", &id));
             }
-            if m.is_varargs()
-                || (!m.annotations().is_empty() && !nullable_text_return(c, m))
+            if (!m.annotations().is_empty() && !nullable_text_return(c, m))
 
                 || (!m.is_constructor() && !supported(m.return_type()))
                 || m.params().iter().any(|(t, _)| !supported(t))

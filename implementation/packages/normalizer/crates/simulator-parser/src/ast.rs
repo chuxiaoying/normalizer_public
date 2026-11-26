@@ -40,7 +40,6 @@ impl JavaProgram {
 #[derive(Debug, Clone)]
 pub struct JavaClass {
     pub(crate) source_file: Option<String>,
-    pub(crate) package: String,
     /// 显式 import 的完整限定名列表（`import x.y.Z;`）
     ///
     /// parser 原始输出，不做 FQN 化决策——FQN 化由 resolver 在类型推断收口点完成。
@@ -64,9 +63,6 @@ impl JavaClass {
         self.source_file.as_deref()
     }
 
-    pub fn package(&self) -> &str {
-        &self.package
-    }
     pub fn imports(&self) -> &[String] {
         &self.imports
     }
@@ -77,11 +73,7 @@ impl JavaClass {
         &self.simple_name
     }
     pub fn full_name(&self) -> String {
-        if self.package.is_empty() {
-            self.simple_name.clone()
-        } else {
-            format!("{}.{}", self.package, self.simple_name)
-        }
+        self.simple_name.clone()
     }
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations
@@ -158,17 +150,6 @@ pub struct JavaMethod {
     pub(crate) is_static: bool,
     pub(crate) is_constructor: bool,
     pub(crate) is_native: bool,
-    /// 最后一个参数是否 varargs（Java 语义：varargs 只能是最后一个参数）
-    ///
-    /// 语义：若为 true，最后一个参数的 JavaType 是 Array（parser 已转换），
-    /// 调用方可以：
-    /// - 传 N 个基础类型实参（编译器自动打包）
-    /// - 直接传 Array 实参（arity 精确匹配）
-    /// - 传 0 个实参（对应空数组）
-    ///
-    /// method_registry 透传此位到 MethodSignature.is_varargs，
-    /// lookup_overload 据此激活 varargs 匹配规则。
-    pub(crate) is_varargs: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) body: Option<Vec<JavaStatement>>,
 }
@@ -196,10 +177,6 @@ impl JavaMethod {
     }
     pub fn is_constructor(&self) -> bool {
         self.is_constructor
-    }
-    /// 最后一个参数是否 varargs（Java 语义：varargs 只能是最后一个参数）
-    pub fn is_varargs(&self) -> bool {
-        self.is_varargs
     }
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations
@@ -423,7 +400,6 @@ pub enum JavaExpr {
 pub enum JavaLit {
     Int(i32),
     Long(i64),
-    Double(f64),
     Bool(bool),
     Str(String),
     Char(char),
@@ -463,7 +439,6 @@ pub enum JavaBinOp {
 pub enum JavaUnaryOp {
     Neg,     // -x
     Not,     // !x
-    BitNot,  // ~x
     PreInc,  // ++x
     PreDec,  // --x
     PostInc, // x++

@@ -585,8 +585,7 @@ impl Loaded {
             )?;
             need(classes.insert(c.full_name()), "duplicate class")?;
             need(
-                c.package().is_empty()
-                    && (c.supertype().is_none()
+                (c.supertype().is_none()
                         || self
                             .project
                             .source_exception_parents
@@ -624,8 +623,7 @@ impl Loaded {
                     "reserved Java method name; rename during preprocessing",
                 )?;
                 need(
-                    !m.is_varargs()
-                        && (m.annotations().is_empty() || self.project.direct_source && crate::normalized::nullable_text_return(c, m)),
+                    m.annotations().is_empty() || self.project.direct_source && crate::normalized::nullable_text_return(c, m),
                     "unsupported method shape",
                 )?;
                 let id = format!("{}.{}", c.full_name(), m.name());

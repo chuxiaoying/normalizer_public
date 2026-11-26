@@ -64,7 +64,6 @@ pub(crate) fn declarations(
             for method in declaration.methods() {
                 if method.body().is_some()
                     || method.is_static()
-                    || method.is_varargs()
                     || method.is_constructor()
                     || !method.annotations().is_empty()
 

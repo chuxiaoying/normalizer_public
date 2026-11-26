@@ -96,7 +96,6 @@ pub(crate) struct Parser<'a> {
     pub(crate) pos: usize,
     lexical_error: Option<ParseError>,
     pub(crate) file: String,
-    pub(crate) package: String,
     /// 显式 import 的 FQN 列表（`import x.y.Z;`）——parser 只收集，不做 FQN 化
     pub(crate) imports: Vec<String>,
     pub(crate) has_unbound_imports: bool,
@@ -109,7 +108,6 @@ impl<'a> Parser<'a> {
             pos: 0,
             lexical_error: None,
             file: file_hint.to_string(),
-            package: String::new(),
             imports: Vec::new(),
             has_unbound_imports: false,
         }
@@ -496,12 +494,9 @@ impl<'a> Parser<'a> {
         let mut classes = Vec::new();
 
         self.skip_ws();
+        let package_at = self.pos;
         if self.eat_keyword("package") {
-            let name = self
-                .read_qualified_ident()
-                .ok_or_else(|| self.err("expected package name"))?;
-            self.require_semicolon("package declaration")?;
-            self.package = name;
+            return Err(self.err_at(package_at, "[JAVA-PACKAGE] package declarations require explicit preprocessing"));
         }
 
         // Keep the exact ordinary imports. The closed input profile only
@@ -593,7 +588,6 @@ impl<'a> Parser<'a> {
 
         let mut class = JavaClass {
             source_file: Some(self.file.clone()),
-            package: self.package.clone(),
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
             simple_name,
@@ -607,7 +601,7 @@ impl<'a> Parser<'a> {
             is_interface,
         };
 
-        parse_class_body(&body_text, &mut class, &self.package, &self.file).map_err(|error| self.rebase_slice(body_at, error))?;
+        parse_class_body(&body_text, &mut class, &self.file).map_err(|error| self.rebase_slice(body_at, error))?;
 
         Ok(class)
     }
@@ -645,7 +639,6 @@ pub fn is_reserved_identifier(name: &str) -> bool {
 fn parse_class_body(
     body: &str,
     class: &mut JavaClass,
-    package: &str,
     file: &str,
 ) -> Result<(), ParseError> {
     let mut p = Parser::new(body, file);
@@ -736,7 +729,6 @@ fn parse_class_body(
             let nested_body = p.skip_balanced_braces()?;
             let mut nested_class = JavaClass {
                 source_file: Some(file.to_owned()),
-                package: package.to_string(),
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
@@ -751,7 +743,6 @@ fn parse_class_body(
             parse_class_body(
                 &nested_body,
                 &mut nested_class,
-                package,
                 file,
             ).map_err(|error| p.rebase_slice(nested_at, error))?;
             class.inner_classes.push(nested_class);
@@ -778,7 +769,7 @@ fn parse_class_body(
                 && !first.contains('.')
             {
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
-                let (params, is_varargs, param_annotations) = parse_params(&mut p)?;
+                let (params, param_annotations) = parse_params(&mut p)?;
                 p.skip_ws();
                 let throws = parse_throws(&mut p)?;
                 p.skip_ws();
@@ -802,7 +793,6 @@ fn parse_class_body(
                     is_static: false,
                     is_constructor: true,
                     is_native: false,
-                    is_varargs,
                     annotations: annotations.clone(),
                     body,
                 });
@@ -837,7 +827,7 @@ fn parse_class_body(
             if is_native && (native_modifier_conflict || is_volatile) {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] incompatible native method modifier"));
             }
-            let (params, is_varargs, param_annotations) = parse_params(&mut p)?;
+            let (params, param_annotations) = parse_params(&mut p)?;
             p.skip_ws();
             let throws = parse_throws(&mut p)?;
             p.skip_ws();
@@ -875,7 +865,6 @@ fn parse_class_body(
                 is_static,
                 is_constructor: false,
                 is_native,
-                is_varargs,
                 annotations,
                 body,
             });
@@ -976,18 +965,15 @@ fn parse_type_atom(p: &mut Parser, allow_diamond: bool) -> Option<JavaType> {
     }
 }
 
-/// 解析参数列表，返回 (参数列表, 最后一个参数是否 varargs)。
-///
-/// Java 语义：varargs 只能是方法的最后一个参数。parser 将 `T...` 转换为 `T[]`
-/// 但同时返回 is_varargs 位以供下游（JavaMethod / MethodSignature）使用。
-type ParsedParameters = (Vec<(JavaType, String)>, bool, std::collections::BTreeMap<String, Vec<AnnotationRef>>);
+/// Parse an ordinary non-variadic method parameter list.
+type ParsedParameters = (Vec<(JavaType, String)>, std::collections::BTreeMap<String, Vec<AnnotationRef>>);
 
 fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
     let invalid = |p: &Parser<'_>, reason: &str| p.err(&format!("[JAVA-PARAMETER] {reason}"));
     if !p.eat_char(b'(') { return Err(invalid(p, "expected opening parenthesis")); }
     let mut params = Vec::new();
     let mut annotations = std::collections::BTreeMap::new();
-    if p.eat_char(b')') { return Ok((params, false, annotations)); }
+    if p.eat_char(b')') { return Ok((params, annotations)); }
     let mut names = std::collections::BTreeSet::new();
     loop {
         let mut attributes = p.read_annotations()?;
@@ -995,25 +981,25 @@ fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
         let mut ty = parse_type(p).filter(|ty| *ty != JavaType::Void)
             .ok_or_else(|| invalid(p, "expected a parameter type"))?;
         p.skip_ws();
-        let variadic = p.starts_with("...");
-        if variadic {
-            p.pos += 3;
-            ty = JavaType::Array(Box::new(ty));
-        }
+        let variadic_at = p.starts_with("...").then_some(p.pos);
+        if variadic_at.is_some() { p.pos += 3; }
         p.skip_ws();
         let at = p.pos;
         let name = p.read_ident().ok_or_else(|| invalid(p, "expected a parameter name"))?;
         if is_reserved_identifier(&name) || !names.insert(name.clone()) {
             return Err(p.err_at(at, "[JAVA-PARAMETER] reserved or duplicate parameter name"));
         }
-        if !variadic {
-            ty = parse_array_type_suffix(p, ty)
-                .ok_or_else(|| invalid(p, "expected a closing array bracket"))?;
+        if let Some(at) = variadic_at {
+            if p.eat_char(b')') {
+                return Err(p.err_at(at, "[JAVA-PARAMETER] variadic parameters require explicit preprocessing"));
+            }
+            return Err(invalid(p, "varargs must be the final parameter"));
         }
+        ty = parse_array_type_suffix(p, ty)
+            .ok_or_else(|| invalid(p, "expected a closing array bracket"))?;
         if !attributes.is_empty() { annotations.insert(name.clone(), attributes); }
         params.push((ty, name));
-        if p.eat_char(b')') { return Ok((params, variadic, annotations)); }
-        if variadic { return Err(invalid(p, "varargs must be the final parameter")); }
+        if p.eat_char(b')') { return Ok((params, annotations)); }
         if !p.eat_char(b',') { return Err(invalid(p, "expected a comma or closing parenthesis")); }
     }
 }

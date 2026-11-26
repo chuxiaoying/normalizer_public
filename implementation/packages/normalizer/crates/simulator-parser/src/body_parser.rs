@@ -664,12 +664,7 @@ impl<'a> Parser<'a> {
                 });
             }
             Some(b'~') => {
-                self.pos += 1;
-                let inner = self.parse_unary()?;
-                return Ok(JavaExpr::UnaryOp {
-                    op: JavaUnaryOp::BitNot,
-                    operand: Box::new(inner),
-                });
+                return Err(self.err("[JAVA-BITWISE] raw bitwise complement requires explicit preprocessing"));
             }
             Some(b'-') => {
                 if let Some(lit) = self.try_parse_negative_min_literal() {
@@ -1125,7 +1120,6 @@ impl<'a> Parser<'a> {
 
     fn read_number_literal(&mut self) -> Result<JavaLit, ParseError> {
         let start = self.pos;
-        let mut is_float = false;
         let mut is_long = false;
         let radix = match (self.peek(), self.peek_at(1)) {
             (Some(b'0'), Some(b'x' | b'X')) => 16,
@@ -1152,45 +1146,32 @@ impl<'a> Parser<'a> {
                     break;
                 }
             }
-            // 小数
-            if self.peek() == Some(b'.') && self.peek_at(1).map_or(false, |c| c.is_ascii_digit()) {
-                is_float = true;
-                self.pos += 1;
-                while let Some(c) = self.peek() {
-                    if c.is_ascii_digit() || c == b'_' {
-                        self.pos += 1;
-                    } else {
-                        break;
-                    }
+            let fraction = self.peek() == Some(b'.')
+                && self.peek_at(1).is_some_and(|c| c.is_ascii_digit());
+            let exponent = matches!(self.peek(), Some(b'e' | b'E'));
+            if exponent {
+                let digits_at = if matches!(self.peek_at(1), Some(b'+' | b'-')) { 2 } else { 1 };
+                if !self.peek_at(digits_at).is_some_and(|c| c.is_ascii_digit()) {
+                    return Err(self.err("invalid numeric literal exponent"));
                 }
             }
-            // 指数
-            if matches!(self.peek(), Some(b'e') | Some(b'E')) {
-                is_float = true;
-                self.pos += 1;
-                if matches!(self.peek(), Some(b'+') | Some(b'-')) {
-                    self.pos += 1;
-                }
-                while let Some(c) = self.peek() {
-                    if c.is_ascii_digit() {
-                        self.pos += 1;
-                    } else {
-                        break;
-                    }
-                }
+            if fraction || exponent {
+                return Err(self.err_at(start, "[JAVA-IEEE-LITERAL] raw IEEE literal requires explicit preprocessing"));
             }
         }
 
         let end = self.pos;
         // A binary or hexadecimal integer takes only the long suffix.
         match self.peek() {
-            Some(b'L' | b'l') if !is_float => {
+            Some(b'L' | b'l') => {
                 is_long = true;
                 self.pos += 1;
             }
             Some(b'F' | b'f' | b'D' | b'd') if radix == 10 => {
-                is_float = true;
-                self.pos += 1;
+                if self.peek_at(1).is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
+                    return Err(self.err("invalid numeric literal suffix"));
+                }
+                return Err(self.err_at(start, "[JAVA-IEEE-LITERAL] raw IEEE literal requires explicit preprocessing"));
             }
             _ => {}
         }
@@ -1208,12 +1189,7 @@ impl<'a> Parser<'a> {
         });
         let cleaned: String = text.chars().filter(|&c| c != '_').collect();
 
-        if is_float {
-            let v: f64 = cleaned
-                .parse()
-                .map_err(|_| self.err("invalid float literal"))?;
-            Ok(JavaLit::Double(v))
-        } else if radix != 10 || (cleaned.starts_with('0') && cleaned.len() > 1) {
+        if radix != 10 || (cleaned.starts_with('0') && cleaned.len() > 1) {
             // Java's nondecimal tokens encode the source integer's bit pattern.
             // Decode that pattern before handing off to exact business arithmetic.
             let (digits, radix) = if radix == 10 { (cleaned.as_str(), 8) } else { (&cleaned[2..], radix) };

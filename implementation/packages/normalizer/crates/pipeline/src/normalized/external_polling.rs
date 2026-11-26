@@ -122,11 +122,7 @@ fn external_call(
     let JavaType::Class(name) = receiver_type else {
         return None;
     };
-    let qualified = if name.contains('.') || owner.package().is_empty() {
-        name.clone()
-    } else {
-        format!("{}.{name}", owner.package())
-    };
+    let qualified = name.clone();
     let interface = program.find_class(&qualified)?;
     if !interface.is_interface()
         || program.classes().iter().any(|class| {
