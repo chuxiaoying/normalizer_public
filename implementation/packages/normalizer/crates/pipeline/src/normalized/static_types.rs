@@ -183,7 +183,18 @@ impl Admission<'_> {
         }
     }
 
+    fn root_object_target(&self, ty: &JavaType) -> bool {
+        let JavaType::Class(name) = ty else { return false };
+        name == "java.lang.Object" || (name == "Object"
+            && !self.program.classes().iter().any(|class|
+                class.full_name().rsplit('.').next() == Some("Object")))
+    }
+
     fn expression(&self, expr: &E, scope: &Scope) -> Result<Kind, String> {
+        self.expression_in_context(expr, scope, false)
+    }
+
+    fn expression_in_context(&self, expr: &E, scope: &Scope, object_target: bool) -> Result<Kind, String> {
         let declared = || self.declared_type(expr, scope).as_ref()
             .map_or(Kind::Unresolved, Kind::declared);
         Ok(match expr {
@@ -287,13 +298,26 @@ impl Admission<'_> {
             }
             E::Ternary { cond, then_expr, else_expr } => {
                 self.condition(self.expression(cond, scope)?, "ternary condition")?;
-                let yes = self.expression(then_expr, scope)?;
-                let no = self.expression(else_expr, scope)?;
-                if yes.conflicts_with(no) {
-                    return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
-                        "branch result type mismatch: then={} else={}", yes.label(), no.label())));
+                let yes = self.expression_in_context(then_expr, scope, object_target)?;
+                let no = self.expression_in_context(else_expr, scope, object_target)?;
+                if object_target {
+                    // A reference conditional in an Object assignment context
+                    // can box either arm. Numeric/Boolean conditionals retain
+                    // their Java category; this is not a public union value.
+                    if [then_expr.as_ref(), else_expr.as_ref()].into_iter().any(|arm|
+                        self.declared_type(arm, scope) == Some(JavaType::Void))
+                    {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE", "a conditional arm cannot return void"));
+                    }
+                    if yes == Kind::Bool && no == Kind::Bool { Kind::Bool }
+                    else { yes.numeric_union(no).unwrap_or(Kind::Ref) }
+                } else {
+                    if yes.conflicts_with(no) {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
+                            "branch result type mismatch: then={} else={}", yes.label(), no.label())));
+                    }
+                    if yes == no { yes } else { yes.numeric_union(no).unwrap_or(Kind::Unresolved) }
                 }
-                if yes == no { yes } else { yes.numeric_union(no).unwrap_or(Kind::Unresolved) }
             }
             E::Cast { operand, .. } => {
                 if self.expression(operand, scope)?.is_native_decimal() {
@@ -367,7 +391,9 @@ impl Admission<'_> {
     fn assignment(&self, target: &E, value: &E, is_compound: bool, scope: &Scope) -> Result<(), String> {
         self.check_writable(target, scope)?;
         let expected = self.expression(target, scope)?;
-        let actual = self.expression(value, scope)?;
+        let object_target = !is_compound && self.declared_type(target, scope).as_ref()
+            .is_some_and(|ty| self.root_object_target(ty));
+        let actual = self.expression_in_context(value, scope, object_target)?;
         let label = match target {
             E::Ident(name) => format!("assignment to {name}"),
             E::FieldAccess { field, .. } => format!("assignment to {field}"),
@@ -384,7 +410,7 @@ impl Admission<'_> {
             match statement {
                 S::VarDecl { java_type, name, initializer, is_final } => {
                     if let Some(value) = initializer {
-                        let actual = self.expression(value, scope)?;
+                        let actual = self.expression_in_context(value, scope, self.root_object_target(java_type))?;
                         let label = format!("initializer for {name}");
                         self.reject_long_narrowing(Some(java_type), value, scope, &label)?;
                         self.compatible(Kind::declared(java_type), actual, &label)?;
@@ -397,9 +423,10 @@ impl Admission<'_> {
                     self.assignment(target, value, *is_compound, scope)?;
                 }
                 S::Return(Some(value)) => {
-                    let actual = self.expression(value, scope)?;
-                    self.reject_long_narrowing(Some(self.method.return_type()), value, scope, "return")?;
-                    self.compatible(Kind::declared(self.method.return_type()), actual, "return")?;
+                    let return_type = self.method.return_type();
+                    let actual = self.expression_in_context(value, scope, self.root_object_target(return_type))?;
+                    self.reject_long_narrowing(Some(return_type), value, scope, "return")?;
+                    self.compatible(Kind::declared(return_type), actual, "return")?;
                 }
                 S::If { cond, then_block, else_block } => {
                     self.condition(self.expression(cond, scope)?, "if condition")?;

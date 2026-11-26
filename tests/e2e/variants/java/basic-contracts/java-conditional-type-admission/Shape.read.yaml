@@ -81,3 +81,75 @@
     - { from: 'return choose ? value : 1;', to: 'if (false) return 3 / value; return 7;' }
   expect:
     - { path: [R], value: '7' }
+
+- name: root-object-return-admits-conditional-boxing-in-unused-helper
+  edits:
+    - from: 'static int read(boolean choose, int[] values, int value) {'
+      to: |-
+        static Object unused(boolean b) { return b ? 1 : true; }
+            static int read(boolean choose, int[] values, int value) {
+
+- name: object-target-reaches-nested-arms-not-the-entry-result
+  edits:
+    - from: 'static int read(boolean choose, int[] values, int value) {'
+      to: |-
+        static java.lang.Object unused(boolean b) { return b ? (b ? 1 : true) : null; }
+            static int read(boolean choose, int[] values, int value) {
+
+- name: object-target-applies-to-local-initializer-and-assignment
+  edits:
+    - from: 'static int read(boolean choose, int[] values, int value) {'
+      to: |-
+        static int unused(boolean b) { Object o = b ? 1 : true; o = b ? "yes" : 2; o = b ? true : false; o = b ? 2 : 3; return 4; }
+            static int read(boolean choose, int[] values, int value) {
+
+- name: source-object-name-is-not-implicitly-the-java-root-class
+  edits:
+    - from: 'class Shape {'
+      to: |-
+        class Object {}
+        class Shape {
+          static Object unused(boolean b) { return b ? 1 : true; }
+  reject: ['[NORM-SOURCE-TYPE]', 'location=Shape.unused', 'branch result type mismatch']
+
+- name: qualified-object-target-is-unambiguous-with-a-same-named-class
+  edits:
+    - from: 'class Shape {'
+      to: |-
+        class Object {}
+        class Shape {
+          static java.lang.Object unused(boolean b) { return b ? 1 : true; }
+
+- name: object-target-does-not-make-a-numeric-guard-boolean
+  edits:
+    - from: 'class Shape {'
+      to: |-
+        class Shape {
+          static Object unused(int n) { return n ? 1 : true; }
+  reject: ['[NORM-SOURCE-TYPE]', 'location=Shape.unused', 'ternary condition requires boolean']
+
+- name: object-target-does-not-invent-a-missing-arm-binding
+  edits:
+    - from: 'class Shape {'
+      to: |-
+        class Shape {
+          static Object unused(boolean b) { return b ? missing : true; }
+  reject: ['[NORM-SOURCE-NAME]', 'location=Shape.unused', 'undeclared value missing']
+
+- name: object-target-does-not-box-an-external-void-expression
+  edits:
+    - from: 'class Shape {'
+      to: |-
+        interface ShapePort { void effect(int value); }
+        class Shape {
+          @normalizer.annotations.External private final ShapePort port;
+          Shape(ShapePort port) { this.port = port; }
+          Object unused(boolean b) { return b ? port.effect(1) : 1; }
+  reject: ['[NORM-SOURCE-TYPE]', 'location=Shape.unused', 'a conditional arm cannot return void']
+
+- name: object-return-type-also-admits-equivalent-if-and-two-returns
+  edits:
+    - from: 'static int read(boolean choose, int[] values, int value) {'
+      to: |-
+        static Object unused(boolean b) { if (b) return 1; return true; }
+            static int read(boolean choose, int[] values, int value) {
