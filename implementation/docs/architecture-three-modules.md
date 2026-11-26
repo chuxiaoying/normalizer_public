@@ -66,7 +66,7 @@ Java 函数、Java Bean、前端 VO 生产、前端 VO 消费、组件监听、�
 | `frontend-vo-production` | 页面事件、生命周期、action | 事件参数、VO 读取、边界调用和 VO 有序写入 | 前端 VO 生产 PERS |
 | `frontend-vo-consumption` | 组件监听、模板绑定、双向绑定提交 | VO 快照读取、组件属性和显示出口 | 前端 VO 消费 PERS |
 | Java `source` | 已符合规范合同的静态或实例业务方法 | 普通函数入口、表达式、状态和边界 | Java 函数 PERS |
-| JavaScript `module` | 闭合的独立 JS 模块和导出函数 | 标量函数入口，保留错误边界 | JavaScript 函数 PERS |
+| TypeScript `module` | 通过严格预检、无 `any` 的独立 `.ts` 源码和导出函数 | 标量、只读值、元组或本地监听，保留错误边界 | TypeScript 函数 PERS |
 
 场景可以共享内核能力，但不应把场景特有的入口识别、框架调度或 VO 绑定塞进内核。
 
@@ -158,7 +158,7 @@ Java 函数、Java Bean、前端 VO 生产、前端 VO 消费、组件监听、�
 
 ## 已验收的正式入口
 
-Java 使用 `source`，已闭合的独立 JavaScript 和 TypeScript 使用同一个 `module`，Vue 生产和消费使用 `scenario`。参数和输入条件见[CLI 参考](../../usage/cli.md)，覆盖范围见[CLI 回归](../../tests/README.md)。场景适配器使用规范工程接入内核，规范工程格式是模块间交付，不是另一条公开 CLI。
+Java 使用 `source`，独立模块的 `module` 只接受已闭合并通过严格类型预检的 `.ts`，Vue 生产和消费使用 `scenario`。原始 JavaScript 须预处理成交付合同明确的 TypeScript；不执行原模块，不从 JS 或 JSDoc 猜测输入类型。参数和输入条件见[CLI 参考](../../usage/cli.md)，覆盖范围见[CLI 回归](../../tests/README.md)。场景适配器使用规范工程接入内核，规范工程格式是模块间交付，不是另一条公开 CLI。
 
 AI 阅读和闭合业务源码，不依赖额外预处理工具。语义改写以[设计种子](../skills/normalizer-preprocess/references/seed-coverage.md)为准。语言模块和内核处理、校验已交付输入，不替 AI 猜缺失语义。
 
@@ -175,4 +175,4 @@ AI 阅读和闭合业务源码，不依赖额外预处理工具。语义改写�
 
 ## 尚未验收的能力
 
-通用框架装配、复杂多文件连接、任意独立 JS 异步调用，以及通用模板解释不在当前 CLI 的承诺范围。有设计但尚未执行的种子列在[测试目录](../../tests/e2e/catalog.yaml)的 `pending` 中。
+通用框架装配、复杂多文件连接、任意独立异步调用，以及通用模板解释不在当前 CLI 的承诺范围。有设计但尚未执行的种子列在[测试目录](../../tests/e2e/catalog.yaml)的 `pending` 中。

@@ -2,7 +2,7 @@
 // The emitted plan keeps source branches and literal slots; the kernel executes it.
 import ts from 'typescript';
 import { unwrapParens as unwrap } from './ir.mjs';
-import {checkedTypeScript, failTypedModule, typedParameterNames, typedIdentifier} from './typed-module.mjs';
+import {failTypedModule, typedParameterNames, typedIdentifier} from './typed-module.mjs';
 
 const n = (op, fields) => ({op, ...fields});
 const variable = name => n('var', {name});
@@ -12,8 +12,7 @@ const has = (node, kind) => node?.modifiers?.some(m => m.kind === kind);
 const fail = failTypedModule;
 const uid = typedIdentifier;
 
-export function compileTypedTuple(physicalPath, sf, fn) {
-  const checker = checkedTypeScript(physicalPath, sf);
+export function compileTypedTuple(checker, sf, fn) {
   const functions = sf.statements.filter(ts.isFunctionDeclaration);
   const helper = functions.find((dec) => dec !== fn);
   const [bind, ret, ...other] = fn.body.statements;

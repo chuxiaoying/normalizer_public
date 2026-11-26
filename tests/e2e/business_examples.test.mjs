@@ -120,10 +120,10 @@ test('module CLI ingress / linked modules stay in the source root and keep their
   t.after(() => rmSync(workspace, {recursive: true, force: true}));
   const project = join(workspace, 'selected');
   mkdirSync(project);
-  writeFileSync(join(project, 'local.txt'), additionSource(1));
-  writeFileSync(join(workspace, 'outside.txt'), additionSource(1));
-  symlinkSync(join(project, 'local.txt'), join(project, 'sum.ts'));
-  symlinkSync(join(workspace, 'outside.txt'), join(project, 'outside.ts'));
+  writeFileSync(join(project, 'local.ts'), additionSource(1));
+  writeFileSync(join(workspace, 'outside-source.ts'), additionSource(1));
+  symlinkSync(join(project, 'local.ts'), join(project, 'sum.ts'));
+  symlinkSync(join(workspace, 'outside-source.ts'), join(project, 'outside.ts'));
   mkdirSync(join(project, 'directory.ts'));
   const run = name => invoke(join(root, 'implementation/tools/normalizer'), ['module', project, '--entry', name + '#sum'], root);
   const accepted = run('sum.ts');

@@ -1,16 +1,15 @@
-// Standalone JavaScript source, lowered without executing user code.
+// Standalone TypeScript source, checked and lowered without executing user code.
 // It parses, never executes, the module and uses the shared PERS kernel.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { invokeKernel } from './invoke-kernel.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { definedModuleExport, lowerExpression, parseSourceModule, unwrapParens as unwrap } from './ir.mjs';
+import { lowerExpression, unwrapParens as unwrap } from './ir.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { checkedTypeScript, failTypedModule, typedModuleAst } from './typed-module.mjs';
 import { entryLocator } from './entry-locator.mjs';
-import { localDirectives } from './local-directives.mjs';
 import { projectSources } from './project-source.mjs';
 
 const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
@@ -44,7 +43,7 @@ function declaredOrderedMap(node) {
     && node.typeArguments.every(type => type.kind === ts.SyntaxKind.StringKeyword);
 }
 const internal = (op, fields) => ({op, ...fields});
-function fail(detail) { throw new Error('[NORM-JS-MODULE] ' + detail); }
+const fail = failTypedModule;
 
 // In this bounded source prefix, the entry immediately evaluates a normal
 // invocation on an ordinary caller-supplied parameter. This is actual call
@@ -86,7 +85,7 @@ function leadingParameterCall(fn, params) {
   }
 }
 
-function mapEntries(node, names, fail, typed) {
+function mapEntries(node, names, fail) {
   node = unwrap(node);
   const argument = ts.isNewExpression(node) && ts.isIdentifier(node.expression)
     && node.expression.text === 'Map' && node.arguments?.length === 1 && unwrap(node.arguments[0]);
@@ -106,7 +105,7 @@ function mapEntries(node, names, fail, typed) {
       && unwrap(present.elements[0]);
     // TS can prove a fresh literal has two readonly slots. Other assertions
     // are not evidence for the shape or origin of a business value.
-    if (typed && entry && ts.isAsExpression(entry) && entry.type.getText() === 'const') entry = unwrap(entry.expression);
+    if (entry && ts.isAsExpression(entry) && entry.type.getText() === 'const') entry = unwrap(entry.expression);
     if ((!nullFirst && operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken)
         || !empty || !ts.isArrayLiteralExpression(empty) || empty.elements.length
         || !entry || !ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2
@@ -135,64 +134,53 @@ const numericOperators = {
 };
 
 function compile(source, file, entry, physicalPath) {
-  const typed = file.endsWith('.ts');
-  const failInput = typed ? failTypedModule : fail;
-  const {sf, fn} = typed
-    ? typedModuleAst(source, physicalPath, entry)
-    : (() => {
-      const sf = parseSourceModule(file, source, failInput);
-      return {sf, fn: definedModuleExport(sf, entry, failInput)};
-    })();
-  if (typed) {
-    const formals = namedParameters(fn.parameters);
-    if (formals.error) failInput(formals.error);
-    const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
-    const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
-    if (isListener || isTuple) {
-      if (fn.parameters.some(p => p.type?.kind !== ts.SyntaxKind.BooleanKeyword)) {
-        failTypedModule('this typed statement adapter requires explicit Boolean entry parameters');
-      }
-      const shape = isListener ? compileTypedListener(physicalPath, sf, fn, file)
-        : compileTypedTuple(physicalPath, sf, fn);
-      const params = shape.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
-      const returns = isListener ? 'void' : 'number';
-      return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
+  const {sf, fn} = typedModuleAst(source, physicalPath, entry);
+  const formals = namedParameters(fn.parameters);
+  if (formals.error) fail(formals.error);
+  const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
+  const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
+  if (isListener || isTuple) {
+    const checker = checkedTypeScript(physicalPath, sf, fail, {rejectAny: true});
+    if (fn.parameters.some(p => p.type?.kind !== ts.SyntaxKind.BooleanKeyword)) {
+      fail('this typed statement adapter requires explicit Boolean entry parameters');
     }
+    const shape = isListener ? compileTypedListener(checker, sf, fn, file)
+      : compileTypedTuple(checker, sf, fn);
+    const params = shape.params.map((name, position) => ({publicName: name, name, position, domain: 'boolean'}));
+    const returns = isListener ? 'void' : 'number';
+    return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
   }
-  return compileScalar(sf, fn, file, entry, physicalPath, failInput, typed);
+  const compiled = compileScalar(sf, fn, file, entry, formals.names);
+  checkedTypeScript(physicalPath, sf, fail, {rejectAny: true});
+  return compiled;
 }
 
-function compileScalar(sf, fn, file, entry, physicalPath, fail, typed) {
+function compileScalar(sf, fn, file, entry, formals) {
   // Imports, executable top-level initialization and other module state
   // cannot be ignored by a closed standalone scalar adapter.
   if (sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
-      !(typed && (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node))))) {
+      !ts.isTypeAliasDeclaration(node) && !ts.isInterfaceDeclaration(node))) {
     fail('standalone scalar modules require closed function declarations');
   }
-  localDirectives(sf, fn.body).requireConsumed();
   if (fn.asteriskToken) fail('generator entry requires a closed completion contract: ' + entry);
-  const formals = namedParameters(fn.parameters);
-  const call = formals.names && leadingParameterCall(fn, formals.names);
+  const call = leadingParameterCall(fn, formals);
   if (call) {
-    if (typed) checkedTypeScript(physicalPath, sf);
     return { closure: { schema: 'normalizer.standalone-closure/1', file, entry, ...call } };
   }
   if (fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
-  const declaredReturn = typed ? fn.type : ts.getJSDocReturnType(fn);
+  const declaredReturn = fn.type;
   const orderedMap = declaredOrderedMap(declaredReturn);
   const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf);
   if (!orderedMap && (!parameter(returnDomain) || returnDomain === nullableText)) fail('expected declared business scalar or non-null readonly Vector return type');
   if (orderedMap && sf.statements.some(declaration => declaration.name?.text === 'Map')) {
     fail('readonly Map requires an unshadowed built-in Map');
   }
-  if (formals.error) fail(formals.error);
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
-    const [tag, ...more] = ts.getJSDocParameterTags(param);
-    const domain = declaredParameter(typed ? param.type : tag?.typeExpression?.type, sf);
-    if (more.length || !parameter(domain) || (!orderedMap && domain === nullableText)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
+    const domain = declaredParameter(param.type, sf);
+    if (!parameter(domain) || (!orderedMap && domain === nullableText)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
@@ -252,15 +240,14 @@ function compileScalar(sf, fn, file, entry, physicalPath, fail, typed) {
   if (remaining.length || !last || !ts.isReturnStatement(last) || !last.expression) fail('expected one closed return expression');
   const returns = orderedMap ? 'map<text,text>' : parameter(returnDomain);
   const body = orderedMap
-    ? internal('value.ordered_text_map', {entries: mapEntries(last.expression, names, fail, typed)})
+    ? internal('value.ordered_text_map', {entries: mapEntries(last.expression, names, fail)})
     : expression(lowerExpression(last.expression, sf)).node;
-  if (typed) checkedTypeScript(physicalPath, sf);
   return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf));
 }
 
 function projectInput(file, entry, params, returnDomain, orderedMap, returns, body, excerpt, typed = {}) {
   const binding = 'Entry.run';
-  const moduleFile = file.endsWith('.ts') ? 'Module.ts' : 'Module.js';
+  const moduleFile = 'Module.ts';
   const javaParams = params.map(param => carrier(param.domain));
   const declarations = javaParams.map((type, index) => type + ' ' + params[index].name);
   const resultTypes = returnDomain === readonlyVector ? {ReadonlyNumbers: 'vector<number>'}
@@ -294,18 +281,19 @@ function publishKernelFailure(result) {
 }
 
 try {
-  const [kernel, rootArg, fileOrFlag, entryOrLocator] = process.argv.slice(2);
-  const {file, name: entry} = fileOrFlag === '--entry'
-    ? entryLocator(entryOrLocator, failTypedModule)
-    : entryLocator(fileOrFlag + '#' + entryOrLocator, fail);
+  const [kernel, rootArg, flag, locator] = process.argv.slice(2);
+  if (flag !== '--entry') fail('expected --entry path.ts#exportedFunction');
+  const {file, name: entry} = entryLocator(locator, fail);
+  if (!file.endsWith('.ts') || file.endsWith('.d.ts')) fail('standalone entry must be an executable .ts source file');
   const { declared, name, path } = projectSources(rootArg)(file);
+  if (!path.endsWith('.ts') || path.endsWith('.d.ts')) fail('standalone .ts entry must resolve to an executable .ts source file');
   const source = readFileSync(path, 'utf8');
   const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, declared);
   if (closure) {
     const result = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));
     publishKernelFailure(result);
   } else {
-    const temp = mkdtempSync(join(tmpdir(), 'normalizer-js-module-'));
+    const temp = mkdtempSync(join(tmpdir(), 'normalizer-ts-module-'));
     try {
       writeFileSync(join(temp, 'Carrier.java'), carrier);
       writeFileSync(join(temp, moduleFile), source);

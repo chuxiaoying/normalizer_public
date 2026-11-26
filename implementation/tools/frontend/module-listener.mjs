@@ -2,7 +2,7 @@
 // A registration writes the lexical callback; dispatch evaluates its body.
 import ts from 'typescript';
 import { unwrapParens } from './ir.mjs';
-import { checkedTypeScript, failTypedModule, typedParameterNames } from './typed-module.mjs';
+import { failTypedModule, typedParameterNames } from './typed-module.mjs';
 import { normalizerMarkers, singleAnnotatedBinding } from './module-projection.mjs';
 
 const fail = failTypedModule;
@@ -18,8 +18,7 @@ function blockStatements(node) {
   return ts.isBlock(node) ? [...node.statements] : [node];
 }
 
-export function compileTypedListener(physicalPath, sf, fn, modulePath) {
-  const checker = checkedTypeScript(physicalPath, sf);
+export function compileTypedListener(checker, sf, fn, modulePath) {
   const params = typedParameterNames(fn);
   const contracts = new Map(), ports = {}, externalResults = {};
   for (const host of sf.statements) {

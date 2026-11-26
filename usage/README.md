@@ -1,6 +1,6 @@
 # 使用
 
-从仓库根目录运行 CLI。Java 输入需要 Cargo；独立 JS、Vue 和正式回归还需要 Node.js 24 或更高版本与 npm。
+从仓库根目录运行 CLI。Java 输入需要 Cargo；独立 TypeScript、Vue 和正式回归还需要 Node.js 24 或更高版本与 npm。
 
 - [运行第一个 Java 入口](getting-started.md)
 - [CLI 命令与参数](cli.md)

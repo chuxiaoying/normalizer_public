@@ -41,8 +41,43 @@ export function assertTypeScript(errors, fail = failTypedModule) {
   if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
 }
 
-export function checkedTypeScript(physicalPath, sf, fail = failTypedModule) {
+// strict/noImplicitAny alone permits dynamic types originating in the
+// standard library (e.g. JSON.parse or the default of Array<T>).
+function assertNoResolvedAny(sf, checker, fail) {
+  const visited = new Set();
+  const hasAny = type => {
+    if (type.flags & ts.TypeFlags.Any) return true;
+    if (visited.has(type)) return false;
+    visited.add(type);
+    if (type.isUnionOrIntersection() && type.types.some(hasAny)) return true;
+    if (type.aliasTypeArguments?.some(hasAny)) return true;
+    return type.flags & ts.TypeFlags.Object && type.objectFlags & ts.ObjectFlags.Reference
+      && checker.getTypeArguments(type).some(hasAny);
+  };
+  const inspect = node => {
+    const constAssertion = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
+      && node.typeName.text === 'const' && ts.isAsExpression(node.parent);
+    if (constAssertion) return;
+    const binding = (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node))
+      && ts.isIdentifier(node.name) ? node.name : undefined;
+    const observed = binding ?? (ts.isExpressionNode(node) || ts.isTypeNode(node) ? node : undefined);
+    // The tuple/object binding pattern itself is syntax, not a typed value.
+    // Its individual binding elements and initializer are visited separately.
+    if (observed && hasAny(checker.getTypeAtLocation(observed))) {
+      const {line, character} = sf.getLineAndCharacterOfPosition(observed.getStart(sf));
+      fail(`resolved any is not an admitted analysis type at ${line + 1}:${character + 1}`);
+    }
+    ts.forEachChild(node, inspect);
+  };
+  inspect(sf);
+}
+
+export function checkedTypeScript(physicalPath, sf, fail = failTypedModule, {rejectAny = false} = {}) {
+  if (rejectAny && (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length)) {
+    fail('TypeScript checking directives cannot disable or suppress the strict preflight');
+  }
   const { checker, errors } = typeScriptProgram(physicalPath, sf, fail);
   assertTypeScript(errors, fail);
+  if (rejectAny) assertNoResolvedAny(sf, checker, fail);
   return checker;
 }
