@@ -38,3 +38,25 @@
   expect:
     - path: [R]
       value: 7 + COALESCE(SUM(SELECT COALESCE(SUM(SELECT value FROM grp AS value), 0) FROM groups AS grp), 0)
+
+- name: external-parameter-cannot-be-captured-by-outer-generated-alias
+  edits:
+    - {from: 'int total(int[][] groups)', to: 'int total(int[][] groups, int grp)'}
+    - {from: 'yield sum from group as value yield value', to: 'yield sum from group as value yield value - grp'}
+  expect:
+    - {path: [P, parameters, grp], add: {position: 1, type: number}}
+    - path: [R]
+      value: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value - grp FROM grp_ AS value), 0) FROM groups AS grp_), 0)
+
+- name: inner-filter-may-empty-every-group
+  edits:
+    - {from: 'sum from group as value yield value', to: 'sum from group as value where false yield value'}
+  expect:
+    - {path: [R], value: '0'}
+
+- name: inner-filter-retains-its-own-rows-before-summing
+  edits:
+    - {from: 'sum from group as value yield value', to: 'sum from group as value where value > 0 and value < 5 yield value'}
+  expect:
+    - path: [R]
+      value: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value FROM grp AS value WHERE value < 5 AND value > 0), 0) FROM groups AS grp), 0)

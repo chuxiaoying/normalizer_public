@@ -67,3 +67,42 @@
           ),
           0
         )
+
+- name: ordered-join-compares-account-to-bill-in-that-direction
+  edits:
+    - {from: 'a.id == b.account_id', to: 'a.id < b.account_id'}
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id < b.account_id
+            WHERE a.id == accountId
+              AND b.status == "OPEN"
+          ),
+          0
+        )
+
+- name: filter-on-bill-side-alone-does-not-filter-account-id
+  edits:
+    - {from: 'a.id == accountId and b.status == "OPEN"', to: 'b.status == "OPEN"'}
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id == b.account_id
+            WHERE b.status == "OPEN"
+          ),
+          0
+        )
+
+- name: false-local-filter-leaves-no-join-pairs
+  edits:
+    - {from: 'a.id == accountId and b.status == "OPEN"', to: 'a.id == accountId and b.status == "OPEN" and false'}
+  expect:
+    - {path: [R], value: '0'}

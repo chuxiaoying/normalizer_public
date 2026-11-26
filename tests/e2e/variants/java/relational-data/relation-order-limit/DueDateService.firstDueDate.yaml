@@ -74,3 +74,22 @@
           ),
           0
         )
+
+- name: filter-only-text-column-is-bound-without-projecting-it
+  edits:
+    - {from: 'where b.account_id == accountId', to: 'where b.account_id == accountId and b.status == "OPEN"'}
+  expect:
+    - {path: [E, bill, columns, status], add: text}
+    - path: [R]
+      value: |-
+        COALESCE(
+          (
+            SELECT bill.due_date
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.status == "OPEN"
+            ORDER BY bill.due_date, bill.id
+            LIMIT 1
+          ),
+          0
+        )

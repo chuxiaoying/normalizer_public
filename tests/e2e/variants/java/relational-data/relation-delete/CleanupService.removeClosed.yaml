@@ -20,3 +20,14 @@
         DELETE FROM bill
         WHERE bill.account_id = accountId + 1
           AND bill.status = 'CLOSED'
+
+- name: delete-text-literal-quotes-apostrophe-within-the-value
+  edits:
+    - from: 'b.status == "CLOSED"'
+      to: 'b.status == "CUSTOMER''S"'
+  expect:
+    - path: [S, 0, sql]
+      value: |-
+        DELETE FROM bill
+        WHERE bill.account_id = accountId
+          AND bill.status = 'CUSTOMER''S'
