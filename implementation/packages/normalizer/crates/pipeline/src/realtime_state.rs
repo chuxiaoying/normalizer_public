@@ -35,16 +35,26 @@ pub(crate) enum CompletionOutcome {
     Throw { class: String, payload: Option<Expr> },
 }
 
-pub(crate) struct TerminalAlternatives(Vec<CompletionAlternative>);
+pub(crate) struct TerminalAlternative {
+    pub(crate) guard: Expr,
+    pub(crate) outcome: TerminalOutcome,
+}
+
+pub(crate) enum TerminalOutcome {
+    Return(Expr),
+    Throw { class: String, payload: Option<Expr> },
+}
+
+pub(crate) struct TerminalAlternatives(Vec<TerminalAlternative>);
 
 impl TerminalAlternatives {
     pub(crate) fn is_always_throwing(&self) -> bool {
         // The completion proof already rejects an empty domain.
-        self.0.iter().all(|a| matches!(a.outcome, CompletionOutcome::Throw { .. }))
+        self.0.iter().all(|a| matches!(a.outcome, TerminalOutcome::Throw { .. }))
     }
 
-    pub(crate) fn as_slice(&self) -> &[CompletionAlternative] { &self.0 }
-    pub(crate) fn into_vec(self) -> Vec<CompletionAlternative> { self.0 }
+    pub(crate) fn as_slice(&self) -> &[TerminalAlternative] { &self.0 }
+    pub(crate) fn into_vec(self) -> Vec<TerminalAlternative> { self.0 }
 
     /// Project the normal-return part of a terminal completion. Throwing
     /// alternatives leave their domain absent from the CASE expression, which
@@ -52,8 +62,8 @@ impl TerminalAlternatives {
     pub(crate) fn normal_return_value(&self) -> Option<Expr> {
         let returns = self.0.iter()
             .filter_map(|alternative| match &alternative.outcome {
-                CompletionOutcome::Return(value) => Some((alternative.guard.clone(), value.clone())),
-                CompletionOutcome::Continue | CompletionOutcome::Throw { .. } => None,
+                TerminalOutcome::Return(value) => Some((alternative.guard.clone(), value.clone())),
+                TerminalOutcome::Throw { .. } => None,
             })
             .collect::<Vec<_>>();
         if returns.is_empty() {
@@ -71,16 +81,17 @@ impl TerminalAlternatives {
     /// R is observed only after normal completion. Once all exits are covered
     /// and throws are published separately, the last normal arm is exhaustive
     /// on that observation domain. Its guard need not retest a failed call.
-    pub(crate) fn value_on_normal_exit(&self) -> Option<Expr> {
+    pub(crate) fn value_on_normal_exit(&self) -> Expr {
         let mut returns: Vec<_> = self.0.iter().filter_map(|alt| {
-            if let CompletionOutcome::Return(value) = &alt.outcome {
+            if let TerminalOutcome::Return(value) = &alt.outcome {
                 Some((alt.guard.clone(), value.clone()))
             } else {
                 None
             }
         }).collect();
-        returns.last_mut()?.0 = b::lit_bool(true);
-        Some(canonicalize_realtime_case(math::normalize(b::case_when(returns))))
+        let Some(last) = returns.last_mut() else { return b::lit_null(); };
+        last.0 = b::lit_bool(true);
+        canonicalize_realtime_case(math::normalize(b::case_when(returns)))
     }
 
 }
@@ -110,15 +121,16 @@ impl Completion {
     /// current domain. A guarded set with a fallthrough path is still an
     /// intermediate block state and cannot be rendered as a function result.
     pub(crate) fn terminal_alternatives(&self) -> Option<TerminalAlternatives> {
-        let alternatives = self.clone().alternatives();
-        if alternatives
-            .iter()
-            .any(|alternative| matches!(alternative.outcome, CompletionOutcome::Continue))
-            || coverage(&alternatives).as_bool() != Some(true)
-        {
-            return None;
-        }
-        Some(TerminalAlternatives(alternatives))
+        let alternatives = self.clone().alternatives().into_iter().map(|alternative| {
+            let outcome = match alternative.outcome {
+                CompletionOutcome::Continue => return None,
+                CompletionOutcome::Return(value) => TerminalOutcome::Return(value),
+                CompletionOutcome::Throw { class, payload } => TerminalOutcome::Throw { class, payload },
+            };
+            Some(TerminalAlternative { guard: alternative.guard, outcome })
+        }).collect::<Option<Vec<_>>>()?;
+        (coverage(alternatives.iter().map(|alternative| &alternative.guard)).as_bool() == Some(true))
+            .then_some(TerminalAlternatives(alternatives))
     }
 
     pub(crate) fn is_always_throwing(&self) -> bool {
@@ -165,7 +177,7 @@ impl Completion {
         if alternatives.len() == 1 && alternatives[0].guard.as_bool() == Some(true) {
             return outcome_to_completion(alternatives.into_iter().next().unwrap().outcome);
         }
-        let covered = coverage(&alternatives).as_bool() == Some(true);
+        let covered = coverage(alternatives.iter().map(|alternative| &alternative.guard)).as_bool() == Some(true);
         if covered
             && alternatives
                 .iter()
@@ -278,14 +290,10 @@ fn outcome_to_completion(outcome: CompletionOutcome) -> Completion {
     }
 }
 
-fn coverage(alternatives: &[CompletionAlternative]) -> Expr {
-    math::normalize(
-        alternatives
-            .iter()
-            .fold(b::lit_bool(false), |coverage, alternative| {
-                b::or(coverage, alternative.guard.clone())
-            }),
-    )
+fn coverage<'a>(guards: impl Iterator<Item = &'a Expr>) -> Expr {
+    math::normalize(guards.fold(b::lit_bool(false), |coverage, guard| {
+        b::or(coverage, guard.clone())
+    }))
 }
 
 fn collapse_return_values<'a>(
@@ -319,8 +327,8 @@ pub(crate) struct SymbolicStore {
 pub(crate) enum EffectOperation {
     Port(String),
     Sql(super::business_sql::SqlEffect),
-    StateWrite(Vec<String>),
-    ArrayWrite { root: String, index: i64 },
+    StateWrite { target: Vec<String>, value: Expr },
+    ArrayWrite { root: String, index: i64, value: Expr },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -329,11 +337,18 @@ pub(crate) struct EffectEvent {
     pub(crate) sequence: usize,
     pub(crate) operation: EffectOperation,
     pub(crate) callsite: String,
-    pub(crate) args: Vec<Expr>,
+    args: Vec<Expr>,
     pub(crate) result: Option<Expr>,
 }
 
 impl EffectEvent {
+    pub(crate) fn arguments(&self) -> &[Expr] {
+        match &self.operation {
+            EffectOperation::StateWrite { value, .. } | EffectOperation::ArrayWrite { value, .. } =>
+                std::slice::from_ref(value),
+            EffectOperation::Port(_) | EffectOperation::Sql(_) => &self.args,
+        }
+    }
 }
 
 /// Ordered, guarded S events produced at their execution point.
@@ -375,9 +390,9 @@ impl EffectSequence {
     pub(super) fn write_state(&mut self, guard: Expr, target: &[String], value: Expr) {
         self.events.push(EffectEvent {
             sequence: self.events.len(),
-            operation: EffectOperation::StateWrite(target.to_vec()),
+            operation: EffectOperation::StateWrite { target: target.to_vec(), value },
             guard,
-            args: vec![value],
+            args: Vec::new(),
             callsite: String::new(),
             result: None,
         });
@@ -386,9 +401,9 @@ impl EffectSequence {
     pub(super) fn write_array(&mut self, guard: Expr, root: String, index: i64, value: Expr) {
         self.events.push(EffectEvent {
             sequence: self.events.len(),
-            operation: EffectOperation::ArrayWrite { root, index },
+            operation: EffectOperation::ArrayWrite { root, index, value },
             guard,
-            args: vec![value],
+            args: Vec::new(),
             callsite: String::new(),
             result: None,
         });
@@ -397,16 +412,16 @@ impl EffectSequence {
     /// Simplify the new effects at a control-flow join. Previously observed
     /// events remain an immutable prefix shared by other live paths.
     pub(super) fn merge_writes_since(&mut self, start: usize) {
-        if !self.events[start..].iter().any(|event| matches!(event.operation, EffectOperation::StateWrite(_))) { return; }
+        if !self.events[start..].iter().any(|event| matches!(event.operation, EffectOperation::StateWrite { .. })) { return; }
         let mut previous_writes = std::collections::BTreeMap::<Vec<String>,usize>::new();
         let suffix = self.events.split_off(start);
         for mut event in suffix {
-            if let EffectOperation::StateWrite(target) = &event.operation {
+            if let EffectOperation::StateWrite { target, .. } = &event.operation {
                 if let Some(&previous) = previous_writes.get(target) {
                     let prior = &self.events[previous];
                     // Moving this write earlier is valid only when every
                     // intervening event is absent on this write's path.
-                    if prior.args == event.args && self.events[previous..].iter().all(|other| {
+                    if prior.arguments() == event.arguments() && self.events[previous..].iter().all(|other| {
                         math::normalize(b::and(other.guard.clone(),event.guard.clone())).as_bool() == Some(false)
                     }) {
                         self.events[previous].guard = math::normalize(b::or(prior.guard.clone(),event.guard));

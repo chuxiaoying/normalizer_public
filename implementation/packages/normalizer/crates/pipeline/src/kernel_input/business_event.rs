@@ -3,7 +3,7 @@
 use super::{
     business_entry::BusinessObservations,
     business_entry::EntryContext,
-    realtime_state::{CompletionOutcome, EffectEvent, EffectOperation},
+    realtime_state::{EffectEvent, EffectOperation, TerminalOutcome},
     *,
 };
 use serde_json::json;
@@ -72,11 +72,7 @@ pub(super) fn observations(
     let alternatives = result.realtime_completion.terminal_alternatives()
         .ok_or_else(|| fail("entry has incomplete control flow"))?;
     let always_throwing = alternatives.is_always_throwing();
-    let returned = match alternatives.value_on_normal_exit() {
-        Some(value) => value,
-        None if always_throwing => b::lit_null(),
-        None => return Err(fail("no normal settled return")),
-    };
+    let returned = alternatives.value_on_normal_exit();
     let mut add_declared_paths = |expression: &Expr| {
         expression.walk(&mut |part| {
             if let Some(SymVarOrigin::Parameter { name, .. }) = part.as_sym_var() {
@@ -89,11 +85,11 @@ pub(super) fn observations(
     add_declared_paths(&returned);
     for alternative in alternatives.as_slice() {
         add_declared_paths(&alternative.guard);
-        if let CompletionOutcome::Return(value) = &alternative.outcome { add_declared_paths(value); }
+        if let TerminalOutcome::Return(value) = &alternative.outcome { add_declared_paths(value); }
     }
     for event in result.realtime_effects.events() {
         add_declared_paths(&event.guard);
-        for arg in &event.args { add_declared_paths(arg); }
+        for arg in event.arguments() { add_declared_paths(arg); }
     }
     let mut ctx = crate::FormatCtx::for_business(names.clone(), states);
     ctx.set_business_identities(identities.clone());
@@ -143,28 +139,30 @@ pub(super) fn observations(
     };
     for event in result.realtime_effects.events() {
         validate_ids(&event.guard, &issued, None)?;
-        for arg in &event.args {
+        for arg in event.arguments() {
             validate_ids(arg, &issued, None)?;
         }
-        if let EffectOperation::Sql(sql) = &event.operation {
-            let (response, _, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
-            let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
-                sql.project(&event.args, &receipt, &mut tables, ctx)
-            })?;
-            if event.guard.as_bool() != Some(true) {
-                item["when"] = json!(crate::format_expr_with_ctx(&event.guard, &mut ctx));
-            }
-            // Atomic SQL writes have one declared failure type, so its
-            // complement names this exact receipt's normal completion.
-            let failed = math::domains::completion::is_throw(response.clone(), sql.exception());
-            ctx.display_business_value(math::normalize(b::not(failed)), format!("completion.is_return({receipt})"));
-            sql_exceptions.insert(sql.exception());
-            effects.push(item);
-            continue;
-        }
-        let condition =
-            (event.guard.as_bool() != Some(true)).then(|| condition_text(&event.guard, &mut ctx));
+        // Port/state guard text is rendered before registering any receipt.
+        // SQL uses its original expression formatter after projecting the SQL item.
+        let condition = (!matches!(&event.operation, EffectOperation::Sql(_))
+            && event.guard.as_bool() != Some(true)).then(|| condition_text(&event.guard, &mut ctx));
         let (label, mut item) = match &event.operation {
+            EffectOperation::Sql(sql) => {
+                let (response, _, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
+                let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
+                    sql.project(event.arguments(), &receipt, &mut tables, ctx)
+                })?;
+                if event.guard.as_bool() != Some(true) {
+                    item["when"] = json!(crate::format_expr_with_ctx(&event.guard, &mut ctx));
+                }
+                // Atomic SQL writes have one declared failure type, so its
+                // complement names this exact receipt's normal completion.
+                let failed = math::domains::completion::is_throw(response.clone(), sql.exception());
+                ctx.display_business_value(math::normalize(b::not(failed)), format!("completion.is_return({receipt})"));
+                sql_exceptions.insert(sql.exception());
+                effects.push(item);
+                continue;
+            }
             EffectOperation::Port(id) => {
                 let contract = project
                     .ports
@@ -199,17 +197,14 @@ pub(super) fn observations(
                     ctx.display_business_value(normal, format!("completion.is_return({output})"));
                 }
                 let args: Vec<_> = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
-                    event.args.iter().map(|arg| crate::format_expr_with_ctx(arg, ctx)).collect()
+                    event.arguments().iter().map(|arg| crate::format_expr_with_ctx(arg, ctx)).collect()
                 });
                 (
                     "call",
                     json!({"external":contract.endpoint,"args":args,"returns":name,"result":output}),
                 )
             }
-            EffectOperation::StateWrite(target) => {
-                let [value] = event.args.as_slice() else {
-                    return Err(fail("missing write value"));
-                };
+            EffectOperation::StateWrite { target, value } => {
                 let value = match value.as_bool() {
                     Some(literal) => json!(literal),
                     None => json!(ctx.with_business_evaluation_guard(&event.guard, |ctx| {
@@ -221,8 +216,7 @@ pub(super) fn observations(
                     json!({"target":entry.state_name(target)?,"value":value}),
                 )
             }
-            EffectOperation::ArrayWrite { root, index } => {
-                let [value] = event.args.as_slice() else { return Err(fail("missing array write value")); };
+            EffectOperation::ArrayWrite { root, index, value } => {
                 need(arrays.contains(root), "array write needs a declared P or E root")?;
                 let name = names.get(root).ok_or_else(|| fail("unbound array write target"))?;
                 let value = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
@@ -230,7 +224,6 @@ pub(super) fn observations(
                 });
                 ("write", json!({"target":format!("{name}[{index}]"),"value":value}))
             }
-            _ => return Err(fail("unsupported event in port/state sequence")),
         };
         if let Some(guard) = condition {
             item["when"] = json!(guard);
@@ -256,7 +249,7 @@ pub(super) fn observations(
     for alternative in alternatives.into_vec() {
         validate_ids(&alternative.guard, &issued, None)?;
         match alternative.outcome {
-            CompletionOutcome::Throw { class, payload } => {
+            TerminalOutcome::Throw { class, payload } => {
                 if let Some(value) = &payload {
                     need(
                         (project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
@@ -278,10 +271,9 @@ pub(super) fn observations(
                     exceptions.push((class, payload, alternative.guard));
                 }
             }
-            CompletionOutcome::Return(value) => {
+            TerminalOutcome::Return(value) => {
                 validate_ids(&value, &issued, Some(temporal_names))?;
             }
-            CompletionOutcome::Continue => return Err(fail("incomplete settled return")),
         }
     }
     if exceptions.iter().any(|(_, payload, _)| payload.is_some()) {
