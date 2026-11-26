@@ -29,3 +29,10 @@
   expect:
     - {path: [E, seed, fields, offset], add: number}
     - {path: [T, 0, initial], value: seed.offset}
+- name: explicit-state-constructor-effects-are-not-inert-assembly
+  edits:
+    - from: 'class Base { int value; }'
+      to: 'class Base { int value; Base() { throw new IllegalStateException(); } }'
+  reject:
+    - '[NORM-FIELD-DECLARATION]'
+    - 'kind=PREPROCESS_REQUIRED'

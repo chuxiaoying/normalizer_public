@@ -806,7 +806,7 @@ mod member_choice;
 mod temporal_graph;
 mod business_entry;
 mod source_entry;
-pub(crate) use source_entry::inert_singleton;
+pub(crate) use source_entry::{assembly_allocation as inert_data_allocation, inert_singleton};
 mod business_event;
 pub(crate) mod business_relation;
 mod source_control;

@@ -151,7 +151,7 @@ fn assembly_argument(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bo
     }
 }
 
-fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {
+pub(crate) fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {
     let (JavaType::Class(name), JavaExpr::New { java_type, args }) = (ty, arg) else { return false; };
     ty == java_type && args.is_empty() && program.find_class(name).is_some_and(|class|
         !class.is_interface() && class.supertype().is_none() && class.static_initializers().is_empty()

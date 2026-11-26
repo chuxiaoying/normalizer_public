@@ -221,13 +221,22 @@ fn source_layouts_with_receiver(
             if source_ports::marked(class, field) {
                 continue;
             }
-            let annotation_ok = field.annotations().is_empty() || entry_state(class, field) || source_nullable_field(class, field);
+            let state = entry_state(class, field);
+            let annotation_ok = field.annotations().is_empty() || state || source_nullable_field(class, field);
+            let initializer_ok = field.initializer().is_none_or(|value| {
+                if state {
+                    // This only certifies assembly before the selected entry.
+                    // Execution still reads the acquired E snapshot, not the
+                    // values produced by this original constructor.
+                    crate::kernel_input::inert_data_allocation(program, field.java_type(), value)
+                } else {
+                    closed_field_initializer(field.java_type(), value).is_some()
+                }
+            });
             if field.is_static()
                 || field.is_final() && !class.is_record()
                     && !(closed_resource_close(program, class).is_some() && resource_blank_final(class, field))
-                || field.initializer().is_some_and(|value|
-                    entry_state(class, field) || closed_field_initializer(field.java_type(), value).is_none())
-                || !annotation_ok
+                || !initializer_ok || !annotation_ok
             {
                 return Err(error("NORM-FIELD-DECLARATION", &class.full_name()));
             }
