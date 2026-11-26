@@ -342,7 +342,7 @@ impl<'a> Parser<'a> {
     fn parse_class_hierarchy(
         &mut self,
         is_interface: bool,
-    ) -> Result<(Option<String>, Vec<String>), ParseError> {
+    ) -> Result<(Option<String>, Vec<String>, std::collections::BTreeMap<String, Vec<JavaType>>), ParseError> {
         let supertype = if !is_interface && self.eat_keyword("extends") {
             Some(self.parse_nominal_base()?)
         } else {
@@ -350,15 +350,24 @@ impl<'a> Parser<'a> {
         };
         let interfaces_keyword = if is_interface { "extends" } else { "implements" };
         let mut interfaces = Vec::new();
+        let mut interface_arguments = std::collections::BTreeMap::new();
         if self.eat_keyword(interfaces_keyword) {
             loop {
-                interfaces.push(self.parse_nominal_base()?);
+                let (name, arguments) = match parse_type(self) {
+                    Some(JavaType::Class(name)) => (name, Vec::new()),
+                    Some(JavaType::Generic(name, args)) if !args.is_empty() => (name, args),
+                    _ => return Err(self.err("expected declared interface type")),
+                };
+                if interface_arguments.insert(name.clone(), arguments).is_some() {
+                    return Err(self.err("duplicate interface in class hierarchy"));
+                }
+                interfaces.push(name);
                 if !self.eat_char(b',') {
                     break;
                 }
             }
         }
-        Ok((supertype, interfaces))
+        Ok((supertype, interfaces, interface_arguments))
     }
 
     fn parse_type_parameters(&mut self) -> Result<Vec<String>, ParseError> {
@@ -515,7 +524,7 @@ impl<'a> Parser<'a> {
         let type_parameters = self.parse_type_parameters()?;
 
         let fields = if is_record { self.parse_record_components()? } else { Vec::new() };
-        let (supertype, interfaces) = self.parse_class_hierarchy(is_interface)?;
+        let (supertype, interfaces, interface_arguments) = self.parse_class_hierarchy(is_interface)?;
         if is_record && (supertype.is_some() || !interfaces.is_empty()) {
             return Err(self.err("[JAVA-RECORD] a passive record cannot declare inheritance"));
         }
@@ -538,6 +547,7 @@ impl<'a> Parser<'a> {
             inner_classes: Vec::new(),
             supertype,
             interfaces,
+            interface_arguments,
             is_interface,
             is_record,
         };
@@ -672,7 +682,7 @@ fn parse_class_body(
                 .ok_or_else(|| p.err("expected nested class name"))?;
             let type_parameters = p.parse_type_parameters()?;
 
-            let (nested_supertype, nested_interfaces) =
+            let (nested_supertype, nested_interfaces, interface_arguments) =
                 p.parse_class_hierarchy(nested_is_interface)?;
 
             p.skip_ws();
@@ -692,6 +702,7 @@ fn parse_class_body(
                 inner_classes: Vec::new(),
                 supertype: nested_supertype,
                 interfaces: nested_interfaces,
+                interface_arguments,
                 is_interface: nested_is_interface,
                 is_record: false,
             };

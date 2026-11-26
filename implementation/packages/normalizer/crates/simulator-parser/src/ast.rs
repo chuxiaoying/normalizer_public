@@ -57,6 +57,7 @@ pub struct JavaClass {
     pub(crate) inner_classes: Vec<JavaClass>,
     pub(crate) supertype: Option<String>,
     pub(crate) interfaces: Vec<String>,
+    pub(crate) interface_arguments: std::collections::BTreeMap<String, Vec<JavaType>>,
     pub(crate) is_interface: bool,
     pub(crate) is_record: bool,
 }
@@ -101,6 +102,9 @@ impl JavaClass {
     }
     pub fn supertype(&self) -> Option<&str> {
         self.supertype.as_deref()
+    }
+    pub fn interface_arguments(&self, name: &str) -> &[JavaType] {
+        self.interface_arguments.get(name).map(Vec::as_slice).unwrap_or_default()
     }
     pub fn interfaces(&self) -> &[String] {
         &self.interfaces

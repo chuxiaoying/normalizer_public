@@ -399,8 +399,9 @@ impl Project {
         }
     }
     fn source_owner(&self, ty: &JavaType) -> Option<&str> {
-        let JavaType::Class(name) = ty else {
-            return None;
+        let name = match ty {
+            JavaType::Class(name) | JavaType::Generic(name, _) => name,
+            _ => return None,
         };
         self.source_layouts
             .keys()

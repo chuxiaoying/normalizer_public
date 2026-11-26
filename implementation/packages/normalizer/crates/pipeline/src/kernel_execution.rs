@@ -297,7 +297,10 @@ impl<'a> Engine<'a> {
         let Some(owner) = self.project.source_owner(expected) else {
             return Ok(());
         };
-        let interface = self.program.find_class(owner).is_some_and(|class| crate::normalized::plain_source_interface(class));
+        let interface = crate::normalized::specialized_interface(self.program, expected).is_some();
+        if matches!(expected, JavaType::Generic(..)) {
+            need(interface, "unsupported generic reference without specialized interface proof")?;
+        }
         if interface {
             if let J::Ternary { then_expr, else_expr, .. } = expression {
                 self.source_reference_assignment(expected, then_expr, id)?;
@@ -309,9 +312,9 @@ impl<'a> Engine<'a> {
         // declared local/parameter identities of the same owner only.
         let actual = self.source_declared_type(expression, id)?;
         need(
-            self.project.source_owner(&actual) == Some(owner) || interface
-                && self.project.source_owner(&actual).and_then(|name| self.program.find_class(name))
-                    .is_some_and(|class| class.interfaces().iter().any(|name| name == owner)),
+            (actual == *expected || (!interface && self.project.source_owner(&actual) == Some(owner)))
+                || interface && self.project.source_owner(&actual).and_then(|name| self.program.find_class(name))
+                    .is_some_and(|class| crate::normalized::implements_specialization(class, expected)),
             "source reference assignment requires the declared owner or interface type",
         )
     }
@@ -925,7 +928,14 @@ impl<'a> Engine<'a> {
                 };
                 if let Some(J::Ident(local)) = target.as_deref() {
                     if let Some(receiver) = env.get(local) {
-                        if let JavaType::Class(interface) = self.source_declared_type(&J::Ident(local.clone()), id)? {
+                        let receiver_type = self.source_declared_type(&J::Ident(local.clone()), id)?;
+                        if let Some(interface) = crate::normalized::specialized_interface(self.program, &receiver_type) {
+                            let receiver = receiver.scalar()?;
+                            let values = args.iter().map(|arg| self.java_expr(arg, id, env, path.clone()))
+                                .collect::<Result<Vec<_>>>()?;
+                            return self.invoke_interface(&interface.full_name(), &receiver_type, method, receiver, values, path);
+                        }
+                        if let JavaType::Class(interface) = receiver_type {
                             if self.program.find_class(&interface).is_some_and(|class|
                                 crate::normalized::source_record_accessor(class, method, args.len(),
                                     matches!(receiver.ty(), Ty::Record(_))).is_some())
@@ -933,12 +943,6 @@ impl<'a> Engine<'a> {
                                 return self.java_expr(&J::FieldAccess {
                                     target: Box::new(J::Ident(local.clone())), field: method.clone(),
                                 }, id, env, path);
-                            }
-                            if self.program.find_class(&interface).is_some_and(crate::normalized::plain_source_interface) {
-                                let receiver = receiver.scalar()?;
-                                let values = args.iter().map(|arg| self.java_expr(arg, id, env, path.clone()))
-                                    .collect::<Result<Vec<_>>>()?;
-                                return self.invoke_interface(&interface, method, receiver, values, path);
                             }
                             // An ordinary input that shadows a marked receiver
                             // does not inherit the field's external contract.
@@ -1436,7 +1440,7 @@ impl Engine<'_> {
     }
 
     fn invoke_interface(
-        &mut self, interface: &str, member: &str, receiver: Expr, args: Vec<Value>, path: Expr,
+        &mut self, interface: &str, receiver_type: &JavaType, member: &str, receiver: Expr, args: Vec<Value>, path: Expr,
     ) -> Result<Value> {
         self.budget()?;
         if let Some(branches) = receiver.as_case_when() {
@@ -1454,7 +1458,7 @@ impl Engine<'_> {
                 let effects = self.realtime_effects.events().len();
                 let throws = self.realtime_throws.len();
                 let completion = self.realtime_completion.clone();
-                let value = self.invoke_interface(interface, member, selected.clone(), args.clone(), branch)?;
+                let value = self.invoke_interface(interface, receiver_type, member, selected.clone(), args.clone(), branch)?;
                 need(effects == self.realtime_effects.events().len() && throws == self.realtime_throws.len()
                     && completion == self.realtime_completion, "conditional interface dispatch requires total overrides without external effects")?;
                 need(ty.as_ref().is_none_or(|t| *t == value.ty()), "interface return types differ")?;
@@ -1471,7 +1475,7 @@ impl Engine<'_> {
         let owner = self.source_objects.allocation_owner(&receiver)
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), &target));
         let class = self.program.find_class(owner).ok_or_else(|| fail("missing selected implementation"))?;
-        need(class.interfaces().iter().any(|name| name == interface), "selected receiver does not implement declared interface")?;
+        need(crate::normalized::implements_specialization(class, receiver_type), "selected receiver does not implement declared interface specialization")?;
         let declaration = self.program.find_class(interface).ok_or_else(|| fail("missing selected interface"))?;
         let mut signatures = declaration.methods().iter().enumerate()
             .filter(|(_, method)| method.name() == member && method.arity() == args.len());

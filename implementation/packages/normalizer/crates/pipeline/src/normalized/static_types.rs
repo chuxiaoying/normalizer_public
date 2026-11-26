@@ -169,8 +169,11 @@ impl Admission<'_> {
         let owner = match target {
             None => self.class,
             Some(target) => {
-                let JavaType::Class(owner) = self.declared_type(target, scope)? else { return None };
-                self.program.find_class(&owner)?
+                let ty = self.declared_type(target, scope)?;
+                match &ty {
+                    JavaType::Class(owner) => self.program.find_class(owner)?,
+                    _ => super::specialized_interface(self.program, &ty)?,
+                }
             }
         };
         owner.methods().iter().find(|m| m.name() == method && m.arity() == arity)

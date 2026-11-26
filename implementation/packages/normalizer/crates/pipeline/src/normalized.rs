@@ -108,7 +108,7 @@ pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> boo
         && !class.methods().is_empty()
         && class.methods().iter().all(|method| !method.is_static()
             && method.body().is_some() == method.is_default() && method.throws().is_empty()
-            && method.annotations().is_empty()
+            && method.annotations().is_empty() && method.type_parameters().is_empty()
             && scalar(method.return_type()) && method.params().iter().all(|(ty, _)| scalar(ty)))
 }
 
@@ -153,6 +153,29 @@ fn unambiguous_interface_defaults(program: &JavaProgram, class: &JavaClass) -> b
         .any(|other| other.name() == method.name() && same_parameters(other, method)))
 }
 
+pub(crate) fn specialized_interface<'a>(program: &'a JavaProgram, ty: &JavaType) -> Option<&'a JavaClass> {
+    let (name, args) = match ty {
+        JavaType::Class(name) => (name, &[][..]),
+        JavaType::Generic(name, args) => (name, args.as_slice()),
+        _ => return None,
+    };
+    let class = program.find_class(name).filter(|class| plain_source_interface(class))?;
+    (class.type_parameters().len() == args.len() && args.iter().all(|arg|
+        matches!(arg, JavaType::Class(name) if program.find_class(name).is_some()
+            || matches!(name.as_str(), "String" | "java.lang.String" | "Object" | "java.lang.Object"
+                | "Integer" | "java.lang.Integer" | "Long" | "java.lang.Long" | "Boolean" | "java.lang.Boolean"))))
+        .then_some(class)
+}
+
+pub(crate) fn implements_specialization(class: &JavaClass, ty: &JavaType) -> bool {
+    let (name, args) = match ty {
+        JavaType::Class(name) => (name, &[][..]),
+        JavaType::Generic(name, args) => (name, args.as_slice()),
+        _ => return false,
+    };
+    class.interfaces().contains(name) && class.interface_arguments(name) == args
+}
+
 fn local_interface_receiver<'a>(
     program: &'a JavaProgram, method: &simulator_parser::JavaMethod, local: &str,
 ) -> Option<&'a simulator_parser::JavaClass> {
@@ -161,8 +184,7 @@ fn local_interface_receiver<'a>(
             S::VarDecl { java_type, name, .. } if name == local => Some(java_type),
             _ => None,
         }))?;
-    let JavaType::Class(name) = declared else { return None };
-    program.find_class(name).filter(|class| plain_source_interface(class))
+    specialized_interface(program, declared)
 }
 
 /// Source layouts retain declaring owners. Primitive DTO fields follow the
@@ -623,6 +645,7 @@ pub(crate) fn validate_with_receiver(
     let supported = |ty: &JavaType| {
         scalar(ty) || native_decimal_type(ty) || exact_decimal_type(ty) || calendar_date_type(ty) || matches!(ty, JavaType::Array(item) if integral(item) || declared_reference(item, &layouts) || matches!(item.as_ref(), JavaType::Array(scalar) if integral(scalar))) || declared_reference(ty, &layouts)
             || matches!(ty, JavaType::Class(name) if is_port_interface(name))
+            || specialized_interface(program, ty).is_some()
     };
     let mut methods = BTreeMap::new();
     let mut classes = BTreeSet::new();
@@ -636,7 +659,10 @@ pub(crate) fn validate_with_receiver(
             if builtin_resource_interface(program, interface) {
                 return closed_resource_close(program, c).is_none();
             }
-            program.find_class(interface).is_none_or(|declaration| {
+            let args = c.interface_arguments(interface);
+            let ty = if args.is_empty() { JavaType::Class(interface.clone()) }
+                else { JavaType::Generic(interface.clone(), args.to_vec()) };
+            specialized_interface(program, &ty).is_none_or(|declaration| {
                 !plain_source_interface(declaration)
                     || declaration.methods().iter().any(|required| {
                         let count = c.methods().iter().filter(|method| override_matches(required, method)).count();
@@ -646,6 +672,7 @@ pub(crate) fn validate_with_receiver(
             })
         })
             || !unambiguous_interface_defaults(program, c)
+            || (!c.is_interface() && !c.type_parameters().is_empty())
             || (c.is_interface() && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || !c.annotations().is_empty()
@@ -667,7 +694,7 @@ pub(crate) fn validate_with_receiver(
             if c.is_interface() && !m.is_default() { continue; }
             let id = method_key(c, index, m);
             methods.insert(id.clone(), (c, m));
-            if (!m.annotations().is_empty() && !nullable_text_return(c, m))
+            if !m.type_parameters().is_empty() || (!m.annotations().is_empty() && !nullable_text_return(c, m))
 
                 || (!m.is_constructor() && !matches!(m.return_type(), JavaType::Void) && !supported(m.return_type()))
                 || m.params().iter().any(|(t, _)| !supported(t))
@@ -979,7 +1006,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 java_type,
                 initializer: Some(e),
                 ..
-            } if scalar(java_type) || native_decimal_type(java_type) || matches!(java_type, JavaType::Class(_)) || numeric_array(java_type) => {
+            } if scalar(java_type) || native_decimal_type(java_type) || matches!(java_type, JavaType::Class(_) | JavaType::Generic(..)) || numeric_array(java_type) => {
                 expr(e, at, calls)?
             }
             S::Assign { target: E::ArrayAccess { target, index }, value, .. }
