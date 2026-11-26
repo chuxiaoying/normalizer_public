@@ -195,6 +195,30 @@ mod distribution_boundary_tests {
     }
 
     #[test]
+    fn comparison_preserves_operand_roles_and_does_not_clone_compound_operands() {
+        let p = b::param("p", ScalarSymbolType::Boolean);
+        let x = b::param("x", ScalarSymbolType::Integer);
+        let seven = b::lit_int(7);
+        let nine = b::lit_int(9);
+        let eleven = b::lit_int(11);
+        let choice = b::case_when(vec![(p.clone(), seven.clone())], eleven.clone());
+
+        let compound = b::lt(choice.clone(), b::add(x, b::lit_int(1)));
+        assert_eq!(simplify_here(&compound), compound);
+
+        let fixed_first = simplify_here(&b::lt(nine.clone(), choice.clone()));
+        assert_eq!(fixed_first, b::case_when(
+            vec![(p.clone(), b::lt(nine.clone(), seven.clone()))],
+            b::lt(nine.clone(), eleven.clone()),
+        ));
+        let case_first = simplify_here(&b::lt(choice, nine.clone()));
+        assert_eq!(case_first, b::case_when(
+            vec![(p, b::lt(seven, nine.clone()))],
+            b::lt(eleven, nine),
+        ));
+    }
+
+    #[test]
     fn partial_case_keeps_its_guard_and_operand_roles() {
         let p = b::param("p", ScalarSymbolType::Boolean);
         let partial = b::normal_return_case_when(vec![], (p.clone(), b::lit_int(7)));

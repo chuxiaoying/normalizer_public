@@ -21,3 +21,24 @@
           WHEN count > 1 THEN count
           ELSE 0
         END
+
+- name: comparing-a-literal-before-the-selected-value-preserves-operand-order
+  edits:
+    - {from: 'static int clamp', to: 'static boolean clamp'}
+    - from: |-
+        if (count <= 0) return 0;
+                return count;
+      to: 'return 9 < (count > 0 ? 7 : 11);'
+  expect:
+    - {path: [entry, returns], value: bool}
+    - {path: [R], value: 'count <= 0'}
+- name: comparing-the-selected-value-before-the-literal-preserves-operand-order
+  edits:
+    - {from: 'static int clamp', to: 'static boolean clamp'}
+    - from: |-
+        if (count <= 0) return 0;
+                return count;
+      to: 'return (count > 0 ? 7 : 11) < 9;'
+  expect:
+    - {path: [entry, returns], value: bool}
+    - {path: [R], value: 'count > 0'}
