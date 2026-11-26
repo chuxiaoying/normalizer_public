@@ -674,20 +674,9 @@ fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
     let mut remaining = crate::builder::lit_bool(true);
     let mut out = Vec::with_capacity(branches.len());
     for (cond, _) in branches {
-        let effective = if cond.as_bool() == Some(true) {
-            remaining.clone()
-        } else {
-            crate::normalize(crate::builder::and(remaining.clone(), cond.clone()))
-        };
+        let (effective, later) = crate::builder::first_match_domains(remaining, cond);
         out.push(effective);
-        if cond.as_bool() == Some(true) {
-            remaining = crate::builder::lit_bool(false);
-        } else {
-            remaining = crate::normalize(crate::builder::and(
-                remaining,
-                crate::builder::not(cond.clone()),
-            ));
-        }
+        remaining = later;
     }
     out
 }
@@ -1175,38 +1164,9 @@ fn is_not_of(cond: &Expr, expected_inner: &Expr) -> bool {
             operand,
         } => operand == expected_inner,
         _ => {
-            is_inverted_comparison(cond, expected_inner)
+            cond.is_comparison_complement(expected_inner)
         }
     }
-}
-
-fn is_inverted_comparison(a: &Expr, b: &Expr) -> bool {
-    if let (
-        ExprKind::BinOp {
-            op: op_a,
-            left: left_a,
-            right: right_a,
-        },
-        ExprKind::BinOp {
-            op: op_b,
-            left: left_b,
-            right: right_b,
-        },
-    ) = (a.kind(), b.kind())
-    {
-        return left_a == left_b
-            && right_a == right_b
-            && matches!(
-                (op_a, op_b),
-                (BinOpKind::Eq, BinOpKind::Ne)
-                    | (BinOpKind::Ne, BinOpKind::Eq)
-                    | (BinOpKind::Lt, BinOpKind::Ge)
-                    | (BinOpKind::Ge, BinOpKind::Lt)
-                    | (BinOpKind::Le, BinOpKind::Gt)
-                    | (BinOpKind::Gt, BinOpKind::Le)
-            );
-    }
-    false
 }
 
 // Selecting a field of the first row under its existence guard, and a

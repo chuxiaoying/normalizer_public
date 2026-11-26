@@ -1082,6 +1082,17 @@ fn evaluate_with_exact_facts(expression: &Expr, facts: &HashMap<Expr, bool>) -> 
     }
 }
 
+/// Split an ordered CASE's remaining inputs between this arm and later arms.
+pub fn first_match_domains(remaining: Expr, test: &Expr) -> (Expr, Expr) {
+    if test.as_bool() == Some(true) {
+        return (remaining, lit_bool(false));
+    }
+    (
+        crate::normalize(and(remaining.clone(), test.clone())),
+        crate::normalize(and(remaining, not(test.clone()))),
+    )
+}
+
 /// Prove `active => expr` using the shared boolean normalizer/coverage engine.
 pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     crate::profile::count(&PATH_IMPLIES_CALLS, "math.proof.path_implies.call", |_| {

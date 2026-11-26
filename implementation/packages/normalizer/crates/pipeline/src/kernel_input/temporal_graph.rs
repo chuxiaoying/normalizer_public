@@ -184,8 +184,9 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
             let mut remaining = active.clone();
             for (test, value) in branches {
                 check(test, &remaining, nodes)?;
-                check(value, &math::normalize(b::and(remaining.clone(), test.clone())), nodes)?;
-                remaining = math::normalize(b::and(remaining, b::not(test.clone())));
+                let (selected, later) = b::first_match_domains(remaining, test);
+                check(value, &selected, nodes)?;
+                remaining = later;
             }
         } else if let Some((op, left, right)) = expression.as_binop() {
             check(left, active, nodes)?;

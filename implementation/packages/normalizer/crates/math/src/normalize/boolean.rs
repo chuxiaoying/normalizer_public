@@ -452,143 +452,45 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
             return Some(builder::lit_bool(false));
         }
 
-        // Literal equality domain absorption:
-        //   x == 16 && x != 0 && ... && x != 15  ->  x == 16
-        //
-        // This is pure path-domain algebra.  A concrete equality for the same
-        // subject proves every inequality against a different literal, and
-        // contradicts equality/inequality against the same literal.  It keeps
-        // source-visible enum lookup loops from growing a prior-failure chain
-        // past max-complexity without special-casing enum code.
+        // A concrete literal and a positive allocation identity each form
+        // their own closed equality class. Do not cross the domains.
         let mut skip_item = false;
-        if let Some((op, subject, lit)) = literal_eq_ne_comparison(item) {
-            match op {
-                BinOpKind::Eq => {
-                    let mut contradiction = false;
+        for domain in [EqualityAtomDomain::Literal, EqualityAtomDomain::Allocated] {
+            let Some((op, subject, atom)) = equality_atom(item, domain) else { continue; };
+            if op == BinOpKind::Eq {
+                let mut contradiction = false;
+                out.retain(|existing| {
+                    let Some((op, other_subject, other)) = equality_atom(existing, domain) else { return true; };
+                    if other_subject != subject { return true; }
+                    if op == BinOpKind::Eq {
+                        contradiction |= atom != other;
+                        true
+                    } else if atom == other {
+                        contradiction = true;
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if contradiction { return Some(builder::lit_bool(false)); }
+                if matches!(domain, EqualityAtomDomain::Allocated) {
                     out.retain(|existing| {
-                        let Some((existing_op, existing_subject, existing_lit)) =
-                            literal_eq_ne_comparison(existing)
-                        else {
-                            return true;
-                        };
-                        if existing_subject != subject {
-                            return true;
-                        }
-                        match existing_op {
-                            BinOpKind::Eq => {
-                                if existing_lit != lit {
-                                    contradiction = true;
-                                }
-                                true
-                            }
-                            BinOpKind::Ne => {
-                                if existing_lit == lit {
-                                    contradiction = true;
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
-                            _ => true,
-                        }
+                        null_comparison_subject(existing, BinOpKind::Ne)
+                            .as_ref().is_none_or(|candidate| candidate != &subject)
                     });
-                    if contradiction {
-                        return Some(builder::lit_bool(false));
-                    }
                 }
-                BinOpKind::Ne => {
-                    for existing in &out {
-                        let Some((existing_op, existing_subject, existing_lit)) =
-                            literal_eq_ne_comparison(existing)
-                        else {
-                            continue;
-                        };
-                        if existing_op != BinOpKind::Eq || existing_subject != subject {
-                            continue;
-                        }
-                        if existing_lit == lit {
-                            return Some(builder::lit_bool(false));
-                        }
-                        skip_item = true;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        // Positive HeapRef identity dedup: same logic as literal dedup but for HeapRef.
-        // x == HeapRef(a) absorbs x != HeapRef(b) when a != b, both positive.
-        if !skip_item {
-            if let Some((op, subject, href_id)) = heap_ref_eq_ne_comparison(item) {
-                if href_id > 0 {
-                    match op {
-                        BinOpKind::Eq => {
-                            let mut contradiction = false;
-                            out.retain(|existing| {
-                                let Some((existing_op, existing_subject, existing_id)) =
-                                    heap_ref_eq_ne_comparison(existing)
-                                else {
-                                    return true;
-                                };
-                                if existing_id <= 0 || existing_subject != subject {
-                                    return true;
-                                }
-                                match existing_op {
-                                    BinOpKind::Eq => {
-                                        if existing_id != href_id {
-                                            contradiction = true;
-                                        }
-                                        true
-                                    }
-                                    BinOpKind::Ne => {
-                                        if existing_id == href_id {
-                                            contradiction = true;
-                                            true
-                                        } else {
-                                            false
-                                        }
-                                    }
-                                    _ => true,
-                                }
-                            });
-                            if contradiction {
-                                return Some(builder::lit_bool(false));
-                            }
-                            // Positive HeapRef implies non-null: remove Ne(subject, null)
-                            out.retain(|existing| {
-                                null_comparison_subject(existing, BinOpKind::Ne)
-                                    .as_ref()
-                                    .is_none_or(|s| s != &subject)
-                            });
-                        }
-                        BinOpKind::Ne => {
-                            for existing in &out {
-                                let Some((existing_op, existing_subject, existing_id)) =
-                                    heap_ref_eq_ne_comparison(existing)
-                                else {
-                                    continue;
-                                };
-                                if existing_id <= 0
-                                    || existing_op != BinOpKind::Eq
-                                    || existing_subject != subject
-                                {
-                                    continue;
-                                }
-                                if existing_id == href_id {
-                                    return Some(builder::lit_bool(false));
-                                }
-                                skip_item = true;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
+            } else {
+                for existing in &out {
+                    let Some((existing_op, existing_subject, other)) = equality_atom(existing, domain) else { continue; };
+                    if existing_op != BinOpKind::Eq || existing_subject != subject { continue; }
+                    if atom == other { return Some(builder::lit_bool(false)); }
+                    skip_item = true;
+                    break;
                 }
             }
+            if skip_item { break; }
         }
-        if skip_item {
-            continue;
-        }
+        if skip_item { continue; }
 
         // Primitive predicate null-behavior absorption:
         //   x != null && !isBlank(x)  ->  !isBlank(x), when isBlank(null)=true
@@ -1036,16 +938,7 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
     // 用户化简原则（20260428180545）：等价逻辑下越简单越正确。
     // 这是纯布尔代数/比较运算反演，不改变 Java 求值语义。
     if let ExprKind::BinOp { op, left, right } = operand.kind() {
-        let inverted = match op {
-            BinOpKind::Eq => Some(BinOpKind::Ne),
-            BinOpKind::Ne => Some(BinOpKind::Eq),
-            BinOpKind::Lt => Some(BinOpKind::Ge),
-            BinOpKind::Le => Some(BinOpKind::Gt),
-            BinOpKind::Gt => Some(BinOpKind::Le),
-            BinOpKind::Ge => Some(BinOpKind::Lt),
-            _ => None,
-        };
-        if let Some(inv) = inverted {
+        if let Some(inv) = op.complemented_comparison() {
             return Some(builder::binop_public(inv, left.clone(), right.clone()));
         }
     }
@@ -1329,6 +1222,22 @@ fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
     constraints
 }
 
+#[derive(Clone, Copy)]
+enum EqualityAtomDomain { Literal, Allocated }
+
+#[derive(PartialEq)]
+enum EqualityAtom { Literal(Lit), Allocated(i64) }
+
+fn equality_atom(expr: &Expr, domain: EqualityAtomDomain) -> Option<(BinOpKind, Expr, EqualityAtom)> {
+    match domain {
+        EqualityAtomDomain::Literal => literal_eq_ne_comparison(expr)
+            .map(|(op, subject, value)| (op, subject, EqualityAtom::Literal(value))),
+        EqualityAtomDomain::Allocated => heap_ref_eq_ne_comparison(expr)
+            .filter(|(_, _, id)| *id > 0)
+            .map(|(op, subject, id)| (op, subject, EqualityAtom::Allocated(id))),
+    }
+}
+
 fn literal_eq_ne_comparison(expr: &Expr) -> Option<(BinOpKind, Expr, Lit)> {
     let ExprKind::BinOp { op, left, right } = expr.kind() else {
         return None;
@@ -1582,25 +1491,8 @@ fn is_complement(a: &Expr, b: &Expr) -> bool {
     }
     // 2. 比较级：`a < b` 与 `a >= b`、`x == null` 与 `x != null` 是互补。
     //
-    // 注意：simplify_not 会把 NOT(comparison) 直接反演成 comparison，因此互补检测
-    // 不能只认识 UnaryOp::Not，否则旧的 AND/OR contradiction/tautology 规则会失效。
-    if let (
-        ExprKind::BinOp {
-            op: op_a,
-            left: left_a,
-            right: right_a,
-        },
-        ExprKind::BinOp {
-            op: op_b,
-            left: left_b,
-            right: right_b,
-        },
-    ) = (a.kind(), b.kind())
-    {
-        if left_a == left_b && right_a == right_b && binop_is_inverted_comparison(*op_a, *op_b) {
-            return true;
-        }
-    }
+    // NOT may already have been rewritten as a closed comparison.
+    if a.is_comparison_complement(b) { return true; }
 
     // 2b. De Morgan 互补：`A || B` 与 `!A && !B` 互补，反向同理。
     //
@@ -1716,16 +1608,4 @@ fn terms_are_pairwise_complements(left: &[Expr], right: &[Expr]) -> bool {
         used[idx] = true;
     }
     true
-}
-
-fn binop_is_inverted_comparison(a: BinOpKind, b: BinOpKind) -> bool {
-    matches!(
-        (a, b),
-        (BinOpKind::Eq, BinOpKind::Ne)
-            | (BinOpKind::Ne, BinOpKind::Eq)
-            | (BinOpKind::Lt, BinOpKind::Ge)
-            | (BinOpKind::Ge, BinOpKind::Lt)
-            | (BinOpKind::Le, BinOpKind::Gt)
-            | (BinOpKind::Gt, BinOpKind::Le)
-    )
 }

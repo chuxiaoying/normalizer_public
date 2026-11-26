@@ -80,6 +80,14 @@ pub enum BinOpKind {
 }
 
 impl BinOpKind {
+    pub(crate) fn complemented_comparison(self) -> Option<Self> {
+        use BinOpKind::*;
+        Some(match self {
+            Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Le => Gt, Gt => Le,
+            _ => return None,
+        })
+    }
+
     /// Equivalent comparison after exchanging the already evaluated operands.
     /// This does not negate the predicate or apply to arithmetic or logic.
     pub(crate) fn swapped_comparison(self) -> Option<Self> {
@@ -423,6 +431,13 @@ impl Expr {
             ExprKind::UnaryOp { op, operand } => Some((*op, operand)),
             _ => None,
         }
+    }
+
+    /// A complement preserves the operands; it is not an operand swap.
+    pub(crate) fn is_comparison_complement(&self, other: &Expr) -> bool {
+        let Some((a, left, right)) = self.as_binop() else { return false; };
+        let Some((b, other_left, other_right)) = other.as_binop() else { return false; };
+        left == other_left && right == other_right && a.complemented_comparison() == Some(b)
     }
 
     /// 查询器：若本 Expr 是 BinOp，返回 (op, left, right)

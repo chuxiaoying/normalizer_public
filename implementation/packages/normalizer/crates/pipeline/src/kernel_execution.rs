@@ -1076,9 +1076,9 @@ impl Engine<'_> {
             // This first dispatcher admits pure override branches, not a
             // speculative evaluation of incompatible effectful alternatives.
             for (condition, selected) in branches {
-                let guard = math::normalize(b::and(remaining.clone(), condition.clone()));
+                let (guard, later) = b::first_match_domains(remaining, condition);
                 let branch = math::normalize(b::and(path.clone(), guard.clone()));
-                remaining = math::normalize(b::and(remaining, b::not(condition.clone())));
+                remaining = later;
                 if branch.as_bool() == Some(false) { continue; }
                 let effects = self.realtime_effects.events().len();
                 let throws = self.realtime_throws.len();
