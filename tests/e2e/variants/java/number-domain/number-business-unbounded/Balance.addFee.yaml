@@ -12,3 +12,12 @@
   expect:
     - path: [R]
       value: balance + fee + 2
+- name: concrete-intermediate-above-i128-retains-the-full-integer
+  edits:
+    - from: 'return balance + fee;'
+      to: |-
+        long base = 9223372036854775807L;
+        return base * base * base;
+  expect:
+    - path: [R]
+      value: '784637716923335095224261902710254454442933591094742482943'
