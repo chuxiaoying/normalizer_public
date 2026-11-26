@@ -240,13 +240,13 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         }
         return format_case_when(branches, ctx);
     }
-    if expr.as_relation().is_some() || expr.as_relation_aggregate().is_some() {
+    // All other shapes have already been handled. The remaining non-call
+    // shape must be rendered by the relation owner or rejected there.
+    let Some((key, args)) = expr.as_call() else {
         return format_scalar_array_observation(expr, ctx)
             .or_else(|| relation_query::render(expr, ctx))
             .expect("[NORM-BUSINESS-EXPRESSION] relation has no canonical PERS renderer");
-    }
-    // The preceding dispatch exhausts every non-call expression variant.
-    let (key, args) = expr.as_call().expect("unrecognized expression at the formatter boundary");
+    };
     let registered_name = math::func_name(key);
     if ctx.business_inputs.is_some() {
         if let Some((root, position, field)) = math::domains::relation::positional::field_projection(expr) {
