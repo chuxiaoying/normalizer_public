@@ -528,14 +528,9 @@ fn canonical_order_subject_strength(expr: &Expr) -> u8 {
                     70
                 }
             }
-            crate::symvar::SymVarOrigin::External { path, .. } => {
-                if path.is_empty() {
-                    65
-                } else {
-                    100
-                }
-            }
-            crate::symvar::SymVarOrigin::Temporal { .. } => 65,
+            crate::symvar::SymVarOrigin::External { path, .. } if !path.is_empty() => 100,
+            crate::symvar::SymVarOrigin::External { .. }
+            | crate::symvar::SymVarOrigin::Temporal { .. } => 65,
         },
         // Compound expressions do not become stronger subjects because their
         // printed form is longer. Peers are ordered by the display compare key.

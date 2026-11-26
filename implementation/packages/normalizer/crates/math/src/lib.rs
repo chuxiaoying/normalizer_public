@@ -34,7 +34,7 @@ pub mod sort_context;
 pub mod symvar;
 
 pub use domains::primitive::registry::{
-    func_arity, func_name, func_semantics, register_func,
+    func_name, func_semantics, register_func,
     FuncKey, FuncSemantics,
 };
 pub use expr::{BinOpKind, Expr, Lit, RelationAggregateKind, UnaryOpKind};

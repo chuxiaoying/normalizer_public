@@ -130,14 +130,10 @@ export function compileTypedListener(physicalPath, sf, fn) {
     if (numeric !== undefined) return value('bool', numeric);
     fail('listener dispatch condition must be a closed Boolean');
   }
-  function dispatch(st, condition) {
-    const callee = callExpression(st);
-    executeCallback(condition);
-  }
   for (const st of dispatches) {
     const guarded = ts.isIfStatement(st) && !st.elseStatement;
     const condition = guarded ? gate(st.expression) : null;
-    for (const body of guarded ? blockStatements(st.thenStatement) : [st]) dispatch(body, condition);
+    for (const _ of guarded ? blockStatements(st.thenStatement) : [st]) executeCallback(condition);
   }
   steps.push({op: 'return', value: value('unit', null)});
   return {params, excerpt: fn.getText(sf), ports, externalResults,

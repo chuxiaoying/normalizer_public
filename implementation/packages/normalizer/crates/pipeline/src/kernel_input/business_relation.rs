@@ -28,7 +28,7 @@ pub(super) struct Relations {
     pub(super) first_rows: BTreeMap<i64, OrderedRows>,
 }
 
-impl Engine<'_> {
+impl<'a> Engine<'a> {
     /// Only declared base tables filtered by closed, typed expressions in the
     /// current source frame are admitted. In particular, raw E/T values or
     /// composite observations cannot acquire this proof through their name.
@@ -77,7 +77,7 @@ impl Engine<'_> {
         predicates.into_iter().all(|p| closed(p, name, columns, entry.syntax))
     }
 
-    fn query_row_declaration(&self, decl: &JavaType) -> Result<&simulator_parser::JavaClass> {
+    fn query_row_declaration(&self, decl: &JavaType) -> Result<&'a simulator_parser::JavaClass> {
         let JavaType::Generic(container, args) = decl else {
             return Err(fail(format!(
                 "query output requires List<Row>, found {decl:?}"
@@ -100,12 +100,14 @@ impl Engine<'_> {
             .collect()
     }
 
-    fn table_rows(&mut self, query: &Query, decl: &JavaType, env: &Env) -> Result<Rows> {
-        let row = self.query_row_declaration(decl)?;
-        let types = self.query_row_types(row)?;
-        let Operation::OnRows(RowOperation::Project(fields)) = &query.operation else {
-            return Err(fail("table rows require a record projection"));
-        };
+    fn table_rows(
+        &mut self,
+        query: &Query,
+        row: &simulator_parser::JavaClass,
+        types: BTreeMap<String, Ty>,
+        fields: &[(String, Scalar)],
+        env: &Env,
+    ) -> Result<Rows> {
         let nullable_fields: std::collections::BTreeSet<_> = row.fields().iter()
             .filter(|field| crate::normalized::nullable_text_field(row, field))
             .map(|field| field.name()).collect();
@@ -162,13 +164,8 @@ impl Engine<'_> {
             .entry(query.source.clone())
             .or_default();
         for (name, ty) in &columns {
-            let business_type = match ty {
-                Ty::Integer => "number",
-                Ty::Text if nullable_columns.contains(name) => "text?",
-                Ty::Text => "text",
-                Ty::Bool => "bool",
-                _ => return Err(fail("unsupported table column type")),
-            };
+            let business_type = super::business_sql::column_type(ty, nullable_columns.contains(name))
+                .ok_or_else(|| fail("unsupported table column type"))?;
             table.insert(name.clone(), business_type.into());
         }
         Ok(Rows {
@@ -472,12 +469,19 @@ impl Engine<'_> {
                     ordering: vec![],
                 }
             }
-            None if operation.introduces_table() => self.table_rows(
-                query,
-                decl.ok_or_else(|| fail("table query needs a row declaration"))?,
-                env,
-            )?,
-            _ => return Err(fail("aggregate source is not bound")),
+            None => {
+                let projection = match operation {
+                    RowOperation::Project(fields) => Some(fields.as_slice()),
+                    RowOperation::EagerPath { .. } => None,
+                    _ => return Err(fail("aggregate source is not bound")),
+                };
+                let row = self.query_row_declaration(
+                    decl.ok_or_else(|| fail("table query needs a row declaration"))?,
+                )?;
+                let types = self.query_row_types(row)?;
+                let fields = projection.ok_or_else(|| fail("table rows require a record projection"))?;
+                self.table_rows(query, row, types, fields, env)?
+            }
         };
         for clause in &query.clauses {
             match clause {

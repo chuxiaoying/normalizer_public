@@ -14,6 +14,17 @@ pub(super) struct SqlEffect {
     columns: BTreeMap<String, String>,
 }
 
+/// One primitive database-column type mapping for local relations and SQL writes.
+pub(super) fn column_type(ty: &Ty, nullable_text: bool) -> Option<&'static str> {
+    match ty {
+        Ty::Integer => Some("number"),
+        Ty::Text if nullable_text => Some("text?"),
+        Ty::Text => Some("text"),
+        Ty::Bool => Some("bool"),
+        _ => None,
+    }
+}
+
 impl Engine<'_> {
     pub(super) fn execute_sql_write(
         &mut self,
@@ -38,12 +49,7 @@ impl Engine<'_> {
                 ScalarOperand::Integer(n) => (Ty::Integer, b::lit_integer(n.clone())),
                 ScalarOperand::Text(s) => (Ty::Text, b::lit_str(s)),
             };
-            let ty = match ty {
-                Ty::Integer => "number",
-                Ty::Text => "text",
-                Ty::Bool => "bool",
-                _ => return Err(fail("unsupported SQL column type")),
-            };
+            let ty = column_type(&ty, false).ok_or_else(|| fail("unsupported SQL column type"))?;
             columns.insert(column.clone(), ty.into());
             args.push(value);
         }

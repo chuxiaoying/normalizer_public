@@ -153,8 +153,8 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
       const end = st ? st.getStart(sf) : block.end - 1;
       for (let source of directives.after(before, end)) {
         const binding = /^([A-Za-z_$][\w$]*)\s*(\+=|=(?!=))/.exec(source);
-        const [, name, operator] = binding ?? [];
-        if (!locals.get(name) || uninitialized && (name !== uninitialized || operator !== '='))
+        if (!binding || !locals.get(binding[1])
+            || uninitialized && (binding[1] !== uninitialized || binding[2] !== '='))
           fail('local IR requires a writable local assignment in this block and must initialize any pending binding');
         // Host observations execute at the directive's original location.
         source = source.replace(

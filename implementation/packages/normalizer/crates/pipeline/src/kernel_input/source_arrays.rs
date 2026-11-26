@@ -30,14 +30,19 @@ impl LocalIntArray {
     }
 }
 
+fn literal_integer(value: &Expr) -> Option<i64> {
+    match value.as_lit() {
+        Some(math::Lit::Int(value)) => Some(*value),
+        _ => None,
+    }
+}
+
 fn exact_java_int(value: Value) -> Result<i32> {
     need(value.ty() == Ty::Integer, "expected Java int for local array")?;
     let folded = math::normalize(value.scalar()?);
-    match folded.as_lit() {
-        Some(math::Lit::Int(value)) => i32::try_from(*value)
-            .map_err(|_| fail("local array operand exceeds Java int range")),
-        _ => Err(fail("local array operand must be a closed Java int constant")),
-    }
+    let value = literal_integer(&folded)
+        .ok_or_else(|| fail("local array operand must be a closed Java int constant"))?;
+    i32::try_from(value).map_err(|_| fail("local array operand exceeds Java int range"))
 }
 
 fn array_root(value: Value) -> Result<String> {
@@ -49,10 +54,8 @@ fn array_root(value: Value) -> Result<String> {
 
 fn index_value(index: Value) -> Result<i64> {
     need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
-    let value = index.scalar()?.as_lit().and_then(|n| match n {
-        math::Lit::Int(i) => Some(*i),
-        _ => None,
-    }).ok_or_else(|| fail("array subscript must be a constant"))?;
+    let value = literal_integer(&index.scalar()?)
+        .ok_or_else(|| fail("array subscript must be a constant"))?;
     need((0..i64::from(i32::MAX)).contains(&value), "array subscript outside supported nonnegative Java index range")?;
     Ok(value)
 }

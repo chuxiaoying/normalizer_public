@@ -53,12 +53,6 @@ pub enum RowOperation {
     Fold { accumulator: String, initial: Scalar, body: Scalar },
 }
 
-impl RowOperation {
-    pub fn introduces_table(&self) -> bool {
-        matches!(self, Self::Project(_) | Self::EagerPath { .. })
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {
     Rows,

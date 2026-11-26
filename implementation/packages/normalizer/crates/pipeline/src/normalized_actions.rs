@@ -38,6 +38,22 @@ impl DeclaredPortType {
     }
 }
 
+#[derive(Debug)]
+enum PortObservation {
+    ImmutableValue,
+    ReferenceValue,
+}
+
+impl<'de> Deserialize<'de> for PortObservation {
+    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> std::result::Result<Self, D::Error> {
+        match String::deserialize(decoder)?.as_str() {
+            "immutable_value" => Ok(Self::ImmutableValue),
+            "reference_value" => Ok(Self::ReferenceValue),
+            _ => Err(serde::de::Error::custom("unsupported port observation contract")),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Port {
@@ -48,7 +64,7 @@ pub(super) struct Port {
     throws: Vec<String>,
     #[serde(rename = "heap_effect")]
     _heap_effect: PortHeapEffect,
-    argument_observation: String,
+    argument_observation: PortObservation,
     effect: String,
 }
 
@@ -69,7 +85,7 @@ impl Port {
             returns: DeclaredPortType::Source(returns),
             throws,
             _heap_effect: PortHeapEffect::None,
-            argument_observation: "immutable_value".into(),
+            argument_observation: PortObservation::ImmutableValue,
             effect: "sync".into(),
         }
     }
@@ -188,12 +204,11 @@ impl Project {
                 "unsupported port effect; declare sync or async-barrier",
             )?;
             let validate = |ty: &Ty| -> Result<()> {
-                match p.argument_observation.as_str() {
-                    "immutable_value" =>
+                match p.argument_observation {
+                    PortObservation::ImmutableValue =>
                         need(ty.port_value(), "immutable port values cannot contain object references or source sequences"),
-                    "reference_value" =>
+                    PortObservation::ReferenceValue =>
                         need(ty.state_value(), "reference port values require closed state types; source sequences must be explicit heap fields"),
-                    _ => Err(fail("unsupported port observation contract")),
                 }
             };
             let returns = p.returns.resolve()?;
@@ -237,6 +252,15 @@ pub(super) fn builtin_exception(name: &str) -> bool {
     name == "java.lang.IllegalArgumentException"
         || crate::normalized::builtin_exception_name(name) == Some(name)
 }
+fn adapter_scalar_domain(domain: &str) -> Option<Ty> {
+    match domain {
+        "bool" => Some(Ty::Bool),
+        "number" => Some(Ty::Integer),
+        "text" => Some(Ty::Text),
+        _ => None,
+    }
+}
+
 impl Engine<'_> {
     pub(super) fn fresh_binding(&mut self) -> u64 {
         let id = self.next_binding;
@@ -366,12 +390,8 @@ impl Engine<'_> {
         let context = self.entry_context.ok_or_else(|| fail("host input requires the selected entry context"))?;
         let domain = context.parameter_type(input)
             .ok_or_else(|| fail(format!("host input {input} has no P declaration")))?;
-        let ty = match domain {
-            "bool" => Ty::Bool,
-            "number" => Ty::Integer,
-            "text" => Ty::Text,
-            _ => return Err(fail(format!("unsupported host input type: {domain}"))),
-        };
+        let ty = adapter_scalar_domain(domain)
+            .ok_or_else(|| fail(format!("unsupported host input type: {domain}")))?;
         // P represents the entry snapshot, not a fresh host observation.
         // Reading it again aliases the same symbol even after an await.
         let value = symbolic(&host_input_symbol(input), &ty, &mut self.heap, None)?;
@@ -408,12 +428,8 @@ impl Engine<'_> {
                         "NORM-STATE-DECLARATION", &format!("{root}.{}", fields.join(".")), &detail,
                         "请在当前入口声明真实的状态字段和类型。",
                     ))?;
-                    let expected = match domain {
-                        "number" => Ty::Integer,
-                        "bool" => Ty::Bool,
-                        "text" => Ty::Text,
-                        _ => return Err(fail("unsupported state field type")),
-                    };
+                    let expected = adapter_scalar_domain(domain)
+                        .ok_or_else(|| fail("unsupported state field type"))?;
                     let value = self.action_value(value, env)?;
                     need(value.ty() == expected, "incompatible state write value")?;
                     let value = value.scalar()?;

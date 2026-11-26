@@ -5,17 +5,11 @@ use num_bigint::BigInt;
 
 // None endpoints are unbounded, not the host word's minimum and maximum.
 type Endpoint = Option<BigInt>;
-fn subject_domain(e: &Expr) -> Option<(Endpoint, Endpoint)> {
-    if let Some(Lit::Int(value)) = e.as_lit() {
-        let point = BigInt::from(*value);
-        return Some((Some(point.clone()), Some(point)));
-    }
-    match e.as_sym_var() {
+fn is_input_integer(e: &Expr) -> bool {
+    matches!(e.as_sym_var(),
         Some(crate::SymVarOrigin::Parameter { name, primitive_type })
             if primitive_type == "integer" && !name.starts_with('$')
-                && !name.contains(['.', '[', ']']) => Some((None, None)),
-        _ => None,
-    }
+                && !name.contains(['.', '[', ']']))
 }
 
 #[derive(Clone)]
@@ -54,7 +48,7 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
         |expr| expr.as_lit().and_then(Lit::as_integer),
     )?;
     let test = op.comparison_test::<BigInt>()?;
-    subject_domain(s)?;
+    if !is_input_integer(s) { return None; }
     if let Some(old) = subject {
         if old != s {
             return None;
@@ -67,14 +61,12 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
     Some(Guard::Compare(test, n))
 }
 
-fn cells(lo: Endpoint, hi: Endpoint, mut cuts: Vec<BigInt>) -> impl Iterator<Item = (Endpoint, Endpoint)> {
-    cuts.retain(|n| lo.as_ref().is_none_or(|v| n > v)
-        && hi.as_ref().is_none_or(|v| n <= v));
+fn cells(mut cuts: Vec<BigInt>) -> impl Iterator<Item = (Endpoint, Endpoint)> {
     cuts.sort();
     cuts.dedup();
-    let mut start = lo;
+    let mut start = None;
     cuts.into_iter().map(Some).chain(std::iter::once(None)).map(move |next| {
-        let end = next.as_ref().map(|n| n - 1).or_else(|| hi.clone());
+        let end = next.as_ref().map(|n| n - 1);
         (std::mem::replace(&mut start, next), end)
     })
 }
@@ -95,8 +87,8 @@ pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {
     let mut cuts = Vec::new();
     let Some(guards) = disjuncts.iter().map(|c| guard(c, &mut subject, &mut cuts))
         .collect::<Option<Vec<_>>>() else { return false; };
-    let Some((lo, hi)) = subject.as_ref().and_then(subject_domain) else { return false; };
-    cells(lo, hi, cuts).all(|(lo, hi)| {
+    if subject.is_none() { return false; }
+    cells(cuts).all(|(lo, hi)| {
         let representative = cell_representative(&lo, &hi);
         guards.iter().any(|g| g.at(&representative))
     })
@@ -116,9 +108,8 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
         .map(|(c, _)| guard(c, &mut subject, &mut cuts))
         .collect::<Option<Vec<_>>>()?;
     let subject = subject?;
-    let (lo, hi) = subject_domain(&subject)?;
     let mut segments: Vec<(Endpoint, Endpoint, Expr)> = Vec::new();
-    for (start, end) in cells(lo.clone(), hi.clone(), cuts) {
+    for (start, end) in cells(cuts) {
         let representative = cell_representative(&start, &end);
         let value = branches[guards.iter().position(|g| g.at(&representative))?].1.clone();
         if let Some(last) = segments.last_mut() {
@@ -128,6 +119,9 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
             }
         }
         segments.push((start, end, value));
+    }
+    if let [(_, _, only_value)] = segments.as_slice() {
+        return Some((vec![], only_value.clone()));
     }
     // Keep the explicit default and the source's first occurrence of each
     // non-default payload. Partition cells determine effective domains, not a
@@ -148,21 +142,17 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
             if cell_value != &value {
                 continue;
             }
-            let condition = match (a, z) {
-                (Some(a), Some(z)) if a == z => b::eq(subject.clone(), b::lit_integer(a.clone())),
-                (a, z) => {
-                    let lower = a.as_ref().filter(|_| a != &lo)
-                        .map(|n| b::ge(subject.clone(), b::lit_integer(n.clone())));
-                    let upper = z.as_ref().filter(|_| z != &hi)
-                        .map(|n| b::le(subject.clone(), b::lit_integer(n.clone())));
-                    match (lower, upper) {
-                        (None, None) => b::lit_bool(true),
-                        (Some(term), None) | (None, Some(term)) => term,
-                        (Some(lower), Some(upper)) => b::and(lower, upper),
-                    }
+            if let (Some(a), Some(z)) = (a, z) {
+                if a == z {
+                    intervals.push(b::eq(subject.clone(), b::lit_integer(a.clone())));
+                    continue;
                 }
-            };
-            intervals.push(condition);
+            }
+            // A segment with no bounds is the sole segment and was
+            // returned above. There is no unconditional guard to build.
+            let lower = a.as_ref().map(|n| b::ge(subject.clone(), b::lit_integer(n.clone())));
+            let upper = z.as_ref().map(|n| b::le(subject.clone(), b::lit_integer(n.clone())));
+            intervals.extend(lower.into_iter().chain(upper).reduce(b::and));
         }
         if let Some(domain) = intervals.into_iter().reduce(b::or) {
             out.push((domain, value));

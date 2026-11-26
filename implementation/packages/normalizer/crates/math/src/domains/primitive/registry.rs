@@ -95,7 +95,6 @@ impl FuncSemantics {
 #[derive(Clone)]
 pub(crate) struct FuncEntry {
     pub name: String,
-    pub param_types: Vec<crate::primitive_enum::Primitive>,
     pub return_type: Option<crate::primitive_enum::Primitive>,
     pub semantics: FuncSemantics,
 }
@@ -145,7 +144,7 @@ pub fn register_func(
     return_type: Option<crate::primitive_enum::Primitive>,
     semantics: FuncSemantics,
 ) -> FuncKey {
-    let key_hint = (name.to_string(), param_types.clone());
+    let key_hint = (name.to_string(), param_types);
     let reg = registry();
     // Recheck under the writer so concurrent first registrations share a key.
     if let Some(&key) = reg.read().unwrap().name_arity_index.get(&key_hint) {
@@ -158,7 +157,6 @@ pub fn register_func(
     let key = FuncKey(writer.entries.len() as u32);
     writer.entries.push(FuncEntry {
         name: name.to_string(),
-        param_types,
         return_type,
         semantics,
     });
@@ -170,12 +168,6 @@ pub fn register_func(
 pub fn func_name(key: FuncKey) -> String {
     let r = registry().read().unwrap();
     r.entries[key.0 as usize].name.clone()
-}
-
-/// 查询 FuncKey 对应的 arity（从 param_types 列表长度推断）。
-pub fn func_arity(key: FuncKey) -> usize {
-    let r = registry().read().unwrap();
-    r.entries[key.0 as usize].param_types.len()
 }
 
 /// 查询 FuncKey 对应的返回类型（None = Pending / Void）。

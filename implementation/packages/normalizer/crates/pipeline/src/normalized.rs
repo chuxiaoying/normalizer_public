@@ -661,24 +661,22 @@ fn source_array_read(target: &E, index: &E) -> bool {
 }
 
 // Match one full accumulator update and reject every other loop shape at
-// one boundary. The element may have one closed integer token offset.
+// one boundary. One closed integer addition to the element is supported.
 pub(crate) fn array_sum<'a>(item: &str, body: &'a [S]) -> Option<(&'a str, i64)> {
-    let update = body.first().filter(|_| body.len() == 1)?;
-    let S::Assign {
-        target: E::Ident(total),
-        value: E::BinOp { op: B::Add, left, right },
-        ..
-    } = update else { return None; };
-    let total = Some(total).filter(|total| item != total.as_str()
-        && matches!(left.as_ref(), E::Ident(name) if name == *total))?;
-    let offset = match right.as_ref() {
+    let (total, element) = match body {
+        [S::Assign {
+            target: E::Ident(total),
+            value: E::BinOp { op: B::Add, left, right },
+            ..
+        }] if item != total.as_str() && matches!(left.as_ref(), E::Ident(name) if name == total) =>
+            (total, right.as_ref()),
+        _ => return None,
+    };
+    let offset = match element {
         E::Ident(name) if name == item => Some(0),
-        E::BinOp { op: op @ (B::Add | B::Sub), left, right }
-            if matches!(left.as_ref(), E::Ident(name) if name == item) => {
-                integer_token(right).and_then(|value| {
-                    if *op == B::Sub { value.checked_neg() } else { Some(value) }
-                })
-            }
+        E::BinOp { op: B::Add, left, right }
+            if matches!(left.as_ref(), E::Ident(name) if name == item) =>
+                integer_token(right),
         _ => None,
     }?;
     Some((total, offset))

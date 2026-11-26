@@ -186,7 +186,7 @@ function compile(source, file, entry, physicalPath) {
       return {type, node: internal(operator, {left: a.node, right: b.node})};
     }
     if (expr.op === 'read') {
-      const [name, field, ...rest] = expr.target;
+      const [name] = expr.target;
       const binding = names.get(name);
       return {type: 'number', node: internal('value.field', {value: internal('var', {name: binding.name}), name: 'length'})};
     }

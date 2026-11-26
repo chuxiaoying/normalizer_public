@@ -1,6 +1,6 @@
 //! Source admission for waits whose only exit depends on an external response.
 use simulator_parser::{
-    JavaBinOp, JavaExpr, JavaLit, JavaProgram, JavaStatement, JavaType, JavaUnaryOp,
+    JavaBinOp, JavaClass, JavaExpr, JavaLit, JavaProgram, JavaStatement, JavaType, JavaUnaryOp,
 };
 use std::collections::BTreeMap;
 
@@ -13,19 +13,20 @@ pub(super) fn validate_entry(program: &JavaProgram, entry: &str) -> Result<(), S
     let Some(method) = candidates.next().filter(|_| candidates.next().is_none()) else {
         return Ok(()); // Let normal entry admission resolve or diagnose the entry.
     };
-    let mut bindings: BTreeMap<_, _> = class
-        .fields()
-        .iter()
-        .map(|f| (f.name(), f.java_type()))
-        .collect();
-    bindings.extend(method.params().iter().map(|(ty, name)| (name.as_str(), ty)));
+    let mut bindings = BTreeMap::new();
+    for field in class.fields() {
+        bind_interface(program, &mut bindings, field.name(), field.java_type());
+    }
+    for (ty, name) in method.params() {
+        bind_interface(program, &mut bindings, name, ty);
+    }
 
     for statement in method.body().unwrap_or_default() {
         match statement {
             JavaStatement::VarDecl {
                 name, java_type, ..
             } => {
-                bindings.insert(name, java_type);
+                bind_interface(program, &mut bindings, name, java_type);
             }
             JavaStatement::Return(_) | JavaStatement::Throw(_) => break,
             JavaStatement::While { cond, body }
@@ -75,9 +76,32 @@ fn poll_operand(expr: &JavaExpr) -> Option<&JavaExpr> {
     }
 }
 
+// Store only declared interfaces; a non-interface declaration still shadows
+// an earlier field/parameter with the same name and clears its certificate.
+type InterfaceBindings<'a> = BTreeMap<&'a str, (&'a str, &'a JavaClass)>;
+
+fn bind_interface<'a>(
+    program: &'a JavaProgram,
+    bindings: &mut InterfaceBindings<'a>,
+    name: &'a str,
+    ty: &'a JavaType,
+) {
+    let interface = match ty {
+        JavaType::Class(qualified) => program.find_class(qualified)
+            .filter(|class| class.is_interface())
+            .map(|class| (qualified.as_str(), class)),
+        _ => None,
+    };
+    if let Some(interface) = interface {
+        bindings.insert(name, interface);
+    } else {
+        bindings.remove(name);
+    }
+}
+
 fn external_call(
     program: &JavaProgram,
-    bindings: &BTreeMap<&str, &JavaType>,
+    bindings: &InterfaceBindings<'_>,
     expr: &JavaExpr,
 ) -> Option<String> {
     let (receiver, method, args) = match expr {
@@ -86,14 +110,10 @@ fn external_call(
             => (receiver.as_ref(), method, args),
         _ => return None,
     };
-    let Some(JavaType::Class(qualified)) = (if let JavaExpr::Ident(name) = receiver {
-        bindings.get(name.as_str()).copied()
-    } else {
-        None
-    }) else { return None; };
-    let interface = program.find_class(qualified).filter(|class| class.is_interface())?;
+    let JavaExpr::Ident(receiver) = receiver else { return None; };
+    let &(qualified, interface) = bindings.get(receiver.as_str())?;
     (!program.classes().iter().any(|class| class.interfaces().iter()
-        .any(|ty| ty == qualified || ty == interface.simple_name()))
+        .any(|ty| ty.as_str() == qualified || ty == interface.simple_name()))
         && super::source_ports::declares_bodyless_member(interface, method, args.len()))
         .then(|| format!("{qualified}.{method}"))
 }

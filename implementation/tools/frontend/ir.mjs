@@ -32,10 +32,11 @@ function pathOf(node) {
   const property = ts.isPropertyAccessExpression(node) ? node.name
     : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)
       ? node.argumentExpression : undefined;
-  if (!property) return;
-  const parent = pathOf(node.expression);
-  // A bracket string supplies one exact property key, even if it contains ".".
-  if (parent) return [...parent, property.text];
+  if (property) {
+    const parent = pathOf(node.expression);
+    // A bracket string supplies one exact property key, even if it contains ".".
+    if (parent) return [...parent, property.text];
+  }
 }
 
 // Callers require an expression. Array holes remain explicit
