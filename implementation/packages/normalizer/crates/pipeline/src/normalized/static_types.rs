@@ -798,9 +798,8 @@ impl Admission<'_> {
                 S::For { init: Some(init), cond, update: Some(update), body } => {
                     let mut loop_scope = scope.clone();
                     let assignment = super::fixed_for::assignment_init(init.as_ref());
-                    if super::fixed_for::FixedFieldFor::from_for(statement).is_some() {
-                        let S::ExprStmt(E::Assign { target, value, .. }) = init.as_ref() else { unreachable!() };
-                        self.assignment(target, value, false, scope)?;
+                    if let Some(header) = super::fixed_for::FixedFieldFor::from_for(statement) {
+                        self.assignment(header.initial_target, header.initial_value, false, scope)?;
                     } else if let Some((_, target, value)) = assignment {
                         self.assignment(target, value, false, scope)?;
                     } else if let S::Block(declarations) = init.as_ref() {

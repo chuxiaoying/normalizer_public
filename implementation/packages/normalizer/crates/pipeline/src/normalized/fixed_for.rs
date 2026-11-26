@@ -154,8 +154,7 @@ fn inductive_guard(expr: &E, counter: &str, index: i128) -> Option<bool> {
     match expr {
         E::Lit(JavaLit::Bool(b)) => Some(*b),
         E::UnaryOp { op: U::Not, operand } => Some(!inductive_guard(operand, counter, index)?),
-        E::BinOp { op: B::And | B::Or, left, right } => {
-            let E::BinOp { op, .. } = expr else { unreachable!() };
+        E::BinOp { op: op @ (B::And | B::Or), left, right } => {
             let left = inductive_guard(left, counter, index)?;
             let right = inductive_guard(right, counter, index)?;
             Some(if *op == B::And { left && right } else { left || right })
@@ -275,6 +274,8 @@ impl<'a> BoundedControlFor<'a> {
 /// header certifies finite motion; execution must independently bind all
 /// three receiver names to the same fresh object.
 pub(crate) struct FixedFieldFor<'a> {
+    pub initial_target: &'a E,
+    pub initial_value: &'a E,
     pub receivers: [&'a str; 3],
     pub field: &'a str,
     pub start: i128,
@@ -329,7 +330,11 @@ impl<'a> FixedFieldFor<'a> {
         )) { return None; }
         let start = literal(value)?;
         let count = ((end - start) * step + i128::from(inclusive)).max(0);
-        (count <= 256).then_some(Self { receivers, field: member, start, step, count })
+        (count <= 256).then_some(Self {
+            initial_target: target,
+            initial_value: value,
+            receivers, field: member, start, step, count,
+        })
     }
 }
 

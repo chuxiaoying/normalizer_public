@@ -54,3 +54,8 @@
   edits:
     - {from: 'if (i > 4) break;', to: 'if (i > 4) continue;'}
   reject: ['[NORM-LOOP]', 'PREPROCESS_REQUIRED']
+
+- name: compound-guards-preserve-the-original-committed-prefix
+  edits:
+    - {from: 'if (i < 2) continue;', to: 'if (i == 0 || i == 1) continue;'}
+    - {from: 'if (i > 4) break;', to: 'if (i >= 5 && i <= 5) break;'}
