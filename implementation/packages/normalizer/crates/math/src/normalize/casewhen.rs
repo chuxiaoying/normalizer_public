@@ -161,9 +161,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
         let (same_value_grouped, same_value_grouped_changed) =
             group_same_value_effective_domains(&same_value_merged);
 
-        let (dedup_by_cond, dedup_changed) =
-            dead_branch_by_identical_prev_cond(&same_value_grouped);
-
         // 0d. 覆盖死分支消除：
         //    CaseWhen 按序匹配，branch[k] 只有在所有前序 cond 都失败时才会被检查。
         //    若 `cond[k] && !cond[0] && ... && !cond[k-1]` 经 normalize 可证明为 false，
@@ -172,7 +169,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
         //    典型场景：外层 guard 已证明 `value != null`，而 return value 是同一个
         //    `value` 的 CaseWhen。nested flatten 会生成默认 null 分支；该分支被前面
         //    非 null value 分支覆盖，应删除，而不是渲染成 `"found:" + null`。
-        let (covered_stripped, covered_changed) = dead_branch_by_covered_prev_conds(&dedup_by_cond);
+        let (covered_stripped, covered_changed) = dead_branch_by_covered_prev_conds(&same_value_grouped);
 
         // 1. 先把相邻互补分支 canonicalize 成 else 分支：
         //    (c, v1), (NOT(c), v2) / (NOT(c), v1), (c, v2) → (first, v1), (true, v2)。
@@ -285,7 +282,6 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
             || domain_simplified_changed
             || same_value_merged_changed
             || same_value_grouped_changed
-            || dedup_changed
             || covered_changed
             || canonicalized_changed
             || projected_values_changed
@@ -682,7 +678,7 @@ fn strip_prev_disjuncts_from_or_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr,
         let filtered: Vec<Expr> = disjuncts
             .into_iter()
             .filter(|d| !prev_conds.iter().any(|prev| *prev == d))
-            .filter(|d| !is_covered_by_previous_or(d, &previous_or))
+            .filter(|d| !crate::builder::path_implies(d, &previous_or))
             .collect();
         (filtered.len() != original_len).then(|| rebuild_or(&filtered))
     })
@@ -846,64 +842,34 @@ fn simplify_branch_conditions_under_prior_failures(branches: &[(Expr, Expr)]) ->
     })
 }
 
-/// 死分支消除（相同 cond 的后续 branch）：若 branch[k].cond 与某 branch[j].cond (j<k)
-/// 完全相等，则 branch[k] 永远不会被匹配（前面的必先命中），剔除。
-///
-/// 注意：必须保证最后一个 true 兜底分支不被误删（builder::case_when 约束）。
-fn dead_branch_by_identical_prev_cond(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
-    let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(branches.len());
-    let mut changed = false;
-
-    for (cond, value) in branches.iter() {
-        let dup = out.iter().any(|(prev_cond, _)| prev_cond == cond);
-        if dup {
-            changed = true;
-            continue;
-        }
-        out.push((cond.clone(), value.clone()));
-    }
-
-    (out, changed)
-}
-
 fn dead_branch_by_covered_prev_conds(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
     let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(branches.len());
-    let mut changed = false;
-
-    for (cond, value) in branches.iter() {
-        if is_covered_by_previous(cond, &out) {
-            changed = true;
-            continue;
+    let mut seen = HashSet::with_capacity(branches.len());
+    for (cond, value) in branches {
+        // Remember even earlier guards removed by the proof. An exact
+        // duplicate never enters the semantic prover a second time.
+        if seen.insert(cond) && !is_covered_by_previous(cond, &out) {
+            out.push((cond.clone(), value.clone()));
         }
-        out.push((cond.clone(), value.clone()));
     }
-
+    let changed = out.len() != branches.len();
     (out, changed)
 }
 
 fn is_covered_by_previous(cond: &Expr, previous: &[(Expr, Expr)]) -> bool {
-    if previous.is_empty() {
+    let Some(((first, _), rest)) = previous.split_first() else {
         return false;
-    }
-
-    let previous_conds: Vec<Expr> = previous
-        .iter()
-        .map(|(prev_cond, _)| prev_cond.clone())
-        .collect();
+    };
 
     if cond.as_bool() == Some(true) {
+        let previous_conds: Vec<Expr> = previous.iter().map(|(guard, _)| guard.clone()).collect();
         return crate::builder::conditions_cover_all(&previous_conds);
     }
 
-    let previous_or = previous_conds
-        .into_iter()
-        .reduce(crate::builder::or)
-        .unwrap_or_else(|| crate::builder::lit_bool(false));
+    let previous_or = rest.iter().fold(first.clone(), |prefix, (guard, _)| {
+        crate::builder::or(prefix, guard.clone())
+    });
     crate::builder::path_implies(cond, &previous_or)
-}
-
-fn is_covered_by_previous_or(cond: &Expr, previous_or: &Expr) -> bool {
-    crate::builder::path_implies(cond, previous_or)
 }
 
 /// 路径守卫冗余消除：对每个 branch[k]，剥除 cond 中形如 NOT(branch[j].cond) (j<k) 的 AND 项。
