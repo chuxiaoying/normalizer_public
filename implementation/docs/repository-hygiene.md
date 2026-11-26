@@ -34,20 +34,21 @@
 
 - **关系查询标量的 `!=`**：[`PositiveCount.count` 变体](../../tests/e2e/variants/java/collections/collection-filter/PositiveCount.count.yaml)使用 `where row.amount != 0`，断言排除零并保留原账户筛选、聚合及空结果默认值的完整 PERS。该场景不是待补用例；运行时命中仍以当前提交的实际覆盖报告为准。
 
+- **关系谓词与可选子句**：正式对照已核验小写 `is null`／`is not null`、无 `where` 的连接计数、无 `as` 的 UPDATE 表名绑定，以及无 `where` 的全行 UPDATE。依[关系指令](../../design/secondary/关系指令的统一写法.md)分别保留输出、行数与写入效果。
+- **计数的精确下界**：按[可空关系列种子](../../design/examples/topics/relational-data/java-null-semantics.md)，`count <= -1`、`1 + count == 0` 恒假，`count > -1`、`count >= 0` 恒真。正式对照保留表和筛选所依赖的 P/E，不把带未知偏移的表达式错判为常量。
+- **已初始化 long 的有限循环**：正式[常量循环种子](../../design/examples/topics/loops-and-termination/java-constant-bound.md)有赋值式 `long` 局部计数器对照，结束后仍观察末次步进。
+- **TypeScript 局部元组的空分支**：正式[回执元组种子](../../design/examples/topics/collections/typescript-tuple-slots.md)验证命中空分支后继续执行剩余语句，保留原返回观察。
+
 ### 待补回归（不属于覆盖例外）
 
-- **关系语法的等价写法与可选子句**：从正式 `source` CLI 验收[局部关系与写入语法](../../design/chapters/第五章%20·%20关系代数：让%20SQL%20和集合运算一起化简.md)：`is null` / `is not null` 与大写写法得到同一规范 PERS；不带 `where` 的连接计数只按 `on` 条件和匹配行数计数；不带 `as` 的 UPDATE 以表名绑定条件，不带 `where` 的 UPDATE 更新全部行。写入仍须断言 S 中 SQL、原子性和影响行数。不扩张 DELETE 或 SQL 三值逻辑合同。
-- **已取得数据域的精确整数下界**：按[统一正则规范](../../design/secondary/精确数值与区间怎样化简.md#当前取得域内的精确整数下界)，对已取得的 `Count` 分别检查 `<= -1`、`> -1`、`>= 0` 和 `1 + Count == 0`。前者和最后一项恒假，另两项包含零在内恒真；结果简化不能删掉已取得的表和筛选证据。
 - **有序折叠的空提交前缀与隐式依赖**：沿[提前退出种子](../../design/examples/topics/loops-and-termination/java-break-continue.md)把首个可处理索引移到终止界之后，断言初值不变；沿[纯折叠定义](../../design/examples/topics/unified-canonical-form/java-pure-fold-definitions.md)让 R 只引用后一项，断言 T 仍按依赖顺序保留前项。
 - **关系去重并集的来源错误**：依[投影并集种子](../../design/examples/topics/relational-data/sql-projected-distinct.md)，分别提供未绑定来源与并集合同不接受的过滤来源，两者必须明确区分且均不产生 PERS。
 - **Java 名称、声明和分派**：在已支持的源码场景中覆盖 `$` 和关键字前缀标识符、受保护和 `strictfp` 的方法、`final` 类、`transient` 字段、普通 `Object` / `java.lang.Object` 和 `java.lang.String` 声明，以及多接口的已声明方法分派。另覆盖右操作数为文本的 `null + "s"`，R 为 `"nulls"`。不据此扩张可空引用类型或默认接口方法的合同。
 - **独立 JavaScript 无源码调用与适配器启动失败**：按[无源码边界](../../design/chapters/第四章%20·%20AI%20救赎.md)，同步直接调用与 `await` 都不得把普通参数的方法变成 external，分别保留 `:call` 和 `:await` 的失败位置且不输出 PERS。适配器内核若无法启动，工程验收用隔离的可执行文件路径重现启动失败，断言退出非零且无 PERS，不伪造业务种子。
-- **独立 TypeScript 局部元组的空分支**：在[回执元组种子](../../design/examples/topics/collections/typescript-tuple-slots.md)的 helper 中插入一个已知进入的空 `if` 块，预期继续执行之后的返回，完整 PERS 应与原例一致；现有实现会缺少元组，不能把失败定为期望。
 - **证明预算和缓存边界**：按[性能治理](performance-risk-response.md)，用同一份合法 Java 嵌套条件和异常源码，分别降低证明节点上限与缓存条目体积上限，覆盖拒绝证明及跳过过大缓存项。仍要得到相同 PERS；性能探针不能把近似答案变成成功，也不计作已经补齐的正式回归。
 - **布尔 CASE、整数穷尽和相消**：按[统一正则规范](../../design/chapters/第八章%20·%20统一定形规范.md)，`(p ? q : !q) ? true : p` 归约为 `p OR NOT(q)`；`x<0`、`0<=x<=5`、`x>=6` 穷尽整数域，不残留不可达尾臂。把 `x>0?x:x+2` 的值减去 `x`，结果应为 `x<=0?2:0`，不能残留 `x-x`。最后一例已发现实现缺口，不把未化简结果当预期。
 - **数组首项的分支条件**：当 `a[0] > x` 时返回该首项，否则返回 `x`。空数组仍有越界完成；不能把带异常的首项读取当成带默认值的纯取首项。入口应断言完整正常和异常 PERS。
 - **关系连接和 LET 输出**：在[内连接计数](../../design/examples/topics/relational-data/java-join.md)中给两表匹配追加独立布尔开关；为假时结果为零，为真时保留原连接和重复行计数。按[CASE LET 种子](../../design/examples/topics/expression-simplification/java-case-let-extraction.md)区分入参数组、E 状态数组、借用记录字段和 CASE 内取反；检查完整 PERS 中重复子式究竟提取为 LET 还是保持内联，不能把未确认的读取条件冒充已取得的值。
-- **已初始化 long 的有限循环**：[静态边界循环种子](../../design/examples/topics/loops-and-termination/java-constant-bound.md)规定赋值式循环可复用已初始化的 `int` 或 `long` 局部计数器。保持循环体和边界相同，独立预期应一致。现有入口拒绝 `long` 版本，这是合同缺口，不归入已签字的不支持输入。
 - **状态写入、独立字段与可空内容**：在[多次写后读](../../design/examples/topics/state-and-aliasing/java-multi-write-read-order.md)中分别验证同一对象的相邻字段、不同声明对象的同名字段。写入进 S，读取不得混到另一字段或对象；空值声明则沿[可选字段](../../design/examples/topics/objects-and-types/java-optional-field.md)断言完整 R 中保留 `null`，不省字段。
 - **合法接收者与身份**：按[多态分派](../../design/examples/topics/objects-and-types/java-polymorphic-dispatch.md)验证显式 `this.field` 读实际分派到的对象；按[内容与身份](../../design/examples/topics/objects-and-types/java-structural-vs-identity.md)验证非空入参与已绑定为 null 的局部变量不相同。比较不创造外部身份或改变 P。
 - **已取得值相消但不抹掉效果**：纯参数、不可变外部回执字段、第二次采集的完整回执分别计算同值减自身，R 都应归零。参数版不新增 S；两次采集均保留；[原子写入](../../design/examples/topics/relational-data/java-batch-write.md)后取时钟只发生于成功路径，仍保留 SQL、时钟及异常完成。当前参数和回执字段版本还有未化简结果，不能把它们当作预期。
