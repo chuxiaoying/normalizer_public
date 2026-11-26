@@ -34,3 +34,17 @@
       from: "return arrears.status.loading ? '加载中' : '应付金额'"
       to: "return arrears.status.loading ? /* @normalizer-ir extra = unknown */ '加载中' : '应付金额'"
   reject: ['SCENARIO_MODULE_INPUT:', '@normalizer-ir must appear between statements']
+
+- name: entry-state-annotation-binds-one-source-variable
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'const arrears = {'
+      to: 'const another = 0, arrears = {'
+  reject: ['SCENARIO_MODULE_INPUT:', '@entryState must mark one named binding']
+
+- name: prepared-component-projection-has-no-function-argument
+  edits:
+    - file: src/ArrearsPage.mjs
+      from: 'export function caption()'
+      to: 'export function caption(unbound)'
+  reject: ['SCENARIO_MODULE_INPUT:', 'prepared component projection caption requires a synchronous exported function with a return expression and no parameters']

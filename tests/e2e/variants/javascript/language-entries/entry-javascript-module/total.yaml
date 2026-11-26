@@ -9,3 +9,6 @@
 - name: module-right-associated-sum
   edits: [{ from: 'value + base', to: '2 + (base + value)' }]
   expect: [{ path: [R], value: base + value + 2 }]
+- name: the-selected-module-entry-must-be-exported
+  edits: [{ from: 'export function total', to: 'function total' }]
+  reject: ['[NORM-JS-MODULE]', 'expected one defined exported function: total']
