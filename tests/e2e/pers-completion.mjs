@@ -30,15 +30,23 @@ export function hasGuaranteedThrows(document) {
     // Relative to a single constant boundary, a non-null business number
     // lies in exactly one of less/equal/greater. Do not use this for native
     // machine floats, nullables, or receipt fields with a protected domain.
-    const comparison = /^((?:[PE]\.)?[\w$]+(?:\.[\w$]+)*)\s*(<=|>=|==|!=|<|>)\s*(-?(?:0|[1-9]\d*)(?:\.\d+)?)$/.exec(condition);
-    if (comparison && totalType(comparison[1]) === 'number') {
-      const literal = comparison[3].replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
-      const key = comparison[1] + ':' + (literal === '-0' ? '0' : literal);
-      const domains = { '<': 1, '==': 2, '>': 4, '<=': 3, '>=': 6, '!=': 5 };
-      const covered = (comparisons.get(key) ?? 0) | domains[comparison[2]];
-      if (covered === 7) return true;
-      comparisons.set(key, covered);
-    }
+    const comparison = /^(?:(LENGTH)\(((?:[PE]\.)?[\w$]+)\)|((?:[PE]\.)?[\w$]+(?:\.[\w$]+)*))\s*(<=|>=|==|!=|<|>)\s*(-?(?:0|[1-9]\d*)(?:\.\d+)?)$/.exec(condition);
+    if (!comparison) continue;
+    const [, length, lengthRoot, numberRoot, operator, boundary] = comparison;
+    const type = totalType(lengthRoot ?? numberRoot);
+    // LENGTH is total only for a known non-null array root. A nullable
+    // element type (number?[]) does not make the array itself nullable.
+    if (length ? !type?.endsWith('[]') : type !== 'number') continue;
+    const literal = boundary.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace(/^-0$/, '0');
+    const key = (length ? 'LENGTH(' + lengthRoot + ')' : numberRoot) + ':' + literal;
+    const domains = { '<': 1, '==': 2, '>': 4, '<=': 3, '>=': 6, '!=': 5 };
+    // Relative to this boundary, a natural length can only be greater
+    // than a negative, never less than zero, nor equal to a fraction.
+    const feasible = !length ? 7 : literal.startsWith('-') ? 4
+      : literal === '0' ? 6 : literal.includes('.') ? 5 : 7;
+    const covered = (comparisons.get(key) ?? 0) | domains[operator];
+    if ((covered & feasible) === feasible) return true;
+    comparisons.set(key, covered);
   }
   return false;
 }
