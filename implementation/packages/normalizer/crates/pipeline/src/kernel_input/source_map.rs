@@ -99,6 +99,19 @@ mod tests {
     }
 
     #[test]
+    fn text_map_declaration_keeps_the_concrete_container_and_both_domains() {
+        let string = || JavaType::Class("String".into());
+        let qualified = || JavaType::Class("java.lang.String".into());
+        let number = || JavaType::Class("Integer".into());
+        let container = |name: &str, key, value| JavaType::Generic(name.into(), vec![key, value]);
+        assert!(declared_map(&container("java.util.HashMap", string(), qualified())));
+        assert!(declared_map(&container("java.util.HashMap", qualified(), string())));
+        assert!(!declared_map(&container("java.util.HashMap", string(), number())));
+        assert!(!declared_map(&container("java.util.HashMap", number(), string())));
+        assert!(!declared_map(&container("java.util.LinkedHashMap", string(), string())));
+    }
+
+    #[test]
     fn bound_and_literal_text_operands_keep_distinct_provenance() {
         let parameter = b::param("caption", math::ScalarSymbolType::Text);
         let env = Env::from([("caption".into(), Value::Term(Ty::Text, parameter.clone()))]);
