@@ -312,7 +312,7 @@ impl Engine<'_> {
             && spec.returns == Ty::Unit && !spec.throwing(),
             "listener call requires a declared normal zero-argument void sync port")?;
         let binding = self.fresh_binding();
-        self.realtime_effects.record(guard, id, site, Vec::new(), Some(b::external_completion(binding)));
+        self.realtime_effects.record(guard, id, site, Vec::new(), realtime_state::EffectReceipt::tagged(binding));
         Ok(())
     }
 

@@ -3,7 +3,7 @@
 use super::{
     business_entry::BusinessObservations,
     business_entry::EntryContext,
-    realtime_state::{EffectEvent, EffectOperation, TerminalOutcome},
+    realtime_state::{EffectReceipt, EffectOperation, TerminalOutcome},
     *,
 };
 use serde_json::json;
@@ -43,18 +43,16 @@ pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String 
 }
 
 fn bind_receipt<'a>(
-    event: &'a EffectEvent,
+    receipt: &'a EffectReceipt,
+    guard: &Expr,
     issued: &mut BTreeSet<u64>,
     ctx: &mut crate::FormatCtx,
 ) -> Result<(&'a Expr, u64, String)> {
-    let response = event.result.as_ref().ok_or_else(|| fail("missing operation receipt"))?;
-    let Some(SymVarOrigin::External { binding_id, .. }) = response.as_sym_var() else {
-        return Err(fail("invalid operation receipt"));
-    };
+    let binding_id = receipt.binding_id();
     let position = issued.len();
-    need(issued.insert(*binding_id), "duplicate operation receipt")?;
-    ctx.bind_business_event(*binding_id, position, event.guard.clone());
-    Ok((response, *binding_id, format!("$e_{position}")))
+    need(issued.insert(binding_id), "duplicate operation receipt")?;
+    ctx.bind_business_event(binding_id, position, guard.clone());
+    Ok((receipt.response(), binding_id, format!("$e_{position}")))
 }
 
 pub(super) fn observations(
@@ -144,11 +142,11 @@ pub(super) fn observations(
         }
         // Port/state guard text is rendered before registering any receipt.
         // SQL uses its original expression formatter after projecting the SQL item.
-        let condition = (!matches!(&event.operation, EffectOperation::Sql(_))
+        let condition = (!matches!(&event.operation, EffectOperation::Sql { .. })
             && event.guard.as_bool() != Some(true)).then(|| condition_text(&event.guard, &mut ctx));
         let (label, mut item) = match &event.operation {
-            EffectOperation::Sql(sql) => {
-                let (response, _, receipt) = bind_receipt(event, &mut issued, &mut ctx)?;
+            EffectOperation::Sql { statement: sql, receipt } => {
+                let (response, _, receipt) = bind_receipt(receipt, &event.guard, &mut issued, &mut ctx)?;
                 let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                     sql.project(event.arguments(), &receipt, &mut tables, ctx)
                 })?;
@@ -163,7 +161,7 @@ pub(super) fn observations(
                 effects.push(item);
                 continue;
             }
-            EffectOperation::Port(id) => {
+            EffectOperation::Port { id, receipt } => {
                 let contract = project
                     .ports
                     .get(id)
@@ -174,7 +172,7 @@ pub(super) fn observations(
                     spec.returns == ty,
                     "external business result disagrees with port type",
                 )?;
-                let (response, binding_id, output) = bind_receipt(event, &mut issued, &mut ctx)?;
+                let (response, binding_id, output) = bind_receipt(receipt, &event.guard, &mut issued, &mut ctx)?;
                 for (class, failed, payload) in spec.throw_variants(response) {
                     if let Some(payload) = payload.filter(|_| project.direct_source
                         && project.exceptions.get(&class).is_some_and(|ty| matches!(ty.as_str(), "text?" | "number")))

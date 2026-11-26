@@ -323,10 +323,31 @@ pub(crate) struct SymbolicStore {
     entries: Vec<StoreEntry>,
 }
 
+/// A fresh external value and the identity used to publish that occurrence.
+/// Keep arbitrary symbolic expressions out of effect receipt slots.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct EffectReceipt {
+    binding_id: u64,
+    response: Expr,
+}
+
+impl EffectReceipt {
+    pub(super) fn tagged(binding_id: u64) -> Self {
+        Self { binding_id, response: b::external_completion(binding_id) }
+    }
+
+    pub(super) fn sql_count(binding_id: u64) -> Self {
+        Self { binding_id, response: b::sym_e(binding_id, "integer") }
+    }
+
+    pub(super) fn binding_id(&self) -> u64 { self.binding_id }
+    pub(super) fn response(&self) -> &Expr { &self.response }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectOperation {
-    Port(String),
-    Sql(super::business_sql::SqlEffect),
+    Port { id: String, receipt: EffectReceipt },
+    Sql { statement: super::business_sql::SqlEffect, receipt: EffectReceipt },
     StateWrite { target: Vec<String>, value: Expr },
     ArrayWrite { root: String, index: i64, value: Expr },
 }
@@ -338,7 +359,6 @@ pub(crate) struct EffectEvent {
     pub(crate) operation: EffectOperation,
     pub(crate) callsite: String,
     args: Vec<Expr>,
-    pub(crate) result: Option<Expr>,
 }
 
 impl EffectEvent {
@@ -346,7 +366,7 @@ impl EffectEvent {
         match &self.operation {
             EffectOperation::StateWrite { value, .. } | EffectOperation::ArrayWrite { value, .. } =>
                 std::slice::from_ref(value),
-            EffectOperation::Port(_) | EffectOperation::Sql(_) => &self.args,
+            EffectOperation::Port { .. } | EffectOperation::Sql { .. } => &self.args,
         }
     }
 }
@@ -364,26 +384,24 @@ impl EffectSequence {
         operation: impl Into<String>,
         callsite: impl Into<String>,
         args: Vec<Expr>,
-        result: Option<Expr>,
+        receipt: EffectReceipt,
     ) {
         self.events.push(EffectEvent {
             guard: math::normalize(guard),
             sequence: self.events.len(),
-            operation: EffectOperation::Port(operation.into()),
+            operation: EffectOperation::Port { id: operation.into(), receipt },
             callsite: callsite.into(),
             args,
-            result,
         });
     }
 
-    pub(super) fn record_sql(&mut self, guard: Expr, statement: super::business_sql::SqlEffect, args: Vec<Expr>, response: Expr) {
+    pub(super) fn record_sql(&mut self, guard: Expr, statement: super::business_sql::SqlEffect, args: Vec<Expr>, receipt: EffectReceipt) {
         self.events.push(EffectEvent {
             sequence: self.events.len(),
             guard: math::normalize(guard),
-            operation: EffectOperation::Sql(statement),
+            operation: EffectOperation::Sql { statement, receipt },
             callsite: String::new(),
             args,
-            result: Some(response),
         });
     }
 
@@ -394,7 +412,6 @@ impl EffectSequence {
             guard,
             args: Vec::new(),
             callsite: String::new(),
-            result: None,
         });
     }
 
@@ -405,7 +422,6 @@ impl EffectSequence {
             guard,
             args: Vec::new(),
             callsite: String::new(),
-            result: None,
         });
     }
 

@@ -101,7 +101,7 @@ impl Loaded {
         let mut pending = signature.collect::<Vec<_>>();
         let mut external_results = BTreeMap::new();
         for event in result.realtime_effects.events() {
-            if let super::realtime_state::EffectOperation::Port(id) = &event.operation {
+            if let super::realtime_state::EffectOperation::Port { id, .. } = &event.operation {
                 let port = self.project.source_ports.get(id).ok_or("missing source port declaration")?;
                 external_results.insert(id.clone(), source_type(&port.returns)?.to_owned());
                 pending.push(&port.returns);

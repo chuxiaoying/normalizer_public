@@ -101,7 +101,7 @@ impl Engine<'_> {
             port,
             site,
             args,
-            Some(b::external_completion(bind)),
+            realtime_state::EffectReceipt::tagged(bind),
         );
         Self::bind_local(
             env,

@@ -53,7 +53,8 @@ impl Engine<'_> {
         if guard.as_bool() == Some(false) {
             return Ok(());
         }
-        let response = b::sym_e(self.fresh_binding(), "integer");
+        let receipt = super::realtime_state::EffectReceipt::sql_count(self.fresh_binding());
+        let response = receipt.response().clone();
         let failed = completion::is_throw(response.clone(), &write.exception);
         let failure_guard = math::normalize(b::and(guard.clone(), failed.clone()));
         self.realtime_effects.record_sql(
@@ -63,7 +64,7 @@ impl Engine<'_> {
                 columns,
             },
             args,
-            response.clone(),
+            receipt,
         );
 
         self.realtime_throws.push(failure_guard);

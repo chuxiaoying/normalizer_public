@@ -99,9 +99,10 @@ impl Engine<'_> {
         let spec = contract.completion_spec(self.project)?;
         let guard = self.normal_path(path);
         let bind = self.fresh_binding();
-        let response = b::external_completion(bind);
+        let receipt = realtime_state::EffectReceipt::tagged(bind);
+        let response = receipt.response().clone();
         self.realtime_effects
-            .record(guard.clone(), id, id, values, Some(response.clone()));
+            .record(guard.clone(), id, id, values, receipt);
         for (class, failed, payload) in spec.throw_variants(&response) {
             let condition = math::normalize(b::and(guard.clone(), failed.clone()));
 
