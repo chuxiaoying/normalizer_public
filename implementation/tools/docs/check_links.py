@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -29,7 +30,7 @@ def main() -> int:
             target = match.group(1).split("#", 1)[0].strip()
             if not target or "://" in target or target.startswith("mailto:"):
                 continue
-            if not (markdown.parent / target).resolve().exists():
+            if not (markdown.parent / unquote(target)).resolve().exists():
                 missing.append((markdown.relative_to(root), target))
 
     if missing:
