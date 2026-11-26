@@ -1,7 +1,7 @@
 //! A full-rank conjunction of affine equalities on exact integer inputs has
 //! at most one solution. Eliminate over the integers, then check divisibility
 //! during substitution. Partial values and word arithmetic stay opaque.
-use crate::{builder as b, BinOpKind, Expr, SymVarOrigin, UnaryOpKind};
+use crate::{builder as b, BinOpKind, Expr, SymVarOrigin};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use std::collections::{BTreeMap, BTreeSet};

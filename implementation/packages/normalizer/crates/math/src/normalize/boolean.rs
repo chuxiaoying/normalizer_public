@@ -52,15 +52,6 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
     }
 }
 
-/// Unlike boxed Boolean and partial CASE, these values have exactly the two
-/// Boolean values on their defined input domain. Never equate null with false.
-pub(crate) fn total_boolean_value(expr: &Expr) -> bool {
-    match expr.kind() {
-        ExprKind::SymVar { origin } => origin.primitive_type() == "boolean",
-        ExprKind::BinOp { op, .. } => op.swapped_comparison().is_some(),
-        _ => false,
-    }
-}
 fn boolean_literal_equality(op: BinOpKind, left: &Expr, right: &Expr) -> Option<Expr> {
     let (op, value, literal) =
         super::constraint::comparison_literal_rhs((op, left, right), Expr::as_bool)?;
@@ -338,14 +329,12 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     //   Count(R) > 0  <=>  Exists(R)
     //
     // In AND contexts keep the stronger/arithmetic Count fact and remove the
-    // duplicate Exists observer for the same relation. A proven empty input
-    // likewise absorbs emptiness of a strict filtered subset. This is relation
+    // duplicate Exists observer for the same relation. This is relation
     // cardinality semantics, not broad peer implication.
     let absorbed_by_cardinality: Vec<bool> = (0..out.len())
         .map(|i| {
             (0..out.len())
-                .any(|j| i != j && (relation_count_nonzero_implies_exists(&out[j], &out[i])
-                    || empty_input_implies_empty_selection(&out[j], &out[i])))
+                .any(|j| i != j && relation_count_nonzero_implies_exists(&out[j], &out[i]))
         })
         .collect();
     if absorbed_by_cardinality.iter().any(|absorbed| *absorbed) {

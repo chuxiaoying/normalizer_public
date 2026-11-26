@@ -95,20 +95,6 @@ fn compact_bound(expr: &Expr) -> Option<(&Expr, ConstraintBound)> {
     Some((subject, bound))
 }
 
-/// Preserve the direct interval check on literal subjects that were not
-/// folded as constants. Ordered intervals did not admit Ne constraints.
-pub(super) fn literal_subject_intervals_conflict(expr: &Expr, context: &[Expr]) -> bool {
-    let Some((subject, target)) = compact_bound(expr) else { return false; };
-    if subject.as_lit().is_none() || matches!(target, ConstraintBound::Ne(_)) {
-        return false;
-    }
-    context.iter().filter_map(compact_bound).any(|(other, bound)| {
-        !matches!(bound, ConstraintBound::Ne(_))
-            && subject == other
-            && bounds_contradict(bound, target)
-    })
-}
-
 /// 检查两个同 subject 约束是否矛盾（域交集为空）。
 ///
 /// 前提：调用方已确认 `a.subject == b.subject`。

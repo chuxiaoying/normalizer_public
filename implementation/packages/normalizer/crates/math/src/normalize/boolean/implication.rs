@@ -19,18 +19,8 @@ pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bo
 }
 
 pub(super) fn relation_cardinality_contradicts(left: &Expr, right: &Expr) -> bool {
-    exists_with_opposite(left, right, relation_count_zero_relation)
-}
-
-pub(super) fn relation_exists_complements(left: &Expr, right: &Expr) -> bool {
-    exists_with_opposite(left, right, relation_not_exists_true_relation)
-}
-
-fn exists_with_opposite(
-    left: &Expr, right: &Expr, opposite: fn(&Expr) -> Option<&RelationExpr>,
-) -> bool {
-    // Neither a count comparison nor a negated Exists is itself a positive
-    // Exists. If both sides are positive, neither orientation can succeed.
+    // A count comparison is not itself a positive Exists. If both
+    // sides are positive, neither orientation can succeed.
     let (exists_relation, other) = if let Some(relation) = relation_exists_true_relation(left) {
         (relation, right)
     } else if let Some(relation) = relation_exists_true_relation(right) {
@@ -38,7 +28,7 @@ fn exists_with_opposite(
     } else {
         return false;
     };
-    opposite(other).is_some_and(|relation| relation_cardinality_input_matches(exists_relation, relation))
+    relation_count_zero_relation(other).is_some_and(|relation| relation_cardinality_input_matches(exists_relation, relation))
 }
 
 pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -> bool {
@@ -61,12 +51,6 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     relation_cardinality_input_matches(left_relation, right_relation)
 }
 
-/// Emptiness of an identical input implies emptiness of any strict chain
-/// of selections over that input. Do not infer row identity from aliases.
-pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
-    false
-}
-
 pub(super) fn relation_cardinality_input_matches(
     left: &RelationExpr,
     right: &RelationExpr,
@@ -77,19 +61,12 @@ pub(super) fn relation_cardinality_input_matches(
 pub(super) fn relation_exists_true_relation(
     expr: &Expr,
 ) -> Option<&RelationExpr> {
-    let Some((RelationAggregateKind::Exists, relation, select_expr, default_expr)) =
+    let Some((RelationAggregateKind::Exists, relation, _, _)) =
         expr.as_relation_aggregate()
     else {
         return None;
     };
     Some(relation)
-}
-
-fn relation_not_exists_true_relation(expr: &Expr) -> Option<&RelationExpr> {
-    let (UnaryOpKind::Not, exists) = expr.as_unary_op()? else {
-        return None;
-    };
-    relation_exists_true_relation(exists)
 }
 
 pub(super) fn relation_count_zero_relation(expr: &Expr) -> Option<&RelationExpr> {

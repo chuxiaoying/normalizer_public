@@ -106,13 +106,7 @@ pub(crate) fn rebuild_with_children_simplified(
             }
         }
 
-        // ArrayLit：对每个 item 递归化简，不跨 item 合并/等价变换。
-        // 这与 HeapRef 的 passthrough 不同——ArrayLit 的 items 本身是 Expr，
-        // 可能含 BinOp/Call 等需要化简的子表达式。
-        ExprKind::ArrayLit(items) => {
-            let new_items: Vec<Expr> = items.iter().map(|a| recurse(a)).collect();
-            expr.clone()
-        }
+        ExprKind::ArrayLit(_) => expr.clone(),
     }
 }
 

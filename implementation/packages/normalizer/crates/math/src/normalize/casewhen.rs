@@ -25,7 +25,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
         },
     );
     let gate_skipped = flatten_size > 32_768 || flatten_depth > 16;
-    let output = simplify_impl(expr, ctx, gate_skipped);
+    let output = simplify_impl(expr, ctx);
     if let Some(start) = start {
         let skip_reason = if gate_skipped {
             Some("flatten_cost_gate")
@@ -53,7 +53,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
     output
 }
 
-fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_skipped: bool) -> Expr {
+fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
     if let ExprKind::CaseWhen { branches } = expr.kind() {
         if let Some(value) = redundant_integer_point_arm(branches) {
             return value;
@@ -282,7 +282,7 @@ fn simplify_impl(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, gate_s
 // total value is redundant. Do not substitute into partial operands,
 // calls, relation bodies, floating point operations or word operators.
 fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
-    use crate::{builder as b, BinOpKind as B, Lit, UnaryOpKind};
+    use crate::{builder as b, BinOpKind as B, Lit};
     let [(condition, yes), (always, no)] = branches else { return None; };
     if always.as_bool() != Some(true) { return None; }
     let (op, left, right) = condition.as_binop()?;
@@ -345,7 +345,7 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
     };
 
     let mut out: Vec<(Expr, Expr)> = Vec::new();
-    for ((cond, value), domain) in branches.iter().zip(effective_domains.into_iter()) {
+    for ((_, value), domain) in branches.iter().zip(effective_domains.into_iter()) {
         if value != &default_value {
             let displayed_domain = crate::normalize(domain);
             for disjunct in flatten_or(&displayed_domain) {
@@ -878,7 +878,7 @@ fn select_first_default(expr: &Expr) -> Option<Expr> {
         return None;
     };
     for (value, default, invert) in [(yes, no, false), (no, yes, true)] {
-        let Some((crate::RelationAggregateKind::FirstValue, ordered, Some(select), Some(null))) =
+        let Some((crate::RelationAggregateKind::FirstValue, ordered, Some(select), Some(_))) =
             value.as_relation_aggregate()
         else {
             continue;

@@ -103,30 +103,6 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
 /// Closed numeric vector construction. These are immutable values, not
 /// JavaScript allocations whose identity or mutation can be observed.
 pub fn lifted_number_vector(items: Vec<Expr>) -> Result<Expr, &'static str> {
-    use crate::{BinOpKind as Op, SymVarOrigin, UnaryOpKind::Not};
-
-    fn integer(value: &Expr) -> bool {
-        if value.as_lit().and_then(crate::Lit::as_integer).is_some() { return true; }
-        if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
-            return primitive_type == "integer" && !name.starts_with('$') && !name.contains('.');
-        }
-        if let Some((arms, fallback)) = value.as_total_case_when() {
-            return arms.iter().all(|(guard, arm)| boolean(guard) && integer(arm))
-                && integer(fallback);
-        }
-        false
-    }
-
-    fn boolean(value: &Expr) -> bool {
-        if value.as_bool().is_some() { return true; }
-        if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
-            return primitive_type == "boolean" && !name.starts_with('$') && !name.contains('.');
-        }
-        match value.as_binop() {
-            _ => false,
-        }
-    }
-
     fn lift(items: Vec<Expr>, budget: &mut usize) -> Result<Expr, &'static str> {
         *budget = budget.checked_sub(1).ok_or("readonly Vector CASE lift exceeds its expansion budget")?;
         let Some((index, (arms, fallback))) = items.iter().enumerate()
@@ -164,9 +140,8 @@ pub fn ordered_text_map_entries(expr: &Expr) -> Option<&[Expr]> {
 }
 
 pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'static str> {
-    use crate::SymVarOrigin;
     let mut keys = std::collections::BTreeSet::new();
-    for (key, value) in entries {
+    for (key, _) in entries {
         if !keys.insert(key) { return Err("readonly Map requires unique literal keys"); }
     }
     // After seven independent decisions the next level would need 511

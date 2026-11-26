@@ -2,7 +2,7 @@
 //! evidence precedes sorting; Add also represents Java text concatenation.
 //! No source names, fixture names or rendered expressions choose rewrite rules.
 use crate::{
-    builder as b, expr::ExprKind, BinOpKind as B, Expr, Lit, SortContext, SymVarOrigin, UnaryOpKind,
+    builder as b, expr::ExprKind, BinOpKind as B, Expr, Lit, SortContext, SymVarOrigin,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Zero};

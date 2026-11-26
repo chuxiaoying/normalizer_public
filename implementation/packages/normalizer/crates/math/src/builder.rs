@@ -17,7 +17,7 @@
 //! 完成、任务与复合时序绑定使用各自的构造器。
 //! 业务 Pojo 必须用 HeapRef，禁止用 SymVar 表达。
 
-use crate::domains::primitive::registry::{func_arity, FuncKey};
+use crate::domains::primitive::registry::FuncKey;
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 use crate::symvar::{ScalarSymbolType, SymVarOrigin};
 use std::cell::RefCell;
@@ -28,7 +28,6 @@ use std::time::Instant;
 static CONDITIONS_COVER_CALLS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_GROUP_SPLITS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_NORMALIZE_FALLBACKS: AtomicU64 = AtomicU64::new(0);
-static CONDITIONS_COVER_DISJUNCTION_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_DISJUNCTION_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_DIRECT_COMPLEMENTS: AtomicU64 = AtomicU64::new(0);
 static CONDITIONS_COVER_TRUTH_TABLE_PRECHECKS: AtomicU64 = AtomicU64::new(0);
@@ -661,22 +660,6 @@ fn longest_cached_disjunction_subset(conds: &[Expr]) -> Option<(Vec<usize>, Expr
 
         None
     })
-}
-
-fn conditions_cover_disjunction_cache_get(conds: &[Expr]) -> Option<Expr> {
-    let cached =
-        CONDITIONS_COVER_DISJUNCTION_CACHE.with(|cache| cache.borrow().get(conds).cloned());
-    if crate::profile::cache_observation_enabled() {
-        crate::profile::cache_lookup(
-            "proof",
-            "conditions_cover_disjunction",
-            cached.is_some(),
-            proof_key_hash(conds),
-            conds.iter().map(Expr::size).sum(),
-            "conditions_cover_all",
-        );
-    }
-    cached
 }
 
 fn conditions_cover_disjunction_cache_insert(conds: &[Expr], value: Expr) {
