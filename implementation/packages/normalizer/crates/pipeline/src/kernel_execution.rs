@@ -1110,10 +1110,8 @@ impl Engine<'_> {
             ProjectedField(&'a Expr, &'a str),
         }
 
-        let observation = if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
-            if primitive_type != "integer" {
-                return false;
-            }
+        // The caller already established exact integer operand types.
+        let observation = if let Some(SymVarOrigin::External { binding_id, path, .. }) = value.as_sym_var() {
             match path.as_slice() {
                 [] => Observation::Scalar(*binding_id),
                 [field] => Observation::Field(*binding_id, field),
@@ -1152,8 +1150,10 @@ impl Engine<'_> {
             }
             let response = receipt.response();
             match observation {
-                Observation::Field(..) if !spec.throwing() =>
-                    b::path_implies(&path, &event.guard),
+                // A direct field with this receipt identity was issued from
+                // its bare completion root. Throwing ports project from
+                // completion.value instead; external state has another ID.
+                Observation::Field(..) => b::path_implies(&path, &event.guard),
                 Observation::ProjectedField(record, _) if record == &spec.normal_value(response) => {
                     let acquired = b::and(event.guard.clone(), spec.normal_condition(response));
                     b::path_implies(&path, &acquired)
