@@ -149,8 +149,8 @@ fn simplify_reference_comparison(expr: &Expr) -> Option<Expr> {
         return None;
     }
     let positive = |value: &Expr| value.as_heap_ref().filter(|id| *id > 0);
-    let distinct_positive =
-        matches!((positive(left), positive(right)), (Some(a), Some(b)) if a != b);
+    // The earlier reflexive comparison has already handled equal identities.
+    let distinct_positive = positive(left).is_some() && positive(right).is_some();
     let positive_vs_null = (left.is_null() && positive(right).is_some())
         || (right.is_null() && positive(left).is_some());
     if distinct_positive || positive_vs_null {

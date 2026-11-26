@@ -112,7 +112,7 @@ fn external_call(
     let JavaExpr::Ident(receiver) = receiver else { return None; };
     let &(qualified, interface) = bindings.get(receiver.as_str())?;
     (!program.classes().iter().any(|class| class.interfaces().iter()
-        .any(|ty| ty.as_str() == qualified || ty == interface.simple_name()))
+        .any(|ty| ty.as_str() == qualified))
         && super::source_ports::declares_bodyless_member(interface, method, args.len()))
         .then(|| format!("{qualified}.{method}"))
 }

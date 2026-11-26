@@ -222,7 +222,7 @@ fn factor_common_or_disjunct_under_and(conjuncts: &[Expr]) -> Option<Expr> {
                     left_rest.push(left.clone());
                 }
             }
-            if common.is_empty() || left_rest.is_empty() {
+            if common.is_empty() {
                 continue;
             }
 

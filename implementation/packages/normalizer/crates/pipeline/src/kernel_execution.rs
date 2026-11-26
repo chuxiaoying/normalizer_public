@@ -522,7 +522,7 @@ impl Engine<'_> {
                 S::ExprStmt(call @ J::MethodCall { .. }) => {
                     self.java_expr(call, id, env, path)?;
                 }
-                S::ForEach { var_type, var_name, iterable, body } if crate::normalized::integral(var_type) => {
+                S::ForEach { var_name, iterable, body, .. } => {
                     let (total, offset) = crate::normalized::array_sum(var_name, body)
                         .ok_or_else(|| fail("for-each requires an exact source array sum"))?;
                     let array = self.java_expr(iterable, id, env, path.clone())?;
