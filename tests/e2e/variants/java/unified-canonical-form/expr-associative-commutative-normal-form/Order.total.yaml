@@ -37,26 +37,26 @@
   expect:
     - path: [R]
       value: base * value * value
-- name: distributing-a-right-case-does-not-exchange-subtraction-operands
+- name: a-right-case-stays-the-subtrahend-without-net-simplification
   edits:
     - { from: 'return value + base;', to: 'return base - (value > 0 ? 3 : 7);' }
   expect:
     - path: [R]
       value: |-
-        CASE
-          WHEN value <= 0 THEN base - 7
-          ELSE base - 3
+        base - CASE
+          WHEN value > 0 THEN 3
+          ELSE 7
         END
-- name: distributing-a-left-case-keeps-its-value-as-the-minuend
+- name: a-left-case-stays-the-minuend-without-net-simplification
   edits:
     - { from: 'return value + base;', to: 'return (value > 0 ? 3 : 7) - base;' }
   expect:
     - path: [R]
       value: |-
         CASE
-          WHEN value <= 0 THEN 7 - base
-          ELSE 3 - base
-        END
+          WHEN value > 0 THEN 3
+          ELSE 7
+        END - base
 - name: two-cases-do-not-form-a-cross-product-for-subtraction
   edits:
     - { from: 'return value + base;', to: 'return (base > 0 ? 3 : 7) - (value > 0 ? 1 : 2);' }
@@ -64,11 +64,11 @@
     - path: [R]
       value: |-
         CASE
-          WHEN base <= 0 THEN 7
-          ELSE 3
+          WHEN base > 0 THEN 3
+          ELSE 7
         END - CASE
-          WHEN value <= 0 THEN 2
-          ELSE 1
+          WHEN value > 0 THEN 1
+          ELSE 2
         END
 - name: acquired-exact-input-subtracts-to-zero
   edits:
@@ -82,6 +82,6 @@
     - path: [R]
       value: |-
         CASE
-          WHEN value <= 0 THEN 2
-          ELSE 0
+          WHEN value > 0 THEN 0
+          ELSE 2
         END

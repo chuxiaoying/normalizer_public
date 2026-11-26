@@ -23,8 +23,8 @@
     - path: [R]
       value: |-
         CASE
-          WHEN quantity <= 5 THEN 20
-          ELSE 30
+          WHEN quantity > 5 THEN 30
+          ELSE 20
         END
 - name: partition-endpoint-beyond-signed-word
   edits:

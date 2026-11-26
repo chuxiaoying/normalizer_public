@@ -18,6 +18,6 @@
     - path: [R]
       value: |-
         CASE
-          WHEN count <= 1 THEN 0
-          ELSE count
+          WHEN count > 1 THEN count
+          ELSE 0
         END

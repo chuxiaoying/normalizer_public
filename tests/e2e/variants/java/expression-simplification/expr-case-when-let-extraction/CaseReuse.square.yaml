@@ -20,6 +20,6 @@
     - path: [R]
       value: |-
         CASE
-          WHEN extra <= 0 THEN 0
-          ELSE COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0) * COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0)
+          WHEN extra > 0 THEN COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0) * COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0)
+          ELSE 0
         END
