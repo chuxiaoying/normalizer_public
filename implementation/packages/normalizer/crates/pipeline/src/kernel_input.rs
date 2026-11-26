@@ -406,10 +406,11 @@ impl Loaded {
     /// Closed source entrance: consume the exact AST validated by the source
     /// capability gate. No YAML roundtrip, native stand-in or general executor.
     pub fn from_parsed_source(program: JavaProgram, entry: &str) -> Result<Self> {
-        crate::normalized::validate(&program, entry)?;
-        let source_layouts = crate::normalized::source_layouts(&program)?;
-        let source_exception_parents = crate::normalized::source_exceptions(&program)?;
-        let source_ports = crate::normalized::source_ports::declarations(&program, &source_exception_parents)?;
+        let crate::normalized::SourceEvidence {
+            layouts: source_layouts,
+            exception_parents: source_exception_parents,
+            ports: source_ports,
+        } = crate::normalized::validate(&program, entry)?;
         let ports = source_ports::contracts(&program, &source_ports)?;
         let exceptions = source_exception_parents
             .keys()
@@ -583,25 +584,20 @@ impl Loaded {
                 !simulator_parser::is_reserved_identifier(c.simple_name()),
                 "reserved Java class name; rename during preprocessing",
             )?;
-            need(classes.insert(c.full_name()), "duplicate class")?;
-            need(
-                (c.supertype().is_none()
-                        || self
-                            .project
-                            .source_exception_parents
-                            .contains_key(&c.full_name()))
-                    && (c.interfaces().is_empty() || self.project.direct_source)
-                    && (!c.is_interface() || self.project.source_ports.values().any(|p| p.interface==c.full_name())
-                        || (self.project.direct_source && crate::normalized::plain_source_interface(c)))
-                    && (c.fields().is_empty()
-                        || self.project.source_exception_parents.contains_key(&c.full_name())
-                        || self.project.source_layouts.contains_key(&c.full_name()))
-                    && c.annotations().is_empty()
-
-                    && (c.imports().is_empty() || crate::normalized::supported_source_imports(c))
-                    && !c.has_unbound_imports(),
-                "unsupported class shape",
-            )?;
+            if !self.project.direct_source {
+                // Generated carriers do not have the source admission proof.
+                need(classes.insert(c.full_name()), "duplicate class")?;
+                need(
+                    c.supertype().is_none()
+                        && c.interfaces().is_empty()
+                        && !c.is_interface()
+                        && c.fields().is_empty()
+                        && c.annotations().is_empty()
+                        && (c.imports().is_empty() || crate::normalized::supported_source_imports(c))
+                        && !c.has_unbound_imports(),
+                    "unsupported class shape",
+                )?;
+            }
             if let Some(value) = self
                 .project
                 .result_value_types
@@ -618,22 +614,13 @@ impl Loaded {
                 continue;
             }
             for m in c.methods() {
-                need(
-                    !simulator_parser::is_reserved_identifier(m.name()),
-                    "reserved Java method name; rename during preprocessing",
-                )?;
-                need(
-                    m.annotations().is_empty() || self.project.direct_source && crate::normalized::nullable_text_return(c, m),
-                    "unsupported method shape",
-                )?;
                 let id = format!("{}.{}", c.full_name(), m.name());
-                need(!e.methods.contains_key(&id), "duplicate/overloaded method")?;
+                if !self.project.direct_source {
+                    need(m.annotations().is_empty(), "unsupported method shape")?;
+                    need(!e.methods.contains_key(&id), "duplicate/overloaded method")?;
+                }
                 self.project.result_type(m.return_type())?;
-                for (t, name) in m.params() {
-                    need(
-                        !simulator_parser::is_reserved_identifier(name),
-                        "reserved Java parameter name; rename during preprocessing",
-                    )?;
+                for (t, _) in m.params() {
                     self.project.parameter_type(t)?;
                 }
                 e.methods.insert(id, m);

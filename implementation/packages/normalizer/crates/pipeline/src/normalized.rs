@@ -319,9 +319,14 @@ fn validate_protected_try(body: &[S], id: &str) -> Result<(), String> {
     Err(error("NORM-CATCH-BODY", id))
 }
 
-/// Validate ALL supplied methods, including unused helpers. Explicitly reject
-/// unsupported shapes instead of sending them to legacy semantic inference.
-pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
+pub(crate) struct SourceEvidence {
+    pub(crate) layouts: BTreeMap<String, BTreeMap<String, String>>,
+    pub(crate) exception_parents: BTreeMap<String, String>,
+    pub(crate) ports: BTreeMap<String, source_ports::SourcePort>,
+}
+
+/// Validate every supplied method, including unused helpers.
+pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvidence, String> {
     external_polling::validate_entry(program, entry)?;
     let exceptions = source_exceptions(program)?;
     let layouts = source_layouts(program)?;
@@ -466,7 +471,7 @@ pub fn validate(program: &JavaProgram, entry: &str) -> Result<(), String> {
     for id in graph.keys() {
         visit(id, &graph, &mut BTreeSet::new(), &mut done)?;
     }
-    Ok(())
+    Ok(SourceEvidence { layouts, exception_parents: exceptions, ports })
 }
 
 enum SourceCall {
