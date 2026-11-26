@@ -89,16 +89,7 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
         }
         result
     }
-    if let Some(t) = s.strip_prefix("task<").and_then(|s| s.strip_suffix('>')) {
-        let t = Ty::parse(t)?;
-        need(
-            t.state_value() && !matches!(t, Ty::Task(_)),
-            "task result must be a closed non-task value; adopt nested promises explicitly",
-        )?;
-        return Ok(Some(Ty::Task(Box::new(t))));
-    }
-    let vector_source = s.strip_suffix('?').unwrap_or(s);
-    if let Some(t) = vector_source
+    if let Some(t) = s
         .strip_prefix("vector<")
         .and_then(|s| s.strip_suffix('>'))
     {

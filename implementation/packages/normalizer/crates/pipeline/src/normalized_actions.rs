@@ -107,8 +107,6 @@ pub(super) enum Action {
     },
     Catch {
         classes: Vec<String>,
-        #[serde(default)]
-        name: Option<String>,
         body: Vec<Action>,
         handler: Vec<Action>,
     },
@@ -169,12 +167,6 @@ impl Project {
                     "invalid port parameter",
                 )?;
                 validate(&Ty::parse(&a.typ)?)?;
-                if let Some(observation_type) = &a.observation_type {
-                    need(
-                        Ty::parse(observation_type)?.state_value(),
-                        "port observation type must be a closed state value",
-                    )?;
-                }
             }
             let mut exceptions = BTreeSet::new();
             for exception in &p.throws {
@@ -433,7 +425,6 @@ impl Engine<'_> {
                 }
                 Action::Catch {
                     classes,
-                    name,
                     body,
                     handler,
                 } => {
@@ -442,27 +433,10 @@ impl Engine<'_> {
                         "catch requires explicit concrete exception classes",
                     )?;
                     let mut seen = std::collections::BTreeSet::new();
-                    let mut payload_type: Option<Ty> = None;
                     for class in classes {
                         need(seen.insert(class), "duplicate caught exception class")?;
-                        let type_only = self.project.type_only_exception(class);
-                        need(name.is_some() || type_only,
+                        need(self.project.type_only_exception(class),
                             "catch without payload binding accepts only declared type-only exceptions; preprocess observed exception payload explicitly")?;
-                        let ty = if type_only {
-                            Ty::Unit
-                        } else {
-                            Ty::parse(
-                                self.project
-                                    .exceptions
-                                    .get(class)
-                                    .ok_or_else(|| fail("undeclared caught exception"))?,
-                            )?
-                        };
-                        if let Some(previous) = &payload_type {
-                            need(previous == &ty,
-                                "caught payload types differ; use separate catches or an explicit tagged value")?;
-                        }
-                        payload_type = Some(ty);
                     }
                     let parent = std::mem::replace(
                         &mut self.realtime_completion,
@@ -485,28 +459,6 @@ impl Engine<'_> {
                                 .fold(b::lit_bool(false), |g, alt| b::or(g, alt.guard.clone())),
                         );
                         let mut local = env.clone();
-                        if let Some(name) = name {
-                            let mut values = caught
-                                .iter()
-                                .filter_map(|alt| match &alt.outcome {
-                                    realtime_state::CompletionOutcome::Throw {
-                                        payload, ..
-                                    } => Some((alt.guard.clone(), payload.clone().unwrap_or_else(b::lit_null))),
-                                    _ => None,
-                                })
-                                .rev();
-                            let (_, last) = values
-                                .next()
-                                .ok_or_else(|| fail("caught payload is missing"))?;
-                            let payload = values.fold(last, |rest, (guard, value)| {
-                                realtime_state::join_value(guard, value, rest)
-                            });
-                            Self::bind_local(
-                                &mut local,
-                                name,
-                                Value::Term(payload_type.unwrap(), payload),
-                            )?;
-                        }
                         let enclosing = self.caught_exceptions.replace(caught);
                         self.action_path = math::normalize(b::and(path.clone(), guard.clone()));
                         self.realtime_completion = realtime_state::Completion::Continue;

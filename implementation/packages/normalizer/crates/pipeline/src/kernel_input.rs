@@ -215,8 +215,6 @@ struct Parameter {
     name: String,
     #[serde(rename = "type")]
     typ: String,
-    #[serde(default)]
-    observation_type: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -23,8 +23,9 @@ function pathOf(node, sf) {
   return null;
 }
 
+// Callers require an expression. Array holes remain explicit
+// OmittedExpression nodes rather than fabricated value expressions.
 function expr(node, sf) {
-  if (!node) return { op: 'undefined' };
   if (ts.isParenthesizedExpression(node)) return expr(node.expression, sf);
   // These are compile-time annotations, not runtime wrappers. Keeping them
   // opaque would hide calls underneath `await nativeRpc(...) as Reply`.

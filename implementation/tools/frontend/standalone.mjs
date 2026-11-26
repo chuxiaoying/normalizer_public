@@ -203,7 +203,7 @@ function compile(source, file, entry, physicalPath) {
       return {type: 'bool', node: internal(expr.operator === '===' ? 'eq' : 'gt', {left: a.node, right: b.node})};
     }
     if (expr.op === 'array') {
-      if (expr.items.some(item => ['opaque', 'undefined'].includes(item.op))) fail('readonly Vector literal requires a closed list of numbers');
+      if (expr.items.some(item => item.op === 'opaque')) fail('readonly Vector literal requires a closed list of numbers');
       const items = expr.items.map(expression);
       if (items.some(item => item.type !== 'number')) fail('readonly Vector literal requires a closed list of numbers');
       return {type: 'number[]', node: internal('value.number_vector', {items: items.map(item => item.node)})};
@@ -254,6 +254,11 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
   }};
 }
 
+function publishKernelFailure(result) {
+  process.stderr.write(result.stderr || '[NORM-JS-MODULE] kernel failed without a diagnostic\n');
+  process.exitCode = result.status ?? 1;
+}
+
 try {
   const [kernel, rootArg, file, entry] = process.argv.slice(2);
   if (!kernel || !rootArg || !file || !entry || !/\.(js|ts)$/.test(file)) fail('expected PROJECT_ROOT, a relative .js or .ts file, and an exported function');
@@ -264,8 +269,7 @@ try {
     const result = spawnSync(kernel, ['--validate-standalone-closure'], {input: JSON.stringify(closure), encoding: 'utf8'});
     if (result.error) throw result.error;
     if (result.status === 0 || result.stdout) fail('expected a kernel closure failure with no result');
-    process.stderr.write(result.stderr || '[NORM-JS-MODULE] kernel failed without a diagnostic\n');
-    process.exitCode = result.status ?? 1;
+    publishKernelFailure(result);
   } else {
     const temp = mkdtempSync(join(tmpdir(), 'normalizer-js-module-'));
     try {
@@ -276,8 +280,7 @@ try {
       const result = spawnSync(kernel, ['--project', projectPath, binding], {encoding: 'utf8'});
       if (result.error) throw result.error;
       if (result.status !== 0) {
-        process.stderr.write(result.stderr || '[NORM-JS-MODULE] kernel failed without a diagnostic\n');
-        process.exitCode = result.status ?? 1;
+        publishKernelFailure(result);
       } else {
         process.stdout.write(result.stdout);
       }

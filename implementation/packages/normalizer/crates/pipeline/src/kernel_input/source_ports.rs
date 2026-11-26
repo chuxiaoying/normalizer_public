@@ -56,7 +56,6 @@ pub(super) fn contracts(
                     Ok(Parameter {
                         name: name.clone(),
                         typ: ty.describe(),
-                        observation_type: None,
                     })
                 })
                 .collect::<Result<_>>()?;
