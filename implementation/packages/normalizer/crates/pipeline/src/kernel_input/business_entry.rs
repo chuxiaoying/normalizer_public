@@ -581,6 +581,25 @@ mod public_entry_admission {
     }
 
     #[test]
+    fn declared_java_domains_render_without_coercing_record_or_array_shape() {
+        let program = simulator_parser::parse(
+            "class Row { int value; } class Entry {
+                 static java.lang.String read(int quantity, double price, boolean ready, Row[] rows) {
+                     return \"ok\";
+                 }
+             }",
+            "Entry.java",
+            &simulator_parser::ParseOptions::default(),
+        ).unwrap();
+        let entry = &program.find_class("Entry").unwrap().methods()[0];
+        for ((ty, _), expected) in entry.params().iter().zip(["number", "number", "bool", "Row[]"]) {
+            assert_eq!(source_type(ty).unwrap(), expected);
+        }
+        assert_eq!(entry.params().len(), 4);
+        assert_eq!(source_type(entry.return_type()).unwrap(), "text");
+    }
+
+    #[test]
     fn a_composite_result_needs_agreement_between_the_ir_type_and_public_declaration() {
         use super::super::Ty;
         let mut entry = supplied_entry();
