@@ -54,6 +54,23 @@ fn owned_column_domain<'a>(
     columns.get(column).map(String::as_str)
 }
 
+#[cfg(test)]
+mod physical_column_contract {
+    use super::*;
+
+    #[test]
+    fn same_column_spelling_in_another_table_is_not_the_same_acquisition() {
+        let columns = BTreeMap::from([
+            ("id".into(), "number".into()),
+            ("memo".into(), "text?".into()),
+        ]);
+        assert_eq!(owned_column_domain(&columns, "bill", ("bill", "id")), Some("number"));
+        assert_eq!(owned_column_domain(&columns, "bill", ("bill", "memo")), Some("text?"));
+        assert_eq!(owned_column_domain(&columns, "bill", ("invoice", "id")), None);
+        assert_eq!(owned_column_domain(&columns, "bill", ("bill", "missing")), None);
+    }
+}
+
 impl<'a> Engine<'a> {
     /// Only declared base tables filtered by closed, typed expressions in the
     /// current source frame are admitted. In particular, raw E/T values or
