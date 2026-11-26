@@ -236,6 +236,20 @@
   expect:
     - { path: [R], value: 'balance + 0.2' }
 
+- name: native-symbolic-decimal-negation-preserves-the-unknown-sign
+  edits:
+    - { from: 'static int addFee(int balance', to: 'static double addFee(double balance' }
+    - { from: 'return balance + fee;', to: 'return -balance;' }
+  expect:
+    - { path: [R], value: '- (balance)' }
+
+- name: native-decimal-order-respects-sign-and-exact-equality
+  edits:
+    - from: 'return balance + fee;'
+      to: 'return -0.25 < -0.125 && -0.25 <= -0.250 && 1.25 >= 1.25 && 1.25 != 1.5 ? 1 : 0;'
+  expect:
+    - { path: [R], value: '1' }
+
 - name: reject-floating-hex-without-significand
   edits:
     - from: "static int addFee"

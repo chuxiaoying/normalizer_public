@@ -68,3 +68,42 @@ pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignme
     if !t.rest().is_empty() { return Ok(None); }
     Ok(Some(Assignment { binding: binding.into(), value: Decimal::Local(name), round: None }))
 }
+
+#[cfg(test)]
+mod decimal_source_contract {
+    use super::*;
+
+    #[test]
+    fn identifier_round_is_not_confused_with_the_round_operation() {
+        let mut tokens = Tokens { source: " round " };
+        let assignment = parse("result", &mut tokens).unwrap().unwrap();
+        assert_eq!(assignment, Assignment {
+            binding: "result".into(), value: Decimal::Local("round".into()), round: None,
+        });
+        let mut unmatched = Tokens { source: "?" };
+        assert_eq!(parse("result", &mut unmatched).unwrap(), None);
+    }
+
+    #[test]
+    fn malformed_and_excessive_exact_literals_reject_only_at_local_ir_admission() {
+        let excessive = format!("round({}, 2)", "1".repeat(4097));
+        for (source, diagnostic) in [
+            ("round(-, 2)", "decimal requires digits"),
+            ("round(7., 2)", "decimal requires digits after the point"),
+            ("round(price, \"two\")", "round scale must be an integer literal"),
+            ("round(price, 4097)", "round scale exceeds 4096"),
+            (excessive.as_str(), "decimal literal exceeds 4096 characters"),
+        ] {
+            let mut tokens = Tokens { source };
+            assert_eq!(parse("result", &mut tokens).unwrap_err(), diagnostic);
+        }
+    }
+
+    #[test]
+    fn maximum_exact_scale_keeps_the_explicit_mode_without_ieee_conversion() {
+        let mut tokens = Tokens { source: "round(-0.125, 4096, HALF_EVEN)" };
+        let assignment = parse("result", &mut tokens).unwrap().unwrap();
+        assert_eq!(assignment.value, Decimal::Literal { coefficient: BigInt::from(-125), scale: 3 });
+        assert_eq!(assignment.round, Some((4096, Some(Mode::HalfEven))));
+    }
+}
