@@ -21,8 +21,8 @@ pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Act
         t.expect(name)?;
         t.expect("(")
     };
-    if tokens.rest().starts_with("value.length(") {
-        op(tokens, "length")?;
+    if let Some(rest) = tokens.rest().strip_prefix("value.length(") {
+        tokens.source = rest;
         let stack = tokens.name()?;
         tokens.expect(")")?;
         tokens.expect("==")?;

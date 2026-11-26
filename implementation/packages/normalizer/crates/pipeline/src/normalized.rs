@@ -384,7 +384,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
         }
         for m in c.methods() {
             let id = format!("{}.{}", name, m.name());
-            if methods.insert(id.clone(), m).is_some() {
+            if methods.insert(id.clone(), (c, m)).is_some() {
                 return Err(error("NORM-OVERLOAD", &id));
             }
             if (!m.annotations().is_empty() && !nullable_text_return(c, m))
@@ -411,7 +411,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
     }
     let mut graph = BTreeMap::new();
     let mut catch_types = CatchTypes::new();
-    for (id, m) in &methods {
+    for (id, &(owner, m)) in &methods {
         let mut calls = Vec::new();
         let Some(body) = m.body() else {
             // A valid native declaration contributes no executable body.
@@ -424,7 +424,6 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             resolved: catch_types.entry(id.clone()).or_default(),
         };
         statements(body, id, &mut calls, &mut catches)?;
-        let owner = program.find_class(id.rsplit_once('.').unwrap().0).unwrap();
         static_types::validate(program, owner, m, id, body)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
@@ -440,11 +439,10 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
                     format!("{owner}.{owner}")
                 }
             };
-            let caller = program.find_class(id.rsplit_once('.').unwrap().0).unwrap();
-            if ports.get(&format!("{}.{target}", caller.full_name())).is_some_and(|port| port.params.len() == arity) {
+            if ports.get(&format!("{}.{target}", owner.full_name())).is_some_and(|port| port.params.len() == arity) {
                 continue;
             }
-            if crate::normalized_text::source_intrinsic(caller, &target, arity).is_some() {
+            if crate::normalized_text::source_intrinsic(owner, &target, arity).is_some() {
                 continue;
             }
             if let Some((local, member)) = target.split_once('.') {
@@ -460,7 +458,7 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             }
             if methods
                 .get(&target)
-                .is_none_or(|method| method.arity() != arity)
+                .is_none_or(|(_, method)| method.arity() != arity)
             {
                 return Err(error(
                     "NORM-UNBOUND-CALL",
