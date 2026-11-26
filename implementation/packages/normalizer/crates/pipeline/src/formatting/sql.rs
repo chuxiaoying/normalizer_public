@@ -455,9 +455,6 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
         }
         return format!("{}\nEND", parts.join("\n  "));
     }
-    if branches.is_empty() {
-        return "CASE END".to_string();
-    }
     let mut parts = vec!["CASE".to_string()];
     for (cond, value) in branches {
         if cond.as_bool() == Some(false) {

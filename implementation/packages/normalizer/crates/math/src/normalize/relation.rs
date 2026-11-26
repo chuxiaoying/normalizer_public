@@ -204,11 +204,8 @@ fn relation_profile_shape(relation: &RelationExpr) -> (usize, usize) {
     match relation {
         RelationExpr::Empty | RelationExpr::Base { .. } => (1, 1),
         RelationExpr::Vector { value, .. } => (1 + value.size(), 1 + value.depth()),
-        RelationExpr::Select { predicate, input } => {
-            let (size, depth) = relation_profile_shape(input);
-            (1 + predicate.size() + size, 1 + depth)
-        }
-        RelationExpr::Project { value, input, .. } => {
+        RelationExpr::Select { predicate: value, input }
+        | RelationExpr::Project { value, input, .. } => {
             let (size, depth) = relation_profile_shape(input);
             (1 + value.size() + size, 1 + depth)
         }
