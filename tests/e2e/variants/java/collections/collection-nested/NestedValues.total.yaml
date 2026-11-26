@@ -65,3 +65,25 @@
   edits:
     - {from: 'int total;', to: 'int total = 0;'}
     - {from: 'total = sum from groups', to: 'total += sum from groups'}
+
+- name: nested-sum-adds-a-signed-initial-product-once
+  edits:
+    - {from: 'int total(int[][] groups)', to: 'int total(int[][] groups, int base, int multiplier)'}
+    - {from: 'int total;', to: 'int total = base * multiplier;'}
+    - {from: 'total = sum from groups', to: 'total += sum from groups'}
+  expect:
+    - {path: [P, parameters, base], add: {position: 1, type: number}}
+    - {path: [P, parameters, multiplier], add: {position: 2, type: number}}
+    - path: [R]
+      value: base * multiplier + COALESCE(SUM(SELECT COALESCE(SUM(SELECT value FROM grp AS value), 0) FROM groups AS grp), 0)
+
+- name: additive-initializer-keeps-both-non-additive-terms
+  edits:
+    - {from: 'int total(int[][] groups)', to: 'int total(int[][] groups, int base, int offset)'}
+    - {from: 'int total;', to: 'int total = base * 2 + offset * 3;'}
+    - {from: 'total = sum from groups', to: 'total += sum from groups'}
+  expect:
+    - {path: [P, parameters, base], add: {position: 1, type: number}}
+    - {path: [P, parameters, offset], add: {position: 2, type: number}}
+    - path: [R]
+      value: base * 2 + offset * 3 + COALESCE(SUM(SELECT COALESCE(SUM(SELECT value FROM grp AS value), 0) FROM groups AS grp), 0)
