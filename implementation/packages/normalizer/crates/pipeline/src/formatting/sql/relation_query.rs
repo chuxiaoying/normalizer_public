@@ -5,18 +5,6 @@ use math::{
     BinOpKind, Expr, SymVarOrigin,
 };
 
-// The SQL predicate owners share one comparison classification and reversal.
-fn reversed_comparison(op: BinOpKind) -> Option<BinOpKind> {
-    Some(match op {
-        BinOpKind::Eq | BinOpKind::Ne => op,
-        BinOpKind::Lt => BinOpKind::Gt,
-        BinOpKind::Le => BinOpKind::Ge,
-        BinOpKind::Gt => BinOpKind::Lt,
-        BinOpKind::Ge => BinOpKind::Le,
-        _ => return None,
-    })
-}
-
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
     let (kind, relation, value, default) = expr.as_relation_aggregate()?;
     if kind == math::RelationAggregateKind::Count && value.is_none() && default.is_none() {
@@ -55,7 +43,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             };
             let fmt_predicate = |expr: &Expr, ctx: &mut crate::FormatCtx| {
                 let comparison = expr.as_binop().and_then(|(op, left, right)|
-                    reversed_comparison(op).map(|reverse| (op, reverse, left, right)));
+                    op.swapped_comparison().map(|reverse| (op, reverse, left, right)));
                 let Some((op, reverse, left, right)) = comparison else {
                     return crate::format_expr_with_ctx(expr, ctx);
                 };
@@ -172,7 +160,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     };
     let predicate_text = |e: &Expr, ctx: &mut crate::FormatCtx| {
         let comparison = e.as_binop().and_then(|(op, left, right)|
-            reversed_comparison(op).map(|reverse| (op, reverse, left, right)));
+            op.swapped_comparison().map(|reverse| (op, reverse, left, right)));
         let Some((op, reverse, left, right)) = comparison else {
             return fmt(e, ctx);
         };

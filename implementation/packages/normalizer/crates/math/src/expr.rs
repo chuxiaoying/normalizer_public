@@ -103,7 +103,7 @@ impl BinOpKind {
 
     /// Equivalent comparison after exchanging the already evaluated operands.
     /// This does not negate the predicate or apply to arithmetic or logic.
-    pub(crate) fn swapped_comparison(self) -> Option<Self> {
+    pub fn swapped_comparison(self) -> Option<Self> {
         Some(match self {
             Self::Lt => Self::Gt,
             Self::Le => Self::Ge,

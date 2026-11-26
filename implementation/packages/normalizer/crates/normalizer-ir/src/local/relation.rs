@@ -34,37 +34,59 @@ pub enum Clause {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Projection {
-    Value(Scalar),
-    NestedSum { alias: String, clauses: Vec<Clause>, value: Scalar },
-    GroupKeys(Vec<Scalar>),
-    JoinCount { source: String, alias: String, on: Scalar, filters: Vec<Scalar> },
-    FirstValue { value: Scalar, fallback: Scalar },
+pub enum Operation {
     FirstArray { offset: num_bigint::BigUint, fallback: Scalar },
-    Fields(Vec<(String, Scalar)>),
-    Fold { accumulator: String, initial: Scalar, body: Scalar },
+    NestedSum { alias: String, clauses: Vec<Clause>, value: Scalar },
+    JoinCount { source: String, alias: String, on: Scalar, filters: Vec<Scalar> },
+    OnRows(RowOperation),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Kind {
+pub enum RowOperation {
+    Project(Vec<(String, Scalar)>),
+    EagerPath(Vec<String>),
+    Sum(Scalar),
+    Count { distinct: bool },
+    GroupCount(Vec<Scalar>),
+    FirstValue { value: Scalar, fallback: Scalar },
+    FirstRow,
+    Fold { accumulator: String, initial: Scalar, body: Scalar },
+    // Well-formed syntax can ask for an unsupported projection. Keep it
+    // distinct from parser-exclusive operation combinations so row-source
+    // and clause diagnostics remain at their original execution boundary.
+    UnsupportedProjection { table_declaration: bool },
+}
+
+impl RowOperation {
+    pub fn introduces_table(&self) -> bool {
+        matches!(self, Self::Project(_) | Self::EagerPath(..)
+            | Self::UnsupportedProjection { table_declaration: true })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Kind {
     Rows,
     Sum,
     First,
-    Reduce,
     Count,
     CountDistinct,
     GroupCount,
+}
+
+enum Yield {
+    Fields(Vec<(String, Scalar)>),
+    Value(Scalar),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Query {
     pub binding: String,
     pub accumulate: bool,
-    pub kind: Kind,
     pub source: String,
     pub alias: String,
     pub clauses: Vec<Clause>,
-    pub projection: Projection,
+    pub operation: Operation,
 }
 
 fn atom(t: &mut Tokens<'_>) -> Result<Scalar, String> {
@@ -152,8 +174,8 @@ pub(super) fn parse(
         t.expect("yield")?;
         let body = scalar(t)?;
         if !t.rest().is_empty() { return Err("trailing reduce relation input".into()); }
-        return Ok(Some(Query { binding, accumulate, kind: Kind::Reduce, source, alias, clauses: vec![],
-            projection: Projection::Fold { accumulator, initial, body } }));
+        return Ok(Some(Query { binding, accumulate, source, alias, clauses: vec![],
+            operation: Operation::OnRows(RowOperation::Fold { accumulator, initial, body }) }));
     }
     let kind = if t.take("sum") {
         Kind::Sum
@@ -204,9 +226,8 @@ fn parse_query_tail(
             let default = scalar(t)?;
             if !t.rest().is_empty() { return Err("trailing scalar first input".into()); }
             return Ok(Query {
-                binding, accumulate, kind, source,
-                alias: String::new(), clauses: vec![],
-                projection: Projection::FirstArray { offset: offset.unwrap_or_default(), fallback: default },
+                binding, accumulate, source, alias: String::new(), clauses: vec![],
+                operation: Operation::FirstArray { offset: offset.unwrap_or_default(), fallback: default },
             });
         }
     }
@@ -219,8 +240,8 @@ fn parse_query_tail(
             keys.push(scalar(t)?);
         }
         if !t.rest().is_empty() { return Err("trailing group key clauses".into()); }
-        return Ok(Query { binding, accumulate, kind, source, alias,
-            clauses: vec![], projection: Projection::GroupKeys(keys) });
+        return Ok(Query { binding, accumulate, source, alias, clauses: vec![],
+            operation: Operation::OnRows(RowOperation::GroupCount(keys)) });
     }
     if kind == Kind::Count && t.take("join") {
         let right = t.name()?;
@@ -236,8 +257,8 @@ fn parse_query_tail(
         }
         if !t.rest().is_empty() { return Err("trailing join count input".into()); }
         return Ok(Query {
-            binding, accumulate, kind, source, alias, clauses: vec![],
-            projection: Projection::JoinCount { source: right, alias: right_alias, on, filters },
+            binding, accumulate, source, alias, clauses: vec![],
+            operation: Operation::JoinCount { source: right, alias: right_alias, on, filters },
         });
     }
     let mut clauses = vec![];
@@ -267,14 +288,14 @@ fn parse_query_tail(
     }
     if matches!(kind, Kind::Count | Kind::CountDistinct) && t.rest().is_empty() {
         return Ok(Query {
-            binding, accumulate, kind, source, alias: alias.clone(), clauses,
-            projection: Projection::Value(Scalar::Path(vec![alias])),
+            binding, accumulate, source, alias, clauses,
+            operation: Operation::OnRows(RowOperation::Count { distinct: kind == Kind::CountDistinct }),
         });
     }
     t.expect("yield")?;
     let mut nested = Tokens { source: t.rest() };
     let has_nested_sum = kind == Kind::Sum && nested.take("sum") && nested.take("from");
-    let mut projection = if t.take("{") {
+    let projection = if t.take("{") {
         let mut fields = vec![];
         let mut names = BTreeSet::new();
         loop {
@@ -289,42 +310,55 @@ fn parse_query_tail(
             }
             t.expect(",")?;
         }
-        Projection::Fields(fields)
+        Yield::Fields(fields)
     } else if has_nested_sum {
         if !allow_nested_sum {
             return Err("nested sum is limited to two dimensions".into());
         }
         *t = nested;
         let inner = parse_query_tail(String::new(), false, t, Kind::Sum, false)?;
-        let Projection::Value(value) = inner.projection else {
+        let Operation::OnRows(RowOperation::Sum(value)) = inner.operation else {
             return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
         };
         if inner.source != alias || inner.alias == alias {
             return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into());
         }
-        Projection::NestedSum { alias: inner.alias, clauses: inner.clauses, value }
+        return Ok(Query {
+            binding, accumulate, source, alias, clauses,
+            operation: Operation::NestedSum { alias: inner.alias, clauses: inner.clauses, value },
+        });
     } else {
-        Projection::Value(scalar(t)?)
+        Yield::Value(scalar(t)?)
     };
     if kind == Kind::First {
         t.expect("else")?;
         if !t.take("null") {
-            let Projection::Value(value) = projection else {
+            let Yield::Value(value) = projection else {
                 return Err("scalar first fallback requires a scalar projection".into());
             };
-            projection = Projection::FirstValue { value, fallback: scalar(t)? };
+            let fallback = scalar(t)?;
+            if !t.rest().is_empty() {
+                return Err(format!("trailing relation input: {}", t.rest()));
+            }
+            return Ok(Query {
+                binding, accumulate, source, alias, clauses,
+                operation: Operation::OnRows(RowOperation::FirstValue { value, fallback }),
+            });
         }
     }
     if !t.rest().is_empty() {
         return Err(format!("trailing relation input: {}", t.rest()));
     }
-    Ok(Query {
-        binding,
-        accumulate,
-        kind,
-        source,
-        alias,
-        clauses,
-        projection,
-    })
+    let operation = match (kind, projection) {
+        (Kind::Rows, Yield::Fields(fields)) => RowOperation::Project(fields),
+        (Kind::Rows, Yield::Value(Scalar::Path(path))) => RowOperation::EagerPath(path),
+        (Kind::Sum, Yield::Value(value)) => RowOperation::Sum(value),
+        (Kind::Count | Kind::CountDistinct, Yield::Value(Scalar::Path(path)))
+            if path.as_slice() == std::slice::from_ref(&alias) =>
+                RowOperation::Count { distinct: kind == Kind::CountDistinct },
+        (Kind::First, Yield::Value(Scalar::Path(path)))
+            if path.as_slice() == std::slice::from_ref(&alias) => RowOperation::FirstRow,
+        _ => RowOperation::UnsupportedProjection { table_declaration: kind == Kind::Rows },
+    };
+    Ok(Query { binding, accumulate, source, alias, clauses, operation: Operation::OnRows(operation) })
 }

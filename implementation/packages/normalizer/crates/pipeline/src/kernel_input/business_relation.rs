@@ -3,7 +3,7 @@
 //! into the shared relation algebra, preserving the original table source.
 use super::*;
 use normalizer_ir::local::{
-    relation::{Clause, Kind, Op, Projection, Query, Scalar},
+    relation::{Clause, Op, Operation, Query, RowOperation, Scalar},
 };
 
 #[derive(Clone, PartialEq)]
@@ -94,7 +94,7 @@ impl Engine<'_> {
     fn table_rows(&mut self, query: &Query, decl: &JavaType, env: &Env) -> Result<Rows> {
         let row = self.query_row_declaration(decl)?;
         let types = self.query_row_types(row)?;
-        let Projection::Fields(fields) = &query.projection else {
+        let Operation::OnRows(RowOperation::Project(fields)) = &query.operation else {
             return Err(fail("table rows require a record projection"));
         };
         let nullable_fields: std::collections::BTreeSet<_> = row.fields().iter()
@@ -299,7 +299,7 @@ impl Engine<'_> {
             need(!self.source_array_writes.contains_key(name),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
-        if let (Kind::Rows, Projection::Value(Scalar::Path(parts))) = (&query.kind, &query.projection) {
+        if let Operation::OnRows(RowOperation::EagerPath(parts)) = &query.operation {
             if matches!(decl, Some(JavaType::Array(item)) if crate::normalized::integral(item)) {
                 let [alias, link, leaf] = parts.as_slice() else {
                     return Err(fail("eager record projection requires one nullable member hop"));
@@ -330,110 +330,113 @@ impl Engine<'_> {
                 return Ok(());
             }
         }
-        if let Projection::FirstArray { offset, fallback } = &query.projection {
-            let Some(Value::Sequence { item: Ty::Integer, name, .. }) =
-                env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };
-            let relation = RelationExpr::base(name, "value");
-            let default = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
-            need(default.ty() == Ty::Integer, "scalar first requires a numeric fallback")?;
-            need(decl.is_none_or(crate::normalized::integral), "scalar first requires a numeric local")?;
-            let index = b::lit_integer(offset.clone());
-            let length = r::relation_count(relation.clone());
-            let none = if offset.bits() == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
-            let nth = r::relation_nth_value(relation, index, b::lit_null());
-            let value = b::case_when(vec![(none, default.scalar()?), (b::lit_bool(true), nth)]);
-            env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
-            return Ok(());
-        }
-        if let Projection::NestedSum { alias, clauses, value } = &query.projection {
-            let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
-                return Err(fail("nested sum requires a directly bound two-dimensional array"));
-            };
-            need(**element == Ty::Integer,
-                "nested sum requires exact integer elements")?;
-            let fresh = |prefix: &str| {
-                let mut name = prefix.to_owned();
-                while env.contains_key(&name) || self.source_relations.tables.contains_key(&name) {
-                    name.push('_');
-                }
-                name
-            };
-            let group = fresh("grp");
-            let item = fresh("value");
-            let outer = RelationExpr::base(name, &group);
-            let mut inner_relation = RelationExpr::vector(b::row_value(&group), &item);
-            let row = BTreeMap::from([(String::new(), Value::Term(Ty::Integer, b::row_value(&item)))]);
-            // The outer binding shadows any equally named entry local, but
-            // is an array here, not an integer projection.
-            let mut inner_locals = env.clone();
-            inner_locals.remove(&query.alias);
-            for clause in clauses {
-                let Clause::Where(p) = clause else {
-                    return Err(fail("nested sum supports scalar filters only"));
-                };
-                let predicate = self.query_value(p, alias, &row, &inner_locals, guard)?;
-                need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
-                inner_relation = RelationExpr::select(predicate.scalar()?, inner_relation);
+        let operation = match &query.operation {
+            Operation::FirstArray { offset, fallback } => {
+                let Some(Value::Sequence { item: Ty::Integer, name, .. }) =
+                    env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };
+                let relation = RelationExpr::base(name, "value");
+                let default = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
+                need(default.ty() == Ty::Integer, "scalar first requires a numeric fallback")?;
+                need(decl.is_none_or(crate::normalized::integral), "scalar first requires a numeric local")?;
+                let index = b::lit_integer(offset.clone());
+                let length = r::relation_count(relation.clone());
+                let none = if offset.bits() == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
+                let nth = r::relation_nth_value(relation, index, b::lit_null());
+                let value = b::case_when(vec![(none, default.scalar()?), (b::lit_bool(true), nth)]);
+                env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
+                return Ok(());
             }
-            need(query.clauses.is_empty(), "nested sum outer clauses require a group-valued operation")?;
-            let element = self.query_value(value, alias, &row, &inner_locals, guard)?;
-            need(element.ty() == Ty::Integer, "sum requires exact integers")?;
-            need(decl.is_none_or(crate::normalized::integral), "nested sum requires a numeric local")?;
-            let summed = r::relation_sum(outer, r::relation_sum(inner_relation, element.scalar()?));
-            let summed = if query.accumulate {
-                let prior = env.get(&query.binding).ok_or_else(|| fail("+= needs an initialized local"))?;
-                need(prior.ty() == Ty::Integer, "+= requires a number")?;
-                b::add(prior.scalar()?, summed)
-            } else { summed };
-            env.insert(query.binding.clone(), Value::Term(Ty::Integer, math::normalize(summed)));
-            return Ok(());
-        }
-        if let Projection::JoinCount { source: other, alias: rhs, on, filters } = &query.projection {
-            let mut names = env.clone();
-            let mut bind = |source: &str, alias: &str| -> Result<RelationExpr> {
-                need(!env.contains_key(alias), "join alias would shadow a local value")?;
-                let Some(Value::Rows(rows)) = env.get(source) else {
-                    return Err(fail("join requires two typed table bindings"));
+            Operation::NestedSum { alias, clauses, value } => {
+                let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
+                    return Err(fail("nested sum requires a directly bound two-dimensional array"));
                 };
-                let RelationExpr::Base { name, alias: bound } = &rows.input else {
-                    return Err(fail("join count currently requires unfiltered table declarations"));
+                need(**element == Ty::Integer,
+                    "nested sum requires exact integer elements")?;
+                let fresh = |prefix: &str| {
+                    let mut name = prefix.to_owned();
+                    while env.contains_key(&name) || self.source_relations.tables.contains_key(&name) {
+                        name.push('_');
+                    }
+                    name
                 };
-                need(name == bound && self.source_relations.tables.contains_key(name),
-                    "join count requires a declared table")?;
-                for (field, value) in &rows.fields {
-                    let value = value.scalar()?;
-                    let (table, column) = value.as_row_value().and_then(|p| p.split_once('.'))
-                        .ok_or_else(|| fail("join requires direct table columns"))?;
-                    need(table == name && field == column, "join table declaration must keep physical column names")?;
-                    need(self.source_relations.tables[name][column] != "text?",
-                        "join count currently requires non-nullable columns")?;
-                    names.insert(format!("{alias}.{field}"),
-                        Value::Term(rows.fields[field].ty(), b::row_value(format!("{alias}.{field}"))));
+                let group = fresh("grp");
+                let item = fresh("value");
+                let outer = RelationExpr::base(name, &group);
+                let mut inner_relation = RelationExpr::vector(b::row_value(&group), &item);
+                let row = BTreeMap::from([(String::new(), Value::Term(Ty::Integer, b::row_value(&item)))]);
+                // The outer binding shadows any equally named entry local, but
+                // is an array here, not an integer projection.
+                let mut inner_locals = env.clone();
+                inner_locals.remove(&query.alias);
+                for clause in clauses {
+                    let Clause::Where(p) = clause else {
+                        return Err(fail("nested sum supports scalar filters only"));
+                    };
+                    let predicate = self.query_value(p, alias, &row, &inner_locals, guard)?;
+                    need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
+                    inner_relation = RelationExpr::select(predicate.scalar()?, inner_relation);
                 }
-                Ok(RelationExpr::base(name, alias))
-            };
-            let outer = bind(&query.source, &query.alias)?;
-            let mut inner = bind(other, rhs)?;
-            let predicate = |expr| {
-                let value = self.query_value(expr, "", &BTreeMap::new(), &names, guard)?;
-                need(value.ty() == Ty::Bool, "join predicate must be bool")?;
-                value.scalar()
-            };
-            let on = predicate(on)?;
-            let dependency = |predicate: &Expr| join_dependency(predicate, &query.alias, rhs);
-            need(dependency(&on) == 3, "join ON must depend on both typed rows")?;
-            inner = RelationExpr::select(on, inner);
-            for clause in filters {
-                let filter = predicate(clause)?;
-                need(dependency(&filter) != 3, "join WHERE may filter one row per clause")?;
-                inner = RelationExpr::select(filter, inner);
+                need(query.clauses.is_empty(), "nested sum outer clauses require a group-valued operation")?;
+                let element = self.query_value(value, alias, &row, &inner_locals, guard)?;
+                need(element.ty() == Ty::Integer, "sum requires exact integers")?;
+                need(decl.is_none_or(crate::normalized::integral), "nested sum requires a numeric local")?;
+                let summed = r::relation_sum(outer, r::relation_sum(inner_relation, element.scalar()?));
+                let summed = if query.accumulate {
+                    let prior = env.get(&query.binding).ok_or_else(|| fail("+= needs an initialized local"))?;
+                    need(prior.ty() == Ty::Integer, "+= requires a number")?;
+                    b::add(prior.scalar()?, summed)
+                } else { summed };
+                env.insert(query.binding.clone(), Value::Term(Ty::Integer, math::normalize(summed)));
+                return Ok(());
             }
-            need(decl.is_none_or(crate::normalized::integral), "join count needs a numeric local")?;
-            // Correlated sum counts every matching pair, with multiplicity.
-            let result = r::relation_sum(outer, r::relation_sum(inner, b::lit_int(1)));
-            env.insert(query.binding.clone(), Value::Term(Ty::Integer, result));
-            return Ok(());
-        }
+            Operation::JoinCount { source: other, alias: rhs, on, filters } => {
+                let mut names = env.clone();
+                let mut bind = |source: &str, alias: &str| -> Result<RelationExpr> {
+                    need(!env.contains_key(alias), "join alias would shadow a local value")?;
+                    let Some(Value::Rows(rows)) = env.get(source) else {
+                        return Err(fail("join requires two typed table bindings"));
+                    };
+                    let RelationExpr::Base { name, alias: bound } = &rows.input else {
+                        return Err(fail("join count currently requires unfiltered table declarations"));
+                    };
+                    need(name == bound && self.source_relations.tables.contains_key(name),
+                        "join count requires a declared table")?;
+                    for (field, value) in &rows.fields {
+                        let value = value.scalar()?;
+                        let (table, column) = value.as_row_value().and_then(|p| p.split_once('.'))
+                            .ok_or_else(|| fail("join requires direct table columns"))?;
+                        need(table == name && field == column, "join table declaration must keep physical column names")?;
+                        need(self.source_relations.tables[name][column] != "text?",
+                            "join count currently requires non-nullable columns")?;
+                        names.insert(format!("{alias}.{field}"),
+                            Value::Term(rows.fields[field].ty(), b::row_value(format!("{alias}.{field}"))));
+                    }
+                    Ok(RelationExpr::base(name, alias))
+                };
+                let outer = bind(&query.source, &query.alias)?;
+                let mut inner = bind(other, rhs)?;
+                let predicate = |expr| {
+                    let value = self.query_value(expr, "", &BTreeMap::new(), &names, guard)?;
+                    need(value.ty() == Ty::Bool, "join predicate must be bool")?;
+                    value.scalar()
+                };
+                let on = predicate(on)?;
+                let dependency = |predicate: &Expr| join_dependency(predicate, &query.alias, rhs);
+                need(dependency(&on) == 3, "join ON must depend on both typed rows")?;
+                inner = RelationExpr::select(on, inner);
+                for clause in filters {
+                    let filter = predicate(clause)?;
+                    need(dependency(&filter) != 3, "join WHERE may filter one row per clause")?;
+                    inner = RelationExpr::select(filter, inner);
+                }
+                need(decl.is_none_or(crate::normalized::integral), "join count needs a numeric local")?;
+                // Correlated sum counts every matching pair, with multiplicity.
+                let result = r::relation_sum(outer, r::relation_sum(inner, b::lit_int(1)));
+                env.insert(query.binding.clone(), Value::Term(Ty::Integer, result));
+                return Ok(());
+            }
+            Operation::OnRows(operation) => operation,
+        };
         let mut locals = env.clone();
         let mut rows = match env.get(&query.source) {
             Some(Value::Rows(rows)) => (**rows).clone(),
@@ -479,7 +482,7 @@ impl Engine<'_> {
                     ordering: vec![],
                 }
             }
-            None if query.kind == Kind::Rows => self.table_rows(
+            None if operation.introduces_table() => self.table_rows(
                 query,
                 decl.ok_or_else(|| fail("table query needs a row declaration"))?,
                 env,
@@ -520,8 +523,8 @@ impl Engine<'_> {
                 }
             }
         }
-        let result = match (&query.kind, &query.projection) {
-            (Kind::Rows, Projection::Fields(fields)) => {
+        let result = match operation {
+            RowOperation::Project(fields) => {
                 rows.fields = fields
                     .iter()
                     .map(|(k, e)| {
@@ -545,7 +548,7 @@ impl Engine<'_> {
                 env.insert(query.binding.clone(), Value::Rows(Box::new(rows)));
                 return Ok(());
             }
-            (Kind::Sum, Projection::Value(expr)) => {
+            RowOperation::Sum(expr) => {
                 let value = self.query_value(expr, &query.alias, &rows.fields, &locals, guard)?;
                 need(value.ty() == Ty::Integer, "sum requires business numbers")?;
                 let sum = r::relation_sum(rows.input, value.scalar()?);
@@ -560,19 +563,17 @@ impl Engine<'_> {
                 };
                 Value::Term(Ty::Integer, math::normalize(sum))
             }
-            (Kind::Count | Kind::CountDistinct, Projection::Value(Scalar::Path(parts)))
-                if rows.fields.contains_key("") && parts.as_slice() == std::slice::from_ref(&query.alias) =>
+            RowOperation::Count { distinct } if rows.fields.contains_key("") =>
             {
                 let row = rows.fields[""].scalar()?;
-                let count = if query.kind == Kind::CountDistinct {
+                let count = if *distinct {
                     r::relation_count_distinct(rows.input, row)
                 } else {
                     r::relation_count_nonnull(rows.input, row)
                 };
                 Value::Term(Ty::Integer, math::normalize(count))
             }
-            (Kind::Count, Projection::Value(Scalar::Path(parts)))
-                if parts.as_slice() == std::slice::from_ref(&query.alias) =>
+            RowOperation::Count { distinct: false } =>
             {
                 // This is the unprojected, no-default cardinality operation.
                 // Preserve its existing SUM(SELECT 1) business representation,
@@ -585,7 +586,7 @@ impl Engine<'_> {
                     Value::Term(Ty::Integer, value)
                 }
             }
-            (Kind::GroupCount, Projection::GroupKeys(keys)) => {
+            RowOperation::GroupCount(keys) => {
                 // Each group is one distinct *tuple* of evaluated keys, not
                 // independent distinct counts and not the source row count.
                 let RelationExpr::Base { name, alias } = &rows.input else {
@@ -604,7 +605,7 @@ impl Engine<'_> {
                 let distinct = RelationExpr::distinct(RelationExpr::project(b::array_lit(keys), "groups", rows.input));
                 Value::Term(Ty::Integer, r::relation_sum(distinct, b::lit_int(1)))
             }
-            (Kind::Reduce, Projection::Fold { accumulator, initial, body }) => {
+            RowOperation::Fold { accumulator, initial, body } => {
                 // In exact arithmetic a fold a := a +/- term(row) equals the
                 // initial value +/- the bag sum. No commutation rule applies to
                 // word, IEEE, arbitrary recurrences or partial per-row terms.
@@ -642,7 +643,7 @@ impl Engine<'_> {
                     }
                 }
             }
-            (Kind::First, Projection::FirstValue { value, fallback }) => {
+            RowOperation::FirstValue { value, fallback } => {
                 need(!rows.ordering.is_empty(), "first requires an ordered input")?;
                 let value = self.query_value(value, &query.alias, &rows.fields, &locals, guard)?;
                 let fallback = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
@@ -655,8 +656,7 @@ impl Engine<'_> {
                     ordered, value.scalar()?, fallback.scalar()?,
                 )))
             }
-            (Kind::First, Projection::Value(Scalar::Path(path))) if matches!(path.as_slice(),[s] if s==&query.alias) =>
-            {
+            RowOperation::FirstRow => {
                 need(!rows.ordering.is_empty(), "first requires an ordered input")?;
                 if let Some(declared) = decl {
                     let JavaType::Class(target) = declared else {
@@ -684,7 +684,9 @@ impl Engine<'_> {
                 env.insert(query.binding.clone(), Value::Term(Ty::Ref, b::heap_ref(id)));
                 return Ok(());
             }
-            _ => return Err(fail("incompatible query operation and projection")),
+            RowOperation::EagerPath(_) | RowOperation::Count { distinct: true }
+            | RowOperation::UnsupportedProjection { .. } =>
+                return Err(fail("incompatible query operation and projection")),
         };
         if let Some(declared) = decl {
             need(

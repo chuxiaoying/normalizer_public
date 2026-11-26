@@ -121,10 +121,11 @@ fn boolean_literal_equality(op: BinOpKind, left: &Expr, right: &Expr) -> Option<
 /// 合法性依赖布尔代数分配律；返回的新 OR 会被 fixpoint 调用 normalize 继续化简，
 /// 所以本函数只负责结构变换，不做具体 AND 化简。
 fn simplify_or_under_and_context(or_expr: &Expr, context: &[Expr]) -> Option<Expr> {
-    let disjuncts = flatten_or(or_expr);
-    if disjuncts.len() < 2 || context.is_empty() {
+    if context.is_empty() {
         return None;
     }
+    // The sole caller has matched a binary OR root.
+    let disjuncts = flatten_or(or_expr);
 
     let mut changed = false;
     let mut kept: Vec<Expr> = Vec::with_capacity(disjuncts.len());
@@ -160,16 +161,7 @@ fn simplify_or_under_and_context(or_expr: &Expr, context: &[Expr]) -> Option<Exp
         }
     }
 
-    if !changed {
-        return None;
-    }
-    if kept.is_empty() {
-        return Some(builder::lit_bool(false));
-    }
-    if kept.len() == 1 {
-        return Some(kept.into_iter().next().unwrap());
-    }
-    Some(rebuild_or(&kept))
+    changed.then(|| rebuild_or(&kept))
 }
 
 fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
@@ -382,13 +374,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         if out.iter().any(|e| e == item) {
             continue;
         }
-        // 互补检测：若已有 NOT(item) 或 item 是已有项的 NOT，整体化简为 false
-        if out
-            .iter()
-            .any(|e| !profile_pair_can_skip_proof_check(e, item) && is_complement(e, item))
-        {
-            return Some(builder::lit_bool(false));
-        }
         // A row alias does not change whether the same relation is empty.
         // The same complement used by OR coverage also refutes conjunctions.
         if out.iter().any(|existing| {
@@ -397,23 +382,8 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         }) {
             return Some(builder::lit_bool(false));
         }
-        // Relation cardinality contradiction:
-        //   Exists(R) && Count(R) == 0 -> false
-        //
-        // This is Relation Calculus cardinality algebra.  It is needed before
-        // executor bounds checks can erase impossible exception domains under a
-        // non-empty path guard; do not encode this as a List.get special case.
-        if out.iter().any(|existing| {
-            !profile_pair_can_skip_proof_check(existing, item)
-                && relation_cardinality_contradicts(existing, item)
-        }) {
-            return Some(builder::lit_bool(false));
-        }
-        // 上下文矛盾：例如 `!Exists(R) && Exists(Select(P,R))`。
-        //
-        // `Exists(Select(P,R)) => Exists(R)` 是 Relation Calculus 的通用
-        // cardinality 蕴含；这里仍只使用当前 boolean 层的窄 proof helper，
-        // 不调用 path_implies/normalize，避免递归自咬。
+        // The context proof checks direct complements and exact Count/Exists
+        // contradictions on this same pair before checking nested conditions.
         if expr_is_false_under_and_context(item, &out)
             || out.iter().any(|existing| {
                 expr_is_false_under_and_context(existing, std::slice::from_ref(item))
@@ -637,13 +607,8 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         return Some(rebuild_and(&context_simplified));
     }
 
-    // 全部过滤掉 → true（空合取 = 恒真）
-    if out.is_empty() {
-        return Some(builder::lit_bool(true));
-    }
-    // 单项 → 该项
-    if out.len() == 1 {
-        return Some(out.into_iter().next().unwrap());
+    if out.len() < 2 {
+        return Some(rebuild_and(&out));
     }
     // AND 和 OR 共用统一正则规范的结构排序键。
     let out = sort_commutative(out, ctx);
@@ -732,11 +697,8 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         out.push(item.clone());
     }
 
-    if out.is_empty() {
-        return Some(builder::lit_bool(false));
-    }
-    if out.len() == 1 {
-        return Some(out.into_iter().next().unwrap());
+    if out.len() < 2 {
+        return Some(rebuild_or(&out));
     }
 
     if let Some(factored) = factor_common_and_conjuncts_under_or(&out) {

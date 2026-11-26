@@ -988,12 +988,19 @@ impl Engine<'_> {
                 } else { (yes, no) };
                 self.choose(condition, yes, no)
             }
-            J::BinOp { op, left, right }
-                if matches!(op, B::Eq | B::Ne | B::Gt | B::Lt | B::Ge | B::Le) =>
-            {
+            J::BinOp { op, left, right } => {
+                let op = match op {
+                    B::Eq => BinOpKind::Eq,
+                    B::Ne => BinOpKind::Ne,
+                    B::Lt => BinOpKind::Lt,
+                    B::Le => BinOpKind::Le,
+                    B::Gt => BinOpKind::Gt,
+                    B::Ge => BinOpKind::Ge,
+                    _ => return Err(fail("unsupported Java expression in pure-array-1")),
+                };
                 let nullable = match (left.as_ref(), right.as_ref()) {
                     (value, J::Lit(JavaLit::Null)) | (J::Lit(JavaLit::Null), value)
-                        if matches!(op, B::Eq | B::Ne) => Some(value),
+                        if matches!(op, BinOpKind::Eq | BinOpKind::Ne) => Some(value),
                     _ => None,
                 };
                 if let Some(operand) = nullable {
@@ -1012,7 +1019,7 @@ impl Engine<'_> {
                     };
                     return Ok(Value::Term(
                         Ty::Bool,
-                        if *op == B::Ne { b::not(null) } else { null },
+                        if op == BinOpKind::Ne { b::not(null) } else { null },
                     ));
                 }
                 let l = self.java_expr(left, id, env, path.clone())?;
@@ -1022,25 +1029,17 @@ impl Engine<'_> {
                 )?;
                 let r = self.java_expr(right, id, env, path.clone())?;
                 if matches!((l.ty(), r.ty()), (Ty::Decimal, Ty::Decimal) | (Ty::Decimal, Ty::Integer) | (Ty::Integer, Ty::Decimal)) {
-                    let op = match op {
-                        B::Eq => BinOpKind::Eq,
-                        B::Ne => BinOpKind::Ne,
-                        B::Lt => BinOpKind::Lt,
-                        B::Le => BinOpKind::Le,
-                        B::Gt => BinOpKind::Gt,
-                        _ => BinOpKind::Ge,
-                    };
                     return Ok(Value::Term(Ty::Bool, math::domains::decimal::binary(op, l.scalar()?, r.scalar()?)));
                 }
                 need(l.ty() == r.ty(), "Java comparison type mismatch")?;
                 let ty = l.ty();
                 need(
-                    matches!(op, B::Eq | B::Ne) || matches!(ty, Ty::Integer),
+                    matches!(op, BinOpKind::Eq | BinOpKind::Ne) || matches!(ty, Ty::Integer),
                     "ordered comparison type",
                 )?;
                 if matches!(l, Value::IntegerFloor { .. }) || matches!(r, Value::IntegerFloor { .. }) {
                     let domain = self.normal_path(path);
-                    if let Some(value) = compare_integer_floor(*op, &l, &r, &domain) {
+                    if let Some(value) = compare_integer_floor(op, &l, &r, &domain) {
                         return Ok(Value::Term(Ty::Bool, b::lit_bool(value)));
                     }
                 }
@@ -1049,19 +1048,12 @@ impl Engine<'_> {
                 need(!matches!(ty, Ty::Record(_)),
                     "member choice record has content but no Java reference identity")?;
                 if ty == Ty::Ref {
-                    let identity = self.source_reference_equality(a, z, *op == B::Ne)?;
+                    let identity = self.source_reference_equality(a, z, op == BinOpKind::Ne)?;
                     return Ok(Value::Term(Ty::Bool, identity));
                 }
                 Ok(Value::Term(
                     Ty::Bool,
-                    match op {
-                        B::Eq => b::eq(a, z),
-                        B::Ne => b::ne(a, z),
-                        B::Gt => b::gt(a, z),
-                        B::Lt => b::lt(a, z),
-                        B::Ge => b::ge(a, z),
-                        _ => b::le(a, z),
-                    },
+                    b::binop_public(op, a, z),
                 ))
             }
             _ => Err(fail("unsupported Java expression in pure-array-1")),
@@ -1070,28 +1062,21 @@ impl Engine<'_> {
 }
 
 // Apply the source host's proof before entering the unconstrained math cache.
-fn compare_integer_floor(op: B, left: &Value, right: &Value, domain: &Expr) -> Option<bool> {
-    fn against_literal(op: B, subject: &Value, bound: &Value, domain: &Expr) -> Option<bool> {
+fn compare_integer_floor(op: BinOpKind, left: &Value, right: &Value, domain: &Expr) -> Option<bool> {
+    fn against_literal(op: BinOpKind, subject: &Value, bound: &Value, domain: &Expr) -> Option<bool> {
         let lower = subject.certified_integer_floor(domain)?;
         let Value::Term(Ty::Integer, bound) = bound else { return None; };
         let bound = bound.as_lit()?.as_integer()?;
         match op {
-            B::Lt if lower >= bound => Some(false),
-            B::Le | B::Eq if lower > bound => Some(false),
-            B::Gt | B::Ne if lower > bound => Some(true),
-            B::Ge if lower >= bound => Some(true),
+            BinOpKind::Lt if lower >= bound => Some(false),
+            BinOpKind::Le | BinOpKind::Eq if lower > bound => Some(false),
+            BinOpKind::Gt | BinOpKind::Ne if lower > bound => Some(true),
+            BinOpKind::Ge if lower >= bound => Some(true),
             _ => None,
         }
     }
-    let swapped = match op {
-        B::Lt => B::Gt,
-        B::Le => B::Ge,
-        B::Gt => B::Lt,
-        B::Ge => B::Le,
-        B::Eq | B::Ne => op,
-        _ => return None,
-    };
-    against_literal(op, left, right, domain).or_else(|| against_literal(swapped, right, left, domain))
+    against_literal(op, left, right, domain)
+        .or_else(|| against_literal(op.swapped_comparison()?, right, left, domain))
 }
 
 impl Engine<'_> {
