@@ -180,8 +180,6 @@ pub struct Project {
     #[serde(default)]
     result_value_types: BTreeMap<String, String>,
     #[serde(default)]
-    value_types: BTreeMap<String, String>,
-    #[serde(default)]
     parameter_value_types: BTreeMap<String, BTreeMap<String, String>>,
 
 }
@@ -367,11 +365,6 @@ impl Project {
         if self.source_owner(t).is_some() {
             return Ok(Ty::Ref);
         }
-        if let JavaType::Class(name) = t {
-            if let Some(value) = self.value_types.get(name) {
-                return Ty::parse(value);
-            }
-        }
         self.java_type(t)
     }
     fn semantic_parameter_type(&self, method: &str, name: &str, t: &JavaType) -> Result<Ty> {
@@ -392,7 +385,6 @@ impl Project {
             if let Some(value) = self
                 .result_value_types
                 .get(name)
-                .or_else(|| self.value_types.get(name))
             {
                 return Ty::parse(value);
             }
@@ -442,7 +434,6 @@ impl Loaded {
             exceptions,
             ports,
             result_value_types: BTreeMap::new(),
-            value_types: BTreeMap::new(),
             parameter_value_types: BTreeMap::new(),
         };
         // The source gate already checked syntax, calls and cycles. Only
@@ -474,13 +465,6 @@ impl Loaded {
             return Err(fail("unsupported schema"));
         }
         need(!project.entries.is_empty(), "no entries")?;
-        need(
-            project
-                .value_types
-                .keys()
-                .all(|name| !project.result_value_types.contains_key(name)),
-            "duplicate composite value alias",
-        )?;
         // A raw DAO/framework SQL port is still an opaque execution request.
         // The normalized kernel only accepts the already-preprocessed relation
         // root and its relational operators.  Keeping this guard at admission
@@ -602,7 +586,6 @@ impl Loaded {
                 .project
                 .result_value_types
                 .get(&c.full_name())
-                .or_else(|| self.project.value_types.get(&c.full_name()))
             {
                 let ty = Ty::parse(value)?;
                 need(!matches!(c.full_name().as_str(), "Object" | "String")
@@ -627,12 +610,7 @@ impl Loaded {
                 e.methods.insert(id, m);
             }
         }
-        for name in self
-            .project
-            .result_value_types
-            .keys()
-            .chain(self.project.value_types.keys())
-        {
+        for name in self.project.result_value_types.keys() {
             need(
                 classes.contains(name.as_str()),
                 "result value carrier class is missing",

@@ -200,10 +200,6 @@ impl EntryContext {
             return Ok((self.qualified("P", name), &parameter.ty));
         };
         match path.as_slice() {
-            [kind, root] if kind == "P" => {
-                let parameter = self.parameters.get(root).ok_or("unbound parameter")?;
-                Ok((self.qualified(kind, root), &parameter.ty))
-            }
             [kind, root, fields @ ..] if kind == "E" && !fields.is_empty() => {
                 let ty = self.state_field(root, fields)?;
                 Ok((format!("{}.{}", self.qualified(kind, root), fields.join(".")), ty))
