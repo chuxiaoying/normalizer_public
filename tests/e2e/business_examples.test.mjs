@@ -30,7 +30,7 @@ function checkExample(project, scene, entry, fixture, variant, seedReject) {
     assert.ok(scene, 'Vue source requires a registered CLI scene');
     args = ['scenario', scene, project, '--entry', entryFunction, '--source', sourceFile];
   } else if (mainFile.endsWith('.ts')) {
-    args = ['module', project, mainFile, entry];
+    args = ['module', project, '--entry', entryFunction];
   } else {
     assert.equal(scene, undefined, 'Java source must use the source CLI route');
     args = ['source', project, entryFunction];
@@ -98,7 +98,7 @@ for (const [name, setup, diagnostic] of [
     const project = mkdtempSync(join(tmpdir(), 'normalizer-ingress-'));
     t.after(() => rmSync(project, { recursive: true, force: true }));
     const { status, stdout, stderr } = invoke(
-      join(root, 'implementation/tools/normalizer'), ['source', setup(project), 'Probe.run'], root);
+      join(root, 'implementation/tools/normalizer'), ['source', setup(project), 'Probe.java#Probe.run'], root);
     assert.notEqual(status, 0);
     assert.equal(stdout, '');
     assert.ok(typeof diagnostic === 'string' ? stderr.includes(diagnostic) : diagnostic.test(stderr), stderr);
@@ -106,8 +106,8 @@ for (const [name, setup, diagnostic] of [
   });
 }
 
-const additionSource = count => '/**\n * @param {number} x\n * @returns {number}\n */\n'
-  + 'export function sum(x) { return x' + ' + 1'.repeat(count) + '; }\n';
+const additionSource = count =>
+  'export function sum(x: number): number { return x' + ' + 1'.repeat(count) + '; }\n';
 
 test('module CLI ingress / linked modules stay in the source root and keep their declared name', t => {
   const workspace = mkdtempSync(join(tmpdir(), 'normalizer-module-link-'));
@@ -116,20 +116,20 @@ test('module CLI ingress / linked modules stay in the source root and keep their
   mkdirSync(project);
   writeFileSync(join(project, 'local.txt'), additionSource(1));
   writeFileSync(join(workspace, 'outside.txt'), additionSource(1));
-  symlinkSync(join(project, 'local.txt'), join(project, 'sum.js'));
-  symlinkSync(join(workspace, 'outside.txt'), join(project, 'outside.js'));
-  mkdirSync(join(project, 'directory.js'));
-  const run = name => invoke(join(root, 'implementation/tools/normalizer'), ['module', project, name, 'sum'], root);
-  const accepted = run('sum.js');
+  symlinkSync(join(project, 'local.txt'), join(project, 'sum.ts'));
+  symlinkSync(join(workspace, 'outside.txt'), join(project, 'outside.ts'));
+  mkdirSync(join(project, 'directory.ts'));
+  const run = name => invoke(join(root, 'implementation/tools/normalizer'), ['module', project, '--entry', name + '#sum'], root);
+  const accepted = run('sum.ts');
   assert.equal(accepted.status, 0, accepted.stderr);
   const actual = YAML.parse(accepted.stdout);
   assertPers(actual, 'in-root module link');
-  assert.equal(actual.entry.function, 'sum.js#sum');
+  assert.equal(actual.entry.function, 'sum.ts#sum');
   assert.equal(actual.R, 'x + 1');
   for (const [name, diagnostic] of [
-    ['outside.js', /\[SOURCE-OUTSIDE-ROOT\].*outside\.js/],
-    ['../other.js', /\[SOURCE-OUTSIDE-ROOT\].*other\.js/],
-    ['directory.js', /\[SOURCE-READ-FAILED\].*directory\.js/],
+    ['outside.ts', /\[SOURCE-OUTSIDE-ROOT\].*outside\.ts/],
+    ['../other.ts', /\[SOURCE-OUTSIDE-ROOT\].*other\.ts/],
+    ['directory.ts', /\[SOURCE-READ-FAILED\].*directory\.ts/],
   ]) {
     const rejected = run(name);
     assert.notEqual(rejected.status, 0);
@@ -144,28 +144,28 @@ test('scenario CLI ingress / original and prepared Vue files stay in the same se
   const project = join(workspace, 'selected');
   mkdirSync(project);
   const original = '<template><Card :amount="7" /></template>\n';
-  const prepared = '/** @componentProp Card#amount.value */\nexport function amount() { return 7; }\n';
+  const prepared = '/** @N componentProp Card#amount.value */\nexport function amount(): number { return 7; }\n';
   writeFileSync(join(project, 'local.vue'), original);
-  writeFileSync(join(project, 'local.mjs'), prepared);
+  writeFileSync(join(project, 'local.ts'), prepared);
   writeFileSync(join(workspace, 'outside.vue'), original);
-  writeFileSync(join(workspace, 'outside.mjs'), prepared);
+  writeFileSync(join(workspace, 'outside.ts'), prepared);
   symlinkSync(join(project, 'local.vue'), join(project, 'Page.vue'));
-  symlinkSync(join(project, 'local.mjs'), join(project, 'page.mjs'));
+  symlinkSync(join(project, 'local.ts'), join(project, 'page.ts'));
   symlinkSync(join(workspace, 'outside.vue'), join(project, 'outside.vue'));
-  symlinkSync(join(workspace, 'outside.mjs'), join(project, 'outside.mjs'));
+  symlinkSync(join(workspace, 'outside.ts'), join(project, 'outside.ts'));
   const run = (module, component) => invoke(join(root, 'implementation/tools/normalizer'),
-    ['scenario', 'frontend-vo-consumption', project, '--entry', `${module}:amount`, '--source', component], root);
-  const accepted = run('page.mjs', 'Page.vue');
+    ['scenario', 'frontend-vo-consumption', project, '--entry', `${module}#amount`, '--source', component], root);
+  const accepted = run('page.ts', 'Page.vue');
   assert.equal(accepted.status, 0, accepted.stderr);
   const actual = YAML.parse(accepted.stdout);
   assertPers(actual, 'in-root Vue links');
-  assert.equal(actual.entry.function, 'Page.vue#Card#amount.value');
+  assert.equal(actual.entry.function, 'page.ts#amount');
   assert.equal(actual.R, '7');
-  for (const [module, component] of [['page.mjs', 'outside.vue'], ['outside.mjs', 'Page.vue']]) {
+  for (const [module, component] of [['page.ts', 'outside.vue'], ['outside.ts', 'Page.vue']]) {
     const rejected = run(module, component);
     assert.notEqual(rejected.status, 0);
     assert.equal(rejected.stdout, '');
-    assert.match(rejected.stderr, /\[SOURCE-OUTSIDE-ROOT\].*outside\.(vue|mjs)/);
+    assert.match(rejected.stderr, /\[SOURCE-OUTSIDE-ROOT\].*outside\.(vue|ts)/);
   }
 });
 
@@ -174,8 +174,8 @@ test('module CLI ingress / expression nesting is bounded before execution', t =>
   t.after(() => rmSync(project, {recursive: true, force: true}));
   const module = join(root, 'implementation/tools/normalizer');
   for (const count of [120, 200]) {
-    writeFileSync(join(project, 'sum.js'), additionSource(count));
-    const result = invoke(module, ['module', project, 'sum.js', 'sum'], root);
+    writeFileSync(join(project, 'sum.ts'), additionSource(count));
+    const result = invoke(module, ['module', project, '--entry', 'sum.ts#sum'], root);
     if (count === 120) {
       assert.equal(result.status, 0, result.stderr);
       const actual = YAML.parse(result.stdout);
@@ -194,9 +194,9 @@ test('module CLI ingress / expression nesting is bounded before execution', t =>
 test('module CLI execution / exhausted normalization leaves no misleading PERS', t => {
   const project = mkdtempSync(join(tmpdir(), 'normalizer-module-budget-'));
   t.after(() => rmSync(project, {recursive: true, force: true}));
-  writeFileSync(join(project, 'sum.js'), additionSource(64));
+  writeFileSync(join(project, 'sum.ts'), additionSource(64));
   const command = join(root, 'implementation/tools/normalizer');
-  const args = ['module', project, 'sum.js', 'sum'];
+  const args = ['module', project, '--entry', 'sum.ts#sum'];
   const ordinary = invoke(command, args, root);
   assert.equal(ordinary.status, 0, ordinary.stderr);
   const full = YAML.parse(ordinary.stdout);
@@ -236,7 +236,7 @@ class ProofBudget {
   const env = Object.fromEntries(Object.entries(process.env)
     .filter(([name]) => !name.startsWith('NORMALIZER_MATH_')));
   const command = join(root, 'implementation/tools/normalizer');
-  const args = ['source', project, 'ProofBudget.nested'];
+  const args = ['source', project, 'src/ProofBudget.java#ProofBudget.nested'];
   const profile = join(project, 'proof-budget.log');
   for (const options of [
     {},
@@ -265,7 +265,7 @@ test('source CLI execution / bounded cache eviction does not change normalizatio
     .filter(([name]) => !name.startsWith('NORMALIZER_MATH_')));
   env.NORMALIZER_MATH_PROFILE_LOG = profile;
   const result = invoke(join(root, 'implementation/tools/normalizer'),
-    ['source', project, 'CacheProbe.sum'], root, undefined, env);
+    ['source', project, 'CacheProbe.java#CacheProbe.sum'], root, undefined, env);
   assert.equal(result.status, 0, result.stderr);
   const actual = YAML.parse(result.stdout);
   assertPers(actual, 'bounded cache source result');
@@ -282,7 +282,7 @@ test('source CLI ingress / in-root source links keep the declared source path', 
   writeFileSync(content, 'class Probe { static int run() { return 7; } }');
   symlinkSync(content, join(project, 'Probe.java'));
   const result = invoke(join(root, 'implementation/tools/normalizer'),
-    ['source', project, 'Probe.run'], root);
+    ['source', project, 'Probe.java#Probe.run'], root);
   assert.equal(result.status, 0, result.stderr);
   const actual = YAML.parse(result.stdout);
   assertPers(actual, 'in-root source link');
@@ -294,9 +294,10 @@ test('complemented CASE has one representative in pure returns and state writes'
   const project = mkdtempSync(join(tmpdir(), 'normalizer-case-orientation-'));
   t.after(() => rmSync(project, { recursive: true, force: true }));
   writePreparedSource(project, 'src/Compare.java', `
-import normalizer.annotations.EntryState;
+import normalizer.intrinsics.N;
 class Compare {
-    @EntryState int result;
+    static final Compare INSTANCE = new Compare();
+    @N.EntryState int result;
     static int pure(int a, int b) { return a == 1 && b == 2 ? 7 : 9; }
     static int inverse(int a, int b) { if (a != 1 || b != 2) return 9; return 7; }
     int state(int a, int b) { result = a == 1 && b == 2 ? 7 : 9; return result; }
@@ -307,19 +308,19 @@ class Compare {
   // use the exact same total condition, and neither reads initial state.
   const result = 'CASE\n  WHEN a == 1 AND b == 2 THEN 7\n  ELSE 9\nEND';
   for (const name of ['pure', 'inverse', 'state', 'stateInverse']) {
-    const entry = 'Compare.' + name;
+    const entry = 'src/Compare.java#Compare.' + (name.startsWith('state') ? 'INSTANCE.' : '') + name;
     const { status, stdout, stderr } = invoke(join(root, 'implementation/tools/normalizer'), ['source', project, entry], root);
     assert.equal(status, 0, stderr);
     const actual = YAML.parse(stdout);
     assertPers(actual, entry);
     const expected = {
       schema: 'normalizer.pers/1',
-      entry: { function: 'src/Compare.java#' + entry, returns: 'number' },
+      entry: { function: entry, returns: 'number' },
       P: { parameters: { a: { position: 0, type: 'number' }, b: { position: 1, type: 'number' } } },
       R: result,
     };
     if (name.startsWith('state')) {
-      expected.E = { result: { kind: 'state', source: 'src/Compare.java#Compare.result', type: 'number' } };
+      expected.E = { result: { kind: 'state', source: 'src/Compare.java#Compare.INSTANCE.result', type: 'number' } };
       expected.S = [{ write: { target: 'result', value: result } }];
     }
     assert.deepEqual(actual, expected);

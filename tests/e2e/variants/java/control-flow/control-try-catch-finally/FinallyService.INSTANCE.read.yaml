@@ -96,7 +96,7 @@
   expect:
   - path:
     - R
-    value: ⊥
+    absent: true
   - path:
     - throws
     add:
@@ -212,7 +212,7 @@
     - from: 'attempts = attempts + 1;'
       to: 'attempts = attempts + 1; throw new TerminalError();'
   expect:
-    - {path: [R], value: '⊥'}
+    - {path: [R], absent: true}
     - path: [throws]
       add:
         - {type: TerminalError, when: 'true'}
@@ -233,7 +233,7 @@
     - from: 'attempts = attempts + 1;'
       to: 'attempts = attempts + 1; throw new RuntimeException("message");'
   expect:
-    - {path: [R], value: '⊥'}
+    - {path: [R], absent: true}
     - path: [throws]
       add:
         - {type: java.lang.RuntimeException, when: 'true', payload: '"message"'}

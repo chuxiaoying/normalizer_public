@@ -120,7 +120,7 @@ R: |-
 
 **只按类型匹配的对照**　外部端口仍声明抛出 `RemoteError`，但增加 `ParentError`，让继承链成为 `RemoteError → ParentError → RuntimeException`。先放一个不匹配的同级 `OtherError` handler，再捕获 `RuntimeException`。应穿过中间父类命中后者，不会返回第一个 handler 的 999。回执里仍是实际的 `RemoteError`，finally 仍仅写一次。此例不读取或构造异常对象的载荷。继承有环或根不在当前 RuntimeException 合同内时，必须在源码合同校验时拒绝。
 
-若 finally 写入后无条件抛出 `RemoteError`，则它取代 try 和 catch 的所有正常完成。S 仍保留同一次外部调用及写入；`R: ⊥`，`throws` 在全域报告 `RemoteError`。
+若 finally 写入后无条件抛出 `RemoteError`，则它取代 try 和 catch 的所有正常完成。S 仍保留同一次外部调用及写入；没有正常完成，因此不写 `R`，`throws` 在全域报告 `RemoteError`。
 
 若 finally 先写入，再仅对 `accountId == 0` 返回 42，它只覆盖该域上的正常完成以及异常转零。其他账户仍按原 try/catch 返回；同一次调用和一次状态写入留在 S 中。
 
