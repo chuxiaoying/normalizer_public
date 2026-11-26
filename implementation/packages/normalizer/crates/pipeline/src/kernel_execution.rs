@@ -71,7 +71,7 @@ pub(super) struct Engine<'a> {
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
     pub(super) checked_ports: BTreeMap<String, actions::CheckedPort>,
-    pub(super) pending_ports: BTreeMap<u64, String>,
+    pub(super) pending_completions: BTreeMap<u64, std::sync::Arc<port_completion::PortSpec>>,
     pub(super) caught_exceptions: Option<Vec<realtime_state::CompletionAlternative>>,
     pub(super) next_binding: u64,
     /// Heap identities allocated during this execution. The direct renderer
@@ -1193,7 +1193,7 @@ impl Engine<'_> {
 
         let path = self.normal_path(path.clone());
         self.realtime_effects.events().iter().any(|event| {
-            let realtime_state::EffectOperation::Port { id, receipt } = &event.operation else { return false; };
+            let realtime_state::EffectOperation::Port { receipt, completion: spec, .. } = &event.operation else { return false; };
             // A bare integer is only minted for a nonthrowing source port.
             // For fields, prove the declared integer and the exact response
             // before attributing that observation to this occurrence.
@@ -1204,8 +1204,6 @@ impl Engine<'_> {
                 Observation::ProjectedField(_, field) => field,
                 _ => return false,
             };
-            let Some(port) = self.checked_ports.get(id) else { return false; };
-            let spec = &port.completion;
             let Ty::Record(fields) = &spec.returns else { return false; };
             if fields.get(field) != Some(&Ty::Integer) {
                 return false;

@@ -155,13 +155,12 @@ pub(super) fn observations(
                 effects.push(item);
                 continue;
             }
-            EffectOperation::Port { id, receipt } => {
+            EffectOperation::Port { id, receipt, completion: spec } => {
                 let contract = project
                     .ports
                     .get(id)
                     .ok_or_else(|| fail("missing external declaration"))?;
                 let (name, ty) = entry.external_type(id)?;
-                let spec = &result.checked_ports.get(id).ok_or_else(|| fail("missing external declaration"))?.completion;
                 need(
                     spec.returns == ty,
                     "external business result disagrees with port type",

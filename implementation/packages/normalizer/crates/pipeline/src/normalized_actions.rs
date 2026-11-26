@@ -91,7 +91,7 @@ impl Port {
 /// One admitted signature, used by both producers and the effect renderer.
 pub(super) struct CheckedPort {
     pub(super) parameters: Vec<Ty>,
-    pub(super) completion: port_completion::PortSpec,
+    pub(super) completion: std::sync::Arc<port_completion::PortSpec>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -227,7 +227,7 @@ impl Project {
                 exceptions.insert(exception.clone(), payload);
             }
             ports.insert(name.clone(), CheckedPort {
-                parameters, completion: port_completion::PortSpec { returns, exceptions },
+                parameters, completion: std::sync::Arc::new(port_completion::PortSpec { returns, exceptions }),
             });
         }
         Ok(ports)
@@ -358,8 +358,9 @@ impl Engine<'_> {
             && checked.parameters.is_empty()
             && spec.returns == Ty::Unit && !spec.throwing(),
             "listener call requires a declared normal zero-argument void sync port")?;
+        let completion = spec.clone();
         let binding = self.fresh_binding();
-        self.realtime_effects.record(guard, id, site, Vec::new(), realtime_state::EffectReceipt::tagged(binding));
+        self.realtime_effects.record_port(guard, id, site, Vec::new(), realtime_state::EffectReceipt::tagged(binding), completion);
         Ok(())
     }
 

@@ -571,7 +571,7 @@ impl Loaded {
             entry_context: None,
             state_roots: BTreeMap::new(),
             checked_ports,
-            pending_ports: BTreeMap::new(),
+            pending_completions: BTreeMap::new(),
             caught_exceptions: None,
             next_binding: 0,
             realtime_local_allocations: BTreeSet::new(),
@@ -768,7 +768,6 @@ impl Loaded {
             entry_return_type: e.methods[entry].returns.clone(),
             source_tables: e.source_relations.tables,
             realtime_effects: e.realtime_effects,
-            checked_ports: e.checked_ports,
             terminal,
         })
     }

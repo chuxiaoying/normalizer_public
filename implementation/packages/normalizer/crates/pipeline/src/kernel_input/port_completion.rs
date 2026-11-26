@@ -3,7 +3,7 @@ use super::Ty;
 use math::{builder as b, domains::completion, Expr};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PortSpec {
     pub returns: Ty,
     pub exceptions: BTreeMap<String, Ty>,

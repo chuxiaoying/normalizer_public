@@ -105,7 +105,7 @@ impl Engine<'_> {
         let receipt = realtime_state::EffectReceipt::tagged(bind);
         let response = receipt.response().clone();
         self.realtime_effects
-            .record(guard.clone(), id, id, values, receipt);
+            .record_port(guard.clone(), id, id, values, receipt, spec.clone());
         for (class, failed, payload) in spec.throw_variants(&response) {
             let condition = math::normalize(b::and(guard.clone(), failed.clone()));
 

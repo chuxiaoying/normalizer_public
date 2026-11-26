@@ -6,6 +6,8 @@
 //! earliest branch join has one implementation and one simplification boundary.
 
 use math::{builder as b, Expr, ScalarSymbolType};
+use super::port_completion::PortSpec;
+use std::sync::Arc;
 
 /// The completion channel carried by a real-time execution state.
 ///
@@ -332,7 +334,7 @@ impl EffectReceipt {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectOperation {
-    Port { id: String, receipt: EffectReceipt },
+    Port { id: String, receipt: EffectReceipt, completion: Arc<PortSpec> },
     Sql { statement: super::business_sql::SqlEffect, receipt: EffectReceipt },
     StateWrite { target: Vec<String>, value: Expr },
     ArrayWrite { root: String, index: i64, value: Expr },
@@ -364,18 +366,19 @@ pub(crate) struct EffectSequence {
 }
 
 impl EffectSequence {
-    pub(crate) fn record(
+    pub(super) fn record_port(
         &mut self,
         guard: Expr,
         operation: impl Into<String>,
         callsite: impl Into<String>,
         args: Vec<Expr>,
         receipt: EffectReceipt,
+        completion: Arc<PortSpec>,
     ) {
         self.events.push(EffectEvent {
             guard: math::normalize(guard),
             sequence: self.events.len(),
-            operation: EffectOperation::Port { id: operation.into(), receipt },
+            operation: EffectOperation::Port { id: operation.into(), receipt, completion },
             callsite: callsite.into(),
             args,
         });

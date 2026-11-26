@@ -13,7 +13,6 @@ pub(super) struct ExecutionResult {
     pub(super) source_state_bindings: BTreeMap<u64, String>,
     pub(super) source_identity_parameters: BTreeMap<i64, String>,
     pub(super) source_identity_states: BTreeMap<i64, u64>,
-    pub(super) checked_ports: BTreeMap<String, super::actions::CheckedPort>,
     pub(super) realtime_effects: EffectSequence,
     pub(super) terminal: TerminalAlternatives,
 }
