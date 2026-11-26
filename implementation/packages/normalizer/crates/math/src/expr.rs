@@ -110,39 +110,67 @@ pub enum BinOpKind {
     Or,
 }
 
+/// The closed comparison subset of binary operators.
+#[derive(Clone, Copy)]
+pub(crate) enum Comparison {
+    Eq, Ne, Lt, Le, Gt, Ge,
+}
+
+impl Comparison {
+    pub(crate) fn swapped(self) -> Self {
+        use Comparison::*;
+        match self {
+            Lt => Gt, Le => Ge, Gt => Lt, Ge => Le, Eq | Ne => self,
+        }
+    }
+
+    fn complemented(self) -> Self {
+        use Comparison::*;
+        match self {
+            Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Le => Gt, Gt => Le,
+        }
+    }
+
+    fn test<T: Ord>(self) -> fn(&T, &T) -> bool {
+        use Comparison::*;
+        match self {
+            Eq => T::eq, Ne => T::ne, Lt => T::lt, Le => T::le, Gt => T::gt, Ge => T::ge,
+        }
+    }
+}
+
+impl From<Comparison> for BinOpKind {
+    fn from(comparison: Comparison) -> Self {
+        use Comparison::*;
+        match comparison {
+            Eq => Self::Eq, Ne => Self::Ne, Lt => Self::Lt, Le => Self::Le,
+            Gt => Self::Gt, Ge => Self::Ge,
+        }
+    }
+}
+
 impl BinOpKind {
-    pub(crate) fn complemented_comparison(self) -> Option<Self> {
+    pub(crate) fn comparison(self) -> Option<Comparison> {
         use BinOpKind::*;
         Some(match self {
-            Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Le => Gt, Gt => Le,
-            _ => return None,
+            Eq => Comparison::Eq, Ne => Comparison::Ne, Lt => Comparison::Lt,
+            Le => Comparison::Le, Gt => Comparison::Gt, Ge => Comparison::Ge,
+            Add | Sub | Mul | And | Or => return None,
         })
     }
 
+    pub(crate) fn complemented_comparison(self) -> Option<Self> {
+        Some(self.comparison()?.complemented().into())
+    }
+
     pub(crate) fn comparison_test<T: Ord>(self) -> Option<fn(&T, &T) -> bool> {
-        use BinOpKind::*;
-        Some(match self {
-            Eq => T::eq,
-            Ne => T::ne,
-            Lt => T::lt,
-            Le => T::le,
-            Gt => T::gt,
-            Ge => T::ge,
-            _ => return None,
-        })
+        Some(self.comparison()?.test())
     }
 
     /// Equivalent comparison after exchanging the already evaluated operands.
     /// This does not negate the predicate or apply to arithmetic or logic.
     pub fn swapped_comparison(self) -> Option<Self> {
-        Some(match self {
-            Self::Lt => Self::Gt,
-            Self::Le => Self::Ge,
-            Self::Gt => Self::Lt,
-            Self::Ge => Self::Le,
-            Self::Eq | Self::Ne => self,
-            _ => return None,
-        })
+        Some(self.comparison()?.swapped().into())
     }
 }
 

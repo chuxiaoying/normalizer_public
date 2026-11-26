@@ -17,15 +17,14 @@ fn indices(upper: Expr) -> Expr {
     b::call(key, vec![upper])
 }
 
-fn minimum(a: Expr, z: Expr) -> Expr {
+fn minimum(mut a: Expr, mut z: Expr) -> Expr {
     if a == z { return a; }
     let key = key(&MINIMUM, "LEAST", vec![Primitive::Number; 2], Primitive::Number);
     let sort = &crate::DefaultSortContext;
-    if crate::canonical_order_key(&a, sort) <= crate::canonical_order_key(&z, sort) {
-        b::call(key, vec![a, z])
-    } else {
-        b::call(key, vec![z, a])
+    if crate::canonical_order_key(&a, sort) > crate::canonical_order_key(&z, sort) {
+        std::mem::swap(&mut a, &mut z);
     }
+    b::call(key, vec![a, z])
 }
 
 fn field_at(source: &str, index: Expr, field: &str) -> Expr {

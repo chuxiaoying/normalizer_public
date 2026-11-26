@@ -222,13 +222,9 @@ impl Engine<'_> {
                 }
                 Ok(value)
             }
-            Scalar::NullPredicate { value, negated } => {
-                let Scalar::Path(parts) = value.as_ref() else {
-                    return Err(fail("SQL NULL predicate requires a declared column"));
-                };
-                need(matches!(parts.as_slice(), [owner, column] if owner == alias && fields.contains_key(column)),
-                    "SQL NULL predicate requires a bound row column")?;
-                let value = self.query_value(value, alias, fields, locals, guard)?.scalar()?;
+            Scalar::NullPredicate { owner, column, negated } => {
+                let value = fields.get(column).filter(|_| owner == alias)
+                    .ok_or_else(|| fail("SQL NULL predicate requires a bound row column"))?.scalar()?;
                 need(value.as_row_value().is_some(), "SQL NULL predicate requires a table column")?;
                 let op = if *negated { b::ne } else { b::eq };
                 Ok(Value::Term(Ty::Bool, op(value, b::lit_null())))
@@ -301,13 +297,8 @@ impl Engine<'_> {
             need(!self.source_array_writes.contains_key(name),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
-        if let Operation::OnRows(RowOperation::EagerPath(parts)) = &query.operation {
+        if let Operation::OnRows(RowOperation::EagerPath { link, leaf }) = &query.operation {
             if matches!(decl, Some(JavaType::Array(item)) if crate::normalized::integral(item)) {
-                let [alias, link, leaf] = parts.as_slice() else {
-                    return Err(fail("eager record projection requires one nullable member hop"));
-                };
-                need(alias == &query.alias && query.clauses.is_empty(),
-                    "eager record projection requires an unfiltered source-order path")?;
                 let Some(Value::Sequence { item: Ty::Ref, name, .. }) =
                     env.get(&query.source) else { return Err(fail("eager projection requires a directly bound record array")); };
                 let root = name.clone();
@@ -348,7 +339,7 @@ impl Engine<'_> {
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
                 return Ok(());
             }
-            Operation::NestedSum { alias, clauses, value } => {
+            Operation::NestedSum { alias, filters, value } => {
                 let Some(Value::Sequence { item: Ty::Seq(element), name, .. }) = env.get(&query.source) else {
                     return Err(fail("nested sum requires a directly bound two-dimensional array"));
                 };
@@ -370,11 +361,8 @@ impl Engine<'_> {
                 // is an array here, not an integer projection.
                 let mut inner_locals = env.clone();
                 inner_locals.remove(&query.alias);
-                for clause in clauses {
-                    let Clause::Where(p) = clause else {
-                        return Err(fail("nested sum supports scalar filters only"));
-                    };
-                    let predicate = self.query_value(p, alias, &row, &inner_locals, guard)?;
+                for filter in filters {
+                    let predicate = self.query_value(filter, alias, &row, &inner_locals, guard)?;
                     need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
                     inner_relation = RelationExpr::select(predicate.scalar()?, inner_relation);
                 }
@@ -620,7 +608,7 @@ impl Engine<'_> {
                     match term {
                         Scalar::Path(parts) => parts.first().is_some_and(|name| name == accumulator),
                         Scalar::Binary(_, l, r) => has_accumulator(l, accumulator) || has_accumulator(r, accumulator),
-                        Scalar::NullPredicate { value, .. } => has_accumulator(value, accumulator),
+                        Scalar::NullPredicate { owner, .. } => owner == accumulator,
                         Scalar::Integer(_) | Scalar::Text(_) | Scalar::Bool(_) => false,
                     }
                 }
@@ -693,7 +681,7 @@ impl Engine<'_> {
                 env.insert(query.binding.clone(), Value::Term(Ty::Ref, b::heap_ref(id)));
                 return Ok(());
             }
-            RowOperation::EagerPath(_) | RowOperation::Count { distinct: true } =>
+            RowOperation::EagerPath { .. } | RowOperation::Count { distinct: true } =>
                 return Err(fail("incompatible query operation and projection")),
         };
         if let Some(declared) = decl {

@@ -10,7 +10,7 @@ pub enum Scalar {
     Text(String),
     Bool(bool),
     Binary(Op, Box<Scalar>, Box<Scalar>),
-    NullPredicate { value: Box<Scalar>, negated: bool },
+    NullPredicate { owner: String, column: String, negated: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,7 +36,7 @@ pub enum Clause {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
     FirstArray { offset: num_bigint::BigUint, fallback: Scalar },
-    NestedSum { alias: String, clauses: Vec<Clause>, value: Scalar },
+    NestedSum { alias: String, filters: Vec<Scalar>, value: Scalar },
     JoinCount { source: String, alias: String, on: Scalar, filters: Vec<Scalar> },
     OnRows(RowOperation),
 }
@@ -44,7 +44,7 @@ pub enum Operation {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowOperation {
     Project(Vec<(String, Scalar)>),
-    EagerPath(Vec<String>),
+    EagerPath { link: String, leaf: String },
     Sum(Scalar),
     Count { distinct: bool },
     GroupCount(Vec<Scalar>),
@@ -55,7 +55,7 @@ pub enum RowOperation {
 
 impl RowOperation {
     pub fn introduces_table(&self) -> bool {
-        matches!(self, Self::Project(_) | Self::EagerPath(_))
+        matches!(self, Self::Project(_) | Self::EagerPath { .. })
     }
 }
 
@@ -133,7 +133,12 @@ fn scalar(t: &mut Tokens<'_>) -> Result<Scalar, String> {
     if t.take("IS") || t.take("is") {
         let negated = t.take("NOT") || t.take("not");
         if !t.take("NULL") { t.expect("null")?; }
-        return Ok(Scalar::NullPredicate { value: Box::new(left), negated });
+        let Scalar::Path(parts) = left else {
+            return Err("SQL NULL predicate requires a declared column".into());
+        };
+        let [owner, column]: [String; 2] = parts.try_into()
+            .map_err(|_| "SQL NULL predicate requires a bound row column")?;
+        return Ok(Scalar::NullPredicate { owner, column, negated });
     }
     for (token, op) in [
         ("==", Op::Eq),
@@ -318,9 +323,13 @@ fn parse_query_tail(
                 if inner.source == alias && inner.alias != alias => value,
             _ => return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into()),
         };
+        let filters = inner.clauses.into_iter().map(|clause| match clause {
+            Clause::Where(predicate) => Ok(predicate),
+            _ => Err("nested sum supports scalar filters only".to_owned()),
+        }).collect::<Result<Vec<_>, _>>()?;
         return Ok(Query {
             binding, accumulate, source, alias, clauses,
-            operation: Operation::NestedSum { alias: inner.alias, clauses: inner.clauses, value },
+            operation: Operation::NestedSum { alias: inner.alias, filters, value },
         });
     } else {
         Yield::Value(scalar(t)?)
@@ -343,7 +352,14 @@ fn parse_query_tail(
     }
     let operation = match (kind, projection) {
         (Kind::Rows, Yield::Fields(fields)) => RowOperation::Project(fields),
-        (Kind::Rows, Yield::Value(Scalar::Path(path))) => RowOperation::EagerPath(path),
+        (Kind::Rows, Yield::Value(Scalar::Path(path))) => {
+            let [owner, link, leaf]: [String; 3] = path.try_into()
+                .map_err(|_| "eager record projection requires one nullable member hop")?;
+            if owner != alias || !clauses.is_empty() {
+                return Err("eager record projection requires an unfiltered source-order path".into());
+            }
+            RowOperation::EagerPath { link, leaf }
+        }
         (Kind::Sum, Yield::Value(value)) => RowOperation::Sum(value),
         (Kind::Count | Kind::CountDistinct, Yield::Value(Scalar::Path(path)))
             if path.as_slice() == std::slice::from_ref(&alias) =>

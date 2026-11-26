@@ -18,7 +18,7 @@
 //! - O(n) 扫描 AND 子式，无递归风险
 //! - 只处理整数字面量 bound；非字面量 bound 不参与求解
 
-use crate::expr::{BinOpKind, Expr, ExprKind, Lit};
+use crate::expr::{BinOpKind, Comparison, Expr, ExprKind, Lit};
 
 /// 约束的 bound 部分。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,11 +49,20 @@ pub(super) fn comparison_literal_rhs<'a, T>(
     (op, left, right): (BinOpKind, &'a Expr, &'a Expr),
     literal: impl Fn(&Expr) -> Option<T>,
 ) -> Option<(BinOpKind, &'a Expr, T)> {
-    let swapped = op.swapped_comparison()?;
+    let (op, subject, value) = align_comparison_literal(op.comparison()?, left, right, literal)?;
+    Some((op.into(), subject, value))
+}
+
+fn align_comparison_literal<'a, T>(
+    op: Comparison,
+    left: &'a Expr,
+    right: &'a Expr,
+    literal: impl Fn(&Expr) -> Option<T>,
+) -> Option<(Comparison, &'a Expr, T)> {
     if let Some(value) = literal(right) {
         Some((op, left, value))
     } else {
-        literal(left).map(|value| (swapped, right, value))
+        literal(left).map(|value| (op.swapped(), right, value))
     }
 }
 
@@ -81,8 +90,9 @@ pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint>
 }
 
 fn compact_bound(expr: &Expr) -> Option<(&Expr, ConstraintBound)> {
-    let (op, subject, value) = comparison_literal_rhs(expr.as_binop()?, compact_integer)?;
-    use BinOpKind::*;
+    let (op, left, right) = expr.as_binop()?;
+    let (op, subject, value) = align_comparison_literal(op.comparison()?, left, right, compact_integer)?;
+    use Comparison::*;
     let bound = match op {
         Lt => ConstraintBound::Lt(value),
         Gt => ConstraintBound::Gt(value),
@@ -90,7 +100,6 @@ fn compact_bound(expr: &Expr) -> Option<(&Expr, ConstraintBound)> {
         Ge => ConstraintBound::Ge(value),
         Eq => ConstraintBound::Eq(value),
         Ne => ConstraintBound::Ne(value),
-        _ => return None,
     };
     Some((subject, bound))
 }
