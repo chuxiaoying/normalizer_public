@@ -15,6 +15,7 @@ use crate::domains::primitive::registry::FuncKey;
 use crate::symvar::SymVarOrigin;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -31,14 +32,44 @@ pub struct Expr(pub(crate) Rc<ExprKind>, pub(crate) Rc<ExprProfile>);
 ///
 /// 后续可扩展 vars/has_heap_ref/has_case_when 等索引；复杂度检查和化简快捷分析
 /// 禁止回到每次递归扫描整棵树。
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct ExprProfile {
     size: usize,
     depth: usize,
     vars: BTreeSet<String>,
     has_heap_ref: bool,
     has_case_when: bool,
+    has_relation_aggregate: bool,
     structural_hash: u64,
+}
+
+// This derived hint is not part of existing profile identity or debug
+// signatures. In particular, the proof atom keys use the original Debug.
+impl fmt::Debug for ExprProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExprProfile")
+            .field("size", &self.size)
+            .field("depth", &self.depth)
+            .field("vars", &self.vars)
+            .field("has_heap_ref", &self.has_heap_ref)
+            .field("has_case_when", &self.has_case_when)
+            .field("structural_hash", &self.structural_hash)
+            .finish()
+    }
+}
+
+impl PartialEq for ExprProfile {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+
+impl Eq for ExprProfile {}
+
+impl Hash for ExprProfile {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identity().hash(state);
+    }
 }
 
 /// 字面量类型。
@@ -518,23 +549,10 @@ impl Expr {
         self.1.has_heap_ref
     }
 
-    /// Test for a lazy relation observation in this expression tree.
+    /// O(1) test for a lazy relation observation in this expression tree.
     /// A bare relation is not itself an observation of its rows.
     pub(crate) fn contains_relation_aggregate(&self) -> bool {
-        match self.kind() {
-            ExprKind::RelationAggregate { .. } => true,
-            ExprKind::Call { args, .. } | ExprKind::ArrayLit(args) => {
-                args.iter().any(Expr::contains_relation_aggregate)
-            }
-            ExprKind::BinOp { left, right, .. } => {
-                left.contains_relation_aggregate() || right.contains_relation_aggregate()
-            }
-            ExprKind::UnaryOp { operand, .. } => operand.contains_relation_aggregate(),
-            ExprKind::CaseWhen { branches } => branches.iter().any(|(condition, value)| {
-                condition.contains_relation_aggregate() || value.contains_relation_aggregate()
-            }),
-            _ => false,
-        }
+        self.1.has_relation_aggregate
     }
 
     /// O(1) 查询表达式是否包含 CaseWhen。
@@ -624,6 +642,11 @@ fn walk_relation_expr<F: FnMut(&Expr)>(rel: &crate::domains::relation::RelationE
 }
 
 impl ExprProfile {
+    fn identity(&self) -> (usize, usize, &BTreeSet<String>, bool, bool, u64) {
+        (self.size, self.depth, &self.vars, self.has_heap_ref,
+         self.has_case_when, self.structural_hash)
+    }
+
     fn leaf() -> Self {
         Self {
             size: 1,
@@ -631,6 +654,7 @@ impl ExprProfile {
             vars: BTreeSet::new(),
             has_heap_ref: false,
             has_case_when: false,
+            has_relation_aggregate: false,
             structural_hash: 0,
         }
     }
@@ -662,10 +686,12 @@ impl ExprProfile {
         let mut vars = BTreeSet::new();
         let mut has_heap_ref = false;
         let mut has_case_when = false;
+        let mut has_relation_aggregate = false;
         for child in children {
             vars.extend(child.vars);
             has_heap_ref |= child.has_heap_ref;
             has_case_when |= child.has_case_when;
+            has_relation_aggregate |= child.has_relation_aggregate;
         }
         Self {
             size,
@@ -673,6 +699,7 @@ impl ExprProfile {
             vars,
             has_heap_ref,
             has_case_when,
+            has_relation_aggregate,
             structural_hash: 0,
         }
     }
@@ -784,9 +811,17 @@ impl ExprProfile {
                 }
                 let child_size: usize = children.iter().map(|p| p.size).sum();
                 let child_depth: usize = children.iter().map(|p| p.depth).max().unwrap_or(0);
-                Self::from_children(1 + child_size, 1 + child_depth, children)
+                let mut profile = Self::from_children(1 + child_size, 1 + child_depth, children);
+                profile.has_relation_aggregate = true;
+                profile
             }
-            ExprKind::Relation(relation) => Self::relation(relation),
+            ExprKind::Relation(relation) => {
+                let mut profile = Self::relation(relation);
+                // Keep size/depth/vars, but do not expose observations inside
+                // a bare relation or propagate them to its Expr parents.
+                profile.has_relation_aggregate = false;
+                profile
+            }
         };
         profile.structural_hash = structural_hash_from_kind(kind);
         profile
