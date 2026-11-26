@@ -56,6 +56,14 @@ fn owned_column_domain<'a>(
 
 type TableColumns = BTreeMap<String, String>;
 
+/// Java locals supply a declared shape in addition to the inferred row.
+/// Adapter actions have no Java local declaration; their already typed rows
+/// carry field names and domains directly.
+fn query_row_matches(fields: &BTreeMap<String, Value>, declared: Option<&BTreeMap<String, Ty>>) -> bool {
+    declared.is_none_or(|types| types.len() == fields.len()
+        && fields.iter().all(|(name, value)| types.get(name) == Some(&value.ty())))
+}
+
 /// This is specifically a physical-table proof, not a claim about every
 /// finite relation that can be counted.
 fn closed_count_table<'a>(
@@ -104,6 +112,25 @@ mod physical_column_contract {
         let rows = RelationExpr::vector(vector, "value");
         assert!(closed_count_table(&rows, &tables).is_none());
         assert!(closed_count_table(&RelationExpr::base("bill", "other"), &tables).is_none());
+    }
+
+    #[test]
+    fn inferred_rows_do_not_require_a_java_local_but_respect_it_when_present() {
+        let fields = BTreeMap::from([
+            ("amount".to_owned(), Value::Term(Ty::Integer, b::row_value("bill.amount"))),
+            ("paid".to_owned(), Value::Term(Ty::Bool, b::row_value("bill.paid"))),
+        ]);
+        let declared = BTreeMap::from([
+            ("amount".to_owned(), Ty::Integer),
+            ("paid".to_owned(), Ty::Bool),
+        ]);
+        let different_shape = BTreeMap::from([
+            ("amount".to_owned(), Ty::Integer),
+            ("paid".to_owned(), Ty::Integer),
+        ]);
+        assert!(query_row_matches(&fields, None));
+        assert!(query_row_matches(&fields, Some(&declared)));
+        assert!(!query_row_matches(&fields, Some(&different_shape)));
     }
 
     #[test]
@@ -628,14 +655,8 @@ impl<'a> Engine<'a> {
                     .collect::<Result<_>>()?;
                 if let Some(declared) = decl {
                     let types = self.query_row_types(self.query_row_declaration(declared)?)?;
-                    need(
-                        types.len() == rows.fields.len()
-                            && rows
-                                .fields
-                                .iter()
-                                .all(|(name, value)| types.get(name) == Some(&value.ty())),
-                        "row projection does not match declared fields and types",
-                    )?;
+                    need(query_row_matches(&rows.fields, Some(&types)),
+                        "row projection does not match declared fields and types")?;
                 }
                 env.insert(query.binding.clone(), Value::Rows(Box::new(rows)));
                 return Ok(());
@@ -739,27 +760,19 @@ impl<'a> Engine<'a> {
             RowOperation::FirstRow => {
                 let mut keys = rows.ordering.into_iter();
                 let first_key = keys.next().ok_or_else(|| fail("first requires an ordered input"))?;
-                if let Some(declared) = decl {
-                    let JavaType::Class(target) = declared else {
-                        return Err(fail("first requires a declared row type"));
-                    };
-                    let class = self
-                        .program
-                        .find_class(target)
-                        .ok_or_else(|| fail("first result has no row declaration"))?;
-                    need(
-                        class.fields().len() == rows.fields.len()
-                            && class.fields().iter().all(|f| {
-                                self.project
-                                    .parameter_type(f.java_type())
-                                    .ok()
-                                    .is_some_and(|ty| {
-                                        rows.fields.get(f.name()).is_some_and(|v| v.ty() == ty)
-                                    })
-                            }),
-                        "first row does not match declared fields and types",
-                    )?;
-                }
+                let declared = match decl {
+                    None => None,
+                    Some(JavaType::Class(target)) => {
+                        let class = self.program.find_class(target)
+                            .ok_or_else(|| fail("first result has no row declaration"))?;
+                        let types = self.query_row_types(class)
+                            .map_err(|_| fail("first row does not match declared fields and types"))?;
+                        Some(types)
+                    }
+                    Some(_) => return Err(fail("first requires a declared row type")),
+                };
+                need(query_row_matches(&rows.fields, declared.as_ref()),
+                    "first row does not match declared fields and types")?;
                 let id = self.heap.new_path_object().id();
                 self.source_relations.first_rows.insert(id, OrderedRows {
                     input: rows.input,
