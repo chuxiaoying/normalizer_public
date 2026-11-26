@@ -39,6 +39,10 @@
   reject:
   - '[SOURCE-PARSE-FAILED]'
   - local map update cannot alias to another binding
+- name: qualified-text-return-and-local-preserve-null-versus-absence
+  edits:
+    - { from: 'static String select', to: 'static java.lang.String select' }
+    - { from: '@N.Nullable String selected;', to: '@N.Nullable java.lang.String selected;' }
 - name: nullable-result-needs-an-explicit-return-contract
   edits:
   - from: |-
