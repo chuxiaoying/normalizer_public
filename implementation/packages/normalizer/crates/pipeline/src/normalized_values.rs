@@ -2,6 +2,12 @@
 use super::*;
 use math::{domains::composite as data, Primitive};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ValueBoundary {
+    ImmutablePort,
+    State,
+}
+
 impl Ty {
     pub(crate) fn describe(&self) -> String {
         match self {
@@ -26,29 +32,28 @@ impl Ty {
             Self::Seq(item) => format!("source sequence<{}>", item.describe()),
         }
     }
-    pub(super) fn state_value(&self) -> bool {
+    fn value_allowed(&self, boundary: ValueBoundary) -> bool {
+        let state = boundary == ValueBoundary::State;
         match self {
-            Self::Unit
-            | Self::Bool
-            | Self::Integer
-            | Self::Text
-            | Self::OrderedTextMap
-            | Self::Ref => true,
-            Self::Task(t) | Self::Vector(t) => t.state_value(),
-            Self::Record(fields) => fields.values().all(Self::state_value),
-            _ => false,
+            Self::Unit | Self::Bool | Self::Integer | Self::Text => true,
+            Self::OrderedTextMap | Self::Ref => state,
+            Self::Task(t) => state && t.value_allowed(boundary),
+            Self::Vector(t) => t.value_allowed(boundary),
+            Self::Record(fields) => fields.values().all(|field| field.value_allowed(boundary)),
+            Self::Decimal | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
         }
     }
+
+    pub(super) fn state_value(&self) -> bool {
+        self.value_allowed(ValueBoundary::State)
+    }
+
     // External immutable values carry no identity, callbacks, or heap mutation.
     // They are typed response data, not guessed library implementations.
     pub(crate) fn port_value(&self) -> bool {
-        match self {
-            Self::Unit | Self::Bool | Self::Integer | Self::Text => true,
-            Self::Vector(t) => t.port_value(),
-            Self::Record(fields) => fields.values().all(Self::port_value),
-            _ => false,
-        }
+        self.value_allowed(ValueBoundary::ImmutablePort)
     }
+
     pub(crate) fn primitive_value(&self) -> Result<Primitive> {
         Ok(match self {
             Self::Unit => return Err(fail("unit has no primitive value")),

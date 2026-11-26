@@ -115,13 +115,13 @@ export function compileTypedTuple(physicalPath, sf, fn) {
     positions.set(element.name.text, {index, rest: Boolean(element.dotDotDotToken)});
   }
   const observed = new Map();
+  let nextProbe = 0;
   function observe(kind, fields) {
     const key = JSON.stringify([kind, fields]);
     if (!observed.has(key)) {
-      let i = observed.size;
-      while (inputScope.has('tuple_probe_' + i)
-          || [...observed.values()].some(value => value.name === 'tuple_probe_' + i)) i++;
-      observed.set(key, {kind, name: 'tuple_probe_' + i, ...fields});
+      // Every lower index has already been allocated or reserved by a formal.
+      while (inputScope.has('tuple_probe_' + nextProbe)) nextProbe++;
+      observed.set(key, {kind, name: 'tuple_probe_' + nextProbe++, ...fields});
     }
     return variable(observed.get(key).name);
   }
