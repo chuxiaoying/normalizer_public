@@ -21,7 +21,7 @@ impl Engine<'_> {
                 && self.project.declared_result_type(java_type)? == Ty::Bool,
             "local stack or its output is not a fresh closed binding",
         )?;
-        need(self.selected_entry_id() == Some(method), "local stack requires typed entry arrays")?;
+        need(self.selected_entry.id == method, "local stack requires typed entry arrays")?;
         need(exception == "IllegalArgumentException", "local stack uses the same supported type-only exception for both guards")?;
         let root_of = |local: &str| -> Result<(String, &str)> {
             let Some(Value::Sequence { item: Ty::Ref, name, .. }) = env.get(local)

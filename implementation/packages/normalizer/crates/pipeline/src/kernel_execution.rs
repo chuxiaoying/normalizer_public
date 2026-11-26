@@ -73,7 +73,7 @@ pub(super) struct Engine<'a> {
     pub(super) methods: BTreeMap<String, AdmittedMethod<'a>>,
     pub(super) active: BTreeSet<String>,
     pub(super) steps: usize,
-    pub(super) selected_entry: Option<SelectedEntry<'a>>,
+    pub(super) selected_entry: SelectedEntry<'a>,
     pub(super) public_source_entry: Option<&'a str>,
     pub(super) source_root: Option<&'a Path>,
     pub(super) active_static_receiver: Option<(String, String)>,
@@ -105,11 +105,7 @@ pub(super) struct Engine<'a> {
 
 impl<'a> Engine<'a> {
     fn diagnostic_entry(&self) -> &str {
-        self.public_source_entry.or_else(|| self.selected_entry_id()).unwrap_or("Java execution")
-    }
-
-    pub(super) fn selected_entry_id(&self) -> Option<&'a str> {
-        self.selected_entry.map(|entry| entry.id)
+        self.public_source_entry.unwrap_or(self.selected_entry.id)
     }
     fn node_inner(&mut self, n: &Node, env: &mut Env, path: Expr) -> Result<Value> {
         self.budget()?;
@@ -153,8 +149,8 @@ impl<'a> Engine<'a> {
                     let input = acquired.scalar()?;
                     let binding = math::domains::composite::input_name(&input)
                         .ok_or_else(|| fail("length requires a direct readonly Vector input"))?;
-                    let entry = self.selected_entry_id().and_then(|full| full.rsplit('.').next())
-                        .ok_or_else(|| fail("length requires a declared entry"))?;
+                    let id = self.selected_entry.id;
+                    let entry = id.rsplit_once('.').map_or(id, |(_, method)| method);
                     need(acquired.ty() == Ty::Vector(Box::new(Ty::Integer))
                         && self.project.parameter_value_types.get(entry).and_then(|params| params.get(binding))
                             .is_some_and(|ty| ty == "vector<number>"),
@@ -519,7 +515,7 @@ impl<'a> Engine<'a> {
                     )?;
                     need(!env.contains_key(name), "duplicate local")?;
                     if crate::normalized::host_collection_allocation(java_type, expr) {
-                        crate::preprocess::out_of_source(self.selected_entry_id().unwrap_or(id), "java.util.ArrayList.<init>");
+                        crate::preprocess::out_of_source(self.selected_entry.id, "java.util.ArrayList.<init>");
                     }
                     self.source_reference_assignment(java_type, expr, id)?;
                     let v = self.java_expr(expr, id, env, path.clone())?;
@@ -778,10 +774,8 @@ impl<'a> Engine<'a> {
                     // Keep the actual P or E root of a local alias.
                     let state_root = self.source_objects.state_bindings
                         .values().any(|name| source_state_symbol(name) == *root);
-                    let admitted = state_root || self.selected_entry
-                            .is_some_and(|entry| entry.syntax.params().iter().any(|(_, parameter)| {
-                                parameter == root
-                            }));
+                    let admitted = state_root || self.selected_entry.syntax.params().iter()
+                        .any(|(_, parameter)| parameter == root);
                     if admitted {
                         self.budget()?;
                         return Ok(Some(super::source_arrays::borrowed_array_length(root)));
@@ -825,8 +819,9 @@ impl<'a> Engine<'a> {
             J::Ident(n) => {
                 if let Some(value) = env.get(n) { return Ok(value.clone()); }
                 let owner = id.rsplit_once('.').unwrap().0;
-                if n == "this" && !self.methods[id].syntax.is_static() && self.selected_entry.is_some_and(|entry|
-                    !entry.syntax.is_static() && entry.id.rsplit_once('.').is_some_and(|(selected, _)| selected == owner))
+                let entry = self.selected_entry;
+                if n == "this" && !self.methods[id].syntax.is_static() && !entry.syntax.is_static()
+                    && entry.id.rsplit_once('.').is_some_and(|(selected, _)| selected == owner)
                 {
                     return Ok(self.source_entry_receiver_value(owner));
                 }
@@ -1007,7 +1002,7 @@ impl<'a> Engine<'a> {
                                     && self.source_objects.allocation_owner(&reference).is_none()
                             }) {
                                 crate::preprocess::out_of_source(
-                                    self.selected_entry_id().unwrap_or(id),
+                                    self.selected_entry.id,
                                     &format!("{interface}.{method}"),
                                 );
                             }
@@ -1028,9 +1023,9 @@ impl<'a> Engine<'a> {
                             let endpoint = &self.project.source_ports[&port].endpoint;
                             Some(format!("{receiver}.{endpoint}"))
                         } else {
-                            need(self.selected_entry.is_some_and(|entry|
-                                !entry.syntax.is_static() && entry.id.rsplit_once('.').map(|(owner, _)| owner) == owner
-                            ), "external port requires the statically bound entry receiver")?;
+                            let entry = self.selected_entry;
+                            need(!entry.syntax.is_static() && entry.id.rsplit_once('.').map(|(owner, _)| owner) == owner,
+                                "external port requires the statically bound entry receiver")?;
                             None
                         }
                     } else { None };

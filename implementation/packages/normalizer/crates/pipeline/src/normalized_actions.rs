@@ -352,7 +352,7 @@ impl Engine<'_> {
             guard = math::normalize(b::and(guard, condition.scalar()?));
         }
         if guard.as_bool() == Some(false) { return Ok(()); }
-        let entry = self.selected_entry_id().unwrap_or("standalone module");
+        let entry = self.selected_entry.id;
         let id = port.unwrap_or_else(|| crate::preprocess::out_of_source(entry, target));
         let contract = self.project.ports.get(id).ok_or_else(|| fail("missing sync call contract"))?;
         let checked = &self.checked_ports[id];

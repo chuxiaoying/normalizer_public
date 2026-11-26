@@ -214,9 +214,6 @@ impl<'a> Engine<'a> {
         let Some((name, columns, predicates)) = closed_count_table(relation, &self.source_relations.tables) else {
             return false;
         };
-        let Some(entry) = self.selected_entry else {
-            return false;
-        };
         fn closed(expr: &Expr, table: &str, columns: &BTreeMap<String, String>, entry: &simulator_parser::JavaMethod) -> bool {
             if let Some(literal) = expr.as_lit() {
                 return matches!(literal, math::Lit::Int(_) | math::Lit::BigInt(_) | math::Lit::Bool(_) | math::Lit::Str(_) | math::Lit::Null);
@@ -237,7 +234,7 @@ impl<'a> Engine<'a> {
             }
             false
         }
-        predicates.into_iter().all(|p| closed(p, name, columns, entry.syntax))
+        predicates.into_iter().all(|p| closed(p, name, columns, self.selected_entry.syntax))
     }
 
     fn query_row_declaration(&self, decl: &JavaType) -> Result<&'a simulator_parser::JavaClass> {

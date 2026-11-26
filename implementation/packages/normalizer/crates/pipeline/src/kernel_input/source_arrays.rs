@@ -117,8 +117,7 @@ impl Engine<'_> {
 
     fn array_roots_may_alias(&self, left: &str, right: &str) -> bool {
         if left == right { return true; }
-        let Some(selected) = self.selected_entry else { return false; };
-        let ty = |name: &str| selected.syntax.params().iter()
+        let ty = |name: &str| self.selected_entry.syntax.params().iter()
             .find(|(ty, param)| param == name && crate::normalized::numeric_array(ty))
             .map(|(ty, _)| ty);
         ty(left).is_some_and(|left| ty(right) == Some(left))
@@ -162,7 +161,7 @@ impl Engine<'_> {
     pub(super) fn source_array_store(&mut self, array: Value, index: Value, rhs: Value, path: Expr) -> Result<()> {
         need(rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
         let root = array_root(array)?;
-        let entry = self.selected_entry.ok_or_else(|| fail("array mutation requires a source entry"))?;
+        let entry = self.selected_entry;
         let (owner, _) = entry.id.rsplit_once('.').ok_or_else(|| fail("missing source owner"))?;
         let parameters = entry.syntax.params().iter().filter(|(ty, _)| crate::normalized::numeric_array(ty)).count();
         let states = if entry.syntax.is_static() { 0 } else {

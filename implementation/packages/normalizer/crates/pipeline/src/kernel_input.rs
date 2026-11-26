@@ -200,6 +200,11 @@ impl AdmittedMethod<'_> {
     }
 }
 
+struct PreparedExecution<'a> {
+    methods: BTreeMap<String, AdmittedMethod<'a>>,
+    checked_ports: BTreeMap<String, actions::CheckedPort>,
+}
+
 struct CheckedBinding<'a> {
     name: &'a str,
     function: &'a Function,
@@ -572,7 +577,11 @@ impl Loaded {
         );
         Ok(Self { project, program, source_entry: None })
     }
-    fn engine(&self, checked_ports: BTreeMap<String, actions::CheckedPort>) -> Engine<'_> {
+    fn engine<'a>(
+        &'a self,
+        prepared: PreparedExecution<'a>,
+        selected_entry: kernel_execution::SelectedEntry<'a>,
+    ) -> Engine<'a> {
         Engine {
             node_depth: 0,
             max_node_depth: 0,
@@ -582,16 +591,16 @@ impl Loaded {
             temporal_definitions: Vec::new(),
             source_array_writes: Default::default(),
             project: &self.project,
-            methods: BTreeMap::new(),
+            methods: prepared.methods,
             active: BTreeSet::new(),
             steps: 0,
-            selected_entry: None,
-            public_source_entry: None,
+            selected_entry,
+            public_source_entry: self.source_entry.as_ref().map(|source| source.locator.as_str()),
             source_root: self.source_entry.as_ref().map(|source| source.project_root.as_path()),
             active_static_receiver: None,
-            entry_context: None,
+            entry_context: self.project.entry_contexts.get(selected_entry.id),
             state_roots: BTreeMap::new(),
-            checked_ports,
+            checked_ports: prepared.checked_ports,
             pending_completions: BTreeMap::new(),
             caught_exceptions: None,
             next_binding: 0,
@@ -610,8 +619,9 @@ impl Loaded {
             realtime_throws: Vec::new(),
         }
     }
-    fn prepare(&self) -> Result<Engine<'_>> {
-        let mut e = self.engine(self.project.validate_state_metadata()?);
+    fn prepare(&self) -> Result<PreparedExecution<'_>> {
+        let checked_ports = self.project.validate_state_metadata()?;
+        let mut methods = BTreeMap::new();
         let mut classes = BTreeSet::new();
         let mut adapter_signatures = BTreeMap::new();
         let mut aliases = BTreeMap::<&str, Ty>::new();
@@ -668,7 +678,7 @@ impl Loaded {
                 if !self.project.direct_source {
                     need(m.body().is_none(), "adapter signature carriers must not contain Java method bodies")?;
                     need(m.annotations().is_empty(), "unsupported method shape")?;
-                    need(!e.methods.contains_key(&id), "duplicate/overloaded method")?;
+                    need(!methods.contains_key(&id), "duplicate/overloaded method")?;
                 }
                 let return_type = m.return_type();
                 let alias = match return_type {
@@ -686,13 +696,13 @@ impl Loaded {
                     adapter_signatures.insert(id.clone(), format!("{})", spellings.join(",")));
                     types
                 };
-                e.methods.insert(id, AdmittedMethod { syntax: m, defaults, returns, binding: None });
+                methods.insert(id, AdmittedMethod { syntax: m, defaults, returns, binding: None });
             }
         }
         // Source admission already owns executable/native declaration
         // validity. Semantic bindings only exist on signature-only adapters.
         if self.project.direct_source {
-            return Ok(e);
+            return Ok(PreparedExecution { methods, checked_ports });
         }
         for name in self.project.result_value_types.keys() {
             need(
@@ -705,7 +715,7 @@ impl Loaded {
                 .java
                 .split_once('(')
                 .ok_or_else(|| fail("binding requires full signature"))?;
-            let declared = e.methods.get_mut(id)
+            let declared = methods.get_mut(id)
                 .ok_or_else(|| fail(format!("binding has no Java declaration: {id}")))?;
             let m = declared.syntax;
             need(signature.ends_with(')'), "invalid signature")?;
@@ -734,28 +744,26 @@ impl Loaded {
                 "duplicate binding",
             )?;
         }
-        for method in e.methods.values() {
+        for method in methods.values() {
             need(method.binding.is_some(), "unbound bodyless method")?;
         }
-        Ok(e)
+        Ok(PreparedExecution { methods, checked_ports })
     }
     fn normalize(&self, entry: &str) -> Result<ExecutionResult> {
         let adapter_prepare = (!self.project.direct_source).then(Instant::now);
-        let mut e = self.prepare()?;
-        // The adapter prepares every declaration, but executes only the
-        // selected entry. Reuse this verified engine rather than rebuilding it.
+        let prepared = self.prepare()?;
+        // Validate every declared adapter entry; the engine can only run
+        // after the particular checked entry below has been selected.
         if let Some(started) = adapter_prepare {
             for id in &self.project.entries {
-                need(e.methods.contains_key(id), "entry missing")?;
+                need(prepared.methods.contains_key(id), "entry missing")?;
             }
-            emit_stage_profile("prepare", started, format!("methods={}", e.methods.len()));
+            emit_stage_profile("prepare", started, format!("methods={}", prepared.methods.len()));
         }
         let selected = self.project.entries.iter().find(|s| *s == entry)
             .ok_or_else(|| fail("entry not declared"))?;
-        let m = e.methods.get(entry).ok_or_else(|| fail("entry method missing"))?.syntax;
-        e.selected_entry = Some(kernel_execution::SelectedEntry { id: selected.as_str(), syntax: m });
-        e.public_source_entry = self.source_entry.as_ref().map(|source| source.locator.as_str());
-        e.entry_context = self.project.entry_contexts.get(entry);
+        let m = prepared.methods.get(entry).ok_or_else(|| fail("entry method missing"))?.syntax;
+        let mut e = self.engine(prepared, kernel_execution::SelectedEntry { id: selected.as_str(), syntax: m });
         let args = m
             .params()
             .iter()
