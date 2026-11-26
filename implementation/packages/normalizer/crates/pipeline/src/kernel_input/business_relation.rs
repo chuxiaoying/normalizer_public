@@ -12,11 +12,20 @@ pub(super) struct Rows {
     fields: BTreeMap<String, Value>,
     ordering: Vec<Expr>,
 }
+
+/// A selected row has already passed the same ordering admission as FIRST.
+pub(super) struct OrderedRows {
+    input: RelationExpr,
+    fields: BTreeMap<String, Value>,
+    first_key: Expr,
+    remaining_keys: Vec<Expr>,
+}
+
 #[derive(Default)]
 pub(super) struct Relations {
     pub(super) tables: BTreeMap<String, BTreeMap<String, String>>,
     pub(super) record_inputs: BTreeMap<String, String>,
-    pub(super) first_rows: BTreeMap<i64, Rows>,
+    pub(super) first_rows: BTreeMap<i64, OrderedRows>,
 }
 
 impl Engine<'_> {
@@ -644,20 +653,22 @@ impl Engine<'_> {
                 }
             }
             RowOperation::FirstValue { value, fallback } => {
-                need(!rows.ordering.is_empty(), "first requires an ordered input")?;
+                let mut keys = rows.ordering.into_iter();
+                let first_key = keys.next().ok_or_else(|| fail("first requires an ordered input"))?;
                 let value = self.query_value(value, &query.alias, &rows.fields, &locals, guard)?;
                 let fallback = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
                 // The declared non-null integer projection makes fallback
                 // equivalent to an empty-result default, not a NULL coercion.
                 need(value.ty() == Ty::Integer && fallback.ty() == Ty::Integer,
                     "ordered scalar first requires a non-null numeric projection and fallback")?;
-                let ordered = r::order_by(rows.input, rows.ordering);
+                let ordered = r::order_by(rows.input, first_key, keys);
                 Value::Term(Ty::Integer, math::normalize(r::relation_first_value(
                     ordered, value.scalar()?, fallback.scalar()?,
                 )))
             }
             RowOperation::FirstRow => {
-                need(!rows.ordering.is_empty(), "first requires an ordered input")?;
+                let mut keys = rows.ordering.into_iter();
+                let first_key = keys.next().ok_or_else(|| fail("first requires an ordered input"))?;
                 if let Some(declared) = decl {
                     let JavaType::Class(target) = declared else {
                         return Err(fail("first requires a declared row type"));
@@ -680,7 +691,12 @@ impl Engine<'_> {
                     )?;
                 }
                 let id = self.heap.new_path_object().id();
-                self.source_relations.first_rows.insert(id, rows);
+                self.source_relations.first_rows.insert(id, OrderedRows {
+                    input: rows.input,
+                    fields: rows.fields,
+                    first_key,
+                    remaining_keys: keys.collect(),
+                });
                 env.insert(query.binding.clone(), Value::Term(Ty::Ref, b::heap_ref(id)));
                 return Ok(());
             }
@@ -731,7 +747,11 @@ impl Engine<'_> {
         // nullability to the boundary renderer.
         need(ty == Ty::Integer || (ty == Ty::Text && declared_text_column()),
             "first scalar projection requires a number or declared text column")?;
-        let ordered = r::order_by(row.input.clone(), row.ordering.clone());
+        let ordered = r::order_by(
+            row.input.clone(),
+            row.first_key.clone(),
+            row.remaining_keys.iter().cloned(),
+        );
         Ok(Some(Value::Term(ty, r::relation_first_value(ordered, select, b::lit_null()))))
     }
 }

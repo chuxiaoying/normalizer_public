@@ -5,19 +5,22 @@
 use super::{relation_expr, RelationExpr};
 use crate::{builder as b, Expr, Primitive};
 
-pub fn order_by(input: RelationExpr, keys: Vec<Expr>) -> RelationExpr {
-    if keys.is_empty() {
-        return input;
-    }
+/// Build an ordered relation from a certified first key and its ordered tail.
+pub fn order_by(
+    input: RelationExpr,
+    first: Expr,
+    remaining: impl ExactSizeIterator<Item = Expr>,
+) -> RelationExpr {
+    let key_count = 1 + remaining.len();
     let op = crate::register_func(
-        &format!("relation.order_by/{}", keys.len()),
+        &format!("relation.order_by/{key_count}"),
         std::iter::once(Primitive::Composite)
-            .chain(keys.iter().map(|_| Primitive::Number))
+            .chain((0..key_count).map(|_| Primitive::Number))
             .collect(),
         Some(Primitive::Composite),
         crate::domains::primitive::registry::FuncSemantics::pure_function(),
     );
-    let args = std::iter::once(relation_expr(input)).chain(keys).collect();
+    let args = std::iter::once(relation_expr(input)).chain([first]).chain(remaining).collect();
     RelationExpr::vector(b::call(op, args), "ordered")
 }
 

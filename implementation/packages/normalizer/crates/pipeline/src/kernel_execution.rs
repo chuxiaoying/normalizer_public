@@ -18,6 +18,14 @@ impl JavaArithmetic {
 }
 
 
+// AIR comes from a directive, independently of the Java declaration.
+fn preceding_uninitialized<'a>(body: &'a [S], index: usize, binding: &str) -> Option<&'a JavaType> {
+    match body.get(index.checked_sub(1)?) {
+        Some(S::VarDecl { name, java_type, initializer: None, .. }) if name == binding => Some(java_type),
+        _ => None,
+    }
+}
+
 impl AdmittedMethod<'_> {
     pub(super) fn parameter_type(
         &self, project: &Project, id: &str, index: usize, name: &str,
@@ -404,9 +412,8 @@ impl Engine<'_> {
                     consumed_through = i + self.execute_closed_source_stack(&body[i..], id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding }) => {
-                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
-                        Some(S::VarDecl { name, java_type, initializer: None, .. }) if name == binding
-                            && super::source_map::declared_map(java_type)), "local map requires a fresh typed local declaration")?;
+                    need(preceding_uninitialized(body, i, binding).is_some_and(super::source_map::declared_map),
+                        "local map requires a fresh typed local declaration")?;
                     env.insert(binding.clone(), Value::LocalTextMap(Default::default()));
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapPut { binding, key, value }) => {
@@ -417,9 +424,8 @@ impl Engine<'_> {
                     map.put(key.clone(), value);
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapGet { binding, source, key, fallback }) => {
-                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
-                        Some(S::VarDecl { name, java_type, initializer: None, .. }) if name == binding
-                            && super::source_map::declared_text(java_type)), "local map read requires an uninitialized text local")?;
+                    need(preceding_uninitialized(body, i, binding).is_some_and(super::source_map::declared_text),
+                        "local map read requires an uninitialized text local")?;
                     let method = self.methods[id].syntax;
                     let owner = id.rsplit_once('.').and_then(|(owner, _)| self.program.find_class(owner));
                     need(owner.is_some_and(|owner| crate::normalized::nullable_text_return(owner, method)),
@@ -431,8 +437,7 @@ impl Engine<'_> {
                     env.insert(binding.clone(), Value::Term(Ty::Text, map.get_or(key, fallback)));
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, branches }) => {
-                    need(matches!(i.checked_sub(1).and_then(|i| body.get(i)),
-                        Some(S::VarDecl { name, initializer: None, .. }) if name == binding),
+                    need(preceding_uninitialized(body, i, binding).is_some(),
                         "projected union count must initialize its declared local")?;
                     self.projected_union_count(binding, branches, env)?;
                 }
@@ -445,8 +450,7 @@ impl Engine<'_> {
                     self.execute_source_decimal(decimal, &decl, env)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::SqlWrite(write)) => {
-                    let declared = matches!(i.checked_sub(1).and_then(|previous| body.get(previous)),
-                        Some(S::VarDecl { name, initializer: None, .. }) if name == &write.binding)
+                    let declared = preceding_uninitialized(body, i, &write.binding).is_some()
                         || env
                             .get(&write.binding)
                             .is_some_and(|value| value.ty() == Ty::Integer);
@@ -551,10 +555,8 @@ impl Engine<'_> {
                     self.execute_source_try(body,catches,finally_block.as_deref(),id,env,path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, members, empty }) => {
-                    let Some(S::VarDecl { name, java_type, initializer: None, .. }) = i.checked_sub(1).and_then(|i| body.get(i)) else {
-                        return Err(fail("member choice must follow its uninitialized local declaration"));
-                    };
-                    need(name == binding, "member choice must follow its uninitialized local declaration")?;
+                    let java_type = preceding_uninitialized(body, i, binding)
+                        .ok_or_else(|| fail("member choice must follow its uninitialized local declaration"))?;
                     self.choose_source_member(binding, members, empty, java_type, id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after }) => {
@@ -562,8 +564,7 @@ impl Engine<'_> {
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::CountRange {binding,accumulate,lower,upper}) => {
                     let declared = env.get(binding).is_some_and(|value| value.ty()==Ty::Integer)
-                        || (!*accumulate && matches!(i.checked_sub(1).and_then(|previous| body.get(previous)),
-                            Some(S::VarDecl { name, initializer:None,..}) if name == binding));
+                        || (!*accumulate && preceding_uninitialized(body, i, binding).is_some());
                     need(declared,"count requires a declared integer output")?;
                     self.count_range(binding,*accumulate,lower,upper,env)?;
                 }
