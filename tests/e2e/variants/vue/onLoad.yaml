@@ -82,9 +82,8 @@
     from: arrears.status.ready = true
     to: arrears.status.neverDeclared = true
   reject:
-  - 'SCENARIO_KERNEL_FAILED:'
-  - '[NORM-STATE-DECLARATION]'
-  - undeclared state field
+  - 'SCENARIO_MODULE_INPUT:'
+  - Property 'neverDeclared' does not exist on type
 - name: reuse-entry-today-through-local-alias
   edits:
   - file: src/ArrearsPage.ts

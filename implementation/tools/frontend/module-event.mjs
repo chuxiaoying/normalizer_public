@@ -19,10 +19,10 @@ function hostType(node) {
   return parameterAliases.get(type) ?? type;
 }
 
-function closedFormals(formals) {
+function closedFormals(formals, role) {
   return formals.map(p => {
     if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer) {
-      fail('entry and external port require named required parameters');
+      fail(`${role} requires named required parameters`);
     }
     return {name: p.name.text, type: hostType(p.type), declaration: p};
   });
@@ -68,7 +68,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
     return type.typeArguments[0];
   }
   promiseValue(fn.type, ts.SyntaxKind.VoidKeyword);
-  for (const [position, p] of closedFormals(fn.parameters).entries()) {
+  for (const [position, p] of closedFormals(fn.parameters, 'entry').entries()) {
     parameters[p.name] = {position, type: p.type};
     inputs.set(p.name, p.declaration);
   }
@@ -112,7 +112,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       if (ports.has(path)) fail('ambiguous external method ' + path);
       ports.set(path, {
         id: 'port_' + ports.size, endpoint: modulePath + '#' + path, declaration, method, excerpt: method.getText(sf),
-        params: closedFormals(method.parameters).map(({name, type}) => ({name, type})),
+        params: closedFormals(method.parameters, 'external port').map(({name, type}) => ({name, type})),
         returns: hostType(promiseValue(method.type)), throws: rejectionNames(method, checker, sf),
       });
     }

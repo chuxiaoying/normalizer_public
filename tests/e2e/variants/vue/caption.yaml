@@ -20,7 +20,7 @@
     to: "const early = later\n  const later = \"查询中\"\n  return arrears.status.loading ? early : \"应付金额\""
   reject:
   - 'SCENARIO_MODULE_INPUT:'
-  - unbound projection local later
+  - Block-scoped variable 'later' used before its declaration
 - name: directive-in-return-expression
   edits:
   - file: src/ArrearsPage.ts

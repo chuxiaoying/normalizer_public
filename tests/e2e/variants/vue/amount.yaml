@@ -39,7 +39,7 @@
     to: 'return arrears.status.ready ? arrears[''summary.payable''] : 0'
   reject:
   - 'SCENARIO_MODULE_INPUT:'
-  - missing type for arrears["summary.payable"]
+  - Property 'summary.payable' does not exist on type
 - name: exact-bracket-key-through-record-alias
   edits:
   - file: src/ArrearsPage.ts
