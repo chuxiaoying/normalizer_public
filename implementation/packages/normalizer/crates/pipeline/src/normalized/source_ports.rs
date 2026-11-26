@@ -34,6 +34,7 @@ pub(crate) fn declares_bodyless_member(class: &JavaClass, member: &str, arity: u
 #[derive(Clone)]
 pub(crate) struct SourcePort {
     pub interface: String,
+    pub source_path: String,
     pub endpoint: String,
     pub returns: JavaType,
     pub params: Vec<(JavaType, String)>,
@@ -91,6 +92,7 @@ pub(crate) fn declarations(
                         id.clone(),
                         SourcePort {
                             interface: interface.clone(),
+                            source_path: declaration.source_file().unwrap_or(interface).to_owned(),
                             endpoint,
                             returns: method.return_type().clone(),
                             params: method.params().to_vec(),

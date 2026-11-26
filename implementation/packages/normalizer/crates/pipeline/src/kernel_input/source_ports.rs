@@ -59,11 +59,8 @@ pub(super) fn contracts(
                     })
                 })
                 .collect::<Result<_>>()?;
-            let class = program
-                .find_class(&p.interface)
-                .ok_or_else(|| fail("undeclared port interface"))?;
             let origin = Origin {
-                path: class.source_file().unwrap_or(&p.interface).into(),
+                path: p.source_path.clone(),
                 excerpt: p.endpoint.rsplit('.').next().unwrap().into(),
             };
             let port = actions::Port::from_source(
