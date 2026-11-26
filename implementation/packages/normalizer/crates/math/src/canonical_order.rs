@@ -147,24 +147,12 @@ fn subject_key(expr: &Expr, ctx: &dyn SortContext) -> String {
                 aggregate_structural_key(*kind, relation, select_expr, default_expr, ctx)
             )
         }
-        ExprKind::UnaryOp {
-            op: UnaryOpKind::Not,
-            operand,
-        } => subject_key(operand, ctx),
         ExprKind::UnaryOp { operand, .. } => subject_key(operand, ctx),
         ExprKind::BinOp { op, left, right } => binop_subject_key(*op, left, right, ctx),
         ExprKind::Call { key, args, .. } => call_subject_key(*key, args, ctx),
         ExprKind::CaseWhen { branches } => branches
             .iter()
-            .map(|(cond, value)| {
-                let c = subject_key(cond, ctx);
-                let v = subject_key(value, ctx);
-                if c <= v {
-                    c
-                } else {
-                    v
-                }
-            })
+            .map(|(cond, value)| subject_key(cond, ctx).min(subject_key(value, ctx)))
             .min()
             .unwrap_or_else(|| "99|casewhen-empty".to_string()),
         ExprKind::ArrayLit(items) => items
@@ -187,6 +175,8 @@ fn binop_subject_key(op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortCon
         };
     }
 
+    let left_key = subject_key(left, ctx);
+    let right_key = subject_key(right, ctx);
     if matches!(
         op,
         BinOpKind::Eq
@@ -196,29 +186,13 @@ fn binop_subject_key(op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortCon
             | BinOpKind::Gt
             | BinOpKind::Ge
     ) {
-        let left_key = subject_key(left, ctx);
-        let right_key = subject_key(right, ctx);
-
-        if is_literal_like(left) && !is_literal_like(right) {
-            return right_key;
+        match (is_literal_like(left), is_literal_like(right)) {
+            (true, false) => return right_key,
+            (false, true) => return left_key,
+            _ => {}
         }
-        if is_literal_like(right) && !is_literal_like(left) {
-            return left_key;
-        }
-        return if left_key <= right_key {
-            left_key
-        } else {
-            right_key
-        };
     }
-
-    let left_key = subject_key(left, ctx);
-    let right_key = subject_key(right, ctx);
-    if left_key <= right_key {
-        left_key
-    } else {
-        right_key
-    }
+    left_key.min(right_key)
 }
 
 fn call_subject_key(
