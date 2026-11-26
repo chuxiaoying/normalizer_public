@@ -39,16 +39,12 @@ impl DeclaredPortType {
 }
 
 #[derive(Debug)]
-enum PortObservation {
-    ImmutableValue,
-    ReferenceValue,
-}
+struct ImmutablePortObservation;
 
-impl<'de> Deserialize<'de> for PortObservation {
+impl<'de> Deserialize<'de> for ImmutablePortObservation {
     fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> std::result::Result<Self, D::Error> {
         match String::deserialize(decoder)?.as_str() {
-            "immutable_value" => Ok(Self::ImmutableValue),
-            "reference_value" => Ok(Self::ReferenceValue),
+            "immutable_value" => Ok(Self),
             _ => Err(serde::de::Error::custom("unsupported port observation contract")),
         }
     }
@@ -64,7 +60,8 @@ pub(super) struct Port {
     throws: Vec<String>,
     #[serde(rename = "heap_effect")]
     _heap_effect: PortHeapEffect,
-    argument_observation: PortObservation,
+    #[serde(rename = "argument_observation")]
+    _argument_observation: ImmutablePortObservation,
     effect: String,
 }
 
@@ -85,7 +82,7 @@ impl Port {
             returns: DeclaredPortType::Source(returns),
             throws,
             _heap_effect: PortHeapEffect::None,
-            argument_observation: PortObservation::ImmutableValue,
+            _argument_observation: ImmutablePortObservation,
             effect: "sync".into(),
         }
     }
@@ -204,12 +201,7 @@ impl Project {
                 "unsupported port effect; declare sync or async-barrier",
             )?;
             let validate = |ty: &Ty| -> Result<()> {
-                match p.argument_observation {
-                    PortObservation::ImmutableValue =>
-                        need(ty.port_value(), "immutable port values cannot contain object references or source sequences"),
-                    PortObservation::ReferenceValue =>
-                        need(ty.state_value(), "reference port values require closed state types; source sequences must be explicit heap fields"),
-                }
+                need(ty.port_value(), "immutable port values cannot contain object references or source sequences")
             };
             let returns = p.returns.resolve()?;
             validate(&returns)?;
