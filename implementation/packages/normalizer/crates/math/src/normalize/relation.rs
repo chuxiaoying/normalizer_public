@@ -48,6 +48,15 @@ fn rewrite_empty_aggregate(expr: &Expr) -> Option<Expr> {
     }
 }
 
+/// Each contributing row is exactly zero, and the sum's empty identity is
+/// zero too. Acquisitions remain owned by the execution layer, not the sum.
+fn rewrite_zero_sum(expr: &Expr) -> Option<Expr> {
+    let (RelationAggregateKind::Sum, _, Some(value), None) = expr.as_relation_aggregate()? else {
+        return None;
+    };
+    (value.as_lit() == Some(&crate::Lit::Int(0))).then(|| builder::lit_int(0))
+}
+
 /// The zero/null ordered-row observation has one representative: FIRST of
 /// that same row. NthValue's constructor requires OrderedList semantics at
 /// its host; this rewrite neither invents order nor changes the relation.
@@ -88,6 +97,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
     };
     let output = rewrite_count_zero_comparison(expr)
         .or_else(|| rewrite_empty_aggregate(expr))
+        .or_else(|| rewrite_zero_sum(expr))
         .or_else(|| rewrite_index_zero_as_first(expr))
         .unwrap_or_else(|| expr.clone());
     if let Some((input_size, start)) = profile {
@@ -136,5 +146,16 @@ mod typed_count_bound_tests {
         for value in [first, nonnull] {
             assert!(relation_count_bound(&builder::gt(value, zero.clone())).is_none());
         }
+    }
+
+    #[test]
+    fn an_empty_inner_relation_contributes_zero_for_every_outer_row() {
+        use crate::domains::relation::relation_sum;
+        let outer = RelationExpr::base("accounts", "account");
+        let inner = RelationExpr::select(builder::lit_bool(false), RelationExpr::base("bills", "bill"));
+        let nested = relation_sum(outer.clone(), relation_sum(inner, builder::lit_int(1)));
+        assert_eq!(crate::normalize(nested), builder::lit_int(0));
+        let nonzero = relation_sum(outer, builder::lit_int(1));
+        assert_ne!(crate::normalize(nonzero), builder::lit_int(0));
     }
 }
