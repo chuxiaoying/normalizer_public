@@ -188,7 +188,7 @@ impl Engine<'_> {
         self.source_objects
             .objects
             .insert(reference.id(), (owner.into(), Origin::Allocation));
-        for field in class.fields() {
+        for field in class.fields().iter().filter(|field| !field.is_static()) {
             let default = match self.project.parameter_type(field.java_type())? {
                 Ty::Integer => b::lit_int(0),
                 Ty::Ref | Ty::Text => b::lit_null(),

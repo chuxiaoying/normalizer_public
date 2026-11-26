@@ -1,6 +1,6 @@
 //! Resolve public source entry identity before the execution key is selected.
 use super::Result;
-use simulator_parser::{JavaClass, JavaExpr, JavaLit, JavaProgram, JavaStatement, JavaType};
+use simulator_parser::{JavaClass, JavaExpr, JavaField, JavaLit, JavaProgram, JavaStatement, JavaType};
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
 
@@ -22,7 +22,7 @@ impl SourceReceiver {
     /// Establish the identity of a pre-existing receiver, not a fresh Java
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
     /// assembly is admitted by this route.
-    fn certify(&self, program: &JavaProgram, target: &str, initializer: &JavaExpr) -> Result<()> {
+    fn certify(program: &JavaProgram, target: &str, initializer: &JavaExpr) -> Result<()> {
         let JavaExpr::New { args, .. } = initializer else { unreachable!() };
         let class = program.find_class(target).ok_or("missing receiver assembly type")?;
         let mut constructors = class.methods().iter().filter(|m| m.is_constructor());
@@ -122,6 +122,20 @@ impl SourceReceiver {
     }
 }
 
+/// Recognize a closed, inert static singleton declaration independently of
+/// whether it is the selected entry receiver. This proves startup can be
+/// ignored, not that code can read the object by guessing its declared type.
+pub(crate) fn inert_singleton(program: &JavaProgram, owner: &JavaClass, field: &JavaField) -> bool {
+    if !field.is_static() || !field.is_final() || !field.annotations().is_empty()
+        || owner.is_interface() || owner.supertype().is_some() || !owner.static_initializers().is_empty()
+    {
+        return false;
+    }
+    let JavaType::Class(target) = field.java_type() else { return false; };
+    let Some(initializer @ JavaExpr::New { java_type, .. }) = field.initializer() else { return false; };
+    java_type == field.java_type() && SourceReceiver::certify(program, target, initializer).is_ok()
+}
+
 fn assembly_argument(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {
     match (ty, arg) {
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Bool(_))) => name == "boolean",
@@ -145,7 +159,11 @@ fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> 
 
 impl SourceEntry {
     pub(super) fn resolve(program: &JavaProgram, root: &Path, locator: &str) -> Result<Self> {
-        let fail = |detail: &str| format!("[NORM-ENTRY] {locator}: {detail}");
+        let diagnostic_location = locator.split_once('#').map_or(locator, |(_, invocation)| invocation);
+        let fail = |detail: &str| crate::preprocess::required(
+            "NORM-ENTRY", diagnostic_location, &format!("{detail}; source locator: {locator}"),
+            "使用能唯一确定源码声明的工程相对路径和静态入口调用。",
+        );
         let (file, invocation) = locator.split_once('#').ok_or_else(||
             fail("expected project-relative Java path#static invocation"))?;
         // Insist on the canonical path spelling rather than silently cleaning it.
@@ -169,13 +187,20 @@ impl SourceEntry {
             }
             None => (invocation, None),
         };
-        let segments: Vec<_> = invocation.split('.').collect();
-        let (root_name, receiver_name, method_name) = match segments.as_slice() {
-            [owner, method] => (*owner, None, *method),
-            [owner, field, method] => (*owner, Some(*field), *method),
-            _ => return Err(fail("expected Class.method or Class.FIELD.method")),
+        let (qualified_owner, method_name) = invocation.rsplit_once('.')
+            .ok_or_else(|| fail("expected Class.method or Class.FIELD.method"))?;
+        let method_owner = program.find_class(qualified_owner);
+        let receiver_root = qualified_owner.rsplit_once('.').and_then(|(owner, name)| {
+            let class = program.find_class(owner)?;
+            class.fields().iter().any(|field| field.name() == name).then_some((class, name))
+        });
+        let (class, receiver_name) = match (method_owner, receiver_root) {
+            (Some(class), None) => (class, None),
+            (None, Some((class, name))) => (class, Some(name)),
+            (Some(_), Some(_)) => return Err(fail("ambiguous class or static receiver binding")),
+            (None, None) => return Err(fail("undeclared invocation root class or receiver")),
         };
-        let class = program.find_class(root_name).ok_or_else(|| fail("undeclared invocation root class"))?;
+        let root_name = class.full_name();
         let declaration_file = class.source_file().ok_or_else(|| fail("missing invocation root source declaration"))?;
         if Path::new(declaration_file).strip_prefix(root).ok() != Some(Path::new(file)) {
             return Err(fail("file does not declare the invocation root class"));
@@ -191,12 +216,12 @@ impl SourceEntry {
             {
                 return Err(fail("receiver field must be static final with a matching explicit constructor"));
             }
-            let mut receiver = SourceReceiver { owner: root_name.into(), field: name.into(), assembly_fields: BTreeSet::new() };
-            receiver.certify(program, target, field.initializer().unwrap()).map_err(|detail| fail(&detail))?;
+            let mut receiver = SourceReceiver { owner: root_name.clone(), field: name.into(), assembly_fields: BTreeSet::new() };
+            SourceReceiver::certify(program, target, field.initializer().unwrap()).map_err(|detail| fail(&detail))?;
             receiver.certify_static_assembly(program, class).map_err(|detail| fail(&detail))?;
             (target.as_str(), Some(receiver))
         } else {
-            (root_name, None)
+            (root_name.as_str(), None)
         };
         let target_class = program.find_class(target).ok_or_else(|| fail("undeclared receiver class"))?;
         let mut candidates = target_class.methods().iter().enumerate().filter(|(_, method)|

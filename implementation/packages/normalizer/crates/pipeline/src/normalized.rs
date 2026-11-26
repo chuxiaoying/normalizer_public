@@ -106,8 +106,15 @@ fn source_layouts_with_receiver(
             continue;
         }
         let mut fields = BTreeMap::new();
+        let mut declared_field_names = BTreeSet::new();
         for field in class.fields() {
+            if !declared_field_names.insert(field.name()) {
+                return Err(error("NORM-FIELD-DECLARATION", &class.full_name()));
+            }
             if receiver.is_some_and(|(owner, fields)| owner == class.full_name() && fields.contains(field.name())) {
+                continue;
+            }
+            if crate::kernel_input::inert_singleton(program, class, field) {
                 continue;
             }
             if source_ports::marked(class, field) {
