@@ -42,6 +42,18 @@ pub(super) fn scalar_binary(op: Op) -> fn(Expr, Expr) -> Expr {
     }
 }
 
+/// Resolve a row value only in the physical table that owns it.
+fn owned_column_domain<'a>(
+    columns: &'a BTreeMap<String, String>,
+    table: &str,
+    (owner, column): (&str, &str),
+) -> Option<&'a str> {
+    if owner != table {
+        return None;
+    }
+    columns.get(column).map(String::as_str)
+}
+
 impl<'a> Engine<'a> {
     /// Only declared base tables filtered by closed, typed expressions in the
     /// current source frame are admitted. In particular, raw E/T values or
@@ -65,8 +77,8 @@ impl<'a> Engine<'a> {
                 return matches!(literal, math::Lit::Int(_) | math::Lit::BigInt(_) | math::Lit::Bool(_) | math::Lit::Str(_) | math::Lit::Null);
             }
             if let Some(row) = expr.as_row_value() {
-                return row.split_once('.').is_some_and(|(owner, field)|
-                    owner == table && columns.contains_key(field));
+                return row.split_once('.').and_then(|qualified|
+                    owned_column_domain(columns, table, qualified)).is_some();
             }
             if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
                 return entry.params().iter().any(|(ty, parameter)| parameter == name
@@ -384,12 +396,15 @@ impl<'a> Engine<'a> {
                     };
                     need(name == bound && self.source_relations.tables.contains_key(name),
                         "join count requires a declared table")?;
+                    let columns = &self.source_relations.tables[name];
                     for (field, value) in &rows.fields {
                         let value = value.scalar()?;
                         let (table, column) = value.as_row_value().and_then(|p| p.split_once('.'))
                             .ok_or_else(|| fail("join requires direct table columns"))?;
-                        need(table == name && field == column, "join table declaration must keep physical column names")?;
-                        need(self.source_relations.tables[name][column] != "text?",
+                        let domain = owned_column_domain(columns, name, (table, column))
+                            .filter(|_| field == column)
+                            .ok_or_else(|| fail("join table declaration must keep physical column names"))?;
+                        need(domain != "text?",
                             "join count currently requires non-nullable columns")?;
                         names.insert(format!("{alias}.{field}"),
                             Value::Term(rows.fields[field].ty(), b::row_value(format!("{alias}.{field}"))));
@@ -581,11 +596,12 @@ impl<'a> Engine<'a> {
                 };
                 need(name == alias && self.source_relations.tables.contains_key(name),
                     "group count requires a declared table")?;
+                let columns = &self.source_relations.tables[name];
                 let keys = keys.iter().map(|key| {
                     let value = self.query_value(key, &query.alias, &rows.fields, &locals, guard)?;
                     let value = value.scalar()?;
-                    need(value.as_row_value().is_some_and(|path| path.split_once('.').is_some_and(
-                        |(table, column)| table == name && self.source_relations.tables[name].contains_key(column))),
+                    need(value.as_row_value().and_then(|path| path.split_once('.'))
+                        .and_then(|qualified| owned_column_domain(columns, name, qualified)).is_some(),
                         "group key requires a declared table column")?;
                     Ok(value)
                 }).collect::<Result<Vec<_>>>()?;
