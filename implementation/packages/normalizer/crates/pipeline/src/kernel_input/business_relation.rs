@@ -255,21 +255,7 @@ impl Engine<'_> {
                 } else {
                     Ty::Bool
                 };
-                let (mut a, mut b) = (left.scalar()?, right.scalar()?);
-                if t == Ty::Bool && left.ty() == Ty::Integer {
-                    // An exact difference compared with zero may compare the operands
-                    // directly. Both sides still require the same row and port values.
-                    if b == b::lit_int(0) {
-                        if let Some((BinOpKind::Sub, x, y)) = a.as_binop() {
-                            (a, b) = (x.clone(), y.clone());
-                        }
-                    } else if a == b::lit_int(0) {
-                        if let Some((BinOpKind::Sub, x, y)) = b.as_binop() {
-                            (a, b) = (y.clone(), x.clone());
-                        }
-                    }
-                }
-                Ok(Value::Term(t, math::normalize(binary(a, b))))
+                Ok(Value::Term(t, math::normalize(binary(left.scalar()?, right.scalar()?))))
             }
         }
     }
