@@ -6,12 +6,7 @@ use simulator_parser::{JavaClass, JavaField};
 pub(crate) const IMPORT: &str = "normalizer.annotations.External";
 
 pub(crate) fn marked(class: &JavaClass, field: &JavaField) -> bool {
-    let [marker] = field.annotations() else {
-        return false;
-    };
-    !marker.has_arguments()
-        && (marker.name() == IMPORT
-            || (marker.name() == "External" && class.imports().iter().any(|name| name == IMPORT)))
+    source_marker(class, field.annotations(), IMPORT)
 }
 
 pub(crate) fn receiver(expr: &E) -> Option<&str> {

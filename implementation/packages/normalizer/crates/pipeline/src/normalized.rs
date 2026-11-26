@@ -6,7 +6,7 @@ pub(crate) mod fixed_for;
 pub(crate) mod source_ports;
 
 use simulator_parser::{
-    JavaBinOp as B, JavaExpr as E, JavaLit, JavaProgram, JavaStatement as S, JavaType,
+    AnnotationRef, JavaBinOp as B, JavaExpr as E, JavaLit, JavaProgram, JavaStatement as S, JavaType,
     JavaUnaryOp as U,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -130,27 +130,33 @@ pub(crate) fn source_layouts(
     }
     Ok(layouts)
 }
+const ENTRY_STATE: &str = "normalizer.annotations.EntryState";
+const NULLABLE: &str = "normalizer.annotations.Nullable";
+
+fn source_marker(
+    class: &simulator_parser::JavaClass,
+    annotations: &[AnnotationRef],
+    qualified: &str,
+) -> bool {
+    let [annotation] = annotations else { return false; };
+    !annotation.has_arguments()
+        && (annotation.name() == qualified
+            || (qualified.rsplit('.').next() == Some(annotation.name())
+                && class.imports().iter().any(|name| name == qualified)))
+}
+
 pub(crate) fn entry_state(
     class: &simulator_parser::JavaClass,
     field: &simulator_parser::JavaField,
 ) -> bool {
-    let [annotation] = field.annotations() else {
-        return false;
-    };
-    !annotation.has_arguments()
-        && (annotation.name() == "normalizer.annotations.EntryState"
-            || (annotation.name() == "EntryState"
-                && class
-                    .imports()
-                    .iter()
-                    .any(|name| name == "normalizer.annotations.EntryState")))
+    source_marker(class, field.annotations(), ENTRY_STATE)
 }
 pub(crate) fn source_nullable_parameter(
     method: &simulator_parser::JavaMethod, name: &str, ty: &JavaType,
 ) -> Result<bool, String> {
     match method.param_annotations(name) {
         [] => Ok(false),
-        [annotation] if annotation.name() == "normalizer.annotations.Nullable"
+        [annotation] if annotation.name() == NULLABLE
             && !annotation.has_arguments() && matches!(ty, JavaType::Class(_)) => Ok(true),
         [annotation] => Err(format!("unsupported source parameter annotation {}", annotation.name())),
         _ => Err("multiple source parameter annotations cannot define nullability".into()),
@@ -160,11 +166,8 @@ pub(crate) fn source_nullable_parameter(
 pub(crate) fn source_nullable_field(
     class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
 ) -> bool {
-    let [annotation] = field.annotations() else { return false; };
     matches!(field.java_type(), JavaType::Class(_))
-        && !annotation.has_arguments()
-        && (annotation.name() == "normalizer.annotations.Nullable"
-            || (annotation.name() == "Nullable" && class.imports().iter().any(|name| name == "normalizer.annotations.Nullable")))
+        && source_marker(class, field.annotations(), NULLABLE)
 }
 
 pub(crate) fn nullable_text_field(
@@ -174,18 +177,15 @@ pub(crate) fn nullable_text_field(
         && source_nullable_field(class, field)
 }
 pub(crate) fn nullable_text_return(class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod) -> bool {
-    let [annotation] = method.annotations() else { return false; };
     matches!(method.return_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
-        && !annotation.has_arguments()
-        && (annotation.name() == "normalizer.annotations.Nullable"
-            || (annotation.name() == "Nullable" && class.imports().iter().any(|name| name == "normalizer.annotations.Nullable")))
+        && source_marker(class, method.annotations(), NULLABLE)
 }
 
 pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> bool {
     class.imports().iter().all(|name| {
         matches!(
             name.as_str(),
-            source_ports::IMPORT | "normalizer.annotations.EntryState" | "normalizer.annotations.Nullable" | "java.util.List" | crate::normalized_text::SOURCE_IMPORT
+            source_ports::IMPORT | ENTRY_STATE | NULLABLE | "java.util.List" | crate::normalized_text::SOURCE_IMPORT
         )
     })
 }
