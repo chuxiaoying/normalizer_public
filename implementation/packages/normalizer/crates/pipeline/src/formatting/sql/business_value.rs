@@ -62,7 +62,10 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
         });
     }
     let mut definitions = Vec::new();
-    for (Repetition { query, .. }, _) in queries.into_iter().zip(total_counts) {
+    for (Repetition { query, eager }, total) in queries.into_iter().zip(total_counts) {
+        if eager != total {
+            continue;
+        }
         let name = format!("$l_{}", definitions.len());
         definitions.push(format!(
             "LET {name} = {}",
@@ -78,6 +81,39 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod let_scope_contract {
+    use super::*;
+    use math::{domains::relation as r, ScalarSymbolType};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn a_third_guarded_use_blocks_a_global_binding_for_two_eager_uses() {
+        let inputs = ["enabled", "extra", "publish", "values"].into_iter()
+            .map(|name| (name.to_owned(), name.to_owned())).collect::<BTreeMap<_, _>>();
+        let mut ctx = FormatCtx::for_business(inputs, BTreeMap::new());
+        ctx.set_scalar_arrays(BTreeSet::from(["values".to_owned()]));
+        let zero = b::lit_int(0);
+        let offset = b::case_when(vec![(
+            b::param("enabled", ScalarSymbolType::Boolean),
+            b::param("extra", ScalarSymbolType::Integer),
+        )], zero.clone());
+        let query = r::relation_sum(r::RelationExpr::base("values", "item"),
+            b::add(b::acquired_integer_row("item"), offset));
+        let repeated = b::mul(query.clone(), query.clone());
+        let eager = format_value(&repeated, &mut ctx);
+        assert!(eager.starts_with("LET $l_0 = "));
+        assert!(eager.ends_with("IN $l_0 * $l_0"));
+
+        let guarded = b::case_when(vec![(
+            b::param("publish", ScalarSymbolType::Boolean), query,
+        )], zero);
+        let mixed = format_value(&b::add(repeated, guarded), &mut ctx);
+        assert!(!mixed.contains("$l_"));
+        assert_eq!(mixed.matches("SUM(").count(), 3);
+    }
 }
 
 // The mathematical CASE already selected its arms. In a minimum/maximum,
