@@ -3,49 +3,12 @@
 use crate::{builder as b, BinOpKind as B, Expr, Lit};
 use num_bigint::BigInt;
 
-// Only direct acquired entry parameters carry this declaration evidence.
-// Legacy expansion also encodes partial field/E projections as Parameter paths;
-// numeric annotations on those paths do not certify a total bounded input.
-fn native_parameter_bounds(e: &Expr) -> Option<(i128, i128)> {
-    let crate::expr::ExprKind::SymVar {
-        origin:
-            crate::symvar::SymVarOrigin::Parameter {
-                name,
-                primitive_type,
-            },
-    } = e.kind()
-    else {
-        return None;
-    };
-    if name.starts_with("$e_")
-        || name.starts_with("$t_")
-        || name.starts_with("$h_")
-        || name.contains(['.', '[', ']'])
-    {
-        return None;
-    }
-    match primitive_type.as_str() {
-        "i32" => Some((i32::MIN as i128, i32::MAX as i128)),
-        "i64" => Some((i64::MIN as i128, i64::MAX as i128)),
-        _ => None,
-    }
-}
-
-pub(super) fn bounds(e: &Expr) -> Option<(i128, i128)> {
-    if let Some(domain) = native_parameter_bounds(e) {
-        return Some(domain);
-    }
-    if let Some(Lit::Int(n)) = e.as_lit() {
-        return Some((*n as i128, *n as i128));
-    }
-    None
-}
-
 // None endpoints are unbounded, not the host word's minimum and maximum.
 type Endpoint = Option<BigInt>;
 fn subject_domain(e: &Expr) -> Option<(Endpoint, Endpoint)> {
-    if let Some((lo, hi)) = bounds(e) {
-        return Some((Some(lo.into()), Some(hi.into())));
+    if let Some(Lit::Int(value)) = e.as_lit() {
+        let point = BigInt::from(*value);
+        return Some((Some(point.clone()), Some(point)));
     }
     match e.as_sym_var() {
         Some(crate::SymVarOrigin::Parameter { name, primitive_type })

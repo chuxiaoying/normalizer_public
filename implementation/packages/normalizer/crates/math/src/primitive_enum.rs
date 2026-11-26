@@ -26,11 +26,11 @@ pub enum Primitive {
 
 impl Primitive {
     /// Lower an internal scalar symbol tag, after the language adapter has
-    /// provided its evidence. Fixed-width carriers remain distinct tags;
-    /// they do not acquire implicit Java class or runtime library behavior.
+    /// provided its evidence. A machine-width Java spelling does not give
+    /// an ordinary business number an implicit bounded domain.
     pub(crate) fn from_symbol_tag(tag: &str) -> Option<Self> {
         match tag {
-            "integer" | "i32" | "i64" | crate::domains::decimal::VALUE_TAG => Some(Self::Number),
+            "integer" | crate::domains::decimal::VALUE_TAG => Some(Self::Number),
             "boolean" => Some(Self::Boolean),
             "text" => Some(Self::String),
             _ => None,

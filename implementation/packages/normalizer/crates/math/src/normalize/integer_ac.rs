@@ -35,7 +35,7 @@ fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
                 && (primitive_type == "integer" || !name.contains('.'))
                 && matches!(
                     primitive_type.as_str(),
-                    "integer" | "i32" | "i64"
+                    "integer"
                 )
         }
         ExprKind::BinOp {

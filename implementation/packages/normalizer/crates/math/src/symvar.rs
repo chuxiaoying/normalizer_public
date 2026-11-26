@@ -29,7 +29,6 @@ pub enum SymVarOrigin {
     ///
     /// `primitive_type` 示例：
     /// - 逻辑标量：`"integer"` / `"boolean"` / `"text"` 等。
-    /// - 明确固定位宽载体：`"i32"`、`"i64"`。
     Parameter {
         name: String,
         primitive_type: String,
