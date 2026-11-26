@@ -569,10 +569,11 @@ impl Engine<'_> {
         if left.ty() == Ty::Decimal || right.ty() == Ty::Decimal {
             need(matches!(left.ty(), Ty::Integer | Ty::Decimal)
                 && matches!(right.ty(), Ty::Integer | Ty::Decimal), "numeric operands required")?;
+            use math::domains::decimal::Operator;
             let binary = match op {
-                JavaArithmetic::Add => BinOpKind::Add,
-                JavaArithmetic::Sub => BinOpKind::Sub,
-                JavaArithmetic::Mul => BinOpKind::Mul,
+                JavaArithmetic::Add => Operator::Add,
+                JavaArithmetic::Sub => Operator::Sub,
+                JavaArithmetic::Mul => Operator::Mul,
             };
             return Ok(Value::Term(Ty::Decimal,
                 math::domains::decimal::binary(binary, left.scalar()?, right.scalar()?)));
@@ -955,15 +956,17 @@ impl Engine<'_> {
                 self.choose(condition, yes, no)
             }
             J::BinOp { op, left, right } => {
-                let op = match op {
-                    B::Eq => BinOpKind::Eq,
-                    B::Ne => BinOpKind::Ne,
-                    B::Lt => BinOpKind::Lt,
-                    B::Le => BinOpKind::Le,
-                    B::Gt => BinOpKind::Gt,
-                    B::Ge => BinOpKind::Ge,
+                use math::domains::decimal::Operator;
+                let comparison = match op {
+                    B::Eq => Operator::Eq,
+                    B::Ne => Operator::Ne,
+                    B::Lt => Operator::Lt,
+                    B::Le => Operator::Le,
+                    B::Gt => Operator::Gt,
+                    B::Ge => Operator::Ge,
                     _ => return Err(fail("unsupported Java expression in pure-array-1")),
                 };
+                let op = comparison.binop();
                 let nullable = match (left.as_ref(), right.as_ref()) {
                     (value, J::Lit(JavaLit::Null)) | (J::Lit(JavaLit::Null), value)
                         if matches!(op, BinOpKind::Eq | BinOpKind::Ne) => Some(value),
@@ -994,7 +997,7 @@ impl Engine<'_> {
                 )?;
                 let r = self.java_expr(right, id, env, path.clone())?;
                 if matches!((l.ty(), r.ty()), (Ty::Decimal, Ty::Decimal) | (Ty::Decimal, Ty::Integer) | (Ty::Integer, Ty::Decimal)) {
-                    return Ok(Value::Term(Ty::Bool, math::domains::decimal::binary(op, l.scalar()?, r.scalar()?)));
+                    return Ok(Value::Term(Ty::Bool, math::domains::decimal::binary(comparison, l.scalar()?, r.scalar()?)));
                 }
                 need(l.ty() == r.ty(), "Java comparison type mismatch")?;
                 let ty = l.ty();

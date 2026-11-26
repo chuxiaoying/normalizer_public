@@ -1,6 +1,6 @@
 //! Finite exact decimals as signed integer coefficients and powers of ten.
 //! Operations are distinct from fixed-width words and IEEE binary values.
-use crate::{builder as b, Expr, Primitive};
+use crate::{builder as b, BinOpKind, Expr, Primitive};
 use crate::domains::primitive::registry::FuncSemantics;
 use num_bigint::{BigInt, Sign};
 use std::cmp::Ordering;
@@ -105,31 +105,51 @@ pub fn negate(value: Expr) -> Expr {
     }
 }
 
-pub fn binary(op: crate::BinOpKind, left: Expr, right: Expr) -> Expr {
-    use crate::BinOpKind::*;
+/// Operators admitted in the exact decimal domain. In particular, a generic
+/// logical, bitwise or division operator cannot reach decimal folding.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Operator {
+    Add, Sub, Mul, Eq, Ne, Lt, Le, Gt, Ge,
+}
+
+impl Operator {
+    pub fn binop(self) -> BinOpKind {
+        use Operator::*;
+        match self {
+            Add => BinOpKind::Add, Sub => BinOpKind::Sub, Mul => BinOpKind::Mul,
+            Eq => BinOpKind::Eq, Ne => BinOpKind::Ne, Lt => BinOpKind::Lt,
+            Le => BinOpKind::Le, Gt => BinOpKind::Gt, Ge => BinOpKind::Ge,
+        }
+    }
+}
+
+pub fn binary(op: Operator, left: Expr, right: Expr) -> Expr {
+    use Operator::*;
     // The simulator evaluates both operands before reaching this pure rule;
     // neither a previously recorded effect nor an exceptional path is erased.
     if op == Sub && left == right {
         return b::lit_int(0);
     }
     if let (Some((a, s)), Some((b, t))) = (coefficient(&left), coefficient(&right)) {
-        if op == Mul {
-            return literal(a * b, s.checked_add(t).expect("decimal scale overflow"));
-        }
         let scale = s.max(t);
-        let a = a * BigInt::from(10).pow(scale - s);
-        let b = b * BigInt::from(10).pow(scale - t);
-        match op {
-            Add => return literal(a + b, scale),
-            Sub => return literal(a - b, scale),
-            _ => {
-                if let Some(compare) = op.comparison_test() {
-                    return b::lit_bool(compare(&a, &b));
-                }
-            }
-        }
+        let align = || (&a * BigInt::from(10).pow(scale - s), &b * BigInt::from(10).pow(scale - t));
+        let compare = || {
+            let (left, right) = align();
+            left.cmp(&right)
+        };
+        return match op {
+            Add => { let (a, b) = align(); literal(a + b, scale) }
+            Sub => { let (a, b) = align(); literal(a - b, scale) }
+            Mul => literal(&a * &b, s.checked_add(t).expect("decimal scale overflow")),
+            Eq => b::lit_bool(compare() == Ordering::Equal),
+            Ne => b::lit_bool(compare() != Ordering::Equal),
+            Lt => b::lit_bool(compare() == Ordering::Less),
+            Le => b::lit_bool(compare() != Ordering::Greater),
+            Gt => b::lit_bool(compare() == Ordering::Greater),
+            Ge => b::lit_bool(compare() != Ordering::Less),
+        };
     }
-    b::binop_public(op, left, right)
+    b::binop_public(op.binop(), left, right)
 }
 
 pub fn multiply(a: Expr, b: Expr) -> Expr {
