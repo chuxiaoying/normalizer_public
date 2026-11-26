@@ -1198,7 +1198,11 @@ mod source_declaration_contracts {
         assert!(validate(&project(""), "Entry.build").is_ok());
         let error = validate(&project("7"), "Entry.build").err()
             .expect("an implicit constructor never accepts a supplied argument");
-        assert!(error.contains("[NORM-UNBOUND-CALL]") && error.contains("Box.Box/1"));
+        assert_eq!(
+            error.lines().next(),
+            Some("[NORM-UNBOUND-CALL] kind=PREPROCESS_REQUIRED location=Entry.build -> Box constructor/1"),
+            "the attempted constructor and supplied arity must be in the primary diagnostic",
+        );
     }
 
     #[test]
