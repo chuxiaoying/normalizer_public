@@ -14,16 +14,17 @@ export function unwrapParens(node) {
   return node;
 }
 
-function pathOf(node, sf) {
-  if (ts.isIdentifier(node)) return node.text;
-  if (node.kind === ts.SyntaxKind.ThisKeyword) return 'this';
+function pathOf(node) {
+  if (ts.isIdentifier(node)) return [node.text];
+  if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
   if (ts.isPropertyAccessExpression(node)) {
-    const parent = pathOf(node.expression, sf);
-    return parent ? `${parent}.${node.name.text}` : null;
+    const parent = pathOf(node.expression);
+    return parent ? [...parent, node.name.text] : null;
   }
   if (ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)) {
-    const parent = pathOf(node.expression, sf);
-    return parent ? `${parent}.${node.argumentExpression.text}` : null;
+    const parent = pathOf(node.expression);
+    // A bracket string supplies one exact property key, even if it contains ".".
+    return parent ? [...parent, node.argumentExpression.text] : null;
   }
   return null;
 }
@@ -41,7 +42,7 @@ function expr(node, sf) {
   if (node.kind === ts.SyntaxKind.NullKeyword) return { op: 'literal', type: 'null', value: null };
   if (ts.isIdentifier(node)) return { op: 'var', name: node.text };
   if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-    const path = pathOf(node, sf);
+    const path = pathOf(node);
     if (path) return { op: 'read', target: path };
   }
   if (ts.isBinaryExpression(node)) {

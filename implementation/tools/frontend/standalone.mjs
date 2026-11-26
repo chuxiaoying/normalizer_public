@@ -180,7 +180,7 @@ function compile(source, file, entry, physicalPath) {
       return {type: 'number', node: internal(expr.operator === '+' ? 'add' : 'subtract', {left: left.node, right: right.node})};
     }
     if (expr.op === 'read') {
-      const [name, field, ...rest] = expr.target.split('.');
+      const [name, field, ...rest] = expr.target;
       const binding = names.get(name);
       if (field !== 'length' || rest.length || binding?.type !== 'number[]') {
         fail('length requires a direct declared non-null readonly Vector');

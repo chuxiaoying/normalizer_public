@@ -18,34 +18,37 @@ function compileProjection(projection) {
   const environment = Object.create(null);
 
   function read(target) {
-    const [binding, ...fields] = target.split('.');
+    const [binding, ...fields] = target;
     const alias = bindings.get(binding);
     if (alias && !alias.statePath) throw new Error(`SCENARIO_MODULE_INPUT: scalar projection local ${binding} has no fields`);
-    target = [alias?.statePath ?? binding, ...fields].join('.');
-    const [root, ...path] = target.split('.');
+    const statePath = [...(alias?.statePath ?? [binding]), ...fields];
+    const [root, ...path] = statePath;
+    const key = JSON.stringify(statePath);
+    const label = path.reduce((prefix, part) =>
+      /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(part) ? prefix + '.' + part : prefix + '[' + JSON.stringify(part) + ']', root);
     const state = projection.states.get(root);
-    if (!state) throw new Error(`SCENARIO_MODULE_INPUT: ${target} must name an @entryState field`);
+    if (!state) throw new Error(`SCENARIO_MODULE_INPUT: ${label} must name an @entryState field`);
     let type = state.fields;
     for (const name of path) {
-      if (!type || typeof type !== 'object' || !Object.hasOwn(type, name)) throw new Error(`SCENARIO_MODULE_INPUT: missing type for ${target}`);
+      if (!type || typeof type !== 'object' || !Object.hasOwn(type, name)) throw new Error(`SCENARIO_MODULE_INPUT: missing type for ${label}`);
       type = type[name];
     }
-    if (typeof type === 'object') return { statePath: target };
-    if (!reads.has(target)) {
-      reads.set(target, { name: `state_${reads.size}`, path: ['E', root, ...path], type });
+    if (typeof type === 'object') return { statePath };
+    if (!reads.has(key)) {
+      reads.set(key, { name: `state_${reads.size}`, path: ['E', root, ...path], type });
       environment[root] ??= { kind: 'state', source: state.source, fields: Object.create(null) };
       let fields = environment[root].fields;
       for (const name of path.slice(0, -1)) fields = fields[name] ??= Object.create(null);
       fields[path.at(-1)] = type;
     }
-    return { type, body: { op: 'var', name: reads.get(target).name } };
+    return { type, body: { op: 'var', name: reads.get(key).name } };
   }
 
   function compile(expr) {
     if (expr.op === 'read') return read(expr.target);
     if (expr.op === 'var') {
       const binding = bindings.get(expr.name);
-      if (binding?.statePath || projection.states.has(expr.name)) return read(expr.name);
+      if (binding?.statePath || projection.states.has(expr.name)) return read([expr.name]);
       if (!binding) throw new Error(`SCENARIO_MODULE_INPUT: unbound projection local ${expr.name}`);
       return { type: binding.type, body: { op: 'var', name: binding.name } };
     }
