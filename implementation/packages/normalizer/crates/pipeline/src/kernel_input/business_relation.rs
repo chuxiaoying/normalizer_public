@@ -69,6 +69,50 @@ mod physical_column_contract {
         assert_eq!(owned_column_domain(&columns, "bill", ("invoice", "id")), None);
         assert_eq!(owned_column_domain(&columns, "bill", ("bill", "missing")), None);
     }
+
+    #[test]
+    fn generic_correlated_sums_are_not_unconditionally_flattened_to_a_join() {
+        let accounts = RelationExpr::base("accounts", "a");
+        let bills = RelationExpr::base("bills", "b");
+        let key = b::eq(b::row_value("a.id"), b::row_value("b.account_id"));
+        let tenant = b::eq(b::row_value("a.tenant"), b::row_value("b.tenant"));
+        let count = |condition, input| r::relation_sum(RelationExpr::select(condition, input), b::lit_int(1));
+        let joined = count(key.clone(), bills.clone());
+        assert!(inner_join_count(&accounts, &joined).is_some());
+
+        let two_dependent_terms = count(b::and(key, tenant), bills);
+        assert!(inner_join_count(&accounts, &two_dependent_terms).is_none());
+        let independent_inner = count(b::eq(b::row_value("a.account_id"), b::lit_int(1)),
+            RelationExpr::base("bills", "a"));
+        assert!(inner_join_count(&accounts, &independent_inner).is_none());
+    }
+
+    #[test]
+    fn grouping_and_projected_union_recognizers_require_their_own_row_shape() {
+        let table = RelationExpr::base("bill", "bill");
+        let status = b::row_value("bill.status");
+        let keys = b::array_lit(vec![status.clone()]);
+        let grouped = |input, name| RelationExpr::distinct(RelationExpr::project(keys.clone(), name, input));
+        assert_eq!(grouped_table(&grouped(table.clone(), "groups")).map(|(name, _)| name), Some("bill"));
+        assert!(grouped_table(&RelationExpr::distinct(table.clone())).is_none());
+        assert!(grouped_table(&grouped(table.clone(), "values")).is_none());
+        assert!(grouped_table(&grouped(RelationExpr::base("bill", "row"), "groups")).is_none());
+        let filtered = RelationExpr::select(b::ne(status.clone(), b::lit_str("closed")), table.clone());
+        assert!(grouped_table(&grouped(filtered.clone(), "groups")).is_none());
+
+        let projection = |input, name| RelationExpr::project(status.clone(), name, input);
+        let direct = RelationExpr::Union(vec![projection(table.clone(), "value")]);
+        assert_eq!(projected_union_columns(&direct), Some(vec![("bill", "status")]));
+        for branch in [
+            table.clone(),
+            projection(filtered, "value"),
+            projection(table, "other"),
+            projection(RelationExpr::base("bill", "row"), "value"),
+        ] {
+            assert!(projected_union_columns(&RelationExpr::Union(vec![branch])).is_none());
+        }
+        assert!(projected_union_columns(&RelationExpr::Union(Vec::new())).is_none());
+    }
 }
 
 impl<'a> Engine<'a> {
