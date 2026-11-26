@@ -108,3 +108,15 @@
         - call: { external: probe.read, args: ['10'], returns: number, result: $e_0 }
         - call: { external: probe.read, args: ['30'], returns: number, result: $e_1, when: 'NOT (fail)' }
     - { path: [throws], absent: true }
+
+- name: minimum-java-int-index-still-exits-only-on-the-guarded-path
+  edits:
+    - {from: '(new int[]{2, 7})[-1]', to: '(new int[]{2, 7})[-2147483648]'}
+
+- name: maximum-java-int-index-is-not-a-wrapped-valid-position
+  edits:
+    - {from: '(new int[]{2, 7})[-1]', to: '(new int[]{2, 7})[2147483647]'}
+
+- name: zero-index-into-an-empty-array-is-still-an-index-failure
+  edits:
+    - {from: '(new int[]{2, 7})[-1]', to: '(new int[]{})[0]'}

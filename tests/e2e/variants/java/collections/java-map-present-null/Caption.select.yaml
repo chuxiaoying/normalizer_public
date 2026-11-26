@@ -111,3 +111,20 @@
   - '[SOURCE-PARSE-FAILED]'
   - '[NORM-UNSUPPORTED-LOCAL-IR]'
   - unknown accumulating local operation
+
+- name: empty-string-is-a-valid-key-not-an-absent-key
+  edits:
+    - {from: 'map_put(captions, "main", null)', to: 'map_put(captions, "", null)'}
+    - {from: 'map_get_or(captions, "main", fallback)', to: 'map_get_or(captions, "", fallback)'}
+
+- name: literal-map-keys-are-case-sensitive
+  edits:
+    - {from: 'map_get_or(captions, "main", fallback)', to: 'map_get_or(captions, "MAIN", fallback)'}
+  expect:
+    - {path: [R], value: fallback}
+
+- name: an-empty-text-value-is-present-and-is-not-null
+  edits:
+    - {from: 'map_put(captions, "main", null)', to: 'map_put(captions, "main", "")'}
+  expect:
+    - {path: [R], value: 'CASE WHEN cleared THEN "" ELSE fallback END'}

@@ -44,3 +44,9 @@
   reject:
   - '[NORM-PROJECT]'
   - Java array element type differs from the declared array
+
+- name: equal-initializer-values-still-occupy-two-distinct-slots
+  edits:
+    - {from: '{2, 7}', to: '{2, 2}'}
+  expect:
+    - {path: [R], value: '22'}
