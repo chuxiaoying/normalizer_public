@@ -13,13 +13,21 @@ enum WirePlan {
 enum Slot {
     Undefined,
     Text { value: String },
-    Record { fields: BTreeMap<String, bool> },
+    Record { fields: BTreeMap<String, ScalarField> },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+enum ScalarField {
+    Flag(bool),
+    Text(String),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Binding {
     IsUndefined { name: String, index: usize },
+    SlotTruth { name: String, index: usize },
     OptionalFlag { name: String, index: usize, field: String },
     RestLength { name: String, from: usize },
 }
@@ -64,10 +72,22 @@ fn admit_plan(plan: WirePlan, observations: &[Binding]) -> Result<Plan> {
                         let flag = matches!(items.get(*index), None | Some(Slot::Undefined));
                         (name, Ty::Bool, b::lit_bool(flag))
                     }
+                    Binding::SlotTruth { name, index } => {
+                        let flag = match items.get(*index) {
+                            None | Some(Slot::Undefined) => false,
+                            Some(Slot::Text { value }) => !value.is_empty(),
+                            Some(Slot::Record { .. }) => true,
+                        };
+                        (name, Ty::Bool, b::lit_bool(flag))
+                    }
                     Binding::OptionalFlag { name, index, field } => {
                         let flag = match items.get(*index) {
                             None | Some(Slot::Undefined) => false,
-                            Some(Slot::Record { fields }) => fields.get(field).copied().unwrap_or(false),
+                            Some(Slot::Record { fields }) => match fields.get(field) {
+                                None => false,
+                                Some(ScalarField::Flag(value)) => *value,
+                                Some(ScalarField::Text(_)) => return Err("optional tuple property is not Boolean".into()),
+                            },
                             _ => return Err("optional tuple receiver is not a record".to_owned()),
                         };
                         (name, Ty::Bool, b::lit_bool(flag))
