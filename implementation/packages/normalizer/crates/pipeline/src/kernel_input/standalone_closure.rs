@@ -108,6 +108,27 @@ mod tests {
     }
 
     #[test]
+    fn closure_requires_an_admitted_module_path_and_each_identifier() {
+        for filename in ["/src/input.js", "src/input.ts"] {
+            let mut wrong_file = envelope();
+            wrong_file["file"] = json!(filename);
+            assert_rejected(wrong_file);
+        }
+
+        let mut wrong_entry = envelope();
+        wrong_entry["entry"] = json!("2entry");
+        assert_rejected(wrong_entry);
+
+        let mut wrong_member = envelope();
+        wrong_member["call"]["member"] = json!("a.b");
+        assert_rejected(wrong_member);
+
+        let mut wrong_formal = envelope();
+        wrong_formal["parameters"] = json!(["input", "not-a-binding"]);
+        assert_rejected(wrong_formal);
+    }
+
+    #[test]
     fn a_parsed_mjs_call_with_dollar_identifiers_keeps_the_no_source_diagnostic() {
         let mut valid = envelope();
         valid["file"] = json!("src/input.mjs");
