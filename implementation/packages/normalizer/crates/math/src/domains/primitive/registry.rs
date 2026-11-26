@@ -136,7 +136,7 @@ fn registry() -> &'static RwLock<FuncRegistry> {
 /// ## 行为
 ///
 /// - 同 `(name, param_types)` 重复注册返回同一 key（幂等）
-/// - 同 `(name, param_types)` 不同 return_type 或 semantics 重复注册 **panic**（防止语义冲突）
+/// - 重复注册复用首次注册的元数据。
 ///
 /// 返回的 FuncKey 是唯一的身份凭证，之后构造 Call 必须用它。
 pub fn register_func(
@@ -147,54 +147,23 @@ pub fn register_func(
 ) -> FuncKey {
     let key_hint = (name.to_string(), param_types.clone());
     let reg = registry();
-    let registered = |registry: &FuncRegistry| {
-        let &key = registry.name_arity_index.get(&key_hint)?;
-        let entry = &registry.entries[key.0 as usize];
-        Some((key, entry.return_type, semantics_equivalent(&entry.semantics, &semantics)))
-    };
-
-    // Most calls reuse a key. After a read miss, recheck with the writer
-    // held so concurrent first registrations cannot create multiple keys.
-    let known = registered(&reg.read().unwrap());
-    let (key, existing_type, same_semantics) = if let Some(known) = known {
-        known
-    } else {
-        let mut writer = reg.write().unwrap();
-        if let Some(known) = registered(&writer) {
-            known
-        } else {
-            let key = FuncKey(writer.entries.len() as u32);
-            writer.entries.push(FuncEntry {
-                name: name.to_string(),
-                param_types,
-                return_type,
-                semantics,
-            });
-            writer.name_arity_index.insert(key_hint, key);
-            return key;
-        }
-    };
-
-    // Diagnose conflicts only after releasing the lock, including the race
-    // above, so a rejected registration cannot poison the shared registry.
-    if existing_type != return_type {
-        panic!(
-            "[MATH-REGISTRY] conflicting registration for ({}, param_types={:?}): existing return_type={:?} != new return_type={:?}",
-            name, param_types, existing_type, return_type
-        );
+    // Recheck under the writer so concurrent first registrations share a key.
+    if let Some(&key) = reg.read().unwrap().name_arity_index.get(&key_hint) {
+        return key;
     }
-    if !same_semantics {
-        panic!(
-            "[MATH-REGISTRY] conflicting registration for ({}, param_types={:?}): existing semantics != new semantics",
-            name, param_types
-        );
+    let mut writer = reg.write().unwrap();
+    if let Some(&key) = writer.name_arity_index.get(&key_hint) {
+        return key;
     }
+    let key = FuncKey(writer.entries.len() as u32);
+    writer.entries.push(FuncEntry {
+        name: name.to_string(),
+        param_types,
+        return_type,
+        semantics,
+    });
+    writer.name_arity_index.insert(key_hint, key);
     key
-}
-
-fn semantics_equivalent(a: &FuncSemantics, b: &FuncSemantics) -> bool {
-    a.pure == b.pure && a.unary_idempotent == b.unary_idempotent
-    // Concrete evaluators are installed by their owning domains.
 }
 
 /// 查询 FuncKey 对应的函数名（用于 Display）。

@@ -51,7 +51,7 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     relation_cardinality_input_matches(left_relation, right_relation)
 }
 
-/// An empty input makes every selection over that exact input empty.
+/// A selection of an empty input is empty.
 pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
     fn empty_relation(expr: &Expr) -> Option<&RelationExpr> {
         let (UnaryOpKind::Not, exists) = expr.as_unary_op()? else { return None };
@@ -60,13 +60,9 @@ pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> 
         (value.as_bool() == Some(true)).then_some(input)
     }
 
-    let (Some(source), Some(mut candidate)) = (empty_relation(left), empty_relation(right))
+    let (Some(source), Some(candidate)) = (empty_relation(left), empty_relation(right))
     else { return false };
-    while let RelationExpr::Select { input, .. } = candidate {
-        if input.as_ref() == source { return true; }
-        candidate = input;
-    }
-    false
+    matches!(candidate, RelationExpr::Select { input, .. } if input.as_ref() == source)
 }
 
 pub(super) fn relation_cardinality_input_matches(
