@@ -62,7 +62,8 @@ pub(super) fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
 
 impl Engine<'_> {
     fn task_outcome(&self, bind: u64) -> Result<Completion> {
-        let spec = self.pending_ports.get(&bind).ok_or_else(|| fail("unknown task handle"))?;
+        let port = self.pending_ports.get(&bind).ok_or_else(|| fail("unknown task handle"))?;
+        let spec = &self.checked_ports[port].completion;
         let response = b::external_completion(bind);
         let mut outcome = Completion::Continue;
         for (class, guard, payload) in spec.throw_variants(&response) {
@@ -79,10 +80,10 @@ impl Engine<'_> {
         args: &[Node],
         env: &mut Env,
     ) -> Result<()> {
-        let (args, ty) = self.invocation_arguments(port, site, args, env)?;
-        let spec = self.project.ports[port].completion_spec(self.project)?;
+        let args = self.invocation_arguments(port, site, args, env)?;
+        let ty = self.checked_ports[port].completion.returns.clone();
         let bind = self.fresh_binding();
-        self.pending_ports.insert(bind, spec);
+        self.pending_ports.insert(bind, port.to_owned());
         let guard = math::normalize(b::and(
             self.action_path.clone(),
             self.realtime_completion.continuing_guard(),

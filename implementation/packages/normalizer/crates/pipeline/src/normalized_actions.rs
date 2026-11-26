@@ -43,31 +43,11 @@ impl Port {
         }
     }
 
-    pub(super) fn completion_spec(&self, project: &Project) -> Result<port_completion::PortSpec> {
-        let exceptions = self
-            .throws
-            .iter()
-            .map(|class| {
-                let payload = if project.type_only_exception(class) {
-                    Ty::Unit
-                } else {
-                    Ty::parse(
-                        project
-                            .exceptions
-                            .get(class)
-                            .ok_or_else(|| fail("unknown port exception"))?,
-                    )?
-                };
-                Ok((class.clone(), payload))
-            })
-            .collect::<Result<_>>()?;
-        Ok(port_completion::PortSpec {
-            returns: Ty::parse(&self.returns)?,
-            exceptions,
-        })
-    }
-
-
+}
+/// One admitted signature, used by both producers and the effect renderer.
+pub(super) struct CheckedPort {
+    pub(super) parameters: Vec<Ty>,
+    pub(super) completion: port_completion::PortSpec,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -116,7 +96,7 @@ pub(super) enum Action {
     Rethrow,
 }
 impl Project {
-    pub(super) fn validate_state_metadata(&self) -> Result<()> {
+    pub(super) fn validate_state_metadata(&self) -> Result<BTreeMap<String, CheckedPort>> {
         for (name, ty) in &self.heap_fields {
             need(identifier(name), "invalid heap field")?;
             let ty = Ty::parse(ty)?;
@@ -140,6 +120,7 @@ impl Project {
                     )?;
             }
         }
+        let mut ports = BTreeMap::new();
         for (name, p) in &self.ports {
             need(
                 (identifier(name) || self.source_ports.contains_key(name))
@@ -159,25 +140,35 @@ impl Project {
                     _ => Err(fail("unsupported port observation contract")),
                 }
             };
-            validate(&Ty::parse(&p.returns)?)?;
+            let returns = Ty::parse(&p.returns)?;
+            validate(&returns)?;
             let mut names = BTreeSet::new();
+            let mut parameters = Vec::with_capacity(p.params.len());
             for a in &p.params {
                 need(
                     identifier(&a.name) && names.insert(&a.name),
                     "invalid port parameter",
                 )?;
-                validate(&Ty::parse(&a.typ)?)?;
+                let ty = Ty::parse(&a.typ)?;
+                validate(&ty)?;
+                parameters.push(ty);
             }
-            let mut exceptions = BTreeSet::new();
+            let mut exceptions = BTreeMap::new();
             for exception in &p.throws {
                 need(
                     (builtin_exception(exception) || self.exceptions.contains_key(exception))
-                        && exceptions.insert(exception),
+                        && !exceptions.contains_key(exception),
                     "unknown/duplicate port exception",
                 )?;
+                let payload = self.exceptions.get(exception).map(|ty| Ty::parse(ty))
+                    .transpose()?.unwrap_or(Ty::Unit);
+                exceptions.insert(exception.clone(), payload);
             }
+            ports.insert(name.clone(), CheckedPort {
+                parameters, completion: port_completion::PortSpec { returns, exceptions },
+            });
         }
-        Ok(())
+        Ok(ports)
     }
     pub(super) fn type_only_exception(&self, name: &str) -> bool {
         self.exceptions
@@ -258,22 +249,17 @@ impl Engine<'_> {
         site: &str,
         args: &[Node],
         env: &mut Env,
-    ) -> Result<(Vec<Expr>, Ty)> {
+    ) -> Result<Vec<Expr>> {
         let p = self
-            .project
-            .ports
+            .checked_ports
             .get(port)
             .ok_or_else(|| fail("undeclared external port"))?;
         need(
-            identifier(site) && args.len() == p.params.len(),
+            identifier(site) && args.len() == p.parameters.len(),
             "invalid call site/arity",
         )?;
-        let arg_types = p
-            .params
-            .iter()
-            .map(|p| Ty::parse(&p.typ))
-            .collect::<Result<Vec<_>>>()?;
-        let ty = Ty::parse(&p.returns)?;
+        // Evaluating an argument may update the engine's effects.
+        let arg_types = p.parameters.clone();
         let mut values = Vec::new();
         for (index, (arg, expected)) in args.iter().zip(arg_types).enumerate() {
             let v = self.action_value(arg, env)?;
@@ -289,7 +275,7 @@ impl Engine<'_> {
             }
             values.push(v.scalar()?);
         }
-        Ok((values, ty))
+        Ok(values)
     }
 
     fn call_closed_sync(
@@ -306,9 +292,10 @@ impl Engine<'_> {
         let entry = self.selected_entry.unwrap_or("standalone module");
         let id = port.unwrap_or_else(|| crate::preprocess::out_of_source(entry, target));
         let contract = self.project.ports.get(id).ok_or_else(|| fail("missing sync call contract"))?;
-        let spec = contract.completion_spec(self.project)?;
+        let checked = &self.checked_ports[id];
+        let spec = &checked.completion;
         need(identifier(site) && contract.endpoint == target && contract.effect == "sync"
-            && contract.params.is_empty()
+            && checked.parameters.is_empty()
             && spec.returns == Ty::Unit && !spec.throwing(),
             "listener call requires a declared normal zero-argument void sync port")?;
         let binding = self.fresh_binding();

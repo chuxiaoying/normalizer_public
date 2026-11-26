@@ -168,7 +168,7 @@ pub(super) fn observations(
                     .get(id)
                     .ok_or_else(|| fail("missing external declaration"))?;
                 let (name, ty) = entry.external_type(id)?;
-                let spec = contract.completion_spec(project)?;
+                let spec = &result.checked_ports.get(id).ok_or_else(|| fail("missing external declaration"))?.completion;
                 need(
                     spec.returns == ty,
                     "external business result disagrees with port type",

@@ -509,7 +509,7 @@ impl Loaded {
         );
         Ok(Self { project, program })
     }
-    fn engine(&self) -> Engine<'_> {
+    fn engine(&self, checked_ports: BTreeMap<String, actions::CheckedPort>) -> Engine<'_> {
         Engine {
             node_depth: 0,
             max_node_depth: 0,
@@ -528,6 +528,7 @@ impl Loaded {
             selected_entry: None,
             entry_context: None,
             state_roots: BTreeMap::new(),
+            checked_ports,
             pending_ports: BTreeMap::new(),
             caught_exceptions: None,
             next_binding: 0,
@@ -548,8 +549,7 @@ impl Loaded {
         }
     }
     fn prepare(&self) -> Result<Engine<'_>> {
-        let mut e = self.engine();
-        self.project.validate_state_metadata()?;
+        let mut e = self.engine(self.project.validate_state_metadata()?);
         let mut classes = BTreeSet::new();
         for c in self.program.classes() {
             need(
@@ -721,6 +721,7 @@ impl Loaded {
             realtime_store: e.realtime_store,
             realtime_local_allocations: e.realtime_local_allocations,
             realtime_effects: e.realtime_effects,
+            checked_ports: e.checked_ports,
             realtime_completion,
         })
     }

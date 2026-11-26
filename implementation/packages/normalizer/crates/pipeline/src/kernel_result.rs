@@ -17,6 +17,7 @@ pub(super) struct ExecutionResult {
     pub(super) realtime_local_allocations: BTreeSet<i64>,
     /// Roots written through a declared host state field and represented in S.
     pub(super) host_state_roots: BTreeSet<i64>,
+    pub(super) checked_ports: BTreeMap<String, super::actions::CheckedPort>,
     pub(super) realtime_effects: EffectSequence,
     pub(super) realtime_completion: Completion,
 }

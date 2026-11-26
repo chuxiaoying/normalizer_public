@@ -82,23 +82,22 @@ impl Engine<'_> {
         args: Vec<Value>,
         path: Expr,
     ) -> Result<Value> {
-        let contract = &self.project.ports[id];
-        let declaration = &self.project.source_ports[id];
+        let contract = &self.checked_ports[id];
         need(
-            args.len() == declaration.params.len(),
+            args.len() == contract.parameters.len(),
             "source port argument count mismatch",
         )?;
         let mut values = vec![];
-        for (arg, (expected, _)) in args.iter().zip(&declaration.params) {
+        for (arg, expected) in args.iter().zip(&contract.parameters) {
             need(
-                arg.ty() == domain(expected, self.program)?,
+                arg.ty() == *expected,
                 "source port argument type mismatch",
             )?;
             values.push(arg.scalar()?);
         }
-        let spec = contract.completion_spec(self.project)?;
         let guard = self.normal_path(path);
         let bind = self.fresh_binding();
+        let spec = &self.checked_ports[id].completion;
         let receipt = realtime_state::EffectReceipt::tagged(bind);
         let response = receipt.response().clone();
         self.realtime_effects
