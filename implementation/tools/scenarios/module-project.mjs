@@ -89,18 +89,23 @@ function compileProjection(projection) {
   const body = steps.length
     ? { op: 'action', returns: carriers[returned.type][1], steps: [...steps, { op: 'return', value: returned.body }] }
     : returned.body;
-  return { type: returned.type, body, reads: [...reads.values()], environment };
+  return { type: returned.type, body, reads: reads.values(), environment };
 }
 
 function projectionContract(modulePath, moduleText, name, original) {
   const projection = readModuleProjection(modulePath, moduleText, name, original);
   const { type, body, reads, environment } = compileProjection(projection);
-  const params = reads.map(read => ({ name: read.name, type: carriers[read.type][1] }));
-  const javaParams = reads.map(read => carriers[read.type][0]);
-  const declarations = params.map((param, index) => `${javaParams[index]} ${param.name}`).join(', ');
+  const params = [], javaParams = [], declarations = [], bindings = {};
+  for (const { name, path, type } of reads) {
+    const [carrier, domain] = carriers[type];
+    params.push({ name, type: domain });
+    javaParams.push(carrier);
+    declarations.push(`${carrier} ${name}`);
+    bindings[name] = path;
+  }
   const returns = carriers[type][1];
   const javaReturn = carriers[type][0];
-  const source = `class T { static native ${javaReturn} run(${declarations}); }\n`;
+  const source = `class T { static native ${javaReturn} run(${declarations.join(', ')}); }\n`;
   const entry = 'T.run';
   const project = {
     schema: 'normalizer.kernel-input/1',
@@ -108,7 +113,7 @@ function projectionContract(modulePath, moduleText, name, original) {
     entries: [entry],
     entry_contexts: { [entry]: {
       function: projection.function, returns: type, parameters: {}, environment,
-      bindings: Object.fromEntries(reads.map(read => [read.name, read.path])),
+      bindings,
     } },
     functions: { run: {
       java: `T.run(${javaParams.join(',')})`, params, returns,
@@ -132,7 +137,7 @@ function eventContract(modulePath, moduleText, name, original) {
     return `record<${fields.join(',')}>`;
   }
   const ports = {};
-  const exceptions = {};
+  const exceptions = {}, externalResults = {};
   for (const port of event.ports) {
     ports[port.id] = {
       endpoint: port.endpoint, effect: 'async-barrier', heap_effect: 'none', argument_observation: 'immutable_value',
@@ -140,6 +145,7 @@ function eventContract(modulePath, moduleText, name, original) {
       returns: kernelType(port.returns), throws: port.throws,
       origin: {path: 'Prepared.mjs', excerpt: port.endpoint},
     };
+    externalResults[port.id] = port.returns;
     for (const type of port.throws) exceptions[type] = 'unit';
   }
   return {
@@ -148,7 +154,7 @@ function eventContract(modulePath, moduleText, name, original) {
     entry_contexts: {[entry]: {
       function: event.function, returns: 'void', parameters: event.parameters,
       types: event.types, environment: event.environment,
-      external_results: Object.fromEntries(event.ports.map(port => [port.id, port.returns])),
+      external_results: externalResults,
     }},
     functions: {run: {java: 'T.run()', params: [], returns: 'unit',
       origin: {path: 'Prepared.mjs', excerpt: `function ${name}`},

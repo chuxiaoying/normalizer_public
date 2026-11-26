@@ -16,12 +16,8 @@ impl Equation {
     fn accumulate(&mut self, value: &Expr, factor: &BigInt) -> Option<()> {
         if let Some(n) = value.as_lit().and_then(crate::Lit::as_integer) {
             self.constant += factor * n;
-        } else if let Some(SymVarOrigin::Parameter {
-            name,
-            primitive_type,
-        }) = value.as_sym_var()
-        {
-            if primitive_type != "integer" || !super::integer_ac::total_integer(value) {
+        } else if let Some(SymVarOrigin::Parameter { name, .. }) = value.as_sym_var() {
+            if !super::integer_ac::total_integer(value) {
                 return None;
             }
             *self.coefficients.entry(name.clone()).or_default() += factor;
@@ -139,7 +135,7 @@ pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
 
 fn solve_full_rank(equations: &[Equation], variables: BTreeSet<String>) -> Option<Expr> {
     let n = variables.len();
-    if n == 0 || n > equations.len() || equations.iter().all(|eq| eq.coefficients.len() < 2) {
+    if n > equations.len() || equations.iter().all(|eq| eq.coefficients.len() < 2) {
         return None;
     }
     let variables: Vec<_> = variables.into_iter().collect();
