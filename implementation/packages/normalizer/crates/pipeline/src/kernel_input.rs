@@ -853,10 +853,7 @@ fn is_record_choice(expr: &Expr) -> bool {
 }
 
 fn record_choice_projection(expr: &Expr) -> Option<&Expr> {
-    let (key, args) = expr.as_call()?;
-    let [record, field] = args else { return None; };
-    math::domains::composite::field_intrinsic_result(key)?;
-    matches!(field.as_lit(), Some(math::Lit::Str(_))).then_some(())?;
+    let (record, _, _) = math::domains::composite::field_projection(expr)?;
     is_record_choice(record).then_some(record)
 }
 

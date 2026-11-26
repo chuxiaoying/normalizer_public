@@ -1117,13 +1117,9 @@ impl Engine<'_> {
                 [field] => Observation::Field(*binding_id, field),
                 _ => return false,
             }
-        } else if let Some((key, [record, field])) = value.as_call() {
-            if math::domains::composite::field_intrinsic_result(key) != Some(math::Primitive::Number) {
-                return false;
-            }
-            let Some(math::Lit::Str(field)) = field.as_lit() else {
-                return false;
-            };
+        } else if let Some((record, field, math::Primitive::Number)) =
+            math::domains::composite::field_projection(value)
+        {
             Observation::ProjectedField(record, field)
         } else {
             return false;

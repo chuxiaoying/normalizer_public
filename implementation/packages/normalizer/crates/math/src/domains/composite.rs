@@ -26,6 +26,15 @@ pub fn field_intrinsic_result(key: crate::FuncKey) -> Option<Primitive> {
     field_intrinsics().read().unwrap().get(&key).copied()
 }
 
+/// Read a checked field projection without assuming the shape of a generic Call.
+pub fn field_projection(expr: &Expr) -> Option<(&Expr, &str, Primitive)> {
+    let (key, args) = expr.as_call()?;
+    let result = field_intrinsic_result(key)?;
+    let [record, field] = args else { return None; };
+    let crate::Lit::Str(name) = field.as_lit()? else { return None; };
+    Some((record, name.as_str(), result))
+}
+
 pub fn apply(name: &str, args: Vec<Expr>, params: Vec<Primitive>, result: Primitive) -> Expr {
     assert!(matches!(name, "value.input" | "value.field"), "undefined composite operation");
     let registered = if name == "value.field" {
@@ -64,8 +73,8 @@ pub fn vector_length_input(expr: &Expr) -> Option<&Expr> {
 }
 pub fn input_name(expr: &Expr) -> Option<&str> {
     let (key, args) = expr.as_call()?;
-    let [name] = args else { return None; };
     if crate::func_name(key) != "value.input" { return None; }
+    let [name] = args else { return None; };
     match name.as_lit()? { crate::Lit::Str(name) => Some(name), _ => None }
 }
 

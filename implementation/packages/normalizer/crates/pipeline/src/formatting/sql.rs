@@ -146,14 +146,8 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some((_, label)) = ctx.business_projections.iter().rev().find(|(value, _)| value == expr) {
             return label.clone();
         }
-        if let Some((key,args)) = expr.as_call() {
-            if math::domains::composite::field_intrinsic_result(key).is_some() {
-                if let [record,name] = args {
-                    if let Some(math::Lit::Str(name)) = name.as_lit() {
-                        return format!("{}.{name}",format_expr_with_ctx(record,ctx));
-                    }
-                }
-            }
+        if let Some((record, name, _)) = math::domains::composite::field_projection(expr) {
+            return format!("{}.{name}", format_expr_with_ctx(record, ctx));
         }
         if let Some(operation) = math::domains::decimal::view(expr) {
             use math::domains::decimal::View;
@@ -280,10 +274,8 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         &registered_name,
     ));
     if name == "value.input" {
-        if let [value] = args {
-            if let Some(math::Lit::Str(name)) = value.as_lit() {
-                return name.to_owned();
-            }
+        if let Some(input) = math::domains::composite::input_name(expr) {
+            return input.to_owned();
         }
     }
     let args_str: Vec<String> = args.iter().map(|a| format_expr_with_ctx(a, ctx)).collect();
