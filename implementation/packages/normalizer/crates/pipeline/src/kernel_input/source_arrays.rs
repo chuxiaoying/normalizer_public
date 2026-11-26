@@ -72,17 +72,17 @@ fn original_slot(root: &str, index: i64) -> Expr {
 }
 
 impl Engine<'_> {
-    pub(super) fn source_local_array_initializer(&self, values: Vec<Value>) -> Result<Value> {
+    pub(super) fn source_local_array_initializer(&self, values: Vec<Value>) -> Result<LocalIntArray> {
         let entries = values.into_iter().map(exact_java_int).collect::<Result<_>>()?;
-        Ok(Value::LocalIntArray(LocalIntArray::Initialized(entries)))
+        Ok(LocalIntArray::Initialized(entries))
     }
 
-    pub(super) fn source_local_array_allocation(&mut self, size: Value, path: Expr) -> Result<Value> {
+    pub(super) fn source_local_array_allocation(&mut self, size: Value, path: Expr) -> Result<LocalIntArray> {
         let length = exact_java_int(size)?;
         if length < 0 {
             self.throw_source_on_path(path, NEGATIVE_SIZE);
         }
-        Ok(Value::LocalIntArray(LocalIntArray::Zeroed(length.max(0))))
+        Ok(LocalIntArray::Zeroed(length.max(0)))
     }
 
     fn source_array_reference(&mut self, root: &str) -> Expr {

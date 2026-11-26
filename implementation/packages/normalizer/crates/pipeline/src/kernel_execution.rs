@@ -637,6 +637,48 @@ impl Engine<'_> {
         Ok(Value::Term(Ty::Integer, math::normalize(op.build(left, right))))
     }
 
+    fn evaluate_local_array_initializer(
+        &mut self, element_type: &JavaType, elements: &[J], id: &str, env: &mut Env, path: Expr,
+    ) -> Result<super::source_arrays::LocalIntArray> {
+        need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
+        let values = elements.iter().map(|element| self.java_expr(element, id, env, path.clone()))
+            .collect::<Result<_>>()?;
+        self.source_local_array_initializer(values)
+    }
+
+    fn evaluate_local_array_allocation(
+        &mut self, element_type: &JavaType, length: &J, id: &str, env: &mut Env, path: Expr,
+    ) -> Result<super::source_arrays::LocalIntArray> {
+        need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
+        let size = self.java_expr(length, id, env, path.clone())?;
+        self.source_local_array_allocation(size, path)
+    }
+
+    fn local_java_array_length(&mut self, target: &J, id: &str, env: &mut Env, path: Expr) -> Result<Option<i64>> {
+        match target {
+            J::Ident(name) => {
+                if let Some(Value::LocalIntArray(array)) = env.get(name) {
+                    // Charge the child identifier visit just as generic expression
+                    // evaluation did; the immutable length itself needs no path.
+                    self.budget()?;
+                    return Ok(Some(array.length()));
+                }
+                Ok(None)
+            }
+            J::ArrayInitializer { element_type, elements } => {
+                self.budget()?;
+                let path = self.normal_path(path);
+                Ok(Some(self.evaluate_local_array_initializer(element_type, elements, id, env, path)?.length()))
+            }
+            J::ArrayAllocation { element_type, length } => {
+                self.budget()?;
+                let path = self.normal_path(path);
+                Ok(Some(self.evaluate_local_array_allocation(element_type, length, id, env, path)?.length()))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn java_expr(
         &mut self,
         j: &J,
@@ -683,29 +725,22 @@ impl Engine<'_> {
                     .collect::<Result<_>>()?;
                 self.construct_source_object(owner, args, path)
             }
-            J::ArrayInitializer { element_type, elements } if crate::normalized::java_int(element_type) => {
-                let values = elements.iter().map(|element| self.java_expr(element, id, env, path.clone()))
-                    .collect::<Result<_>>()?;
-                self.source_local_array_initializer(values)
-            }
-            J::ArrayAllocation { element_type, length } if crate::normalized::java_int(element_type) => {
-                let size = self.java_expr(length, id, env, path.clone())?;
-                self.source_local_array_allocation(size, path)
-            }
+            J::ArrayInitializer { element_type, elements } => self
+                .evaluate_local_array_initializer(element_type, elements, id, env, path)
+                .map(Value::LocalIntArray),
+            J::ArrayAllocation { element_type, length } => self
+                .evaluate_local_array_allocation(element_type, length, id, env, path)
+                .map(Value::LocalIntArray),
             J::ArrayAccess { target, index } => {
                 let array = self.java_expr(target, id, env, path.clone())?;
                 let index = self.java_expr(index, id, env, path.clone())?;
                 self.source_array_read(array, index, path)
             }
             J::FieldAccess { target, field } => {
-                if field == "length" && (matches!(target.as_ref(), J::Ident(name)
-                    if matches!(env.get(name), Some(Value::LocalIntArray(_))))
-                    || matches!(target.as_ref(), J::ArrayInitializer { .. } | J::ArrayAllocation { .. }))
-                {
-                    let Value::LocalIntArray(array) = self.java_expr(target, id, env, path.clone())? else {
-                        return Err(fail("length requires a local Java int array"));
-                    };
-                    return Ok(Value::Term(Ty::Integer, b::lit_int(array.length())));
+                if field == "length" {
+                    if let Some(length) = self.local_java_array_length(target, id, env, path.clone())? {
+                        return Ok(Value::Term(Ty::Integer, b::lit_int(length)));
+                    }
                 }
                 self.source_field(target, field, id)?;
                 if matches!(target.as_ref(), J::Ident(name) if name == "this")
