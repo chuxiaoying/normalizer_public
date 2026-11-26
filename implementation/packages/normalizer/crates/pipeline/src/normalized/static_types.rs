@@ -451,12 +451,12 @@ impl Admission<'_> {
     fn prove_initialized_counter(&self, name: &str, body: &[S], scope: &Scope) -> Result<(), String> {
         let not_proven = |detail: &str| crate::preprocess::required(
             "NORM-LOOP", self.id, detail,
-            "当前赋值初始化循环只证明已初始化的可变 int 局部计数器；保留合法源码，不要编造初值。",
+            "当前赋值初始化循环只证明已初始化的可变 int/long 局部计数器；保留合法源码，不要编造初值。",
         );
         if !scope.get(name).is_some_and(|binding| binding.initialized_local
-            && super::java_int(&binding.ty))
+            && matches!(&binding.ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long")))
         {
-            return Err(not_proven("assignment counter needs an already initialized int local"));
+            return Err(not_proven("assignment counter needs an already initialized int/long local"));
         }
         if !super::fixed_for::preserves_assignment_counter(body, name) {
             return Err(not_proven(&format!("body must preserve proven induction counter {name}")));
