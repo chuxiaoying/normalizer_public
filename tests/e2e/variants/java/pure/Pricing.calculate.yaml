@@ -14,6 +14,6 @@
     - path: [R]
       value: |-
         CASE
-          WHEN limit < value + 1 THEN base + limit
-          ELSE base + value + 1
-        END
+          WHEN limit < value + 1 THEN limit
+          ELSE value + 1
+        END + base
