@@ -1472,7 +1472,19 @@ impl Engine<'_> {
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), &target));
         let class = self.program.find_class(owner).ok_or_else(|| fail("missing selected implementation"))?;
         need(class.interfaces().iter().any(|name| name == interface), "selected receiver does not implement declared interface")?;
-        let actual = format!("{owner}.{member}");
+        let declaration = self.program.find_class(interface).ok_or_else(|| fail("missing selected interface"))?;
+        let mut signatures = declaration.methods().iter().enumerate()
+            .filter(|(_, method)| method.name() == member && method.arity() == args.len());
+        let (default_index, signature) = signatures.next().ok_or_else(|| fail("missing interface signature"))?;
+        need(signatures.next().is_none(), "ambiguous interface method")?;
+        let override_key = class.methods().iter().enumerate().find_map(|(index, body)|
+            crate::normalized::override_matches(signature, body).then(||
+                crate::normalized::method_key(class, index, body)));
+        let actual = match override_key {
+            Some(actual) => actual,
+            None if signature.is_default() => crate::normalized::method_key(declaration, default_index, signature),
+            None => return Err(fail("missing proven receiver override or default body")),
+        };
         self.java_call_on(&actual, args, path, Some(Value::Term(Ty::Ref, receiver)))
     }
 

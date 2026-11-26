@@ -612,6 +612,8 @@ fn parse_class_body(
         let mut is_static = false;
         let mut is_final = false;
         let mut is_native = false;
+        let mut is_default = false;
+        let mut nonpublic_at = None;
         let mut is_public = false;
         let mut native_modifier_conflict = false;
         let mut synchronized_at = None;
@@ -622,6 +624,7 @@ fn parse_class_body(
                 continue;
             }
             if p.eat_keyword("private") || p.eat_keyword("protected") {
+                nonpublic_at = Some(p.pos);
                 continue;
             }
             let modifier_at = p.pos;
@@ -629,8 +632,12 @@ fn parse_class_body(
                 synchronized_at = Some(modifier_at);
                 continue;
             }
-            if p.eat_keyword("abstract") || p.eat_keyword("default")
-                || p.eat_keyword("strictfp") || p.eat_keyword("transient")
+            if p.eat_keyword("default") {
+                if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] duplicate default modifier")); }
+                is_default = true;
+                continue;
+            }
+            if p.eat_keyword("abstract") || p.eat_keyword("strictfp") || p.eat_keyword("transient")
             {
                 native_modifier_conflict = true;
                 continue;
@@ -656,6 +663,7 @@ fn parse_class_body(
             return Err(p.err_at(at, "[JAVA-MONITOR] synchronized method requires explicit preprocessing"));
         }
         if let Some(nested_is_interface) = p.take_class_kind()? {
+            if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] only instance interface methods may be default")); }
             if is_native {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] a nested type cannot be native"));
             }
@@ -698,7 +706,7 @@ fn parse_class_body(
         }
 
         if p.peek() == Some(b'{') {
-            if !is_static || is_final || is_native || native_modifier_conflict || !annotations.is_empty() || class.is_interface {
+            if !is_static || is_final || is_native || is_default || native_modifier_conflict || !annotations.is_empty() || class.is_interface {
                 return Err(p.err("[INITIALIZER-BLOCK-UNSUPPORTED] expected a standalone static initialization block"));
             }
             let body_at = p.pos + 1;
@@ -724,6 +732,7 @@ fn parse_class_body(
                 if class.is_interface() {
                     return Err(p.err_at(save, "[JAVA-CONSTRUCTOR] interface cannot declare a constructor"));
                 }
+                if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] constructor cannot be default")); }
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
                 let (params, param_annotations) = parse_params(&mut p)?;
                 p.skip_ws();
@@ -752,6 +761,7 @@ fn parse_class_body(
                     return_type: JavaType::Void,
                     is_static: false,
                     is_constructor: true,
+                    is_default: false,
                     is_public,
                     is_native: false,
                     annotations: annotations.clone(),
@@ -781,6 +791,10 @@ fn parse_class_body(
         if p.peek() == Some(b'(') {
             if is_reserved_identifier(&member_name) {
                 return Err(p.err_at(member_at, &format!("[JAVA-RESERVED-METHOD-NAME] {}.{}: reserved keyword used as a Java method name", class.full_name(), member_name)));
+            }
+            if is_default && (!class.is_interface() || is_static || is_final || is_native
+                || nonpublic_at.is_some() || native_modifier_conflict) {
+                return Err(p.err("[JAVA-DECLARATION-DEFAULT] expected a nonstatic public interface method"));
             }
             if is_native && class.is_interface() {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] interface method cannot be native"));
@@ -820,6 +834,9 @@ fn parse_class_body(
                 p.require_semicolon("bodyless method declaration")?;
                 None
             };
+            if is_default && body.is_none() {
+                return Err(p.err("[JAVA-DECLARATION-DEFAULT] default method requires a body"));
+            }
             class.methods.push(JavaMethod {
                 type_parameters,
                 throws,
@@ -829,6 +846,7 @@ fn parse_class_body(
                 return_type: java_type,
                 is_static,
                 is_constructor: false,
+                is_default,
                 is_public,
                 is_native,
                 annotations,
@@ -839,6 +857,7 @@ fn parse_class_body(
             if !type_parameters.is_empty() {
                 return Err(p.err("[JAVA-TYPE-PARAMETERS] type parameters require a method declaration"));
             }
+            if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] field cannot be default")); }
             if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] field cannot be native")); }
             if is_reserved_identifier(&member_name) {
                 return Err(p.err_at(member_at, "[JAVA-RESERVED-FIELD-NAME] reserved keyword used as a Java field name"));

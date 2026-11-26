@@ -107,13 +107,13 @@ pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> boo
         && class.interfaces().is_empty()
         && !class.methods().is_empty()
         && class.methods().iter().all(|method| !method.is_static()
-            && method.body().is_none() && method.throws().is_empty()
+            && method.body().is_some() == method.is_default() && method.throws().is_empty()
             && method.annotations().is_empty()
             && scalar(method.return_type()) && method.params().iter().all(|(ty, _)| scalar(ty)))
 }
 
-fn override_matches(interface: &simulator_parser::JavaMethod, concrete: &simulator_parser::JavaMethod) -> bool {
-    interface.name() == concrete.name() && !concrete.is_static() && concrete.body().is_some()
+pub(crate) fn override_matches(interface: &simulator_parser::JavaMethod, concrete: &simulator_parser::JavaMethod) -> bool {
+    interface.name() == concrete.name() && !concrete.is_static() && concrete.is_public() && concrete.body().is_some()
         && interface.return_type() == concrete.return_type()
         && interface.params().iter().map(|(ty, _)| ty).eq(concrete.params().iter().map(|(ty, _)| ty))
 }
@@ -142,6 +142,15 @@ fn source_record_local(program: &JavaProgram, method: &JavaMethod, local: &str, 
         matches!(statement, S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. }) if binding == local)));
     program.find_class(owner).is_some_and(|class|
         source_record_accessor(class, member, arity, selected).is_some())
+}
+
+fn unambiguous_interface_defaults(program: &JavaProgram, class: &JavaClass) -> bool {
+    let defaults = class.interfaces().iter().filter_map(|name| program.find_class(name))
+        .flat_map(|interface| interface.methods().iter()).filter(|member| member.is_default())
+        .filter(|member| !class.methods().iter().any(|method| override_matches(member, method)))
+        .collect::<Vec<_>>();
+    defaults.iter().enumerate().all(|(index, method)| !defaults[..index].iter()
+        .any(|other| other.name() == method.name() && same_parameters(other, method)))
 }
 
 fn local_interface_receiver<'a>(
@@ -630,10 +639,13 @@ pub(crate) fn validate_with_receiver(
             program.find_class(interface).is_none_or(|declaration| {
                 !plain_source_interface(declaration)
                     || declaration.methods().iter().any(|required| {
-                        c.methods().iter().filter(|method| override_matches(required, method)).count() != 1
+                        let count = c.methods().iter().filter(|method| override_matches(required, method)).count();
+                        count != 1 && (!required.is_default() || count != 0
+                            || c.methods().iter().any(|m| m.name() == required.name() && same_parameters(m, required)))
                     })
             })
         })
+            || !unambiguous_interface_defaults(program, c)
             || (c.is_interface() && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || !c.annotations().is_empty()
@@ -641,9 +653,6 @@ pub(crate) fn validate_with_receiver(
             || c.has_unknown_import_origins()
         {
             return Err(error("NORM-CLASS-SHAPE", &name));
-        }
-        if c.is_interface() {
-            continue;
         }
         for (index, m) in c.methods().iter().enumerate() {
             if c.methods()[..index].iter().any(|prior| prior.name() == m.name()
@@ -655,6 +664,7 @@ pub(crate) fn validate_with_receiver(
             {
                 return Err(error("NORM-OVERLOAD", &format!("{name}.{}", m.name())));
             }
+            if c.is_interface() && !m.is_default() { continue; }
             let id = method_key(c, index, m);
             methods.insert(id.clone(), (c, m));
             if (!m.annotations().is_empty() && !nullable_text_return(c, m))
@@ -1295,7 +1305,7 @@ mod source_declaration_contracts {
             ("interface Shape {}", false),
             ("interface Shape { int VERSION = 1; int size(); }", false),
             ("interface Shape { static int size() { return 1; } }", false),
-            ("interface Shape { default int size() { return 1; } }", false),
+            ("interface Shape { default int size() { return 1; } }", true),
             ("interface Shape { @Deprecated int size(); }", false),
         ] {
             let program = parse(source, "Shape.java", &ParseOptions::default()).unwrap();

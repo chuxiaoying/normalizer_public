@@ -162,6 +162,7 @@ pub struct JavaMethod {
     pub(crate) return_type: JavaType,
     pub(crate) is_static: bool,
     pub(crate) is_constructor: bool,
+    pub(crate) is_default: bool,
     pub(crate) is_public: bool,
     pub(crate) is_native: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
@@ -172,6 +173,7 @@ impl JavaMethod {
     pub fn type_parameters(&self) -> &[String] { &self.type_parameters }
 
     pub fn is_native(&self) -> bool { self.is_native }
+    pub fn is_default(&self) -> bool { self.is_default }
 
     pub fn name(&self) -> &str {
         &self.name

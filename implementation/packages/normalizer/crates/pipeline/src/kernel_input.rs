@@ -650,10 +650,8 @@ impl Loaded {
                         "result value alias requires a declared empty carrier class and composite state type")?;
                 }
             }
-            if c.is_interface() {
-                continue;
-            }
             for (index, m) in c.methods().iter().enumerate() {
+                if c.is_interface() && !m.is_default() { continue; }
                 let id = if self.project.direct_source {
                     crate::normalized::method_key(c, index, m)
                 } else {
