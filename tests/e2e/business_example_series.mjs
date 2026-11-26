@@ -10,12 +10,14 @@ function checkKeys(object, allowed) {
 
 // Entry variants may choose another source-backed Java method explicitly.
 const entryComponent = '[A-Za-z_$][A-Za-z0-9_$]*';
+const entryType = entryComponent + '(?:[.]' + entryComponent + ')*(?:\\[\\])*';
+const entrySignature = '(?:\\(\\s*(?:' + entryType + '(?:\\s*,\\s*' + entryType + ')*)?\\s*\\))?';
 const entryPattern = new RegExp('^(?:' + entryComponent + '/)*[A-Za-z0-9_$-]+[.]java#'
-  + entryComponent + '(?:[.]' + entryComponent + ')+$');
+  + entryComponent + '(?:[.]' + entryComponent + ')+' + entrySignature + '$');
 export function explicitVariantEntry(variant) {
   if (!variant || !Object.hasOwn(variant, 'entry')) return undefined;
   assert.ok(typeof variant.entry === 'string' && entryPattern.test(variant.entry),
-    'Entry override must be a project-relative Java source path#static invocation without arguments');
+    'Entry override must be a project-relative Java source path#invocation with an optional type signature, not argument values');
   return variant.entry;
 }
 

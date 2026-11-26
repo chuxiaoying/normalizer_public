@@ -68,3 +68,5 @@ R: '12'
 +    static int price() { return 99; }
 +}
 ```
+
+当 `Catalog` 同时声明无参的 `price()` 与返回 `offer + 99` 的 `price(int offer)` 时，入口定位 `src/Catalog.java#Catalog.price()` 的 P 为空、R 为 12；定位 `src/Catalog.java#Catalog.price(int)` 的 P 只包含 `offer: number`、R 为 `offer + 99`。括号中写的是类型而非具体值；两案都没有 E、S 或异常。

@@ -42,3 +42,24 @@
   edits:
     - { from: 'class Catalog {', to: 'class DuplicateField { int code; int code; } class Catalog {' }
   reject: ['[NORM-FIELD-DECLARATION]', 'location=DuplicateField']
+
+- name: explicit-empty-signature-selects-the-no-argument-overload
+  entry: 'src/Catalog.java#Catalog.price()'
+  edits:
+    - from: 'static int price() { return Price.price(); }'
+      to: |-
+        static int price() { return Price.price(); }
+            static int price(int offer) { return offer + 99; }
+  expect:
+    - {path: [entry, function], value: 'src/Catalog.java#Catalog.price()'}
+- name: explicit-int-signature-selects-the-declared-parameter-and-result
+  entry: 'src/Catalog.java#Catalog.price(int)'
+  edits:
+    - from: 'static int price() { return Price.price(); }'
+      to: |-
+        static int price() { return Price.price(); }
+            static int price(int offer) { return offer + 99; }
+  expect:
+    - {path: [entry, function], value: 'src/Catalog.java#Catalog.price(int)'}
+    - {path: [P, parameters, offer], add: {position: 0, type: number}}
+    - {path: [R], value: 'offer + 99'}
