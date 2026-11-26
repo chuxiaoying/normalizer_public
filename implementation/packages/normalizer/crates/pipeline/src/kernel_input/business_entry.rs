@@ -346,12 +346,14 @@ impl EntryContext {
             &self.scalar_array_symbols(), &domains, names, acquired_path)
     }
 
+    fn certifies_composite_return(&self, typed: &super::Ty) -> bool {
+        (*typed == super::Ty::Vector(Box::new(super::Ty::Integer)) && self.returns == "number[]")
+            || (*typed == super::Ty::OrderedTextMap && self.returns == "map<text,text>")
+    }
+
     fn render_source(&self, project: &super::Project, result: &ExecutionResult, method: &JavaMethod) -> Result<String> {
         let events = result.realtime_effects.events();
-        let typed = &result.entry_return_type;
-        let certified_composite_return = (*typed == super::Ty::Vector(Box::new(super::Ty::Integer))
-            && self.returns == "number[]") || (*typed == super::Ty::OrderedTextMap
-            && self.returns == "map<text,text>");
+        let certified_composite_return = self.certifies_composite_return(&result.entry_return_type);
         let has_temporals = !result.temporal_definitions.is_empty();
         let total_return = if events.is_empty() || has_temporals {
             result.terminal.total_return_value()
@@ -576,6 +578,21 @@ mod public_entry_admission {
             "types": { "Reply": { "fields": { "amount": "number", "scores": "number[]" } } },
             "external_results": { "lookup": "Reply" }
         })).unwrap()
+    }
+
+    #[test]
+    fn a_composite_result_needs_agreement_between_the_ir_type_and_public_declaration() {
+        use super::super::Ty;
+        let mut entry = supplied_entry();
+        let number_vector = Ty::Vector(Box::new(Ty::Integer));
+        assert!(!entry.certifies_composite_return(&number_vector));
+        entry.returns = "number[]".into();
+        assert!(entry.certifies_composite_return(&number_vector));
+        assert!(!entry.certifies_composite_return(&Ty::Vector(Box::new(Ty::Text))));
+        assert!(!entry.certifies_composite_return(&Ty::OrderedTextMap));
+        entry.returns = "map<text,text>".into();
+        assert!(entry.certifies_composite_return(&Ty::OrderedTextMap));
+        assert!(!entry.certifies_composite_return(&number_vector));
     }
 
     #[test]
