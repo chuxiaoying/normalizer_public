@@ -88,3 +88,31 @@
   - file: src/ArrearsPage.mjs
     from: const todayAtEntry = props.today
     to: "const dateSnapshot = props.today\n  const todayAtEntry = dateSnapshot"
+
+- name: conditional-stable-entry-input-selects-either-arm
+  edits:
+  - file: src/ArrearsPage.mjs
+    from: arrears.loadedAccountId = props.accountId
+    to: 'arrears.loadedAccountId = props.accountId === 0 ? props.today : props.accountId'
+  expect:
+  - path: [S, 0, write, value]
+    value: |-
+      CASE
+        WHEN accountId == 0 THEN today
+        ELSE accountId
+      END
+
+- name: conditional-stable-entry-input-equal-arms-collapse
+  edits:
+  - file: src/ArrearsPage.mjs
+    from: arrears.loadedAccountId = props.accountId
+    to: 'arrears.loadedAccountId = props.accountId === 0 ? props.accountId : props.accountId'
+
+- name: conditional-stable-entry-input-shares-alias-across-await
+  edits:
+  - file: src/ArrearsPage.mjs
+    from: 'total > profile.quota ? profile.quota : total'
+    to: 'props.accountId === 0 ? todayAtEntry : props.today'
+  expect:
+  - path: [S, 5, write, value]
+    value: today

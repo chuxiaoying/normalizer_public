@@ -150,13 +150,17 @@ export function readModuleEvent(modulePath, text, entryName, originPath) {
     if (ts.isPropertyAccessExpression(n))
       return { op: 'value.field', value: lower(n.expression, steps), name: n.name.text };
     if (ts.isConditionalExpression(n)) {
-      // Stateful reads in lazy branches require per-branch bindings.
       const condition = lower(n.condition, steps);
       const yes = [],
         no = [];
       const then = lower(n.whenTrue, yes),
         otherwise = lower(n.whenFalse, no);
-      if (yes.length || no.length) fail('host reads in conditional arms require guarded observation');
+      const bindings = [...yes, ...no];
+      // Only pure bindings of argument P can precede the lazy value selection.
+      // A mutable observation or an effect must stay in its selected arm.
+      if (bindings.some((step) => step.op !== 'read_input'))
+        fail('host reads in conditional arms require guarded observation');
+      steps.push(...bindings);
       return { op: 'if', cond: condition, then, else: otherwise };
     }
     if (ts.isBinaryExpression(n)) {
