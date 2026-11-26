@@ -25,3 +25,10 @@ variants:
       - { from: '{ read: () => Promise<number> }', to: '{ read: () => number }' }
       - { from: '@returns {Promise<number>}', to: '@returns {number}' }
     reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', '[NORM-ENGINE-FAILURE]', '#total:call', 'source.read']
+  - name: legal-javascript-dollar-spelling-does-not-invent-an-external-boundary
+    edits:
+      - { from: 'total(source)', to: 'total($source)' }
+      - { from: 'await source.read()', to: 'await $source.$read()' }
+      - { from: '}} source @returns', to: '}} $source @returns' }
+      - { from: 'read: ()', to: '$read: ()' }
+    reject: ['[NORM-OUT-OF-SOURCE]', 'kind=ABORT', '[NORM-ENGINE-FAILURE]', '$source.$read']
