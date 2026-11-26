@@ -334,7 +334,8 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     let absorbed_by_cardinality: Vec<bool> = (0..out.len())
         .map(|i| {
             (0..out.len())
-                .any(|j| i != j && relation_count_nonzero_implies_exists(&out[j], &out[i]))
+                .any(|j| i != j && (relation_count_nonzero_implies_exists(&out[j], &out[i])
+                    || empty_input_implies_empty_selection(&out[j], &out[i])))
         })
         .collect();
     if absorbed_by_cardinality.iter().any(|absorbed| *absorbed) {
