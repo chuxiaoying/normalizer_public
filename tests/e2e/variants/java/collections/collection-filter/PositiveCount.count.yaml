@@ -15,3 +15,20 @@
           ),
           0
         )
+- name: a-numeric-not-equal-filter-keeps-both-sides-of-zero
+  edits:
+    - file: src/PositiveCount.java
+      from: 'where row.amount > 0'
+      to: 'where row.amount != 0'
+  expect:
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND bill.amount != 0
+          ),
+          0
+        )
