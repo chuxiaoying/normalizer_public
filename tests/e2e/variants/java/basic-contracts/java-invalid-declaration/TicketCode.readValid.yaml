@@ -279,8 +279,9 @@
   - from: return value;
     to: '{ int local = value + 1; } return local;'
   reject:
-  - '[NORM-PROJECT]'
-  - undefined Java variable local
+  - '[NORM-SOURCE-NAME]'
+  - location=TicketCode.readValid
+  - undeclared value local
 - name: a-return-in-a-standalone-block-finishes-the-method
   edits:
   - from: return value;

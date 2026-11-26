@@ -525,7 +525,6 @@ impl Engine<'_> {
                     else_block,
                 } => {
                     let test=self.java_expr(cond,id,env,path.clone())?;
-                    need(test.ty()==Ty::Bool,"Java if requires boolean")?;
                     let condition=self.condition_under_path(test.scalar()?,&path);
                     self.source_if(condition,then_block,else_block.as_deref().unwrap_or_default(),id,env,path)?;
                 }
@@ -894,10 +893,6 @@ impl Engine<'_> {
                 else_expr,
             } => {
                 let condition = self.java_expr(cond, id, env, path.clone())?;
-                need(
-                    condition.ty() == Ty::Bool,
-                    "Java ternary condition must be boolean",
-                )?;
                 let condition = self.condition_under_path(condition.scalar()?, &path);
                 if let Some(taken) = condition.as_bool() {
                     return self.java_expr(if taken { then_expr } else { else_expr }, id, env, path);

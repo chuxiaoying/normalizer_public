@@ -1,6 +1,7 @@
 //! First, deliberately small normalized input profile. No plugin discovery.
 //! This structural gate is not a Java type checker or a translation proof.
 mod external_polling;
+mod static_types;
 pub(crate) mod fixed_for;
 pub(crate) mod source_ports;
 
@@ -409,6 +410,8 @@ pub(crate) fn validate(program: &JavaProgram, entry: &str) -> Result<SourceEvide
             resolved: catch_types.entry(id.clone()).or_default(),
         };
         statements(body, id, &mut calls, &mut catches)?;
+        let owner = program.find_class(id.rsplit_once('.').unwrap().0).unwrap();
+        static_types::validate(program, owner, m, id, body)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
             let target = match call {
