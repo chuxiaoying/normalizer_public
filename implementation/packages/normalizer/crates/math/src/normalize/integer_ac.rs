@@ -18,21 +18,10 @@ fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
         ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_))
         | ExprKind::RowValue { acquired_integer: true, .. } => true,
         ExprKind::SymVar {
-            origin:
-                SymVarOrigin::Parameter {
-                    name,
-                    primitive_type,
-                },
-        } =>
-        // Legacy field expansion can encode partial E/heap projections as
-        // Parameter paths. Only a direct entry parameter is evidence here;
-        // a numeric annotation alone does not establish a field read domain.
-        {
-            !name.starts_with("$e_")
-                && !name.starts_with("$t_")
-                && !name.starts_with("$h_")
-                && primitive_type == "integer"
-        }
+            // The typed origin, not its display spelling, establishes input
+            // availability. Actual E and temporal values have other origins.
+            origin: SymVarOrigin::Parameter { primitive_type, .. },
+        } => primitive_type == "integer",
         ExprKind::BinOp {
             op: B::Add | B::Sub | B::Mul,
             left,
@@ -182,6 +171,19 @@ mod temporal_integer_evidence_tests {
         fn heap_display_name(&self, _: i64) -> Option<String> { None }
         fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { Some(&self.0) }
         fn temporal_is_total(&self, id: u64) -> bool { self.0.contains_key(&id) }
+    }
+
+    #[test]
+    fn an_input_spelling_does_not_imitate_the_acquisition_domain() {
+        use crate::ScalarSymbolType::Integer;
+        for label in ["$e_amount", "$t_limit", "$h_offset"] {
+            let input = b::param(label, Integer);
+            assert!(total_integer(&input));
+            assert_eq!(crate::normalize(b::sub(input.clone(), input)), b::lit_int(0));
+        }
+        let external = b::sym_e(0, Integer);
+        assert!(!total_integer(&external));
+        assert!(!total_integer(&b::integer_temporal_result(0)));
     }
 
     #[test]
