@@ -19,7 +19,8 @@ export function definedModuleExport(sf, entry, fail) {
 const BINARY = new Map([
   [ts.SyntaxKind.PlusToken, '+'], [ts.SyntaxKind.MinusToken, '-'],
   [ts.SyntaxKind.GreaterThanToken, '>'], [ts.SyntaxKind.LessThanToken, '<'],
-  [ts.SyntaxKind.EqualsEqualsEqualsToken, '==='],
+  [ts.SyntaxKind.GreaterThanEqualsToken, '>='], [ts.SyntaxKind.LessThanEqualsToken, '<='],
+  [ts.SyntaxKind.EqualsEqualsEqualsToken, '==='], [ts.SyntaxKind.ExclamationEqualsEqualsToken, '!=='],
 ]);
 
 export function unwrapParens(node) {
@@ -45,6 +46,11 @@ function expr(node, sf) {
   node = unwrapParens(node);
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return { op: 'literal', type: 'string', value: node.text };
   if (ts.isNumericLiteral(node)) return { op: 'literal', type: 'number', value: Number(node.text) };
+  if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)
+      && (node.operator === ts.SyntaxKind.MinusToken || node.operator === ts.SyntaxKind.PlusToken)) {
+    const value = Number(node.operand.text);
+    return { op: 'signed-number', value: node.operator === ts.SyntaxKind.MinusToken ? -value : value };
+  }
   if (node.kind === ts.SyntaxKind.NullKeyword) return { op: 'literal', type: 'null', value: null };
   if (ts.isIdentifier(node)) return { op: 'var', name: node.text };
   if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
