@@ -340,8 +340,7 @@ pub(crate) fn format_array_failure_union(expr: &Expr, ctx: &FormatCtx) -> Option
     if !matches!(expr.as_binop(), Some((BinOpKind::Or, ..))) { return None; }
     let (name, upper) = extract(expr)?;
     if !ctx.scalar_arrays.contains(name) { return None; }
-    let comparison = if upper == 0 { "==" } else { "<=" };
-    Some(format!("LENGTH({}) {comparison} {upper}", array_name(name, ctx)))
+    Some(format!("LENGTH({}) <= {upper}", array_name(name, ctx)))
 }
 
 fn try_format_array_bound(op: BinOpKind, left: &Expr, right: &Expr, ctx: &FormatCtx) -> Option<String> {

@@ -15,7 +15,7 @@ fn local_body(expr: &Scalar, acc: &str, item: &str) -> Result<Expr> {
         Scalar::Path(parts) if parts.len() == 1 && parts[0] == item => b::param("item", ScalarSymbolType::Integer),
         Scalar::Integer(n) => b::lit_integer(n.clone()),
         Scalar::Binary(op @ (Op::Add | Op::Sub | Op::Mul), left, right) => {
-            let build = match op { Op::Add => b::add, Op::Sub => b::sub, _ => b::mul };
+            let build = super::business_relation::scalar_binary(*op);
             build(local_body(left, acc, item)?, local_body(right, acc, item)?)
         }
         _ => return Err(fail("pure fold body requires closed exact-integer arithmetic")),

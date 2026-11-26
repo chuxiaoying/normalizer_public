@@ -28,6 +28,20 @@ pub(super) struct Relations {
     pub(super) first_rows: BTreeMap<i64, OrderedRows>,
 }
 
+pub(super) fn scalar_binary(op: Op) -> fn(Expr, Expr) -> Expr {
+    match op {
+        Op::Add => b::add,
+        Op::Sub => b::sub,
+        Op::Mul => b::mul,
+        Op::Eq => b::eq,
+        Op::Ne => b::ne,
+        Op::Lt => b::lt,
+        Op::Le => b::le,
+        Op::Gt => b::gt,
+        Op::Ge => b::ge,
+    }
+}
+
 impl<'a> Engine<'a> {
     /// Only declared base tables filtered by closed, typed expressions in the
     /// current source frame are admitted. In particular, raw E/T values or
@@ -222,17 +236,7 @@ impl<'a> Engine<'a> {
                 let left = self.query_value(left, alias, fields, locals, guard)?;
                 let right = self.query_value(right, alias, fields, locals, guard)?;
                 need(left.ty() == right.ty(), "incompatible query operands")?;
-                let binary: fn(Expr, Expr) -> Expr = match op {
-                    Op::Add => b::add,
-                    Op::Sub => b::sub,
-                    Op::Mul => b::mul,
-                    Op::Eq => b::eq,
-                    Op::Ne => b::ne,
-                    Op::Lt => b::lt,
-                    Op::Le => b::le,
-                    Op::Gt => b::gt,
-                    Op::Ge => b::ge,
-                };
+                let binary = scalar_binary(*op);
                 need(
                     matches!(op, Op::Eq | Op::Ne) || left.ty() == Ty::Integer,
                     "expected an exact integer query operand",
@@ -604,7 +608,7 @@ impl<'a> Engine<'a> {
                         let term = self.query_value(term, &query.alias, &rows.fields, &locals, guard)?;
                         need(term.ty() == Ty::Integer, "reduce needs exact integer elements")?;
                         let sum = r::relation_sum(rows.input, term.scalar()?);
-                        let value = if *op == Op::Add { b::add(start.scalar()?, sum) } else { b::sub(start.scalar()?, sum) };
+                        let value = scalar_binary(*op)(start.scalar()?, sum);
                         Value::Term(Ty::Integer, math::normalize(value))
                     }
                     _ => {

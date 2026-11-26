@@ -24,7 +24,6 @@ fn is_positive_subject(value: &Expr) -> Option<&Expr> {
     let (op, left, right) = value.as_binop()?;
     match op {
         BinOpKind::Gt if is_integer_zero(right) => Some(left),
-        BinOpKind::Lt if is_integer_zero(left) => Some(right),
         _ => None,
     }
 }

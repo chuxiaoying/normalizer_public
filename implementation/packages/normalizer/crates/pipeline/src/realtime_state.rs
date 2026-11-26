@@ -111,15 +111,6 @@ impl Completion {
         }
     }
 
-    /// A total return is certified and collapsed by `from_alternatives`.
-    /// The remaining guarded states include a different exit or an uncovered domain.
-    pub(crate) fn return_value(&self) -> Option<Expr> {
-        match self {
-            Self::Return(value) => Some(value.clone()),
-            Self::Continue | Self::Throw { .. } | Self::Guarded(_) => None,
-        }
-    }
-
     /// Return the terminal alternatives when this completion covers the whole
     /// current domain. A guarded set with a fallthrough path is still an
     /// intermediate block state and cannot be rendered as a function result.

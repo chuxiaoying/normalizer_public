@@ -486,7 +486,7 @@ impl Engine<'_> {
             return Ok(None);
         }
         need(
-            self.realtime_completion.return_value().as_ref() == Some(&reference)
+            matches!(&self.realtime_completion, realtime_state::Completion::Return(value) if value == &reference)
                 && self.realtime_throws.is_empty(),
             "object projection requires a total normal return of the same object",
         )?;

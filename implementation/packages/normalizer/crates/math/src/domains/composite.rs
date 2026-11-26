@@ -80,22 +80,21 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
         return None;
     };
     let n = point.as_lit()?.as_integer()?;
+    let strict = matches!(op, Gt | Lt);
+    let (op, n) = match op {
+        Gt => (Ge, n + 1),
+        Lt => (Le, n - 1),
+        _ => (op, n),
+    };
     let zero: crate::Integer = 0.into();
-    let one: crate::Integer = 1.into();
-    let empty = || b::eq(subject.clone(), b::lit_int(0));
-    let nonempty = || b::ne(subject.clone(), b::lit_int(0));
     Some(match op {
-        Gt if n < zero => b::lit_bool(true),
         Ge if n <= zero => b::lit_bool(true),
-        Lt if n <= zero => b::lit_bool(false),
         Le | Eq if n < zero => b::lit_bool(false),
         Ne if n < zero => b::lit_bool(true),
-        Gt if n == zero => nonempty(),
-        Ge if n == one => nonempty(),
-        Lt if n == one => empty(),
-        Le if n == zero => empty(),
-        Gt => b::ge(subject.clone(), b::lit_integer(n + 1)),
-        Lt => b::le(subject.clone(), b::lit_integer(n - 1)),
+        Ge if n == 1.into() => b::ne(subject.clone(), b::lit_int(0)),
+        Le if n == zero => b::eq(subject.clone(), b::lit_int(0)),
+        Ge if strict => b::ge(subject.clone(), b::lit_integer(n)),
+        Le if strict => b::le(subject.clone(), b::lit_integer(n)),
         _ => return None,
     })
 }

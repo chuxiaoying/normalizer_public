@@ -159,11 +159,9 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             return fmt(e, ctx);
         };
         if matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-            let column = if right.is_null() && left.as_row_value().is_some() { Some(left) }
-                else if left.is_null() && right.as_row_value().is_some() { Some(right) } else { None };
-            if let Some(column) = column {
+            if right.is_null() && left.as_row_value().is_some() {
                 let predicate = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
-                return format!("{} {predicate}", fmt(column, ctx));
+                return format!("{} {predicate}", fmt(left, ctx));
             }
         }
         // Keep physical table columns on the left unless the other operand
