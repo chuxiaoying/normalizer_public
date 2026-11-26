@@ -30,9 +30,12 @@
 - 现行设计要求、能给出可达输入和独立预期、但固定基准没跑到的行为，登记为待补回归；它仍是未覆盖，不等于豁免。先记录所属设计、入口、能区分正误的观察以及对应零命中项，不提交未裁决的新用例，不从遗留实现反造需求。无论主题分成几个用例，同一覆盖项只计一次。
 - 请求签字时记录源码位置、触发条件、删除影响和复审条件；未获签字前计入分母。只有最终提交的测量范围已核清、正式回归通过，且适用范围内「实际命中 + 已登记待补」等于分母，才能宣告对账 100%。只有待补为零且适用项均实际执行，才称为实际覆盖率 100%。
 
+### 已有正式对照
+
+- **关系查询标量的 `!=`**：[`PositiveCount.count` 变体](../../tests/e2e/variants/java/collections/collection-filter/PositiveCount.count.yaml)使用 `where row.amount != 0`，断言排除零并保留原账户筛选、聚合及空结果默认值的完整 PERS。该场景不是待补用例；运行时命中仍以当前提交的实际覆盖报告为准。
+
 ### 待补回归（不属于覆盖例外）
 
-- **关系查询标量的 `!=`**（已确认待补）：[关系代数语法](../../design/chapters/第五章%20·%20关系代数：让%20SQL%20和集合运算一起化简.md)明确支持该运算，例如 `where row.amount != 0`。当前正式回归没有执行[查询标量运算入口的该分支](../packages/normalizer/crates/pipeline/src/kernel_input/business_relation.rs)。保留实现并继续计入未覆盖，不删、不豁免。本轮固定回归，不新增用例。后续补种子及正式 CLI 验收，覆盖零值被排除、非零值被保留，并对规范 PERS 作确定性断言。
 - **关系语法的等价写法与可选子句**：从正式 `source` CLI 验收[局部关系与写入语法](../../design/chapters/第五章%20·%20关系代数：让%20SQL%20和集合运算一起化简.md)：`is null` / `is not null` 与大写写法得到同一规范 PERS；不带 `where` 的连接计数只按 `on` 条件和匹配行数计数；不带 `as` 的 UPDATE 以表名绑定条件，不带 `where` 的 UPDATE 更新全部行。写入仍须断言 S 中 SQL、原子性和影响行数。不扩张 DELETE 或 SQL 三值逻辑合同。
 - **已取得数据域的精确整数下界**：按[统一正则规范](../../design/secondary/精确数值与区间怎样化简.md#当前取得域内的精确整数下界)，对已取得的 `Count` 分别检查 `<= -1`、`> -1`、`>= 0` 和 `1 + Count == 0`。前者和最后一项恒假，另两项包含零在内恒真；结果简化不能删掉已取得的表和筛选证据。
 - **有序折叠的空提交前缀与隐式依赖**：沿[提前退出种子](../../design/examples/topics/loops-and-termination/java-break-continue.md)把首个可处理索引移到终止界之后，断言初值不变；沿[纯折叠定义](../../design/examples/topics/unified-canonical-form/java-pure-fold-definitions.md)让 R 只引用后一项，断言 T 仍按依赖顺序保留前项。
