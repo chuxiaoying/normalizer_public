@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const cli = join(root, 'implementation/tools/normalizer');
-const scalarModule = '/** @returns {number} */\nexport function value() { return 7; }\n';
+const scalarModule = 'export function value(): number { return 7; }\n';
 
 function fixture(t, source, worker) {
   const directory = mkdtempSync(join(tmpdir(), 'normalizer-frontend-transport-'));
@@ -18,8 +18,8 @@ function fixture(t, source, worker) {
   mkdirSync(join(target, 'debug'), { recursive: true });
   mkdirSync(project);
   writeFileSync(join(target, 'debug/normalizer-normalized'), worker, { mode: 0o700 });
-  writeFileSync(join(project, 'value.js'), source);
-  return (args = ['module', project, 'value.js', 'value']) => {
+  writeFileSync(join(project, 'value.ts'), source);
+  return (args = ['module', project, '--entry', 'value.ts#value']) => {
     const result = spawnSync(cli, args.map(arg => arg === '<project>' ? project : arg), {
       cwd: root, encoding: 'utf8', timeout: 30_000,
       env: { ...process.env, CARGO_TARGET_DIR: target, CARGO: '/bin/false' },
@@ -44,7 +44,7 @@ test('a syntax-recovery tree never reaches the normalization worker', t => {
   const result = run();
   assert.equal(result.status, 1, result.stderr);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /\[NORM-JS-MODULE\]/);
+  assert.match(result.stderr, /\[NORM-TS-MODULE\]/);
   assert.doesNotMatch(result.stderr, /unexpected worker invocation/);
 });
 
@@ -59,7 +59,7 @@ test('worker failure keeps its status and diagnostic but discards incomplete out
 test('unknown scenario is rejected before reading sources or invoking the worker', t => {
   const run = fixture(t, scalarModule, '#!/bin/sh\nprintf "unexpected worker invocation\\n" >&2\nexit 47\n');
   const result = run(['scenario', 'unknown-source-scenario', '<project>',
-    '--entry', 'missing.mjs:entry', '--source', 'missing.vue']);
+    '--entry', 'missing.ts#entry', '--source', 'missing.vue']);
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /SCENARIO_MODULE_INPUT: expected a supported scenario/);

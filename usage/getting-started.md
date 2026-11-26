@@ -10,7 +10,7 @@ class HelloWorld {
     static int addOne(int value) { return value + 1; }
 }
 JAVA
-implementation/tools/normalizer source "$project" HelloWorld.addOne
+implementation/tools/normalizer source "$project" 'src/HelloWorld.java#HelloWorld.addOne'
 ```
 
 在输出中，`entry.function` 指向 `src/HelloWorld.java#HelloWorld.addOne`，`P.parameters.value` 的类型是 `number`，`R` 为 `value + 1`。工具把最终 YAML 写到 stdout，输入无法闭合时返回非零并将诊断写到 stderr。

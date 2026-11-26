@@ -1,6 +1,6 @@
 # 规范输入
 
-从 Java 源目录开始时，提交已闭合的入口与依赖源文件，并给出 `Class.method`。参数及返回类型从声明读取，端口和查询需要真实的来源与语义。最小运行示例见[入门](getting-started.md)。
+从 Java 源目录开始时，提交已闭合的入口与依赖源文件，并给出 `src/Entry.java#Entry.run` 或 `src/Beans.java#Beans.SERVICE.run` 这样能唯一定位的入口。参数及返回类型从声明读取，端口和查询需要真实的来源与语义。最小运行示例见[入门](getting-started.md)。
 
 语言适配器也可生成 `normalizer.kernel-input/1` 工程。工程中 `source` 指向签名载体，`source_text` 保存对应内容，`entries` 列出入口，`functions` 为所需的无实现方法提供带来源的类型化定义。`entry_contexts` 按入口声明原业务函数、返回类型、真实形参和环境。中间载体的函数和环境字段通过上下文映射回业务来源；P 使用入口声明的同名参数。形参类型和返回值载体类型分别由 `parameter_value_types` 和 `result_value_types` 声明，不共用类型别名。签名载体只有声明，没有 Java 方法体；所有方法都绑定到类型化 IR。需要执行 Java 方法体的输入只能走源码入口，先完成源码准入。
 

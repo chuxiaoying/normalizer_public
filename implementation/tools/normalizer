@@ -9,7 +9,7 @@ KERNEL="$TARGET_DIR/debug/normalizer-normalized"
 usage() {
   cat <<'EOF'
 Usage:
-  implementation/tools/normalizer source SOURCE_DIR Class.method
+  implementation/tools/normalizer source SOURCE_DIR 'src/Entry.java#Entry.run'
   implementation/tools/normalizer module PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
   implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION --source ORIGINAL.vue
   implementation/tools/normalizer test business-examples
@@ -113,7 +113,7 @@ case "$command" in
       business-examples)
         ensure_frontend_dependencies tests
         ensure_kernel
-        exec node --test "$ROOT/../tests/e2e/oracle.test.mjs" "$ROOT/../tests/e2e/business_examples.test.mjs"
+        exec node --test "$ROOT/../tests/e2e/oracle.test.mjs" "$ROOT/../tests/e2e/pers-completion.test.mjs" "$ROOT/../tests/e2e/business_examples.test.mjs"
         ;;
       *)
         usage >&2
