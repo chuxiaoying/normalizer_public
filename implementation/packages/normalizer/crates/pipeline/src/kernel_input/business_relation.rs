@@ -213,18 +213,17 @@ impl<'a> Engine<'a> {
     }
 
     fn query_row_declaration(&self, decl: &JavaType) -> Result<&'a simulator_parser::JavaClass> {
-        let JavaType::Generic(container, args) = decl else {
-            return Err(fail(format!(
-                "query output requires List<Row>, found {decl:?}"
-            )));
+        let component = match decl {
+            JavaType::Array(component) => component.as_ref(),
+            JavaType::Generic(container, args)
+                if matches!(container.as_str(), "List" | "java.util.List") && args.len() == 1 => &args[0],
+            _ => return Err(fail(format!(
+                "query output requires a declared row array or List<Row>, found {decl:?}"
+            ))),
         };
-        let [JavaType::Class(name)] = args.as_slice() else {
-            return Err(fail("missing declared query row type"));
+        let JavaType::Class(name) = component else {
+            return Err(fail("query output requires a declared row type"));
         };
-        need(
-            matches!(container.as_str(), "List" | "java.util.List"),
-            "expected List<Row>",
-        )?;
         self.program.find_class(name).ok_or_else(|| fail("undeclared row type"))
     }
 

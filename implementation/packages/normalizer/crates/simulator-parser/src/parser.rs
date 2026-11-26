@@ -87,6 +87,7 @@ pub(crate) struct Parser<'a> {
     pub(crate) imports: Vec<String>,
     pub(crate) has_unbound_imports: bool,
     pub(crate) static_context: bool,
+    pub(crate) official_n: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -100,6 +101,7 @@ impl<'a> Parser<'a> {
             imports: Vec::new(),
             has_unbound_imports: false,
             static_context: false,
+            official_n: false,
         }
     }
 
@@ -525,6 +527,13 @@ fn parse_class_body(
     surrogates: Surrogates<'_>,
 ) -> Result<(), ParseError> {
     let mut p = Parser::new(body, file).with_surrogates(surrogates);
+    // Source admission separately rejects project declarations shadowing N.
+    p.official_n = !class.has_unbound_imports
+        && class.imports.iter().any(|name| name == "normalizer.intrinsics.N")
+        && !class.imports.iter().any(|name| {
+            name != "normalizer.intrinsics.N" && name.rsplit('.').next() == Some("N")
+        });
+
 
     loop {
         p.skip_ws();
@@ -624,7 +633,7 @@ fn parse_class_body(
             let body_at = p.pos + 1;
             let text = p.skip_balanced_braces()?;
             let body = crate::body_parser::parse_method_body_text(
-                text, file, p.surrogates.subspan(body_at), true,
+                text, file, p.surrogates.subspan(body_at), true, p.official_n,
             ).map_err(|error| p.rebase_slice(body_at, error))?;
             class.static_initializers.push((class.fields.len(), body));
             continue;
@@ -657,6 +666,7 @@ fn parse_class_body(
                         file,
                         p.surrogates.subspan(body_at),
                         false,
+                        p.official_n,
                     ).map_err(|error| p.rebase_slice(body_at, error))?)
                 } else {
                     return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
@@ -729,6 +739,7 @@ fn parse_class_body(
                     file,
                     p.surrogates.subspan(body_at),
                     is_static,
+                    p.official_n,
                 ).map_err(|error| p.rebase_slice(body_at, error))?)
             } else {
                 p.require_semicolon("bodyless method declaration")?;

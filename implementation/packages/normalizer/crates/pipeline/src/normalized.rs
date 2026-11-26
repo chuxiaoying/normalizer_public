@@ -720,7 +720,8 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 java_type,
                 initializer: None,
                 ..
-            } if scalar(java_type) || numeric_array(java_type) || matches!(java_type,JavaType::Generic(_,_)|JavaType::Class(_)) => {}
+            } if scalar(java_type) || numeric_array(java_type) || record_array_component(java_type).is_some()
+                || matches!(java_type,JavaType::Generic(_,_)|JavaType::Class(_)) => {}
             S::VarDecl {
                 java_type,
                 initializer: Some(e @ E::Ident(_)),

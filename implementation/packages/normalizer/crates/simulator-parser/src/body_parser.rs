@@ -14,9 +14,11 @@ pub(crate) fn parse_method_body_text(
     file: &str,
     surrogates: Surrogates<'_>,
     static_context: bool,
+    official_n: bool,
 ) -> Result<Vec<JavaStatement>, ParseError> {
     let mut p = Parser::new(body_text, file).with_surrogates(surrogates);
     p.static_context = static_context;
+    p.official_n = official_n;
     p.parse_statements_until_end()
 }
 
@@ -39,7 +41,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let body_at = self.pos + 1;
         let text = self.skip_balanced_braces()?;
-        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context).map_err(|error| self.rebase_slice(body_at, error))
+        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context, self.official_n).map_err(|error| self.rebase_slice(body_at, error))
     }
 
     /// Return the last statement from this source position. A local declaration
@@ -407,7 +409,14 @@ impl<'a> Parser<'a> {
         if is_final {
             annotations.extend(self.read_annotations()?);
         }
-        if annotations.iter().any(|annotation| annotation.name() != "java.lang.SuppressWarnings") {
+        let nullable_marker = |annotation: &AnnotationRef| {
+            !annotation.has_arguments() && (annotation.name() == "normalizer.intrinsics.N.Nullable"
+                || (self.official_n && annotation.name() == "N.Nullable"))
+        };
+        let nullable_count = annotations.iter().filter(|annotation| nullable_marker(annotation)).count();
+        if nullable_count > 1 || annotations.iter().any(|annotation| {
+            annotation.name() != "java.lang.SuppressWarnings" && !nullable_marker(annotation)
+        }) {
             return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] unsupported local variable annotation"));
         }
         let Some((base_ty, name, ty)) = self.declaration_head(save, |p, base_ty, name| {
@@ -418,6 +427,11 @@ impl<'a> Parser<'a> {
             return Ok(None);
         };
 
+        // This marker describes the local's reference domain and does not
+        // initialize it. Assignment and normal branch selection remain required.
+        if nullable_count == 1 && matches!(ty, JavaType::Primitive(_)) {
+            return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] nullable local requires a reference type"));
+        }
         self.require_local_receiver_name(&name)?;
         let init = self.parse_optional_initializer(&ty)?;
         self.skip_ws();
