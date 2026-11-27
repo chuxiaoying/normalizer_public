@@ -61,6 +61,10 @@ pub(super) fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> boo
             right,
         } => exact_business_integer(left, ctx) && exact_business_integer(right, ctx),
         ExprKind::RowValue { acquired_integer: true, .. } => true,
+        ExprKind::Call { key, .. } if crate::domains::completion::output_name(&crate::func_name(*key)) == "completion.value" =>
+            crate::domains::primitive::registry::func_return_type(*key) == Some(crate::Primitive::Number),
+        ExprKind::Call { .. } => crate::domains::composite::field_projection(value)
+            .is_some_and(|(_, _, ty)| ty == crate::Primitive::Number),
         // Strict addition/multiplication require both operands on the
         // same live path regardless of their display order. This type
         // evidence does not authorize dropping an operand or its guard.

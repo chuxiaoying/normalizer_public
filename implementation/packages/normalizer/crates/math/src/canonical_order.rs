@@ -276,7 +276,27 @@ impl Keys<'_> {
                     return node(Class::Relation, named("order_by"), vec!["relation".into()],
                         vec!["ascending_non_null_integer_keys".into()], vec![], children, None, 0, 1);
                 }
+                if let Some((record, field, ty)) = crate::domains::composite::field_projection(expression) {
+                    return node(Class::Read, named("field"), vec![ty.algebra_name().into()],
+                        vec![], vec![Payload::Text(field.into())], vec![Some(self.expr(record))], None, 0, 1);
+                }
                 let (name, parameters, result) = registry::func_signature(*key);
+                if crate::domains::completion::output_name(&name) == "completion.value" {
+                    if let ([receipt], Some(ty)) = (args.as_slice(), result) {
+                        if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = receipt.as_sym_var() {
+                            if primitive_type == "normalized.completion" && path.is_empty() {
+                                if let ObservationIdentity::Receipt(slot) = observation(ctx, *binding_id) {
+                                    // The successful value is a reference to the same acquired
+                                    // occurrence, not another operation. Its distinct contract
+                                    // retains the requirement of a normal completion.
+                                    return node(Class::Reference, named("binding"), vec![ty.algebra_name().into()],
+                                        vec!["normal_completion_value".into()], vec![], vec![],
+                                        Some(Identity::Receipt(slot, vec![])), 0, 0);
+                                }
+                            }
+                        }
+                    }
+                }
                 let ty = result.map(|result| result.algebra_name().into()).into_iter().collect();
                 let signature = parameters.iter().map(|p| value_type_tag(p.algebra_name().into())).collect();
                 if matches!(crate::domains::completion::output_name(&name), "completion.is_throw" | "completion.is_return" | "completion.payload") {
