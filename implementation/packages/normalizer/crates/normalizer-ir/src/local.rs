@@ -11,7 +11,7 @@ pub enum LocalIr {
     LocalMapEmpty { binding: String },
     LocalMapPut { binding: String, key: String, value: MapText },
     LocalMapGet { binding: String, source: String, key: String, fallback: MapText },
-    ProjectedUnionCount { binding: String, branches: Vec<(String, String)> },
+    ProjectedUnionCount { binding: String, first: (String, String), remaining: Vec<(String, String)> },
     MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
     Stack(stack::Action),
     CountRange { binding: String, accumulate: bool, lower: IntegerOperand, upper: IntegerOperand },
@@ -241,17 +241,22 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
     let mut union = Tokens { source: tokens.source };
     if union.take("count") && union.take("distinct") && union.take("union") {
         if accumulate { return Err("projected union initializes its count with =".into()); }
-        let mut branches = Vec::new();
+        let projection = |tokens: &mut Tokens<'_>| -> Result<(String, String), String> {
+            let source = tokens.name()?;
+            tokens.expect(".")?;
+            Ok((source, tokens.name()?))
+        };
+        let first = projection(&mut union)?;
+        if !union.take(",") { return Err("projected union needs at least two closed branches".into()); }
+        let mut remaining = Vec::new();
         loop {
-            let source = union.name()?;
-            union.expect(".")?;
-            branches.push((source, union.name()?));
+            remaining.push(projection(&mut union)?);
             if !union.take(",") { break; }
         }
-        if branches.len() < 2 || !union.rest().is_empty() {
+        if !union.rest().is_empty() {
             return Err("projected union needs at least two closed branches".into());
         }
-        return Ok(LocalIr::ProjectedUnionCount { binding, branches });
+        return Ok(LocalIr::ProjectedUnionCount { binding, first, remaining });
     }
     let mut range = Tokens { source: tokens.source };
     if range.take("count") && range.take("from") && range.take("[") {

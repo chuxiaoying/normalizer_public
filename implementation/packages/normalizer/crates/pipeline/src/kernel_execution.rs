@@ -478,10 +478,10 @@ impl<'a> Engine<'a> {
                     };
                     env.insert(binding.clone(), Value::Term(Ty::Text, map.get_or(key, fallback)));
                 }
-                S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, branches }) => {
+                S::LocalIr(normalizer_ir::local::LocalIr::ProjectedUnionCount { binding, first, remaining }) => {
                     need(preceding_uninitialized(body, i, binding).is_some(),
                         "projected union count must initialize its declared local")?;
-                    self.projected_union_count(binding, branches, env)?;
+                    self.projected_union_count(binding, first, remaining, env)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::Relation(query))=>{
                     let decl=self.source_declared_type(&J::Ident(query.binding.clone()),id)?;

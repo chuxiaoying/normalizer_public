@@ -122,7 +122,7 @@ fn relation_profile_size(relation: &RelationExpr) -> usize {
         RelationExpr::Select { predicate: value, input }
         | RelationExpr::Project { value, input, .. } => 1 + value.size() + relation_profile_size(input),
         RelationExpr::Distinct(input) => 1 + relation_profile_size(input),
-        RelationExpr::Union(branches) => 1 + branches.iter().map(relation_profile_size).sum::<usize>(),
+        RelationExpr::ProjectedUnion(columns) => 1 + columns.iter().len(),
     }
 }
 

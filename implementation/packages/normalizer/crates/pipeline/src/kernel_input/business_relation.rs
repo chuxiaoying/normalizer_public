@@ -179,7 +179,7 @@ mod physical_column_contract {
     }
 
     #[test]
-    fn grouping_and_projected_union_recognizers_require_their_own_row_shape() {
+    fn grouping_requires_its_own_row_shape() {
         let table = RelationExpr::base("bill", "bill");
         let status = b::row_value("bill.status");
         let keys = b::array_lit(vec![status.clone()]);
@@ -191,17 +191,6 @@ mod physical_column_contract {
         let filtered = RelationExpr::select(b::ne(status.clone(), b::lit_str("closed")), table.clone());
         assert!(grouped_table(&grouped(filtered.clone(), "groups")).is_none());
 
-        let projection = |input, name| RelationExpr::project(status.clone(), name, input);
-        let direct = RelationExpr::Union(vec![projection(table.clone(), "value")]);
-        assert_eq!(projected_union_columns(&direct), Some(vec![("bill", "status")]));
-        for branch in [
-            table.clone(),
-            projection(filtered, "value"),
-            projection(table, "other"),
-            projection(RelationExpr::base("bill", "row"), "value"),
-        ] {
-            assert!(projected_union_columns(&RelationExpr::Union(vec![branch])).is_none());
-        }
     }
 }
 
@@ -423,9 +412,9 @@ impl<'a> Engine<'a> {
     }
 
     pub(super) fn projected_union_count(
-        &self, binding: &str, sources: &[(String, String)], env: &mut Env,
+        &self, binding: &str, first: &(String, String), remaining: &[(String, String)], env: &mut Env,
     ) -> Result<()> {
-        let branches = sources.iter().map(|(source, field)| {
+        let projection = |(source, field): &(String, String)| -> Result<(String, String)> {
             let Some(Value::Rows(rows)) = env.get(source) else {
                 return Err(fail("projected union needs a declared table row source"));
             };
@@ -442,10 +431,11 @@ impl<'a> Engine<'a> {
                 .map(|(_, column)| column)
                 .filter(|column| self.source_relations.tables[name].get(*column).is_some_and(|ty| ty == "number"))
                 .ok_or_else(|| fail("projected union field must be a direct nonnullable table column"))?;
-            Ok(RelationExpr::project(b::row_value(format!("{name}.{column}")), "value",
-                RelationExpr::base(name, name)))
-        }).collect::<Result<Vec<_>>>()?;
-        let count = r::relation_count(RelationExpr::union(branches));
+            Ok((name.clone(), column.into()))
+        };
+        let first = projection(first)?;
+        let remaining = remaining.iter().map(projection).collect::<Result<Vec<_>>>()?;
+        let count = r::relation_count(RelationExpr::projected_union(first, remaining));
         env.insert(binding.into(), Value::Term(Ty::Integer, count));
         Ok(())
     }
@@ -988,18 +978,6 @@ pub(super) fn correlated_array_relation(relation: &RelationExpr) -> Option<(&str
     }
 }
 
-pub(crate) fn projected_union_columns(relation: &RelationExpr) -> Option<Vec<(&str, &str)>> {
-    let RelationExpr::Union(branches) = relation else { return None; };
-    // The source directive parses at least two projections. Normalization
-    // can deduplicate them to one, never remove every branch.
-    branches.iter().map(|branch| {
-        let RelationExpr::Project { value, alias, input } = branch else { return None; };
-        let RelationExpr::Base { name, alias: source } = input.as_ref() else { return None; };
-        let (owner, column) = value.as_row_value()?.split_once('.')?;
-        (alias == "value" && source == name && owner == name).then_some((name.as_str(), column))
-    }).collect()
-}
-
 pub(super) fn is_table_expression(
     expr: &Expr,
     tables: &BTreeMap<String, BTreeMap<String, String>>,
@@ -1041,9 +1019,9 @@ pub(super) fn is_table_expression(
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),
             FirstValue => table_source(relation),
             Exists => table_source(relation),
-            Count => (value.is_none() && projected_union_columns(relation).is_some_and(|branches|
-                branches.iter().all(|(name, column)| tables.get(*name)
-                    .and_then(|columns| columns.get(*column)).is_some_and(|ty| ty == "number"))))
+            Count => (value.is_none() && matches!(relation, RelationExpr::ProjectedUnion(branches) if
+                branches.iter().all(|(name, column)| tables.get(name)
+                    .and_then(|columns| columns.get(column)).is_some_and(|ty| ty == "number"))))
                 || is_scalar_array_relation(relation, arrays)
                 || matches!(relation, RelationExpr::Base { name, .. } if record_inputs.contains_key(name)),
             NthValue => is_scalar_array_relation(relation, arrays)

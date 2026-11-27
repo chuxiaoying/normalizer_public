@@ -20,6 +20,18 @@ use crate::{
     Expr, builder,
     expr::{ExprKind, RelationAggregateKind},
 };
+use std::collections::BTreeSet;
+
+/// At least one already-bound physical column. Sorting and deduplication
+/// belong to the set, not to a later SQL alias recognizer.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ProjectedColumns(BTreeSet<(String, String)>);
+
+impl ProjectedColumns {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> + ExactSizeIterator {
+        self.0.iter().map(|(table, column)| (table.as_str(), column.as_str()))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RelationExpr {
@@ -48,8 +60,7 @@ pub enum RelationExpr {
         input: Box<RelationExpr>,
     },
     Distinct(Box<RelationExpr>),
-    /// Unordered set union of already projected branches.
-    Union(Vec<RelationExpr>),
+    ProjectedUnion(ProjectedColumns),
 }
 
 impl RelationExpr {
@@ -85,8 +96,13 @@ impl RelationExpr {
         }
     }
 
-    pub fn union(branches: Vec<RelationExpr>) -> Self {
-        normalize_relation(Self::Union(branches))
+    pub fn projected_union(
+        first: (String, String),
+        remaining: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        let mut columns = BTreeSet::from([first]);
+        columns.extend(remaining);
+        Self::ProjectedUnion(ProjectedColumns(columns))
     }
 
     pub fn distinct(input: RelationExpr) -> Self {
@@ -155,24 +171,11 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
         RelationExpr::Distinct(input) => {
             RelationExpr::Distinct(Box::new(normalize_relation(*input)))
         }
-        RelationExpr::Union(branches) => {
-            let mut branches: Vec<_> = branches.into_iter().map(normalize_relation).collect();
-            branches.sort_by_cached_key(|branch| {
-                let structural = crate::canonical_order_key(&relation_expr(branch.clone()), &crate::DefaultSortContext);
-                let projected = match branch {
-                    RelationExpr::Project {value, ..} => crate::canonical_order_key(value, &crate::DefaultSortContext),
-                    _ => structural.clone(),
-                };
-                (projected, structural)
-            });
-            branches.dedup();
-            RelationExpr::Union(branches)
-        }
         RelationExpr::Vector { value, alias } => RelationExpr::Vector {
             value: crate::normalize(value),
             alias,
         },
-        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. }) => leaf,
+        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_)) => leaf,
     }
 }
 

@@ -30,9 +30,9 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         return Some(format!("(SELECT {column} FROM {name} AS {alias})[{index}]"));
     }
     if kind == math::RelationAggregateKind::Count && value.is_none() {
-        if let Some(branches) = crate::kernel_input::business_relation::projected_union_columns(relation) {
-            let distinct = if branches.len() == 1 { "DISTINCT " } else { "" };
-            let selection = branches.into_iter().map(|(table, column)|
+        if let RelationExpr::ProjectedUnion(branches) = relation {
+            let distinct = if branches.iter().len() == 1 { "DISTINCT " } else { "" };
+            let selection = branches.iter().map(|(table, column)|
                 format!("  SELECT {distinct}{column} FROM {table}")).collect::<Vec<_>>().join("\n  UNION\n");
             return Some(format!("SELECT COUNT(*) FROM (\n{selection}\n) AS accounts"));
         }
