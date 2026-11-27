@@ -13,9 +13,15 @@ export function officialDeclaration() {
   return ts.createSourceFile(officialModulePath, declarations, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 }
 
+export function isOfficialModuleImport(node) {
+  return ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
+    && node.moduleSpecifier.text === specifier;
+}
+
+export const invalidOfficialImport = 'official @normalizer/stdlib operations require a namespace import';
+
 export function isOfficialNamespaceImport(node) {
-  if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)
-      || node.moduleSpecifier.text !== specifier || node.attributes) return false;
+  if (!isOfficialModuleImport(node) || node.attributes) return false;
   const clause = node.importClause;
   return !!clause && !clause.isTypeOnly && !clause.name
     && !!clause.namedBindings && ts.isNamespaceImport(clause.namedBindings);

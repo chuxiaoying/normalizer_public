@@ -3,7 +3,7 @@ import ts from 'typescript';
 import {basename, dirname} from 'node:path';
 import {definedModuleExport, parseSourceModule} from './ir.mjs';
 import {localDirectives} from './local-directives.mjs';
-import {isOfficialNamespaceImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
+import {isOfficialModuleImport, isOfficialNamespaceImport, invalidOfficialImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
 export const failTypedModule = message => { throw new Error('[NORM-TS-MODULE] ' + message); };
 export const typedIdentifier = x => typeof x === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(x) && x !== 'undefined';
@@ -34,6 +34,7 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
   let hasImport = false, hasOfficial = false;
   const inspect = node => {
     if (node.kind === ts.SyntaxKind.AnyKeyword) fail('explicit any is not an admitted analysis type');
+    if (isOfficialModuleImport(node) && !isOfficialNamespaceImport(node)) fail(invalidOfficialImport);
     if (allowOfficial && isOfficialNamespaceImport(node)) {
       hasOfficial = true;
       return;

@@ -3,4 +3,4 @@ reject:
   fragments:
     - "[NORM-TS-MODULE]"
     - "@normalizer-ir"
-    - "not_an_admitted_instruction"
+    - "src/helper.ts:2"

@@ -7,7 +7,7 @@ import ts from 'typescript';
 import { isLocalExportList, parseSourceModule } from './ir.mjs';
 import { assertTypeScript, isCompilerLibrary } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
-import {isOfficialNamespaceImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
+import {isOfficialModuleImport, isOfficialNamespaceImport, invalidOfficialImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
 const relative = specifier => specifier.startsWith('./') || specifier.startsWith('../');
 const ordinaryDeclaration = node => ts.isImportDeclaration(node) || ts.isFunctionDeclaration(node)
@@ -52,6 +52,7 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
       if (!ordinaryDeclaration(st) && !(rootReceiver && input.declared === entry.declared && ts.isVariableStatement(st))) diagnostic(record, st, 'linked modules require closed declarations without executable initialization');
       if (!ts.isImportDeclaration(st)) continue;
       const specifier = ts.isStringLiteral(st.moduleSpecifier) && st.moduleSpecifier.text;
+      if (isOfficialModuleImport(st) && !isOfficialNamespaceImport(st)) diagnostic(record, st, invalidOfficialImport);
       if (isOfficialNamespaceImport(st)) {
         record.dependencies.set(specifier, officialModulePath);
         hasOfficial = true;
