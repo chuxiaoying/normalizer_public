@@ -16,7 +16,8 @@ expected:
         position: 2
         type: number
   R: |-
-    COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0) * COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0) + CASE
+    LET $l_0 = COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0)
+    IN $l_0 * $l_0 + CASE
       WHEN extra > 0 THEN COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0)
       ELSE 0
     END
