@@ -9,4 +9,4 @@ expected:
       values:
         position: 0
         type: number[]
-  R: COUNT(DISTINCT value FROM values WHERE value >= 0)
+  R: COUNT(DISTINCT value FROM values WHERE value > -1)
