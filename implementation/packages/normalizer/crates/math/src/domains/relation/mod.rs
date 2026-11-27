@@ -276,6 +276,23 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
     }
 }
 
+/// Rebind an authored single-source predicate to one input of an inner
+/// join. The snapshot stays fixed and only the lexical row slot changes.
+/// No predicate may read through a different source or a nested binder.
+pub fn rebind_join_predicate(
+    value: &Expr, table: &TableSource, row_slot: usize, alias: &str,
+) -> Option<Expr> {
+    Some(match value.kind() {
+        ExprKind::RowValue { sql: Some(column), .. } if &column.table == table && column.row_slot == 0 =>
+            builder::sql_column(alias, table.clone(), row_slot, &column.column, column.scalar_type),
+        ExprKind::Lit(_) | ExprKind::SymVar { .. } => value.clone(),
+        ExprKind::BinOp { op, left, right } =>
+            builder::binop_public(*op, rebind_join_predicate(left, table, row_slot, alias)?,
+                rebind_join_predicate(right, table, row_slot, alias)?),
+        _ => return None,
+    })
+}
+
 /// Wrap a relation-valued Relation Calculus expression into the single math Expr IR.
 pub fn relation_expr(relation: RelationExpr) -> Expr {
     Expr::new(ExprKind::Relation(Box::new(relation)))

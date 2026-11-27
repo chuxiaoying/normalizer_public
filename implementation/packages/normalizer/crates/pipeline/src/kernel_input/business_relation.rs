@@ -511,14 +511,27 @@ impl<'a> Engine<'a> {
             }
             Operation::JoinCount { source: other, alias: rhs, on, filters } => {
                 let mut names = env.clone();
+                let mut prefilters = Vec::new();
                 let mut bind = |source: &str, alias: &str, row_slot| -> Result<(TableSource, String)> {
                     need(!env.contains_key(alias), "join alias would shadow a local value")?;
                     let Some(Value::Rows(rows)) = env.get(source) else {
                         return Err(fail("join requires two typed table bindings"));
                     };
-                    let RelationExpr::Base { name, alias: bound, snapshot } = &rows.input else {
-                        return Err(fail("join count currently requires unfiltered table declarations"));
+                    let mut input = &rows.input;
+                    let mut source_filters = Vec::new();
+                    while let RelationExpr::Select { predicate, input: inner } = input {
+                        source_filters.push(predicate);
+                        input = inner;
+                    }
+                    let RelationExpr::Base { name, alias: bound, snapshot } = input else {
+                        return Err(fail("join count requires a bound table source"));
                     };
+                    need(rows.ordering.is_empty(), "join count requires unordered input rows")?;
+                    let source_table = TableSource { name: name.clone(), snapshot: *snapshot };
+                    for filter in source_filters {
+                        prefilters.push(r::rebind_join_predicate(filter, &source_table, row_slot, alias)
+                            .ok_or_else(|| fail("join source filter must be a closed predicate over that input"))?);
+                    }
                     let columns = self.source_relations.tables.get(name).filter(|_| name == bound)
                         .ok_or_else(|| fail("join count requires a declared table"))?;
                     for (field, value) in &rows.fields {
@@ -550,11 +563,14 @@ impl<'a> Engine<'a> {
                 let on = predicate(on)?;
                 let dependency = |predicate: &Expr| join_dependency(predicate, &query.alias, rhs);
                 need(dependency(&on) == 3, "join ON must depend on both typed rows")?;
-                let filters = filters.iter().map(|clause| {
+                let mut filters = filters.iter().map(|clause| {
                     let filter = predicate(clause)?;
                     need(dependency(&filter) != 3, "join WHERE may filter one row per clause")?;
                     Ok(filter)
                 }).collect::<Result<Vec<_>>>()?;
+                // These are inner-join selections over already acquired
+                // rows. Apply the source restrictions in WHERE, never ON.
+                filters.extend(prefilters);
                 need(decl.is_none_or(crate::normalized::integral), "join count needs a numeric local")?;
                 // SUM(1) over the matched pairs preserves their multiplicity.
                 let result = math::normalize(r::relation_sum(RelationExpr::Join { left, right, on, filters }, b::lit_int(1)));
