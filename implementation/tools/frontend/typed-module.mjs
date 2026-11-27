@@ -1,5 +1,6 @@
 // The typed standalone syntactic and type-checking gate shared by .ts shapes.
 import ts from 'typescript';
+import {basename, dirname} from 'node:path';
 import {definedModuleExport, parseSourceModule} from './ir.mjs';
 import {localDirectives} from './local-directives.mjs';
 import {isOfficialNamespaceImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
@@ -10,9 +11,7 @@ export const typedIdentifier = x => typeof x === 'string' && /^[A-Za-z_][A-Za-z0
 export function typedModuleAst(source, physicalPath, entry) {
   const sf = parseSourceModule(physicalPath, source, failTypedModule, ts.ScriptKind.TS);
   const fn = definedModuleExport(sf, entry, failTypedModule);
-  for (const declaration of sf.statements) {
-    if (ts.isFunctionDeclaration(declaration) && declaration.body) localDirectives(sf, declaration.body).requireConsumed();
-  }
+  localDirectives(sf, sf).requireConsumed();
   return {sf, fn};
 }
 
@@ -20,12 +19,16 @@ export function typedParameterNames(fn) {
   return fn.parameters.map(param => param.name.text);
 }
 
+export function isCompilerLibrary(file, directory) {
+  return dirname(file) === directory && /^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(file));
+}
+
 export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {allowOfficial = false} = {}) {
   if (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length) {
     fail('TypeScript checking directives cannot disable or suppress the strict preflight');
   }
-  if (allowOfficial && (sf.referencedFiles.length || sf.typeReferenceDirectives.length
-      || sf.libReferenceDirectives.length || sf.hasNoDefaultLib)) {
+  if (sf.referencedFiles.length || sf.typeReferenceDirectives.length
+      || sf.libReferenceDirectives.length || sf.hasNoDefaultLib) {
     fail('compiler reference directives are not scoped module imports');
   }
   let hasImport = false, hasOfficial = false;
@@ -42,9 +45,13 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
   if (hasImport) fail('typed module cannot import outside declarations');
   const options = {strict: true, noEmit: true, noResolve: true, types: [], target: ts.ScriptTarget.ES2022};
   const host = ts.createCompilerHost(options);
-  const readSource = host.getSourceFile.bind(host);
-  host.getSourceFile = (name, ...args) => name === physicalPath ? sf
-    : hasOfficial && name === officialModulePath ? officialDeclaration() : readSource(name, ...args);
+  const readBuiltin = host.getSourceFile.bind(host);
+  const library = dirname(host.getDefaultLibFileName(options));
+  host.getSourceFile = (name, ...args) => {
+    if (name === physicalPath) return sf;
+    if (hasOfficial && name === officialModulePath) return officialDeclaration();
+    if (isCompilerLibrary(name, library)) return readBuiltin(name, ...args);
+  };
   if (hasOfficial) host.resolveModuleNames = names => names.map(name => name === '@normalizer/stdlib'
     ? {resolvedFileName: officialModulePath, extension: ts.Extension.Dts, isExternalLibraryImport: true}
     : undefined);

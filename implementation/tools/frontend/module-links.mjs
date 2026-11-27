@@ -2,10 +2,10 @@
 // The host does not resolve arbitrary packages, run decorators/initializers,
 // or invent declaration stubs for a missing import.
 import { readFileSync } from 'node:fs';
-import { basename, dirname, posix } from 'node:path';
+import { dirname, posix } from 'node:path';
 import ts from 'typescript';
 import { parseSourceModule } from './ir.mjs';
-import { assertTypeScript } from './typed-module.mjs';
+import { assertTypeScript, isCompilerLibrary } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
 import {isOfficialNamespaceImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
@@ -99,7 +99,7 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
     if (hasOfficial && file === officialModulePath) return officialDeclaration();
     const known = modules.get(file);
     if (known) return known.ast;
-    if (dirname(file) === library && /^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(file))) return builtinSource(file, ...rest);
+    if (isCompilerLibrary(file, library)) return builtinSource(file, ...rest);
   };
   host.resolveModuleNames = (specifiers, file) => specifiers.map(specifier => {
     const resolvedFileName = modules.get(file)?.dependencies.get(specifier);
