@@ -461,8 +461,13 @@ pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> E
 /// entering a new branch, short-circuit guard, row, or acquisition scope.
 pub fn let_eager_children(expr: &Expr) -> Vec<&Expr> {
     match expr.kind() {
-        ExprKind::BinOp { op: BinOpKind::Add | BinOpKind::Mul | BinOpKind::Sub, left, right } => vec![left, right],
-        ExprKind::UnaryOp { op: UnaryOpKind::Neg, operand } => vec![operand],
+        ExprKind::BinOp {
+            op: BinOpKind::Add | BinOpKind::Mul | BinOpKind::Sub
+                | BinOpKind::Eq | BinOpKind::Ne | BinOpKind::Lt | BinOpKind::Le
+                | BinOpKind::Gt | BinOpKind::Ge,
+            left, right,
+        } => vec![left, right],
+        ExprKind::UnaryOp { op: UnaryOpKind::Neg | UnaryOpKind::Not, operand } => vec![operand],
         ExprKind::ArrayLit(items) => items.iter().collect(),
         _ => vec![],
     }
