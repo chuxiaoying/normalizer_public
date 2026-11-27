@@ -73,27 +73,20 @@ def _local_dependencies(manifest: Path) -> list[str]:
 
 
 def _cycle_nodes(graph: dict[str, list[str]]) -> list[str]:
-    visiting: set[str] = set()
-    visited: set[str] = set()
-    cycle: set[str] = set()
-
-    def visit(node: str) -> None:
-        if node in visiting:
-            cycle.add(node)
-            return
-        if node in visited:
-            return
-        visiting.add(node)
-        for dependency in graph.get(node, []):
-            visit(dependency)
-            if dependency in cycle:
-                cycle.add(node)
-        visiting.remove(node)
-        visited.add(node)
-
-    for node in graph:
-        visit(node)
-    return sorted(cycle)
+    cycles = []
+    for origin in sorted(graph):
+        pending = list(graph[origin])
+        seen = set()
+        while pending:
+            node = pending.pop()
+            if node == origin:
+                cycles.append(origin)
+                break
+            if node in seen:
+                continue
+            seen.add(node)
+            pending.extend(graph.get(node, ()))
+    return cycles
 
 
 def _maintenance_contract(root: Path) -> dict:
