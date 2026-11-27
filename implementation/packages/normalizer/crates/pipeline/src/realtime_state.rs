@@ -317,10 +317,19 @@ fn coverage<'a>(guards: impl Iterator<Item = &'a Expr>) -> Expr {
 fn collapse_return_values<'a>(
     mut returns: impl DoubleEndedIterator<Item = (&'a Expr, &'a Expr)>,
 ) -> Option<Expr> {
-    let (_, last) = returns.next_back()?;
-    Some(returns.rfold(last.clone(), |value, (guard, branch)| {
-        join_value(guard.clone(), branch.clone(), value)
-    }))
+    let (last_guard, last_value) = returns.next_back()?;
+    // Coverage was proved for the whole ordered set. Normalize one CASE
+    // in that scope, not a right-fold of artificial binary domains whose
+    // fallback would also run on a previously matched path.
+    let branches: Vec<_> = returns.map(|(guard, value)| (guard.clone(), value.clone())).collect();
+    // With exactly two covered outcomes the first guard and its fallback
+    // really are a complete binary choice, so CF-04 applies directly.
+    if let [(condition, value)] = branches.as_slice() {
+        return Some(join_value(condition.clone(), value.clone(), last_value.clone()));
+    }
+    Some(math::normalize(b::normal_return_case_when(
+        branches, (last_guard.clone(), last_value.clone()),
+    )))
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -88,6 +88,24 @@ fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) 
     direct_exact_number(value) || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
 }
 
+/// A final min/max is a complete two-value decision in the remaining
+/// domain. Its already acquired total operands may use CF-04 without
+/// moving any earlier arm or treating arbitrary suffix guards as binary.
+pub(crate) fn canonicalize_terminal_extremum(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
+    let (arms, fallback) = expression.as_total_case_when()?;
+    let ((condition, selected), earlier) = arms.split_last()?;
+    if earlier.is_empty() || !has_total_number_selection_evidence(selected, context)
+        || !has_total_number_selection_evidence(fallback, context)
+    { return None; }
+    let op = selection_comparison(condition, selected, fallback)?;
+    let suffix = order_selection(op, selected, fallback, context)?;
+    let ([(condition, selected)], fallback) = suffix.as_total_case_when()? else { return None; };
+    let mut rewritten = earlier.to_vec();
+    rewritten.push((condition.clone(), selected.clone()));
+    let result = crate::builder::case_when(rewritten, fallback.clone());
+    (result != *expression).then_some(result)
+}
+
 /// Compare the full trees after normalizing the complement. Terminal selection
 /// is still lazy: exchanging the two arms does not evaluate either arm in the
 /// other arm's domain. Callers must first establish a total Boolean test in

@@ -31,6 +31,9 @@ pub(crate) fn simplify(
         }
         return expr.clone();
     }
+    if let Some(value) = crate::case_orientation::canonicalize_terminal_extremum(expr, ctx) {
+        return value;
+    }
     if let Some(value) = select_first_default(expr) {
         return value;
     }
