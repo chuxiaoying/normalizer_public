@@ -222,8 +222,11 @@ impl<'a> Engine<'a> {
                     owned_column_domain(columns, table, qualified)).is_some();
             }
             if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
-                return entry.params().iter().any(|(ty, parameter)| parameter == name
-                    && primitive_type == "integer" && crate::normalized::integral(ty));
+                return entry.params().iter().any(|(ty, parameter)| parameter == name && match primitive_type.as_str() {
+                    "integer" => crate::normalized::integral(ty),
+                    "boolean" => matches!(ty, JavaType::Primitive(name) if name == "boolean"),
+                    _ => false,
+                });
             }
             if let Some((op, left, right)) = expr.as_binop() {
                 return matches!(op, BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne

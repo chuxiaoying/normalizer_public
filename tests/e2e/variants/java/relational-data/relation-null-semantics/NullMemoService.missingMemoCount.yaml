@@ -211,3 +211,33 @@
           ),
           0
         ) < 3
+
+- name: count-filtered-by-a-boolean-input-is-still-nonnegative
+  edits:
+    - {from: 'missingMemoCount(int accountId)', to: 'missingMemoCount(int accountId, boolean enabled)'}
+    - {from: 'where b.account_id == accountId', to: 'where b.account_id == accountId and enabled'}
+    - {from: 'return count;', to: 'return count >= 0 ? 7 : 11;'}
+  expect:
+    - {path: [P, parameters, enabled], add: {position: 1, type: bool}}
+    - {path: [R], value: '7'}
+
+- name: boolean-filter-does-not-prove-whether-the-count-is-zero
+  edits:
+    - {from: 'static int missingMemoCount(int accountId)', to: 'static boolean missingMemoCount(int accountId, boolean enabled)'}
+    - {from: 'where b.account_id == accountId', to: 'where b.account_id == accountId and enabled'}
+    - {from: 'return count;', to: 'return count == 0;'}
+  expect:
+    - {path: [entry, returns], value: bool}
+    - {path: [P, parameters, enabled], add: {position: 1, type: bool}}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM bill
+            WHERE bill.account_id == accountId
+              AND enabled
+              AND bill.memo IS NULL
+          ),
+          0
+        ) == 0
