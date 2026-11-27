@@ -6,7 +6,7 @@
 //! to reorder CaseWhen arms, side-effect ledgers, arguments, list elements, or
 //! string concatenation.
 //!
-//! The design contract is `design/chapters/统一定形.md`. The shared key is:
+//! The design contract is `design/chapters/08-统一定形.md`. The shared key is:
 //!
 //! ```text
 //! subject_key

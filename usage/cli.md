@@ -48,4 +48,4 @@
 | 分析未完成或预算不足 | 按未完成处理，不把局部输出当最终结果，也不凭空缩小循环或取数范围。 |
 | 诊断要求预处理或不支持 | 保留具体位置及 stderr，按[预处理 Skill](skills/normalizer-preprocess/SKILL.md)区分输入证据缺失和当前实现不支持。前者补证据，后者如实报告，不改业务行为以换取成功。 前端错误若提到内部工程或 Java，不表示该把 TypeScript 改写成 Java；先保留纯净 TypeScript 的最小复现。 |
 
-分析拒绝没有成功 PERS。如果合法源码可能抛出业务异常，它仍可以成功归一化，并在 PERS 中出现 `throws`。区分两类结果见[PERS登场](../design/chapters/PERS登场.md)。
+分析拒绝没有成功 PERS。如果合法源码可能抛出业务异常，它仍可以成功归一化，并在 PERS 中出现 `throws`。区分两类结果见[PERS登场](../design/chapters/07-PERS登场.md)。

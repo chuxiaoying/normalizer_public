@@ -9,7 +9,7 @@
 - [种子路径清单](seeds.yaml)保持稳定 ID 到案例文件的权威映射。
 - [种子语义元数据](seed-manifest.yaml)记录主主题、关联主题和种子类型。
 - [种子分母计划](seed-plan.yaml)枚举应该覆盖的语义场景，`planned` 只表示待补的种子位置。
-- [统一定形](../chapters/统一定形.md)规定 expected 如何从等价表达中选择唯一代表。
+- [统一定形](../chapters/08-统一定形.md)规定 expected 如何从等价表达中选择唯一代表。
 
 目录由语义主张组织，不按语言或案例加入批次组织。一个种子只保留一个主主题。它依赖的其他能力写进元数据。只有组合本身成为测试重点时，才建立联合主题。
 
@@ -19,14 +19,14 @@
 
 | 主张入口 | 补种子时必须能区分什么 | 首查现有种子 |
 | --- | --- | --- |
-| [符号执行](../chapters/符号执行.md) | 逐语句和调用执行；完成以后不运行后续语句 | [控制流](topics/control-flow/README.md)、[循环与终止](topics/loops-and-termination/README.md) |
-| [多重宇宙](../chapters/多重宇宙.md) | 可合并的结果和不可搬动的状态、动作和完成路径；未发生不等于取得空值 | [控制流](topics/control-flow/README.md)、[状态与别名](topics/state-and-aliasing/README.md) |
-| [数学化简](../chapters/数学化简.md) | 法则成立与前提失效；子式变化能否解锁父式，不能靠恰巧相等的常量 | [表达式化简](topics/expression-simplification/README.md)、[数值域](topics/number-domain/README.md) |
-| [AI救赎](../chapters/AI救赎.md) | 原件与分析副本的同一观察；合法强类型入口与真正未闭合的类型、依赖或绑定 | [语言入口](topics/language-entries/README.md)、[外部边界](topics/external-boundaries/README.md) |
-| [关系代数](../chapters/关系代数.md) | 空、NULL、重复、顺序和读写边界；同一快照等价查询与写后重新取得 | [关系数据](topics/relational-data/README.md)、[集合](topics/collections/README.md) |
-| [业务至上](../chapters/业务至上.md) | 可忽略的宿主机制与有业务影响的同名操作；精确数值与显式舍入 | [数值域](topics/number-domain/README.md)、[外部边界](topics/external-boundaries/README.md) |
-| [PERS登场](../chapters/PERS登场.md) | 参数、环境、正常与异常完成、有序动作；特别区分不同取得与同一取得的复用 | [状态与别名](topics/state-and-aliasing/README.md)、[外部边界](topics/external-boundaries/README.md) |
-| [统一定形](../chapters/统一定形.md) | 等价输入得到唯一完整 PERS；守卫、排序键、LET 安全域和依赖确实变了仍可区分 | [统一定形](topics/unified-canonical-form/README.md)、[表达式化简](topics/expression-simplification/README.md) |
+| [符号执行](../chapters/01-符号执行.md) | 逐语句和调用执行；完成以后不运行后续语句 | [控制流](topics/control-flow/README.md)、[循环与终止](topics/loops-and-termination/README.md) |
+| [多重宇宙](../chapters/02-多重宇宙.md) | 可合并的结果和不可搬动的状态、动作和完成路径；未发生不等于取得空值 | [控制流](topics/control-flow/README.md)、[状态与别名](topics/state-and-aliasing/README.md) |
+| [数学化简](../chapters/03-数学化简.md) | 法则成立与前提失效；子式变化能否解锁父式，不能靠恰巧相等的常量 | [表达式化简](topics/expression-simplification/README.md)、[数值域](topics/number-domain/README.md) |
+| [AI救赎](../chapters/04-AI救赎.md) | 原件与分析副本的同一观察；合法强类型入口与真正未闭合的类型、依赖或绑定 | [语言入口](topics/language-entries/README.md)、[外部边界](topics/external-boundaries/README.md) |
+| [关系代数](../chapters/05-关系代数.md) | 空、NULL、重复、顺序和读写边界；同一快照等价查询与写后重新取得 | [关系数据](topics/relational-data/README.md)、[集合](topics/collections/README.md) |
+| [业务至上](../chapters/06-业务至上.md) | 可忽略的宿主机制与有业务影响的同名操作；精确数值与显式舍入 | [数值域](topics/number-domain/README.md)、[外部边界](topics/external-boundaries/README.md) |
+| [PERS登场](../chapters/07-PERS登场.md) | 参数、环境、正常与异常完成、有序动作；特别区分不同取得与同一取得的复用 | [状态与别名](topics/state-and-aliasing/README.md)、[外部边界](topics/external-boundaries/README.md) |
+| [统一定形](../chapters/08-统一定形.md) | 等价输入得到唯一完整 PERS；守卫、排序键、LET 安全域和依赖确实变了仍可区分 | [统一定形](topics/unified-canonical-form/README.md)、[表达式化简](topics/expression-simplification/README.md) |
 
 有设计主张但没有唯一输出形态时，先在分母保留场景；由一级或二级设计裁决后才完成种子。不把当前拒绝、当前输出或暂时可用的拼写写成理想预期。
 
@@ -46,6 +46,6 @@
 
 预处理的主张可涉及声明标记、局部调用替换、循环或关系指令、入口重组与明确拒绝。重点是 AI 交付物时，种子同时展示原始源码、分析副本和理想 PERS（或明确拒绝）；重点是内核语义时，只做进入解析器的最小预处理。先由常量和边界检验两种写法是否可区分，再演算含变量的业务结果；绑定的不可变入参不是一次新的观察。
 
-种子的术语、命名和例子也服从设计。新增例子沿用已有术语和公开命名规则：入口按[AI救赎](../chapters/AI救赎.md#入口函数重组)定位，P/E 名来自真实声明，回执和内部绑定的显示编号按[统一定形](../chapters/统一定形.md)确定。派生用例名写它区分的业务观察或拒绝原因，不以当前实现分支、旧预期或修复批次命名。换了公开名字不再是单纯更换局部变量；仅换局部名的等价变体仍核对同一份完整 PERS。
+种子的术语、命名和例子也服从设计。新增例子沿用已有术语和公开命名规则：入口按[AI救赎](../chapters/04-AI救赎.md#入口函数重组)定位，P/E 名来自真实声明，回执和内部绑定的显示编号按[统一定形](../chapters/08-统一定形.md)确定。派生用例名写它区分的业务观察或拒绝原因，不以当前实现分支、旧预期或修复批次命名。换了公开名字不再是单纯更换局部变量；仅换局部名的等价变体仍核对同一份完整 PERS。
 
 种子正文先确立设计意图，再登记稳定 ID。一个种子可以对应多个真实入口，每个入口包含原例和具名变体，由[端到端清单](../../tests/e2e/catalog.yaml)组织。先独立推导完整 PERS 或明确拒绝，再按[测试区](../../tests/README.md)验收；不得用当前输出反填预期，也不从未命中的实现分支反推业务设计。

@@ -1,6 +1,6 @@
 # 内核执行、状态与出口排查
 
-本页供内核维护者确定问题首次出现的位置。执行与输出的语义分别见[符号执行](../../design/chapters/符号执行.md)、[多重宇宙](../../design/chapters/多重宇宙.md)和[PERS登场](../../design/chapters/PERS登场.md)。接口字段查[机器接口](../contracts/business-pers.md)。
+本页供内核维护者确定问题首次出现的位置。执行与输出的语义分别见[符号执行](../../design/chapters/01-符号执行.md)、[多重宇宙](../../design/chapters/02-多重宇宙.md)和[PERS登场](../../design/chapters/07-PERS登场.md)。接口字段查[机器接口](../contracts/business-pers.md)。
 
 ## 按执行阶段定位
 

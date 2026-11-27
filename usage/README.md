@@ -6,4 +6,4 @@
 2. **换成自己的项目。** 按[输入清单](kernel-input.md)确定需要交付的文件。已符合纯净、强类型和有界要求的 Java 可以原样交付；需要理解框架、根据证据恢复类型或重组入口时，把源码、真实入口和观察范围连同[AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md)交给 agent。CLI 不替你调用 AI，也不读取原始模板、配置或框架工程来补出运行步骤。
 3. **运行并看结果。** 用 [CLI 参考](cli.md)选命令。退出码为 0 时读标准输出中的 PERS；非零时读标准错误中的诊断。没有 PERS 不等于业务返回了空值。拿到 PERS 也不等于已经验证与原工程等价；要按所声明的观察范围核对完整结果；有 T 时，也要核对返回值或动作引用的纯定义。
 
-想核对业务含义，从[PERS登场](../design/chapters/PERS登场.md)读 PERS；想运行整个仓库的正式回归，看[测试区](../tests/README.md)。
+想核对业务含义，从[PERS登场](../design/chapters/07-PERS登场.md)读 PERS；想运行整个仓库的正式回归，看[测试区](../tests/README.md)。

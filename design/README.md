@@ -12,14 +12,14 @@
 
 八章是业务语义和归一化规则的裁决依据。
 
-- [符号执行](chapters/符号执行.md)
-- [多重宇宙](chapters/多重宇宙.md)
-- [数学化简](chapters/数学化简.md)
-- [AI救赎](chapters/AI救赎.md)
-- [关系代数](chapters/关系代数.md)
-- [业务至上](chapters/业务至上.md)
-- [PERS登场](chapters/PERS登场.md)
-- [统一定形](chapters/统一定形.md)
+- [符号执行](chapters/01-符号执行.md)
+- [多重宇宙](chapters/02-多重宇宙.md)
+- [数学化简](chapters/03-数学化简.md)
+- [AI救赎](chapters/04-AI救赎.md)
+- [关系代数](chapters/05-关系代数.md)
+- [业务至上](chapters/06-业务至上.md)
+- [PERS登场](chapters/07-PERS登场.md)
+- [统一定形](chapters/08-统一定形.md)
 
 ## 二级设计
 

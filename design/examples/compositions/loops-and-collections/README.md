@@ -1,6 +1,6 @@
 # 循环与集合
 
-本分类的登记及状态见[种子分母计划](../../seed-plan.yaml)；业务规则见[关系代数](../../../chapters/关系代数.md)。
+本分类的登记及状态见[种子分母计划](../../seed-plan.yaml)；业务规则见[关系代数](../../../chapters/05-关系代数.md)。
 
 - [筛选原读数，再逐项扣除](java-filter-fold-charge.md)
 - [在有序费率表的终止标记前选第一项](java-prefix-selection.md)
