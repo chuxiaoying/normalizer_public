@@ -11,7 +11,7 @@ expected:
         type: number
   R: |-
     CASE
-      WHEN quantity <= 9223372036854775807 THEN 10
+      WHEN quantity < 9223372036854775808 THEN 10
       WHEN quantity == 9223372036854775808 THEN 20
       ELSE 30
     END

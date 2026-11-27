@@ -9,4 +9,4 @@ expected:
       count:
         position: 0
         type: number
-  R: count <= 0
+  R: count < 1
