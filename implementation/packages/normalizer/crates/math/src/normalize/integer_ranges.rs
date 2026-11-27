@@ -86,7 +86,12 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
         |expr| expr.as_lit().and_then(Lit::as_integer),
     )?;
     let test = op.comparison_test::<BigInt>()?;
-    if !is_input_integer(s) { return None; }
+    let closed_length = match s.as_relation_aggregate() {
+        Some((crate::RelationAggregateKind::Count,
+            crate::domains::relation::RelationExpr::Base { snapshot: None, .. }, None, None)) => true,
+        _ => crate::domains::composite::vector_length_input(s).is_some_and(is_input_integer_vector),
+    };
+    if !is_input_integer(s) && !closed_length { return None; }
     if let Some(old) = subject {
         if old != s {
             return None;
@@ -103,6 +108,13 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
 pub(super) fn is_closed_integer_guard(expr: &Expr) -> bool {
     let mut subject = None;
     guard(expr, &mut subject, &mut Vec::new()).is_some() && subject.is_some()
+}
+
+fn is_input_integer_vector(value: &Expr) -> bool {
+    // The vector's immutable input binding, not a guarded receipt or
+    // an arbitrary expression, supplies its already acquired length.
+    crate::domains::composite::input_name(value)
+        .is_some_and(|name| !name.starts_with('$') && !name.contains(['.', '[', ']']))
 }
 
 fn cells(mut cuts: Vec<BigInt>) -> impl Iterator<Item = (Endpoint, Endpoint)> {
