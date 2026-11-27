@@ -1,5 +1,16 @@
 entry: src/CanonicalPick.java#CanonicalPick.total
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - member choice guard requires acquired entry scalars
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalPick.java#CanonicalPick.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      backup:
+        position: 1
+        type: number
+  R: >-
+    CHOOSE(values DEFAULT backup AS member0 YIELD CASE WHEN member0 == 0 THEN CHOOSE(values DEFAULT backup AS member1 YIELD member1) ELSE member0 END)

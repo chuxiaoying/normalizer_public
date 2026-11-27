@@ -1,5 +1,29 @@
 entry: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - temporal definitions with effects require unconditional nonthrowing integer receipts
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      code:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
+        args:
+          - code
+        returns: number
+        result: $e_0
+        when: code > 0
+    - call:
+        external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
+        args:
+          - CASE WHEN code > 0 THEN $e_0 ELSE code END
+        returns: number
+        result: $e_1
+  R: CHOOSE(values DEFAULT $e_1 AS member0 YIELD member0)
