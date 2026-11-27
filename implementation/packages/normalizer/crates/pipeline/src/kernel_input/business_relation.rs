@@ -49,13 +49,6 @@ fn add_closed_integer_sum(initial: Expr, sum: Expr, integer_input: impl Fn(&str)
     addends.into_iter().reduce(b::add).expect("closed sum is present")
 }
 
-pub(crate) fn ordered_record_projection(relation: &RelationExpr) -> Option<(&str, &str, &Expr)> {
-    let RelationExpr::Project {value, alias, input} = relation else { return None; };
-    let RelationExpr::Base {name, alias: row_alias} = input.as_ref() else { return None; };
-    if alias != "value" || value.as_row_value()?.split_once('.')?.0 != row_alias { return None; }
-    Some((name, row_alias, value))
-}
-
 pub(super) fn scalar_binary(op: Op) -> fn(Expr, Expr) -> Expr {
     match op {
         Op::Add => b::add,
@@ -443,7 +436,7 @@ impl<'a> Engine<'a> {
             let exception = r::relation_exists(RelationExpr::select(missing, base.clone()));
             self.throw_source_on_path(b::and(guard.clone(), exception), "java.lang.NullPointerException");
             env.insert(query.binding.clone(), Value::EagerIntProjection {
-                base, selected: b::row_value(format!("r.{link}.{leaf}")),
+                source: root, field: format!("{link}.{leaf}"),
             });
             return Ok(());
         }
@@ -954,7 +947,7 @@ pub(super) fn is_table_expression(
                 || is_scalar_array_relation(relation, arrays)
                 || matches!(relation, RelationExpr::Base { name, .. } if record_inputs.contains_key(name)),
             NthValue => is_scalar_array_relation(relation, arrays)
-                || ordered_record_projection(relation).is_some_and(|(name, _, _)| record_inputs.contains_key(name)),
+                || matches!(relation, RelationExpr::RecordProjection { source, .. } if record_inputs.contains_key(source)),
         };
     }
     if let Some(relation) = expr.as_relation() {

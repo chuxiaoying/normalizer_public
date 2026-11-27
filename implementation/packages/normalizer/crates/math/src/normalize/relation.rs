@@ -117,7 +117,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
 
 fn relation_profile_size(relation: &RelationExpr) -> usize {
     match relation {
-        RelationExpr::Empty | RelationExpr::Base { .. } => 1,
+        RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::RecordProjection { .. } => 1,
         RelationExpr::Vector { value, .. } => 1 + value.size(),
         RelationExpr::Select { predicate: value, input }
         | RelationExpr::Project { value, input, .. } => 1 + value.size() + relation_profile_size(input),

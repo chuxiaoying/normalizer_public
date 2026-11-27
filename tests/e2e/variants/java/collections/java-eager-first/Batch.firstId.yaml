@@ -54,3 +54,9 @@
   edits:
     - {from: 'int[] ids;', to: 'Row[] same = rows; int[] ids;'}
     - {from: 'ids = from rows as row yield row.ticket.id', to: 'ids = from same as row yield row.ticket.id'}
+
+- name: a-noninteger-projection-leaf-is-rejected-before-indexing
+  edits:
+    - {from: 'int id;', to: 'String id;'}
+    - {from: 'return ids[0];', to: 'return ids[1];'}
+  reject: ['[NORM-PROJECT]', 'eager projection leaf must be a declared integer']

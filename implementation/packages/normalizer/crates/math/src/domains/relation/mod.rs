@@ -78,6 +78,8 @@ pub enum RelationExpr {
     Distinct(Box<RelationExpr>),
     ProjectedUnion(ProjectedColumns),
     Grouped(GroupedColumns),
+    /// Eager projection of a validated integer field path from an ordered record array.
+    RecordProjection { source: String, field: String },
     /// Inner join of two bound table aliases. Predicates remain separate
     /// so a generic nested SUM cannot masquerade as an authored join.
     Join {
@@ -216,7 +218,7 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
             });
             RelationExpr::Join { left, right, on, filters }
         }
-        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_)) => leaf,
+        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. }) => leaf,
     }
 }
 

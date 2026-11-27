@@ -186,18 +186,18 @@ impl Engine<'_> {
 
     pub(super) fn source_array_read(&mut self, array: Value, index: Value, path: Expr) -> Result<Value> {
         need(self.project.direct_source, "source array index requires direct source")?;
-        if let Value::EagerIntProjection { base, selected } = array {
+        if let Value::EagerIntProjection { source, field } = array {
             let index = index_value(index)?;
-            let RelationExpr::Base { name, .. } = &base else { return Err(fail("unbound record projection")); };
+            let base = RelationExpr::base(&source, "r");
             // Projection has already evaluated, including null failures on any
             // input row. Only its normal path may reach this bounds check.
             let missing = if index == 0 { b::not(r::relation_exists(base.clone())) }
-                else { bounds_failure(name, index) };
+                else { bounds_failure(&source, index) };
             self.throw_source_on_path(b::and(path, missing), OUT_OF_BOUNDS);
             let result = if index == 0 {
-                r::relation_first_value(base, selected, b::lit_null())
+                r::relation_first_value(base, b::row_value(format!("r.{field}")), b::lit_null())
             } else {
-                r::relation_nth_value(RelationExpr::project(selected, "value", base), b::lit_int(index))
+                r::relation_nth_value(RelationExpr::RecordProjection { source, field }, b::lit_int(index))
             };
             return Ok(Value::Term(Ty::Integer, result));
         }

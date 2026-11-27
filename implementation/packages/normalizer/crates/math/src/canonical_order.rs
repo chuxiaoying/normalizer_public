@@ -460,6 +460,7 @@ fn relation_structural_key(
             structural_key(on, ctx),
             key_node("where", filters.iter().map(|term| structural_key(term, ctx)).collect()),
         ]),
+        R::RecordProjection { source, field } => key_node("record-projection", vec![source.clone(), field.clone()]),
         R::Grouped(group) => key_node("group", vec![
             group.table().into(), key_node("columns", group.columns().map(str::to_owned).collect()),
         ]),

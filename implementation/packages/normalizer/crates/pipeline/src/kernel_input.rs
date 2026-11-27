@@ -96,7 +96,7 @@ enum Value {
     Rows(Box<business_relation::Rows>),
     LocalIntArray(source_arrays::LocalIntArray),
     LocalTextMap(source_map::LocalTextMap),
-    EagerIntProjection { base: RelationExpr, selected: Expr },
+    EagerIntProjection { source: String, field: String },
     Sequence {
         item: Ty,
         java_component: Option<String>,
