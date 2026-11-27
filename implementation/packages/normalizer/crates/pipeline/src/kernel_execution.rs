@@ -829,7 +829,7 @@ impl<'a> Engine<'a> {
     ) -> Result<super::source_arrays::LocalIntArray> {
         need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
         let Some((values, _)) = self.source_arguments(elements, id, env, path)? else {
-            return Ok(super::source_arrays::LocalIntArray::Zeroed(0));
+            return Ok(super::source_arrays::LocalIntArray::Unreachable);
         };
         self.source_local_array_initializer(values)
     }
@@ -841,7 +841,7 @@ impl<'a> Engine<'a> {
         let size = self.java_expr(length, id, env, path.clone())?;
         let path = self.normal_path(path);
         if path.as_bool() == Some(false) {
-            return Ok(super::source_arrays::LocalIntArray::Zeroed(0));
+            return Ok(super::source_arrays::LocalIntArray::Unreachable);
         }
         self.source_local_array_allocation(size, path)
     }

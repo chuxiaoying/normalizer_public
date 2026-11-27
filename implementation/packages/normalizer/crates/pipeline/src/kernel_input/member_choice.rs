@@ -55,9 +55,11 @@ impl Engine<'_> {
             Independent(Candidates),
         }
         let choice = match env.get(members) {
-            Some(Value::LocalIntArray(LocalIntArray::Zeroed(0))) => Choice::Fixed(empty.clone()),
-            Some(Value::LocalIntArray(LocalIntArray::Zeroed(_))) => Choice::Fixed(b::lit_int(0)),
-            Some(Value::LocalIntArray(LocalIntArray::Initialized(values))) => match values.as_slice() {
+            Some(Value::LocalIntArray(array)) if self.local_array_may_have_writes(array, &path) =>
+                return Err(fail("local member choice requires a snapshot of the updated array")),
+            Some(Value::LocalIntArray(LocalIntArray::Zeroed { length: 0, .. })) => Choice::Fixed(empty.clone()),
+            Some(Value::LocalIntArray(LocalIntArray::Zeroed { .. })) => Choice::Fixed(b::lit_int(0)),
+            Some(Value::LocalIntArray(LocalIntArray::Initialized { values, .. })) => match values.as_slice() {
                 [] => Choice::Fixed(empty.clone()),
                 [value, rest @ ..] if rest.iter().all(|other| other == value) =>
                     Choice::Fixed(b::lit_int(i64::from(*value))),

@@ -7,15 +7,25 @@ const NEGATIVE_SIZE: &str = "java.lang.NegativeArraySizeException";
 
 #[derive(Clone, PartialEq)]
 pub(super) enum LocalIntArray {
-    Initialized(Vec<i32>),
-    Zeroed(i32),
+    Initialized { values: Vec<i32>, identity: i64 },
+    Zeroed { length: i32, identity: i64 },
+    Unreachable,
 }
 
 impl LocalIntArray {
     pub(super) fn length(&self) -> i64 {
         match self {
-            Self::Initialized(values) => values.len() as i64,
-            Self::Zeroed(length) => i64::from(*length),
+            Self::Initialized { values, .. } => values.len() as i64,
+            Self::Zeroed { length, .. } => i64::from(*length),
+            Self::Unreachable => 0,
+        }
+    }
+
+    fn reference(&self) -> Option<Expr> {
+        match self {
+            Self::Initialized { identity, .. } | Self::Zeroed { identity, .. } =>
+                Some(b::heap_ref(*identity)),
+            Self::Unreachable => None,
         }
     }
 
@@ -24,8 +34,9 @@ impl LocalIntArray {
             return None;
         }
         Some(match self {
-            Self::Initialized(values) => values[index as usize],
-            Self::Zeroed(_) => 0,
+            Self::Initialized { values, .. } => values[index as usize],
+            Self::Zeroed { .. } => 0,
+            Self::Unreachable => return None,
         })
     }
 }
@@ -99,17 +110,24 @@ fn slot_delta(value: Expr, original: &Expr, path: &Expr) -> Expr {
 }
 
 impl Engine<'_> {
-    pub(super) fn source_local_array_initializer(&self, values: Vec<Value>) -> Result<LocalIntArray> {
+    pub(super) fn source_local_array_initializer(&mut self, values: Vec<Value>) -> Result<LocalIntArray> {
         let entries = values.into_iter().map(exact_java_int).collect::<Result<_>>()?;
-        Ok(LocalIntArray::Initialized(entries))
+        Ok(LocalIntArray::Initialized { values: entries, identity: self.heap.new_object().id() })
     }
 
     pub(super) fn source_local_array_allocation(&mut self, size: Value, path: Expr) -> Result<LocalIntArray> {
         let length = exact_java_int(size)?;
         if length < 0 {
             self.throw_source_on_path(path, NEGATIVE_SIZE);
+            return Ok(LocalIntArray::Unreachable);
         }
-        Ok(LocalIntArray::Zeroed(length.max(0)))
+        Ok(LocalIntArray::Zeroed { length, identity: self.heap.new_object().id() })
+    }
+
+    pub(super) fn local_array_may_have_writes(&self, array: &LocalIntArray, path: &Expr) -> bool {
+        array.reference().is_some_and(|reference| self.realtime_store.entries().iter().any(|entry| {
+            entry.reference == reference && !b::path_implies(path, &b::not(entry.guard.clone()))
+        }))
     }
 
     fn source_array_reference(&mut self, root: &str) -> Expr {
@@ -161,6 +179,20 @@ impl Engine<'_> {
 
     pub(super) fn source_array_store(&mut self, array: Value, index: Value, rhs: Value, path: Expr) -> Result<()> {
         need(rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
+        if let Value::LocalIntArray(local) = array {
+            let index = exact_java_int(index)?;
+            let path = self.normal_path(path);
+            if path.as_bool() == Some(false) { return Ok(()); }
+            let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
+            if local.get(index).is_none() {
+                self.throw_source_on_path(path, OUT_OF_BOUNDS);
+            } else {
+                // Aliases hold the same heap reference. This nonescaping
+                // store is visible to the invocation, not published as S.
+                self.realtime_store.store_guarded(path, reference, index.to_string(), rhs.scalar()?);
+            }
+            return Ok(());
+        }
         let root = array_root(array)?;
         let entry = self.selected_entry;
         let (owner, _) = entry.id.rsplit_once('.').ok_or_else(|| fail("missing source owner"))?;
@@ -217,7 +249,10 @@ impl Engine<'_> {
                 // normal result for an integer-valued Java expression.
                 return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
             };
-            return Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(value))));
+            let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
+            let value = self.realtime_store.read_with_initial(&reference, &index.to_string(), &path,
+                Some(b::lit_int(i64::from(value)))).ok_or_else(|| fail("uninitialized local array element"))?;
+            return Ok(Value::Term(Ty::Integer, value));
         }
         let root = array_root(array)?;
         need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
