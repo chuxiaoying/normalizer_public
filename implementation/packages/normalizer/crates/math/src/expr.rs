@@ -529,7 +529,7 @@ impl Expr {
 
     /// A nullable physical column can produce SQL UNKNOWN. Stop at
     /// aggregate/relationship boundaries: an acquired COUNT is not a row value.
-    pub(crate) fn may_observe_sql_unknown(&self) -> bool {
+    pub fn may_observe_sql_unknown(&self) -> bool {
         let mut nullable = false;
         let sql_column = |value: &Expr| matches!(value.kind(), ExprKind::RowValue { sql: Some(_), .. });
         let nullable_symbol = |value: &Expr| value.as_sym_var()

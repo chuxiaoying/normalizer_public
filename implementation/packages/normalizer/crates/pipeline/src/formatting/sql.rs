@@ -263,7 +263,7 @@ impl FormatCtx {
             };
             let mut remaining = active.clone();
             let arms = branches.iter().map(|(guard, value)| {
-                let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
+                let (selected, next) = observation_arm_domains(&remaining, guard);
                 // A guard uses the enclosing bindings. Starting a new
                 // choice in the guard would not bind its selected arm.
                 let pair = (guard_key(guard, &remaining),
@@ -662,29 +662,45 @@ fn format_binop_child_with_precedence(
     }
 }
 
+// The FALSE continuation of a host guard is useful proof, but SQL
+// UNKNOWN also skips WHEN. In that case the next arm gains no inverse fact.
+fn observation_arm_domains(remaining: &Expr, guard: &Expr) -> (Expr, Expr) {
+    use math::builder as b;
+    if guard.may_observe_sql_unknown() {
+        (math::normalize(b::and(remaining.clone(), guard.clone())), remaining.clone())
+    } else { b::first_match_domains(remaining.clone(), guard) }
+}
+
 fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     let business = ctx.business_inputs.is_some();
     let mut parts = vec!["CASE".to_string()];
     let scoped = !ctx.relation_scope.slots.is_empty();
     let outer_domain = ctx.relation_scope.active.clone();
-    let mut remaining = outer_domain.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+    let mut remaining = match (&outer_domain, &ctx.business_evaluation_guard) {
+        (Some(a), Some(z)) if a != z => math::normalize(math::builder::and(a.clone(), z.clone())),
+        (Some(domain), _) | (_, Some(domain)) => domain.clone(),
+        _ => math::builder::lit_bool(true),
+    };
     for (guard, value) in branches {
-        let text = if business {
-            let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
-            ctx.relation_scope.active = Some(selected);
-            let text = business_value::format_value(value, ctx);
-            ctx.relation_scope.active = Some(remaining);
+        let (text, test) = if business {
+            let (selected, next) = observation_arm_domains(&remaining, guard);
+            ctx.relation_scope.active = Some(selected.clone());
+            let text = ctx.with_business_evaluation_guard(&selected, |ctx|
+                business_value::format_value(value, ctx));
+            ctx.relation_scope.active = Some(remaining.clone());
+            let test = (guard.as_bool() != Some(true)).then(||
+                ctx.with_business_evaluation_guard(&remaining, |ctx| format_expr_with_ctx(guard, ctx)));
             remaining = next;
-            text
+            (text, test)
         } else {
-            format_expr_with_ctx(value, ctx)
+            (format_expr_with_ctx(value, ctx),
+                (guard.as_bool() != Some(true)).then(|| format_expr_with_ctx(guard, ctx)))
         };
-        if guard.as_bool() == Some(true) {
+        if let Some(test) = test { parts.push(format!("WHEN {test} THEN {text}")); }
+        else {
             parts.push(format!("ELSE {text}"));
             break;
         }
-        let guard = format_expr_with_ctx(guard, ctx);
-        parts.push(format!("WHEN {guard} THEN {text}"));
     }
     ctx.relation_scope.active = outer_domain;
     let array_index_arm = business && branches.len() == 2
