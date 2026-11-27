@@ -441,7 +441,9 @@ pub(super) fn observations(
                 }
             });
         }
-        let returned = if completion_classes.is_empty() && temporal_names.is_empty() && !reads_total_integer_field {
+        let returned = if completion_classes.is_empty() && temporal_names.is_empty() && !reads_total_integer_field
+            && !returned.has_heap_ref()
+        {
             returned
         } else {
             let observation_identities = ctx.observation_identities();

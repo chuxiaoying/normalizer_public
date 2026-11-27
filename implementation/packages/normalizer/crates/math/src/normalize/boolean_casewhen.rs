@@ -9,7 +9,7 @@ pub(super) fn total_value(expr: &Expr) -> bool {
     total_value_with_context(expr, &crate::DefaultSortContext)
 }
 
-fn total_value_with_context(expr: &Expr, ctx: &dyn crate::SortContext) -> bool {
+pub(super) fn total_value_with_context(expr: &Expr, ctx: &dyn crate::SortContext) -> bool {
     match expr.kind() {
         ExprKind::Lit(_) => true,
         ExprKind::SymVar { origin: crate::SymVarOrigin::Parameter { name, primitive_type } } =>

@@ -138,6 +138,20 @@ fn cell_representative(lo: &Endpoint, hi: &Endpoint) -> BigInt {
     lo.as_ref().or(hi.as_ref()).cloned().unwrap_or_default()
 }
 
+/// Strict integer boundaries can be complementary at adjacent endpoints.
+/// This proof never uses a displayed LENGTH/name as a type certificate.
+pub(super) fn complementary_guards(left: &Expr, right: &Expr) -> bool {
+    let mut subject = None;
+    let mut cuts = Vec::new();
+    let Some(left) = guard(left, &mut subject, &mut cuts) else { return false; };
+    let Some(right) = guard(right, &mut subject, &mut cuts) else { return false; };
+    if subject.is_none() { return false; }
+    cells(cuts).all(|(low, high)| {
+        let point = cell_representative(&low, &high);
+        left.at(&point) != right.at(&point)
+    })
+}
+
 /// Prove a small union on one certified integer domain, without assuming
 /// totality for fields, nullable values, call results or other subjects.
 pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {

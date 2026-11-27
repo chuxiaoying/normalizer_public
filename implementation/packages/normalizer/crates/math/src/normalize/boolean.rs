@@ -1155,7 +1155,7 @@ fn is_complement(a: &Expr, b: &Expr) -> bool {
     // 2. 比较级：`a < b` 与 `a >= b`、`x == null` 与 `x != null` 是互补。
     //
     // NOT may already have been rewritten as a closed comparison.
-    if a.is_comparison_complement(b) { return true; }
+    if a.is_comparison_complement(b) || super::integer_ranges::complementary_guards(a, b) { return true; }
 
     // 2b. De Morgan 互补：`A || B` 与 `!A && !B` 互补，反向同理。
     //

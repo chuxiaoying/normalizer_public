@@ -80,6 +80,32 @@ fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr
     None
 }
 
+/// A shared final non-null guard is a partition of the whole CASE when
+/// every preceding total predicate already requires that same non-null
+/// reference. Only then may the null branch become the first test.
+fn factor_total_nonnull_tail(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
+    use crate::BinOpKind::{Eq, Ne};
+    let (branches, on_null) = expr.as_total_case_when()?;
+    let ((nonnull, when_nonnull), earlier) = branches.split_last()?;
+    if earlier.is_empty() { return None; }
+    let (Ne, lhs, rhs) = nonnull.as_binop()? else { return None; };
+    let reference = if lhs.is_null() { rhs } else if rhs.is_null() { lhs } else { return None; };
+    if !super::boolean_casewhen::total_value_with_context(reference, ctx) || reference.as_heap_ref().is_none() {
+        return None;
+    }
+    let null = crate::builder::binop_public(Eq, lhs.clone(), rhs.clone());
+    let mut parts = vec![(null, on_null.clone())];
+    for (guard, value) in earlier {
+        if !super::boolean_casewhen::total_value_with_context(guard, ctx) { return None; }
+        let conjunction = flatten_and(guard);
+        if !conjunction.contains(nonnull) { return None; }
+        let remaining: Vec<_> = conjunction.into_iter().filter(|term| term != nonnull).collect();
+        parts.push((rebuild_and(&remaining), value.clone()));
+    }
+    let candidate = crate::builder::case_when(parts, when_nonnull.clone());
+    crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
+}
+
 fn simplify_impl(
     expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>,
 ) -> Expr {
@@ -103,6 +129,9 @@ fn simplify_impl(
     if let Some(candidate) = flatten_selected_case(expr, ctx) {
         return candidate;
     }
+    if let Some(candidate) = factor_exhaustive_selector_tail(expr, ctx) {
+        return candidate;
+    }
 
     // A complete nested value CASE can remove one condition arm when
     // flattened. Keep each inner guard behind the original outer guard so
@@ -116,6 +145,9 @@ fn simplify_impl(
 
     if let Some(guarded) = factor_leading_null_test(branches_ref) {
         return Expr::new(ExprKind::CaseWhen { branches: guarded });
+    }
+    if let Some(guarded) = factor_total_nonnull_tail(expr, ctx) {
+        return guarded;
     }
 
     if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
@@ -351,6 +383,37 @@ fn flatten_selected_case(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Ex
         parts.push((guard, value.clone()));
     }
     let candidate = crate::builder::case_when(parts, fallback.clone());
+    crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
+}
+
+/// Execution can produce a flat list of guarded returns instead of a
+/// nested CASE. Recover the same partition only if the inner outcomes
+/// cover the selected domain; a partial expression never gains an ELSE.
+fn factor_exhaustive_selector_tail(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
+    let (last, earlier) = expr.as_case_when()?.split_last()?;
+    if earlier.len() < 2 { return None; }
+    let selector = last.0.as_not()?;
+    if !matches!(selector.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
+        if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
+    { return None; }
+    let mut inner = Vec::with_capacity(earlier.len());
+    for (guard, value) in earlier {
+        let terms = flatten_and(guard);
+        if !terms.contains(selector) { return None; }
+        let terms: Vec<_> = terms.into_iter().filter(|test| test != selector).collect();
+        let remaining = rebuild_and(&terms);
+        if remaining.as_bool().is_none()
+            && !super::boolean_domains::is_closed_boolean(&remaining)
+            && !super::integer_ranges::is_closed_integer_guard(&remaining)
+        { return None; }
+        inner.push((remaining, value.clone()));
+    }
+    let guards: Vec<_> = inner.iter().map(|(guard, _)| guard.clone()).collect();
+    if !crate::builder::conditions_cover_all(&guards) { return None; }
+    let (_, fallback) = inner.pop()?;
+    let mut parts = vec![last.clone()];
+    parts.extend(inner);
+    let candidate = crate::builder::case_when(parts, fallback);
     crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
 }
 

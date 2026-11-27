@@ -36,6 +36,13 @@ pub(super) fn is_closed_boolean(expr: &Expr) -> bool {
 }
 
 fn closed_result(value: &Expr) -> bool {
+    if let Some((arms, fallback)) = value.as_total_case_when() {
+        // CF-11 owns a full Boolean partition, not only its outer arm.
+        // A nested numeric or protected guard has its own domain proof.
+        // Do not return an unchanged outer CASE and thereby block it.
+        return arms.iter().all(|(guard, arm)| is_closed_boolean(guard) && closed_result(arm))
+            && closed_result(fallback);
+    }
     if super::boolean_casewhen::total_value(value) { return true; }
     if let Some(values) = value.as_array_lit() {
         return values.iter().all(closed_result);
