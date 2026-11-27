@@ -36,6 +36,17 @@ pub(crate) fn bound_receiver(
     class: &simulator_parser::JavaClass,
     receiver: &str,
 ) -> bool {
-    receiver == "N" && class.imports_normalizer_intrinsics() && !class.fields().iter().any(|field| field.name() == receiver)
-        && !program.classes().iter().any(|ty| ty.simple_name().rsplit('.').next() == Some(receiver))
+    receiver == "N" && class.imports_normalizer_intrinsics()
+        && !class.fields().iter().any(|field| field.name() == receiver)
+        && !namespace_declared_in_unit(program, class)
+}
+
+// A declaration in another Java compilation unit cannot impersonate
+// the explicit single-type import in this unit.
+pub(crate) fn namespace_declared_in_unit(
+    program: &simulator_parser::JavaProgram,
+    class: &simulator_parser::JavaClass,
+) -> bool {
+    program.classes().iter().any(|other| other.source_file() == class.source_file()
+        && other.simple_name().rsplit('.').next() == Some("N"))
 }

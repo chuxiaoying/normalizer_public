@@ -325,16 +325,16 @@ const ENTRY_STATE: &str = "normalizer.intrinsics.N.EntryState";
 const NULLABLE: &str = "normalizer.intrinsics.N.Nullable";
 use simulator_parser::NORMALIZER_INTRINSICS_IMPORT as N_IMPORT;
 
-/// The closed Java profile admits no package declarations. Refuse an ambiguous
-/// local type rather than treating its nested markers as Normalizer markers.
+/// Refuse counterfeit official definitions and ambiguous local bindings.
 fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
-    let declared_n = program.classes().iter()
-        .any(|class| class.simple_name().rsplit('.').next() == Some("N"));
     let counterfeit_namespace = program.classes().iter().any(|class| {
         let name = class.simple_name();
         name == N_IMPORT || name.strip_prefix(N_IMPORT).is_some_and(|tail| tail.starts_with('.'))
     });
-    if counterfeit_namespace || declared_n && program.classes().iter().any(|class| class.imports_normalizer_intrinsics()) {
+    if counterfeit_namespace || program.classes().iter().any(|class|
+        class.imports_normalizer_intrinsics()
+            && crate::normalized_text::namespace_declared_in_unit(program, class))
+    {
         return Err(error("NORM-INTRINSIC-SHADOW", N_IMPORT));
     }
     for (qualified, alias) in [("java.math.BigDecimal", "BigDecimal"), ("java.time.LocalDate", "LocalDate")] {
