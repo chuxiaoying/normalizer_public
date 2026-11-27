@@ -34,7 +34,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
                     let run = |value: &Expr| {
                         let applied = b::binop_public(*op, value.clone(), value.clone());
                         let folded = super::constant::fold(&applied);
-                        let reduced = super::arithmetic::simplify(&folded);
+                        let reduced = super::arithmetic::simplify(&folded, ctx);
                         super::integer_ac::simplify(&reduced, ctx)
                     };
                     let candidate = b::case_when(
@@ -88,7 +88,7 @@ fn reduce_integer_case(
         let operation = b::binop_public(op, a.clone(), b.clone());
         // These are local, terminating rules, not a new normalization scope.
         let folded = super::constant::fold(&operation);
-        let reduced = super::arithmetic::simplify(&folded);
+        let reduced = super::arithmetic::simplify(&folded, ctx);
         let reduced = if op.comparison().is_some() {
             super::integer_ranges::strict_endpoint(&reduced).unwrap_or(reduced)
         } else { super::integer_ac::simplify(&reduced, ctx) };

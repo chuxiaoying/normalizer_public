@@ -11,7 +11,7 @@ pub(super) fn total_integer(value: &Expr) -> bool {
     total_with_temporals(value, &crate::DefaultSortContext)
 }
 
-fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
+pub(super) fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
     match value.kind() {
         ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
             primitive_type == "integer" && (ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))

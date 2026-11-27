@@ -20,8 +20,8 @@ use crate::expr::{BinOpKind, Expr, ExprKind, Lit};
 ///
 /// 幺元先行的理由：`x - 0` 先被规约为 `x`，避免后续 `(x - 0) op 0` 绕路；
 /// simplify_once 的不动点迭代保证整体收敛。
-pub(crate) fn simplify(expr: &Expr) -> Expr {
-    if let Some(r) = simplify_identity(expr) {
+pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::SortContext) -> Expr {
+    if let Some(r) = simplify_identity(expr, ctx) {
         return r;
     }
     if let Some(r) = simplify_reflexive_equality(expr) {
@@ -49,7 +49,7 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
 ///
 /// 这里仅化简纯值。原调用、状态写入和异常由独立的边界／完成信息
 /// 保留；该规则不授权删除这些可观察行为，也不改变输入的运算域。
-fn simplify_identity(expr: &Expr) -> Option<Expr> {
+fn simplify_identity(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
     let ExprKind::BinOp { op, left, right } = expr.kind() else {
         return None;
     };
@@ -66,7 +66,7 @@ fn simplify_identity(expr: &Expr) -> Option<Expr> {
             if is_lit_int_zero(right) {
                 return Some(left.clone());
             }
-            if super::integer_ac::total_integer(expr) {
+            if super::integer_ac::total_with_temporals(expr, ctx) {
                 if left == right {
                     return Some(crate::builder::lit_int(0));
                 }
