@@ -20,6 +20,9 @@ export function typedParameterNames(fn) {
 }
 
 export function typeScriptProgram(physicalPath, sf, fail = failTypedModule) {
+  if (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length) {
+    fail('TypeScript checking directives cannot disable or suppress the strict preflight');
+  }
   let hasImport = false;
   const inspect = node => {
     if (node.kind === ts.SyntaxKind.AnyKeyword) fail('explicit any is not an admitted analysis type');
@@ -37,8 +40,9 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule) {
   return { checker: checked.getTypeChecker(), errors };
 }
 
-export function assertTypeScript(errors, fail = failTypedModule) {
+export function assertTypeScript(sf, checker, errors, fail = failTypedModule) {
   if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
+  assertNoResolvedAny(sf, checker, fail);
 }
 
 // strict/noImplicitAny alone permits dynamic types originating in the
@@ -56,7 +60,7 @@ function assertNoResolvedAny(sf, checker, fail) {
   };
   const inspect = node => {
     const constAssertion = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
-      && node.typeName.text === 'const' && ts.isAsExpression(node.parent);
+      && node.typeName.text === 'const' && (ts.isAsExpression(node.parent) || ts.isTypeAssertionExpression(node.parent));
     if (constAssertion) return;
     const binding = (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node))
       && ts.isIdentifier(node.name) ? node.name : undefined;
@@ -72,12 +76,8 @@ function assertNoResolvedAny(sf, checker, fail) {
   inspect(sf);
 }
 
-export function checkedTypeScript(physicalPath, sf, fail = failTypedModule, {rejectAny = false} = {}) {
-  if (rejectAny && (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length)) {
-    fail('TypeScript checking directives cannot disable or suppress the strict preflight');
-  }
+export function checkedTypeScript(physicalPath, sf, fail = failTypedModule) {
   const { checker, errors } = typeScriptProgram(physicalPath, sf, fail);
-  assertTypeScript(errors, fail);
-  if (rejectAny) assertNoResolvedAny(sf, checker, fail);
+  assertTypeScript(sf, checker, errors, fail);
   return checker;
 }

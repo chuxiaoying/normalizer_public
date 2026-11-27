@@ -139,7 +139,7 @@ function compile(source, file, entry, physicalPath) {
   const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
   const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
   if (isListener || isTuple) {
-    const checker = checkedTypeScript(physicalPath, sf, fail, {rejectAny: true});
+    const checker = checkedTypeScript(physicalPath, sf, fail);
     if (fn.parameters.some(p => p.type?.kind !== ts.SyntaxKind.BooleanKeyword)) {
       fail('this typed statement adapter requires explicit Boolean entry parameters');
     }
@@ -150,7 +150,7 @@ function compile(source, file, entry, physicalPath) {
     return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
   }
   const compiled = compileScalar(sf, fn, file, entry, formals.names);
-  checkedTypeScript(physicalPath, sf, fail, {rejectAny: true});
+  checkedTypeScript(physicalPath, sf, fail);
   return compiled;
 }
 

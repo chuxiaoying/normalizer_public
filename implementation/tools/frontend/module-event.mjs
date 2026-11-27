@@ -271,7 +271,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   // their same bound declaration after a recognized assignment in its
   // actual lexical scope may bypass this one TS diagnostic. All other
   // failures, including those on unreachable source branches, still reject.
-  assertTypeScript(errors.filter(d => d.code !== 2454 || d.file !== sf || !typedIRReads.has(d.start)), fail);
+  assertTypeScript(sf, checker, errors.filter(d => d.code !== 2454 || d.file !== sf || !typedIRReads.has(d.start)), fail);
   steps.push({ op: 'return', value: { op: 'const', type: 'unit', value: null } });
   return {
     function: modulePath + '#' + entryName,

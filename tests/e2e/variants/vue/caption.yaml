@@ -46,3 +46,12 @@
   - 'SCENARIO_MODULE_INPUT:'
   - prepared component projection caption requires a synchronous exported function with a return expression
     and no parameters
+
+- name: projection-preflight-rejects-an-unused-helper-with-resolved-any
+  edits:
+    - file: src/ArrearsPage.ts
+      from: '/** @N componentProp PayableCard#balance.caption */'
+      to: |-
+        function unchecked() { return JSON.parse("{}") }
+        /** @N componentProp PayableCard#balance.caption */
+  reject: ['SCENARIO_MODULE_INPUT:', 'resolved any is not an admitted analysis type']

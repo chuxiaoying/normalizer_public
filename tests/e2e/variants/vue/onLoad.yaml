@@ -162,3 +162,20 @@
     from: '/** @N rejects ProfileFetchError */'
     to: '/** @N rejects MissingProfileError */'
   reject: ['SCENARIO_MODULE_INPUT:', 'unresolved project exception declaration MissingProfileError']
+
+- name: event-preflight-rejects-a-hidden-resolved-any
+  edits:
+    - file: src/ArrearsPage.ts
+      from: 'type BillRow = {'
+      to: |-
+        type UntypedHostValue = ReturnType<typeof JSON.parse>
+        type BillRow = {
+  reject: ['SCENARIO_MODULE_INPUT:', 'resolved any is not an admitted analysis type']
+- name: event-preflight-cannot-be-disabled-by-a-compiler-comment
+  edits:
+    - file: src/ArrearsPage.ts
+      from: 'type BillRow = {'
+      to: |-
+        // @ts-nocheck
+        type BillRow = {
+  reject: ['SCENARIO_MODULE_INPUT:', 'TypeScript checking directives cannot disable or suppress']
