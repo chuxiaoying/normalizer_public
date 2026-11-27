@@ -72,14 +72,14 @@ S:
   - write: { target: quota.units, value: '7' }
 R: |-
   CASE
-    WHEN observer == quota THEN 7
+    WHEN quota == observer THEN 7
     ELSE observer.units
   END
 throws:
   - { type: java.lang.NullPointerException, when: observer == null }
 ```
 
-公式中的 `observer == quota` 比较两个引用是否指向同一个对象。
+正常完成域已知 `observer` 非空，两个操作数按同一个 `Quota` 类型比较其真实来源，入口快照引用的 `entry_snapshot` 在参数 `parameter` 前。因此 `quota == observer` 判定两者是否指向同一对象；空引用仍在独立的异常条件里。
 
 **判别例**　两个对象原本都为 3 时，传 quota 返回 7，传另一个对象返回 3。传 null 会抛异常，此时 quota.units 仍为 7。
 

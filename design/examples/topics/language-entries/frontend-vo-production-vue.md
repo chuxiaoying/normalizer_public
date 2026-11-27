@@ -319,9 +319,9 @@ S:
             SUM(
               SELECT row.amount - row.waivedAmount
               FROM $e_1 AS row
-              WHERE row.dueDate <= today
-                AND $e_0.minPriority <= row.priority
+              WHERE today >= row.dueDate
                 AND row.amount > row.waivedAmount
+                AND $e_0.minPriority <= row.priority
             ),
             0
           ) THEN $e_0.quota
@@ -329,9 +329,9 @@ S:
             SUM(
               SELECT row.amount - row.waivedAmount
               FROM $e_1 AS row
-              WHERE row.dueDate <= today
-                AND $e_0.minPriority <= row.priority
+              WHERE today >= row.dueDate
                 AND row.amount > row.waivedAmount
+                AND $e_0.minPriority <= row.priority
             ),
             0
           )
