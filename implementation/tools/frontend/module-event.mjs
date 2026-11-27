@@ -2,9 +2,10 @@
 // completion of the request it waits for. Inputs bind to actual formals.
 import ts from 'typescript';
 import { normalizerMarkers, singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
-import { definedModuleExport, parseSourceModule, unwrapParens } from './ir.mjs';
+import { definedModuleExport, isLocalExportList, parseSourceModule, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 import { assertTypeScript, typeScriptProgram } from './typed-module.mjs';
+import { isOfficialNamespaceImport } from './standard-library.mjs';
 
 function fail(message) {
   throw new Error(`SCENARIO_MODULE_INPUT: ${message}`);
@@ -28,6 +29,15 @@ function closedFormals(formals, role) {
   });
 }
 
+function closedErrorDeclaration(declared, checker, sf) {
+  if (!declared || declared.getSourceFile() !== sf || !ts.isClassDeclaration(declared)
+      || declared.members.length || declared.modifiers?.some(ts.isDecorator)) return false;
+  const heritage = declared.heritageClauses?.flatMap(clause => clause.types) ?? [];
+  return heritage.length === 1 && heritage[0].expression.getText() === 'Error'
+    && checker.getSymbolAtLocation(heritage[0].expression)?.declarations?.every(
+      declaration => declaration.getSourceFile().isDeclarationFile);
+}
+
 function rejectionNames(method, checker, sf) {
   const names = [];
   for (const tag of ts.getJSDocTags(method)) {
@@ -39,10 +49,7 @@ function rejectionNames(method, checker, sf) {
       names.push(name);
       continue;
     }
-    const heritage = declared?.heritageClauses?.flatMap(h => h.types) ?? [];
-    if (!declared || declared.getSourceFile() !== sf || !ts.isClassDeclaration(declared) ||
-        heritage.length !== 1 || heritage[0].expression.getText() !== 'Error' ||
-        !checker.getSymbolAtLocation(heritage[0].expression)?.declarations?.some(d => d.getSourceFile().isDeclarationFile)) {
+    if (!closedErrorDeclaration(declared, checker, sf)) {
       fail('unresolved project exception declaration ' + name);
     }
     names.push(name);
@@ -52,7 +59,9 @@ function rejectionNames(method, checker, sf) {
 
 export function readModuleEvent(modulePath, text, entryName, physicalPath = modulePath, {synchronous = false} = {}) {
   const sf = parseSourceModule(physicalPath, text, fail, ts.ScriptKind.TS);
-  const {checker, errors} = typeScriptProgram(physicalPath, sf, fail);
+  const {checker, errors} = typeScriptProgram(physicalPath, sf, fail, {
+    allowOfficial: sf.statements.some(isOfficialNamespaceImport),
+  });
   const symbol = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   const types = Object.create(null), states = Object.create(null), parameters = Object.create(null);
   const typedIRReads = new Set();
@@ -92,15 +101,17 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       types[st.name.text] = {fields};
     }
     if (!marks.size) {
+      if (ts.isFunctionDeclaration(st) || ts.isTypeAliasDeclaration(st) || ts.isInterfaceDeclaration(st)
+          || isLocalExportList(st) || isOfficialNamespaceImport(st)
+          || closedErrorDeclaration(st, checker, sf)) continue;
       if (synchronous && ts.isVariableStatement(st)) {
         fail('synchronous event module data requires a declared source role, such as @N entryState');
       }
-      if (synchronous && !ts.isFunctionDeclaration(st) && !ts.isTypeAliasDeclaration(st)
-          && !ts.isInterfaceDeclaration(st)) {
-        fail('synchronous event module must not contain host installation or other module startup');
-      }
-      continue;
+      fail('event module cannot skip host installation or executable module initialization');
     }
+    if (st !== fn && marks.size === 1 && marks.has('componentProp') && ts.isFunctionDeclaration(st)
+        && st.body && !st.parameters.length && !st.asteriskToken
+        && !st.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) continue;
     if (!ts.isVariableStatement(st) || marks.size !== 1 || marks.has('componentProp')) {
       fail('event host marks must attach to one declaration');
     }
