@@ -1,5 +1,21 @@
 entry: src/Account.java#Beans.ENTRY.reset
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - observable mutation of an input object requires a state write
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quota:
+      fields: { units: number }
+  entry:
+    function: src/Account.java#Beans.ENTRY.reset
+    returns: number
+  P:
+    parameters:
+      observer: { position: 0, type: 'Quota?' }
+  S:
+    - write:
+        target: observer.units
+        value: '7'
+        when: observer != null
+  R: '7'
+  throws:
+    - type: java.lang.NullPointerException
+      when: observer == null
