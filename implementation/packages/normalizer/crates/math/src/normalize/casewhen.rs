@@ -31,6 +31,9 @@ pub(crate) fn simplify(
         }
         return expr.clone();
     }
+    if let Some(value) = crate::case_orientation::canonicalize_terminal_completion(expr, ctx) {
+        return value;
+    }
     if let Some(value) = crate::case_orientation::canonicalize_terminal_extremum(expr, ctx) {
         return value;
     }
@@ -91,6 +94,14 @@ fn simplify_impl(
     // branch order cannot choose two different normal forms.
     if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(expr, ctx, parent) {
         return oriented;
+    }
+
+    // For an acquired Boolean selector, writing its complement first
+    // also preserves the inner CASE's original lazy evaluation domain.
+    // Consider this whole-tree candidate before repeating the selector in
+    // every flattened arm.
+    if let Some(candidate) = flatten_selected_case(expr, ctx) {
+        return candidate;
     }
 
     // A complete nested value CASE can remove one condition arm when
@@ -320,6 +331,27 @@ fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
         remaining = later;
     }
     out
+}
+
+fn flatten_selected_case(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
+    let ([(outer, selected)], skipped) = expr.as_total_case_when()? else { return None; };
+    let selector = outer.as_not().unwrap_or(outer);
+    if !matches!(selector.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
+        if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
+        || skipped.as_case_when().is_some()
+    { return None; }
+    let (inside, fallback) = selected.as_total_case_when()?;
+    let first = crate::normalize_with(crate::builder::not(outer.clone()), ctx);
+    let mut parts = vec![(first, skipped.clone())];
+    for (guard, value) in inside {
+        // Only the actually proved outer selector can be removed; no
+        // other nested observation is moved or removed.
+        let remaining: Vec<_> = flatten_and(guard).into_iter().filter(|test| test != outer).collect();
+        let guard = rebuild_and(&remaining);
+        parts.push((guard, value.clone()));
+    }
+    let candidate = crate::builder::case_when(parts, fallback.clone());
+    crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
 }
 
 fn flatten_nested_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {

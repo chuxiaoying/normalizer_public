@@ -113,6 +113,24 @@ pub(crate) fn canonicalize_terminal_extremum(expression: &Expr, context: &dyn So
     (result != *expression).then_some(result)
 }
 
+/// A final receipt decision is binary in its remaining domain. The same
+/// closed-completion rule applies without moving any earlier CASE arm.
+pub(crate) fn canonicalize_terminal_completion(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
+    let (arms, fallback) = expression.as_total_case_when()?;
+    let ((condition, result), earlier) = arms.split_last()?;
+    if earlier.is_empty() { return None; }
+    let (receipt, class) = crate::domains::completion::throw_tag(condition.as_not().unwrap_or(condition))?;
+    let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() else { return None; };
+    if context.total_single_failure_class(*binding_id) != Some(class) { return None; }
+    let suffix = crate::builder::case_when(vec![(condition.clone(), result.clone())], fallback.clone());
+    let selected = canonicalize_binary_case(&suffix, context, None)?;
+    let ([(condition, result)], fallback) = selected.as_total_case_when()? else { return None; };
+    let mut arms = earlier.to_vec();
+    arms.push((condition.clone(), result.clone()));
+    let new = crate::builder::case_when(arms, fallback.clone());
+    (new != *expression).then_some(new)
+}
+
 /// Compare the full trees after normalizing the complement. Terminal selection
 /// is still lazy: exchanging the two arms does not evaluate either arm in the
 /// other arm's domain. Callers must first establish a total Boolean test in
