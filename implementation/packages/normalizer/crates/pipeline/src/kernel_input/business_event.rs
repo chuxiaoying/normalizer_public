@@ -253,6 +253,7 @@ pub(super) fn observations(
                 }
                 let normal = spec.normal_condition(response);
                 if normal.as_bool().is_none() {
+                    ctx.bind_normal_completion(binding_id, normal.clone());
                     ctx.display_business_value(normal, format!("completion.is_return({output})"));
                 }
                 let args = ctx.with_business_evaluation_guard(&event.guard, |ctx| {

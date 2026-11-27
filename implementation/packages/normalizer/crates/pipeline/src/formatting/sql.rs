@@ -37,6 +37,7 @@ pub struct FormatCtx {
     observation_identities: std::collections::BTreeMap<u64, math::ObservationIdentity>,
     business_acquisitions: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
+    business_normal_completions: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
     /// Public receipt ordinal; the raw binding ID remains an internal identity.
     e_renumber: HashMap<u64, usize>,
@@ -62,6 +63,7 @@ impl Default for FormatCtx {
             observation_identities: Default::default(),
             business_acquisitions: Default::default(),
             business_receipt_guards: Default::default(),
+            business_normal_completions: Default::default(),
             business_evaluation_guard: None,
             e_renumber: HashMap::new(),
         }
@@ -82,6 +84,10 @@ impl FormatCtx {
         if guard.as_bool() != Some(true) {
             self.business_receipt_guards.insert(id, guard);
         }
+    }
+
+    pub(crate) fn bind_normal_completion(&mut self, id: u64, guard: Expr) {
+        if guard.as_bool() != Some(true) { self.business_normal_completions.insert(id, guard); }
     }
 
     pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, identity: math::ObservationIdentity, guard: Expr) {

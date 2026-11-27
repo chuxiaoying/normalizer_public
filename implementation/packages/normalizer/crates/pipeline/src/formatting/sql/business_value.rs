@@ -70,16 +70,36 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
 /// A short-circuit candidate must be safe to observe, not merely algebraically
 /// equivalent on total Boolean values.
 fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
+    use math::domains::completion;
+    let proves = |requirement: &Expr| requirement.as_bool() == Some(true)
+        || domain.is_some_and(|active| b::path_implies(active, requirement));
     let mut available = true;
-    value.walk(&mut |node| {
-        if !available {
-            return;
-        }
+    value.walk_pruned(&mut |node| {
+        if !available { return false; }
         if let Some(SymVarOrigin::External { binding_id, .. }) = node.as_sym_var() {
             if let Some(issued) = ctx.business_receipt_guards.get(binding_id) {
-                available &= domain.is_some_and(|domain| b::path_implies(domain, issued));
+                available &= proves(issued);
             }
         }
+        if let Some((key, args)) = node.as_call() {
+            let registered = math::func_name(key);
+            match (completion::output_name(&registered), args) {
+                ("completion.value", [response]) => {
+                    if let Some(SymVarOrigin::External { binding_id, .. }) = response.as_sym_var() {
+                        if let Some(normal) = ctx.business_normal_completions.get(binding_id) {
+                            available &= proves(normal);
+                        }
+                    }
+                }
+                ("completion.payload", _) => {
+                    if let Some((_, receipt, class)) = completion::class_observation(&registered, args) {
+                        available &= proves(&completion::is_throw(receipt.clone(), class));
+                    }
+                }
+                _ => {}
+            }
+        }
+        available
     });
     available
 }
@@ -148,27 +168,16 @@ pub(crate) fn format_guarded_boolean(
     right: &Expr,
     ctx: &mut FormatCtx,
 ) -> Option<String> {
-    if ctx.business_receipt_guards.is_empty() {
+    if ctx.business_receipt_guards.is_empty() && ctx.business_normal_completions.is_empty() {
         return None;
     }
     let op = ShortCircuit::from_op(op)?;
-    let mut guarded_receipt = false;
-    for operand in [left, right] {
-        operand.walk(&mut |part| {
-            guarded_receipt |= matches!(
-                part.as_sym_var(),
-                Some(SymVarOrigin::External { binding_id, .. })
-                    if ctx.business_receipt_guards.contains_key(binding_id)
-            );
-        });
-        if guarded_receipt {
-            break;
-        }
-    }
-    if !guarded_receipt {
+    let domain = ctx.business_evaluation_guard.as_ref();
+    // Issuance is not the same as successful completion. If both operands
+    // are already available, no extra CASE is necessary.
+    if receipts_available(left, domain, ctx) && receipts_available(right, domain, ctx) {
         return None;
     }
-    let domain = ctx.business_evaluation_guard.as_ref();
     let (guard, value, selected) = lazy_operands(op, left, right, domain, ctx)?;
     let guard_text = super::format_expr_with_ctx(guard, ctx);
     let value_text = ctx.with_business_evaluation_guard(&selected, |ctx| {
