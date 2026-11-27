@@ -15,6 +15,6 @@ expected:
   R: |-
     CASE
       WHEN value < 10 THEN 10
-      WHEN limit < value THEN limit
-      ELSE value
+      WHEN limit > value THEN value
+      ELSE limit
     END

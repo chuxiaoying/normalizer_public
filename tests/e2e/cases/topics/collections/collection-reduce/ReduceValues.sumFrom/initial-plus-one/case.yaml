@@ -12,4 +12,4 @@ expected:
       initial:
         position: 1
         type: number
-  R: initial + COALESCE(SUM(SELECT value FROM values), 0) + 1
+  R: initial + 1 + COALESCE(SUM(SELECT value FROM values), 0)
