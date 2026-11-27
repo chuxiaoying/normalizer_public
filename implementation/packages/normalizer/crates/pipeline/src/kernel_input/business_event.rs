@@ -134,7 +134,9 @@ pub(super) fn observations(
                 heap_operands.entry(id).or_default().0 += 1;
             }
             if let Some((math::BinOpKind::Eq | math::BinOpKind::Ne, left, right)) = node.as_binop() {
-                let allowed = |value: &Expr| value.is_null() || value.as_heap_ref().is_some_and(|id| identities.contains_key(&id));
+                let allowed = |value: &Expr| value.is_null() || value.as_heap_ref().is_some_and(|id| identities.contains_key(&id))
+                    || matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
+                        if primitive_type == "java_reference" && entry.parameter_type(name) == Some("unknown"));
                 if allowed(left) && allowed(right) {
                     for id in [left, right].iter().filter_map(|value| value.as_heap_ref()) {
                         heap_operands.entry(id).or_default().1 += 1;

@@ -653,7 +653,13 @@ impl Engine<'_> {
                 return Ok(()),
             (Some((left_id, left)), Some((right_id, right))) =>
                 borrowed_root(left).zip(borrowed_root(right))
-                    .map(|(left, right)| [(left_id, left), (right_id, right)]),
+                    .map(|(left, right)| vec![(left_id, left), (right_id, right)]),
+            // A wide Java parameter may denote this nominal input object.
+            // Bind the typed acquisition and leave the alias test symbolic.
+            (Some((id, origin)), None) if SourceObjects::is_open_parameter(b) =>
+                borrowed_root(origin).map(|root| vec![(id, root)]),
+            (None, Some((id, origin))) if SourceObjects::is_open_parameter(a) =>
+                borrowed_root(origin).map(|root| vec![(id, root)]),
             _ => None,
         }.ok_or_else(|| fail("borrowed identity comparison requires an alias contract"))?;
         // A different borrowed ID describes a different acquisition path,
