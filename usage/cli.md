@@ -20,24 +20,24 @@
 
 这些是当前仓库 CLI 的限制，不改变[分析副本校验](../design/secondary/分析副本怎样通过校验.md)和[标准操作](../design/secondary/标准操作与声明标记.md)的设计合同。
 
-- **TypeScript：** 当前只检查单个分析模块，使用固定严格选项，不读原工程的 `tsconfig.json`，也不支持跨文件模块解析。检查会拒绝导入，包括设计中的官方 `@normalizer/stdlib`。入口必须是文件内有函数体的具名导出函数声明，例如 `export function run(...)`；当前不接受 `#ops.run` 这样的导出对象方法，也不接受导出的箭头函数变量作为入口。
+- **TypeScript：** 当前只检查单个分析模块，使用固定严格选项，不读原工程的 `tsconfig.json`，也不支持跨文件模块解析。请把入口依赖的可见实现和类型放进同一个分析模块。检查整份模块，包括没调用的辅助函数，并拒绝导入，包括设计中的官方 `@normalizer/stdlib`。入口必须是文件内有函数体的具名导出函数声明，例如 `export function run(...)`；当前不接受 `#ops.run` 这样的导出对象方法，也不接受导出的箭头函数变量作为入口。
 - **环境读取：** 当前 CLI 尚未交付 `N.currentTimeMillis()`。如果分析依赖执行过程中取得的时钟值，按[预处理 Skill](skills/normalizer-preprocess/SKILL.md)报告该缺口，不以常量、新入参或外部写入替代。
 - **同表写后重读：** 当前 CLI 不能可靠区分写入前后取得的表数据。遇到依赖两次观察的输入，即使成功输出也不要当作设计合规结果；保留原有读写次序并报告缺口。[关系指令的统一写法](../design/secondary/关系指令的统一写法.md)规定写后重读是新的观察。
 
 ## Vue 场景
 
-`--entry` 定位实际分析的 `.ts` 导出函数，`--source` 只指原始 `.vue`，两条路径都相对同一个工程。CLI 校验原件可读并保留来源，不编译 Vue、不启动应用，也不证明原件和分析模块等价。
+`--entry` 定位实际分析的 `.ts` 导出函数，`--source` 只指原始 `.vue`，两条路径都相对同一个工程。CLI 校验原件可读并保留来源，不编译 Vue、不启动应用，也不证明原件和分析模块等价。不能把小程序 `.axml` 等其他前端模板直接交给这个入口。
 
 | 场景名 | 选择时机 | 例证 |
 |---|---|---|
-| `frontend-vo-production` | 要看事件或生命周期入口如何读取环境并写入 VO | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
-| `frontend-vo-consumption` | 要看某个组件属性怎样读取已有 VO 并返回观察结果 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
+| `frontend-vo-production` | 看事件或生命周期入口（如 `onLoad`）如何读取环境并写入页面展示状态（VO） | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
+| `frontend-vo-consumption` | 看单个组件属性如何读已有 VO 并返回展示值；准备成同步、导出的无参函数，不分析整次渲染 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
 
 直接可运行的两条完整命令见[新手入门](getting-started.md#3-vue运行生产入口与消费入口)。
 
 ## 诊断
 
-先看退出码，再查看输出。成功时 stdout 是最终 PERS YAML；构建和诊断信息看 stderr。重定向可能预先创建空文件，文件存在不等于成功。
+先看退出码，再查看输出。三个分析命令成功时，标准输出（stdout）是最终 PERS YAML；构建和诊断信息看标准错误（stderr）。`test business-examples` 输出的是测试报告。重定向可能预先创建空文件，文件存在不等于成功。
 
 | 遇到的失败 | 下一步 |
 |---|---|

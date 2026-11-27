@@ -1,11 +1,23 @@
 # 第一次运行 Normalizer
 
-以下命令从 Normalizer 仓库根目录运行，在 macOS 或 Linux 的 Shell 中执行。用 Git 克隆仓库后运行示例。CLI 需要 Bash、Rust 工具链（含 Cargo）和系统链接器。独立 TypeScript、Vue 和业务回归还需要 Node.js 24 或更高版本及 npm。首次调用会按锁文件编译内核、按需安装前端依赖，需要可用的本机缓存或网络。归一化不需要 JVM 或启动 Vue 服务。
+以下命令适用于 macOS 或 Linux。已有检出就直接进入仓库根目录；还没检出时运行：
+
+```sh
+git clone https://github.com/chuxiaoying/normalizer_public.git
+cd normalizer_public
+```
+
+Java 示例只需要 Bash、Rust/Cargo 和系统链接器（仓库 CI 使用 Rust 1.90）。TypeScript、Vue 和业务回归还需要 Node.js 24 或更高版本及 npm。首次执行分析会用 Cargo 按锁文件构建内核，前端入口首次使用时还会按需安装 npm 依赖。请确保能访问依赖仓库，或本机已经有相应缓存。不需要 JDK，也不用启动 Vue 服务。
 
 ```sh
 cargo --version
+rustc --version
 implementation/tools/normalizer help
-# 只在准备运行 TypeScript 或 Vue 时检查：
+```
+
+只在准备运行 TypeScript、Vue 或整套回归时，再检查：
+
+```sh
 node --version
 npm --version
 ```
@@ -41,14 +53,20 @@ implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total
 
 ## 3. Vue：运行生产入口与消费入口
 
-从两个已准备的用例分别复制 `.vue` 原件和分析 `.ts`。这两个入口各自开始分析，不把前一个命令的输出喂给后一个。
+从两个已准备的用例分别复制 `.vue` 原件和分析 `.ts`。生产看 `onLoad` 怎样读取数据和写入页面状态；消费看某个组件属性怎样从已有状态得到展示值。两次分析相互独立，不把生产命令的输出喂给消费命令。
+
+**生产：查询数据并写入页面状态。**
 
 ```sh
 producer=$(mktemp -d)
 cp -R tests/e2e/cases/vue/onLoad/original/src "$producer/"
 implementation/tools/normalizer scenario frontend-vo-production "$producer" \
   --entry 'src/ArrearsPage.ts#onLoad' --source src/ArrearsPage.vue
+```
 
+**消费：计算卡片上的说明文字。**
+
+```sh
 consumer=$(mktemp -d)
 cp -R tests/e2e/cases/vue/caption/original/src "$consumer/"
 implementation/tools/normalizer scenario frontend-vo-consumption "$consumer" \
@@ -59,15 +77,17 @@ implementation/tools/normalizer scenario frontend-vo-consumption "$consumer" \
 
 ## 4. 辨认失败
 
-对第一个 Java 工程选一个不存在的入口；要看的是非零退出、stderr 有诊断、stdout 没有 PERS：
+在运行第 1 节的同一个终端里，使用刚创建的 `java_project`，把入口换成一个不存在的方法。预期是非零退出、标准错误有诊断、标准输出没有 PERS：
 
 ```sh
 if implementation/tools/normalizer source "$java_project" \
      'src/HelloWorld.java#HelloWorld.missing' \
      > "$java_project/pers.yaml" 2> "$java_project/diagnostic.log"; then
-  printf '意外成功\n' >&2
+  printf '意外成功：请查看 %s\n' "$java_project/pers.yaml" >&2
   false
 else
+  status=$?
+  printf '退出码：%s\n' "$status"
   cat "$java_project/diagnostic.log" >&2
   test ! -s "$java_project/pers.yaml" && grep -F '[NORM-ENTRY]' "$java_project/diagnostic.log" >/dev/null
 fi

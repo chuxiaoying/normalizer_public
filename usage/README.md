@@ -1,9 +1,9 @@
 # 使用 Normalizer
 
-**先准备分析副本，再运行 CLI。** Normalizer 不会替你调用 AI，也不会运行 Spring、Vue 或原业务应用来补出隐藏逻辑。已经闭合的 Java 不必改写；原始 JavaScript 要准备成严格 TypeScript，Vue 要保留原组件和准备好的 TypeScript 模块。
+**第一次用？先跑通一个例子，再分析自己的项目。** Normalizer 从选定的程序入口提取业务逻辑，输出 PERS：描述入参、环境、返回值和副作用的 YAML。不需要启动原应用。
 
-1. **准备输入。** 阅读[输入清单](kernel-input.md)。需要理解工程、补齐类型或重组入口时，把[AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md)交给处理该工程的 agent，连同源码、真实入口和观察范围。
-2. **装工具并跑通。** 从仓库根目录按[新手入门](getting-started.md)跑 Java、TypeScript 或 Vue 的最小可复现例子。
-3. **对照自己的项目。** 用 [CLI 参考](cli.md)选命令，成功时读取 stdout 的 PERS，失败时根据退出码和 stderr 定位。不把缺少 PERS 理解为业务空值。
+1. **先试用。** 按[新手入门](getting-started.md)运行 Java、TypeScript 或 Vue 的最小例子。Vue 和 TypeScript 示例已经准备好，不需要先做 AI 预处理。
+2. **换成自己的项目。** 按[输入清单](kernel-input.md)确定需要交付的文件。已闭合的 Java 可以原样交付；需要理解框架、补齐类型或重组入口时，把源码、真实入口和观察范围连同[AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md)交给 agent。CLI 不替你调用 AI。
+3. **运行并看结果。** 用 [CLI 参考](cli.md)选命令。退出码为 0 时读标准输出中的 PERS；非零时读标准错误中的诊断。没有 PERS 不等于业务返回了空值。
 
 想核对业务含义，从[第七章](../design/chapters/第七章%20·%20PERS%20登场.md)读 PERS；想运行整个仓库的正式回归，看[测试区](../tests/README.md)。
