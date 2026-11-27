@@ -79,7 +79,7 @@ Normalizer 工程只识别自己的 `@N.External` 标记。它不需要理解 `R
 - 特殊含义通过 Normalizer 标记进入统一 IR，工程不按外部库名称和方法名做特判。
 - 标记应补充边界身份，源代码结构和语言语义继续由 Normalizer 按 Java 语义处理。
 
-分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
+`Beans.ENTRY` 定位已装配实例；`native` 端口声明交付原签名，按[外部端口合同](../../../chapters/04-AI救赎.md#ai-08-外部端口要有真实合同)处理。
 
 ## 归一化最终结果
 

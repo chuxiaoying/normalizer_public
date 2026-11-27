@@ -49,7 +49,7 @@ class Timeout extends RuntimeException {}
 +}
 ```
 
-分析入口从 `Beans.ENTRY` 取得已装配实例。端口的 `native` 声明只交付原签名，内核按 `@N.External` 记录调用并绑定符号回执，不执行本机代码。
+`Beans.ENTRY` 定位已装配实例；`native` 端口声明交付原签名，按[外部端口合同](../../../chapters/04-AI救赎.md#ai-08-外部端口要有真实合同)处理。
 
 ## 归一化最终结果
 
