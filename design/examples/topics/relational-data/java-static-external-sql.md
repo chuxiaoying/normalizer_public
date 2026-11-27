@@ -240,7 +240,7 @@ S:
 
 R: |-
   CASE
-    WHEN $e_0.quota < COALESCE(
+    WHEN $e_0.quota > COALESCE(
       SUM(
         SELECT bill.amount - bill.waived_amount
         FROM $a_0 AS bill
@@ -251,8 +251,7 @@ R: |-
           AND bill.priority >= $e_0.minPriority
       ),
       0
-    ) THEN $e_0.quota
-    ELSE COALESCE(
+    ) THEN COALESCE(
       SUM(
         SELECT bill.amount - bill.waived_amount
         FROM $a_0 AS bill
@@ -264,6 +263,7 @@ R: |-
       ),
       0
     )
+    ELSE $e_0.quota
   END
 
 throws:
@@ -274,6 +274,7 @@ throws:
 **PERS 验收要点**
 
 - 外部端口封闭其内部实现，返回的业务数据仍应参与关系运算。各字段必须追溯到同一次调用，不能被改造成互不相关的新输入。
+- 取合计和额度的较小值时，只有在回执和同一读表结果已取得的域内比较。相等时两臂无区别；同成本的严格 CASE 由共享比较器选 `>`，不移动读取。
 - 合计本身不含 CASE WHEN，重复出现也不产生 LET，不向 P/E 暴露折叠状态。
 
 ## INSERT 与返回行数

@@ -315,7 +315,7 @@ S:
       target: arrears.summary.payable
       value: |-
         CASE
-          WHEN $e_0.quota < COALESCE(
+          WHEN $e_0.quota > COALESCE(
             SUM(
               SELECT row.amount - row.waivedAmount
               FROM $e_1 AS row
@@ -324,8 +324,7 @@ S:
                 AND $e_0.minPriority <= row.priority
             ),
             0
-          ) THEN $e_0.quota
-          ELSE COALESCE(
+          ) THEN COALESCE(
             SUM(
               SELECT row.amount - row.waivedAmount
               FROM $e_1 AS row
@@ -335,6 +334,7 @@ S:
             ),
             0
           )
+          ELSE $e_0.quota
         END
       when: |-
         CASE
@@ -381,6 +381,8 @@ throws:
   - type: ProfileFetchError
     when: completion.is_throw($e_0, ProfileFetchError)
 ~~~
+
+应付金额在两个回执都已正常取得的域内取合计与额度的较小值。相等时两臂无区别；同成本的严格 CASE 由共享比较器选 `>`，不改变任何调用条件。
 
 第 2 次调用只在第 1 次调用成功时发出。第 1 次失败时直接进入失败路径，不读取未取得的第 2 次回执；成功路径同样先检查第 1 次是否完成。
 
