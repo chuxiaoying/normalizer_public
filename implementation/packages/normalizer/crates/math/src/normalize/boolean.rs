@@ -57,7 +57,8 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
         ExprKind::UnaryOp {
             op: UnaryOpKind::Not,
             operand,
-        } => simplify_not(operand).unwrap_or_else(|| expr.clone()),
+        } => negate_complete_boolean_case(operand, expr, ctx)
+            .or_else(|| simplify_not(operand)).unwrap_or_else(|| expr.clone()),
         _ => expr.clone(),
     }
 }
@@ -681,6 +682,19 @@ fn sort_commutative(
 // =============================================================================
 // NOT 化简
 // =============================================================================
+
+fn negate_complete_boolean_case(operand: &Expr, original: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
+    let (arms, fallback) = operand.as_total_case_when()?;
+    if !arms.iter().all(|(_, value)| super::boolean_casewhen::is_boolean_expr(value))
+        || !super::boolean_casewhen::is_boolean_expr(fallback)
+    { return None; }
+    // Only the subvalues are negated. Branch selection and the live
+    // domain of any guarded receipt remain exactly the same.
+    let invert = |value: &Expr| crate::normalize_with(builder::not(value.clone()), ctx);
+    let candidate = builder::case_when(arms.iter().map(|(guard, value)|
+        (guard.clone(), invert(value))).collect(), invert(fallback));
+    crate::canonical_order_compare(&candidate, original, ctx).is_lt().then_some(candidate)
+}
 
 fn simplify_not(operand: &Expr) -> Option<Expr> {
 

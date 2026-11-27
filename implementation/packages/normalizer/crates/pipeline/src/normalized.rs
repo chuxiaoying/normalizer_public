@@ -1220,6 +1220,13 @@ pub(crate) fn java_int(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Primitive(name) if name == "int")
 }
 
+pub(crate) fn int_array_component(ty: &JavaType) -> bool {
+    match ty {
+        JavaType::Array(element) => int_array_component(element),
+        _ => java_int(ty),
+    }
+}
+
 fn inline_int_array_initializer(e: &E) -> bool {
     matches!(e, E::ArrayInitializer { element_type, .. } if java_int(element_type))
 }
@@ -1256,7 +1263,7 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
             // type arguments; no host or raw generic is dispatched here.
             for arg in args { expr(arg, at, calls)?; }
         }
-        E::ArrayInitializer { element_type, elements } if java_int(element_type) => {
+        E::ArrayInitializer { element_type, elements } if int_array_component(element_type) => {
             for element in elements {
                 expr(element, at, calls)?;
             }

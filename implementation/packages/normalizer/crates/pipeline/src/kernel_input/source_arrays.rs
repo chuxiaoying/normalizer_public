@@ -523,6 +523,8 @@ impl Engine<'_> {
                 }
             }
         }
-        Ok(Value::Term(Ty::Integer, math::normalize(total)))
+        let total = self.normalize_execution_value(total);
+        let order = self.execution_order(total.has_heap_ref());
+        Ok(Value::Term(Ty::Integer, math::normalize::order_acquired_integer_sum(total, &order)))
     }
 }

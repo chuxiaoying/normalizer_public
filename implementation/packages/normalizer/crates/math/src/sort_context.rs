@@ -50,6 +50,10 @@ pub trait SortContext {
     /// The caller may not infer this from a catch type or from a label.
     fn total_single_failure_class(&self, _receipt: u64) -> Option<&str> { None }
 
+    /// A successful value of a nonthrowing occurrence reached on every
+    /// path, not merely the name that would be rendered for its receipt.
+    fn is_total_receipt_value(&self, _receipt: u64) -> bool { false }
+
     /// Published ordinals, which do not by themselves prove availability.
     fn temporal_aliases(&self) -> Option<&std::collections::BTreeMap<u64, usize>> {
         None

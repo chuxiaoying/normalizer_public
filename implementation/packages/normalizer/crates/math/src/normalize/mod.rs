@@ -265,6 +265,27 @@ pub fn canonicalize_bound_integer_ops(value: &Expr, ctx: &dyn crate::SortContext
     integer_ac::simplify(&rebuilt, ctx)
 }
 
+/// Order a strict integer sum after its execution owner has established
+/// the operand types and acquired the entire value. No operand is dropped.
+pub fn order_acquired_integer_sum(value: Expr, ctx: &dyn crate::SortContext) -> Expr {
+    use crate::BinOpKind;
+    if !matches!(value.as_binop(), Some((BinOpKind::Add, ..)))
+        || !crate::canonical_order::comparison_operands_are_bound(&value, ctx)
+    { return value; }
+    let mut work = vec![&value];
+    let mut terms = Vec::new();
+    while let Some(term) = work.pop() {
+        if let Some((BinOpKind::Add, left, right)) = term.as_binop() {
+            work.push(right);
+            work.push(left);
+        } else {
+            terms.push(term.clone());
+        }
+    }
+    terms.sort_by_cached_key(|term| crate::canonical_order_key(term, ctx));
+    terms.into_iter().reduce(crate::builder::add).expect("an addition has operands")
+}
+
 /// Checked normalization for callers that need to report resource failure.
 pub fn try_normalize_with(
     expr: Expr,

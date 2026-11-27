@@ -129,6 +129,12 @@ impl math::SortContext for ExecutionOrder<'_> {
         self.effects.total_single_failure_class(receipt)
     }
 
+    fn is_total_receipt_value(&self, binding: u64) -> bool {
+        self.effects.events().iter().any(|event| event.guard.as_bool() == Some(true)
+            && matches!(&event.operation, super::realtime_state::EffectOperation::Port { receipt, completion, .. }
+                if receipt.binding_id() == binding && !completion.throwing()))
+    }
+
     fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> {
         match self.definitions.get(usize::try_from(id).ok()?)? {
             super::temporal_graph::Definition::Fold(fold) => Some(&fold.shape),
@@ -961,14 +967,33 @@ impl<'a> Engine<'a> {
             }
             J::ArrayInitializer { element_type, elements } => {
                 self.budget()?;
-                need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
-                // The initializer still runs before .length. Its element
-                // values are never observed, so no constant carrier is needed.
-                let Some((values, _)) = self.source_arguments(elements, id, env, path)? else {
-                    return Ok(Some(b::lit_null()));
-                };
-                need(values.iter().all(|value| value.ty() == Ty::Integer),
-                    "expected Java int for local array")?;
+                need(crate::normalized::int_array_component(element_type), "unsupported Java array component")?;
+                // Evaluate each initializer before observing the outer
+                // length. Nested lengths are not added together.
+                if crate::normalized::java_int(element_type) {
+                    let Some((values, _)) = self.source_arguments(elements, id, env, path)? else {
+                        return Ok(Some(b::lit_null()));
+                    };
+                    need(values.iter().all(|value| value.ty() == Ty::Integer),
+                        "expected Java int for local array")?;
+                } else {
+                    let mut live = self.normal_path(path);
+                    for element in elements {
+                        if live.as_bool() == Some(false) { return Ok(Some(b::lit_null())); }
+                        if let J::ArrayInitializer { .. } = element {
+                            self.source_java_array_length(element, id, env, live.clone())?;
+                            live = self.normal_path(live);
+                        } else {
+                            // A reference element is evaluated, but not
+                            // dereferenced; a null row is still one slot.
+                            let Some((_, next)) = self.source_operand(element, id, env, live)? else {
+                                return Ok(Some(b::lit_null()));
+                            };
+                            live = next;
+                        }
+                    }
+                    if live.as_bool() == Some(false) { return Ok(Some(b::lit_null())); }
+                }
                 Ok(Some(b::lit_int(elements.len() as i64)))
             }
             J::ArrayAllocation { element_type, length } => {

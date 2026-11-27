@@ -15,6 +15,9 @@ pub(super) fn total_value_with_context(expr: &Expr, ctx: &dyn crate::SortContext
         ExprKind::SymVar { origin: crate::SymVarOrigin::Parameter { name, primitive_type } } =>
             !name.starts_with('$') && !name.contains(['.', '[', ']'])
                 && matches!(primitive_type.as_str(), "boolean" | "integer" | "text" | "text?"),
+        ExprKind::SymVar { origin: crate::SymVarOrigin::External { binding_id, path, primitive_type } } =>
+            path.is_empty() && matches!(primitive_type.as_str(), "boolean" | "integer")
+                && ctx.is_total_receipt_value(*binding_id),
         ExprKind::HeapRef(id) => ctx.heap_binding_identity(*id).is_some(),
         ExprKind::UnaryOp { operand, .. } => total_value_with_context(operand, ctx),
         ExprKind::BinOp { left, right, .. } =>
