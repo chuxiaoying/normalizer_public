@@ -330,7 +330,10 @@ impl<'a> FixedFieldFor<'a> {
         )) { return None; }
         let start = literal(value)?;
         let count = ((end - start) * step + i128::from(inclusive)).max(0);
-        (count <= 256).then_some(Self {
+        // This header proves a finite count regardless of its size. The
+        // simulator charges each actual step and reports budget exhaustion
+        // separately from an unproved or unsupported loop.
+        Some(Self {
             initial_target: target,
             initial_value: value,
             receivers, field: member, start, step, count,
