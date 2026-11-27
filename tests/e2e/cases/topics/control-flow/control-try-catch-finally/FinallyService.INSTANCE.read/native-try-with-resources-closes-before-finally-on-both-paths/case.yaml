@@ -29,6 +29,6 @@ expected:
         value: attempts + 11
   R: |-
     CASE
-      WHEN completion.is_throw($e_0, RemoteError) THEN 0
-      ELSE $e_0
+      WHEN completion.is_return($e_0) THEN $e_0
+      ELSE 0
     END
