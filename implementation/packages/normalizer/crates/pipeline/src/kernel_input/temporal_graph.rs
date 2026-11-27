@@ -1,7 +1,7 @@
 //! One identity and publication graph for deterministic folds and independent choices.
 use super::*;
 use super::member_choice::{Candidates, Fallback, Occurrence};
-use crate::formatting::sql::scoped_relation::{Operand, Slot};
+use crate::formatting::sql::scoped_relation::{ChoiceOuter, ChoiceShape, Operand, Slot};
 
 #[derive(PartialEq, Eq)]
 pub(super) enum Definition {
@@ -140,7 +140,17 @@ pub(super) fn publish(
                     },
                     Candidates::Literal(values) => format!("[{}]", values.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")),
                 };
-                Slot::Choice { members, empty: value, guard: choice.guard.clone() }
+                let (fallback, element) = match &choice.empty {
+                    Fallback::Integer(value) => (ChoiceOuter::Expression(value.clone()), "number"),
+                    Fallback::RecordParameter { owner, name } => (
+                        ChoiceOuter::Parameter { name: name.clone(), kind: owner.clone() }, owner.as_str()),
+                };
+                let source = match &choice.members {
+                    Candidates::Input(name) => ChoiceOuter::Parameter { name: name.clone(), kind: format!("{element}[]") },
+                    Candidates::Literal(values) => ChoiceOuter::Expression(b::array_lit(values.iter()
+                        .map(|&value| b::lit_int(i64::from(value))).collect())),
+                };
+                Slot::Choice { members, empty: value, guard: choice.guard.clone(), shape: ChoiceShape { source, fallback } }
             }
         };
         published.aliases.insert(id, slot);

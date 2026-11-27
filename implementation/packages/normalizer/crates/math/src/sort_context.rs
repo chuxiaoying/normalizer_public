@@ -31,6 +31,10 @@ pub trait SortContext {
         None
     }
 
+    /// A selected member bound in the current YIELD, independent of
+    /// publication handles (which also index unrelated REDUCE nodes).
+    fn choice_slots(&self) -> Option<&std::collections::BTreeMap<u64, usize>> { None }
+
     /// Retained evaluation handles lower to this structure for comparison.
     fn reduce_shapes(&self) -> Option<&std::collections::BTreeMap<u64, ReduceShape>> { None }
 

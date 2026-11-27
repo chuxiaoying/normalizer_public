@@ -41,6 +41,7 @@ enum Identity {
     // supplies their business identity. They are not published reference names.
     InternalExternal(u64, Vec<String>),
     InternalHeap(i64),
+    InternalTemporal(usize),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -200,9 +201,12 @@ impl Keys<'_> {
                             return node(Class::Relation, named("reduce"), vec!["number".into()],
                                 vec![], vec![], vec![Some(source), Some(initial), Some(body)], None, 0, 1);
                         }
+                        if let Some(&slot) = ctx.choice_slots().and_then(|slots| slots.get(binding_id)) {
+                            return binding(Class::Reference, origin.primitive_type(), Identity::Local(slot));
+                        }
                         let slot = ctx.temporal_aliases().and_then(|aliases| aliases.get(binding_id)).copied()
                             .unwrap_or_else(|| usize::try_from(*binding_id).expect("local identity does not fit its slot"));
-                        (Class::Reference, Identity::Local(slot))
+                        (Class::Reference, Identity::InternalTemporal(slot))
                     }
                 };
                 binding(class, origin.primitive_type(), id)
@@ -314,7 +318,7 @@ thread_local! {
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
     let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
     if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.external_names().is_some()
-        || ctx.in_reduce_body() || ctx.reduce_shapes().is_some_and(|shapes| !shapes.is_empty())
+        || ctx.in_reduce_body() || ctx.choice_slots().is_some() || ctx.reduce_shapes().is_some_and(|shapes| !shapes.is_empty())
     {
         return keys.expr(expr);
     }
@@ -383,9 +387,27 @@ fn value_key_with_lets(
     Rc::new(key)
 }
 
+/// A scoped RA-09 choice has two outer operands. The last child is
+/// the YIELD value, whose references have already been assigned lexical slots.
+pub type ChoiceOperands = (Rc<CanonicalKey>, Rc<CanonicalKey>);
+
+pub fn named_parameter_key(name: &str, kind: &str) -> Rc<CanonicalKey> {
+    binding(Class::Reference, kind, Identity::Parameter(path(name)))
+}
+
+fn wrap_choices(mut value: Rc<CanonicalKey>, prefix: &[ChoiceOperands]) -> Rc<CanonicalKey> {
+    for (source, fallback) in prefix.iter().rev() {
+        value = node(Class::Relation, named("choose"), value.types.clone(), value.contract.clone(),
+            vec![], vec![Some(source.clone()), Some(fallback.clone()), Some(value)], None, 0, 1);
+    }
+    value
+}
+
 struct LetSearch<'a> {
     value: &'a Expr,
     inline: Rc<CanonicalKey>,
+    inline_full: Rc<CanonicalKey>,
+    choices: &'a [ChoiceOperands],
     candidates: Vec<(Expr, Rc<CanonicalKey>)>,
     best: (Rc<CanonicalKey>, Vec<Expr>),
     budget: usize,
@@ -404,6 +426,7 @@ impl LetSearch<'_> {
         if !bindings.is_empty() {
             let mut uses = definition_uses.clone();
             let value = value_key_with_lets(self.value, &self.inline, bindings, &mut uses);
+            let value = wrap_choices(value, self.choices);
             if uses.iter().all(|&count| count >= 2) {
                 let declarations = definition_keys.iter().cloned().map(Some).collect();
                 let mut key = node(Class::Construct, named("let"), self.inline.types.clone(),
@@ -414,7 +437,7 @@ impl LetSearch<'_> {
                 result.tail = Some(value);
                 // The shared structure key only breaks ties between plans
                 // that have already beaten the inline value in complexity.
-                if (&key.arms, &key.operations) < (&self.inline.arms, &self.inline.operations)
+                if (&key.arms, &key.operations) < (&self.inline_full.arms, &self.inline_full.operations)
                     && key < self.best.0
                 {
                     self.best = (key, bindings.clone());
@@ -446,7 +469,7 @@ impl LetSearch<'_> {
 /// Eligibility is supplied by the owner of the acquired value. Names are not
 /// part of the search; reference slots are allocated by each candidate order.
 pub fn canonical_let_plan(
-    value: &Expr, ctx: &dyn SortContext, eligible: impl Fn(&Expr) -> bool,
+    value: &Expr, ctx: &dyn SortContext, choices: &[ChoiceOperands], eligible: impl Fn(&Expr) -> bool,
 ) -> Result<Vec<Expr>, &'static str> {
     fn occurrences(expr: &Expr, eligible: &impl Fn(&Expr) -> bool, counts: &mut HashMap<Expr, usize>) {
         if expr.has_case_when() && eligible(expr) { *counts.entry(expr.clone()).or_default() += 1; }
@@ -463,7 +486,9 @@ pub fn canonical_let_plan(
     let mut selected = vec![false; candidates.len()];
     let budget = std::env::var("NORMALIZER_MATH_MAX_CANDIDATE_NODES").ok()
         .and_then(|raw| raw.parse().ok()).unwrap_or(4_000_000);
-    let mut search = LetSearch { value, inline: inline.clone(), candidates, best: (inline, vec![]), budget };
+    let inline_full = wrap_choices(inline.clone(), choices);
+    let mut search = LetSearch { value, inline, inline_full: inline_full.clone(), choices,
+        candidates, best: (inline_full, vec![]), budget };
     search.search(&mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut selected)?;
     Ok(search.best.1)
 }

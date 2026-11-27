@@ -25,3 +25,19 @@ impl math::SortContext for CanonicalNames<'_> {
 
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.temporals }
 }
+
+
+/// Keys produced for a particular YIELD see only its lexical member slots.
+pub(crate) struct ChoiceKeys<'a> {
+    pub(crate) base: CanonicalNames<'a>,
+    pub(crate) slots: &'a BTreeMap<u64, usize>,
+}
+
+impl math::SortContext for ChoiceKeys<'_> {
+    fn heap_display_name(&self, id: i64) -> Option<String> { self.base.heap_display_name(id) }
+    fn external_names(&self) -> Option<&BTreeMap<u64, String>> { self.base.external_names() }
+    fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
+    fn reduce_shapes(&self) -> Option<&BTreeMap<u64, math::ReduceShape>> { self.base.reduce_shapes() }
+    fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { Some(self.slots) }
+    fn temporal_is_total(&self, id: u64) -> bool { self.base.temporal_is_total(id) }
+}

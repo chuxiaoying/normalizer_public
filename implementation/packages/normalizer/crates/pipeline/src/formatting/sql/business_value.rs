@@ -40,14 +40,15 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut F
         return ctx.in_relation_scope(value, render);
     }
     let external = ctx.published_external_names();
-    let compare = crate::canonical_names::CanonicalNames {
+    let (choices, lexical) = ctx.choice_prefix_keys(value, &external);
+    let compare = crate::canonical_names::ChoiceKeys { base: crate::canonical_names::CanonicalNames {
         heap: &ctx.business_identities,
         external: (!external.is_empty()).then_some(&external),
         total_temporals: None,
         reductions: Some(&ctx.reductions),
         temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-    };
-    let plan = math::canonical_let_plan(value, &compare, |expr| closed_candidate(expr, ctx))
+    }, slots: &lexical };
+    let plan = math::canonical_let_plan(value, &compare, &choices, |expr| closed_candidate(expr, ctx))
         .unwrap_or_else(|failure| panic!("{failure}"));
     let mut definitions = Vec::new();
     for (slot, expression) in plan.into_iter().enumerate() {

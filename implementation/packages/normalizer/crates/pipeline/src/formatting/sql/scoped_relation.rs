@@ -14,7 +14,28 @@ pub(crate) enum Operand {
 #[derive(Clone)]
 pub(crate) enum Slot {
     Fold { source: String, initial: Operand, body: Expr },
-    Choice { members: String, empty: Operand, guard: Expr },
+    Choice { members: String, empty: Operand, guard: Expr, shape: ChoiceShape },
+}
+
+#[derive(Clone)]
+pub(crate) enum ChoiceOuter {
+    Parameter { name: String, kind: String },
+    Expression(Expr),
+}
+
+impl ChoiceOuter {
+    pub(super) fn key(&self, ctx: &dyn math::SortContext) -> Rc<math::CanonicalKey> {
+        match self {
+            Self::Parameter { name, kind } => math::named_parameter_key(name, kind),
+            Self::Expression(value) => math::canonical_order_key(value, ctx),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ChoiceShape {
+    pub(crate) source: ChoiceOuter,
+    pub(crate) fallback: ChoiceOuter,
 }
 
 #[derive(Default)]
@@ -22,6 +43,7 @@ pub(super) struct Scope {
     pub(super) slots: Rc<[Slot]>,
     pub(super) active: Option<Expr>,
     pub(super) members: BTreeMap<usize, String>,
+    pub(super) member_order: Vec<usize>,
     pub(super) in_reduce_yield: bool,
 }
 

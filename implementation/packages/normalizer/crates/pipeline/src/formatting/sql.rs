@@ -152,11 +152,11 @@ impl FormatCtx {
         }
     }
 
-    pub(crate) fn in_relation_scope(&mut self, expression: &Expr, render: impl FnOnce(&mut Self) -> String) -> String {
+    fn eligible_choices(&self, expression: &Expr) -> Vec<usize> {
         let active = self.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
         let mut needed = std::collections::BTreeSet::new();
         let slots = self.relation_scope.slots.clone();
-        if slots.is_empty() { return render(self); }
+        if slots.is_empty() { return vec![]; }
         expression.walk(&mut |part| {
             if let Some(SymVarOrigin::Temporal { binding_id, .. }) = part.as_sym_var() {
                 if let Some(&slot) = self.temporal_names.get(binding_id) {
@@ -164,22 +164,48 @@ impl FormatCtx {
                 }
             }
         });
+        needed.into_iter().filter(|slot| matches!(&slots[*slot], scoped_relation::Slot::Choice { guard, .. }
+            if !self.relation_scope.members.contains_key(slot) && math::builder::path_implies(&active, guard))).collect()
+    }
+
+    fn choice_prefix_keys(
+        &self, expression: &Expr, external: &std::collections::BTreeMap<u64, String>,
+    ) -> (Vec<math::ChoiceOperands>, std::collections::BTreeMap<u64, usize>) {
+        let mut lexical = std::collections::BTreeMap::new();
+        let ids: std::collections::BTreeMap<_, _> = self.temporal_names.iter().map(|(&id, &slot)| (slot, id)).collect();
+        for (position, &slot) in self.relation_scope.member_order.iter().enumerate() {
+            if let Some(&id) = ids.get(&slot) { lexical.insert(id, position); }
+        }
+        let mut shapes = Vec::new();
+        for slot in self.eligible_choices(expression) {
+            let scoped_relation::Slot::Choice { shape, .. } = &self.relation_scope.slots[slot] else { unreachable!("certified choice slot") };
+            let ctx = crate::canonical_names::ChoiceKeys { base: CanonicalNames { heap: &self.business_identities,
+                external: (!external.is_empty()).then_some(external), total_temporals: None,
+                reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) }, slots: &lexical };
+            shapes.push((shape.source.key(&ctx), shape.fallback.key(&ctx)));
+            lexical.insert(ids[&slot], self.relation_scope.member_order.len() + shapes.len() - 1);
+        }
+        (shapes, lexical)
+    }
+
+    pub(crate) fn in_relation_scope(&mut self, expression: &Expr, render: impl FnOnce(&mut Self) -> String) -> String {
+        let needed = self.eligible_choices(expression);
+        let slots = self.relation_scope.slots.clone();
         let mut bindings = Vec::new();
         for slot in needed {
-            if let scoped_relation::Slot::Choice { members, empty, guard } = &slots[slot] {
-                if self.relation_scope.members.contains_key(&slot) || !math::builder::path_implies(&active, guard) {
-                    continue;
-                }
+            if let scoped_relation::Slot::Choice { members, empty, .. } = &slots[slot] {
                 let empty = self.relation_operand(empty);
                 let members = self.uncaptured_name("P", members);
                 let name = format!("member{}", self.relation_scope.members.len());
                 self.relation_scope.members.insert(slot, name.clone());
+                self.relation_scope.member_order.push(slot);
                 bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD ")));
             }
         }
         let mut value = render(self);
         for (slot, prefix) in bindings.into_iter().rev() {
             self.relation_scope.members.remove(&slot);
+            self.relation_scope.member_order.pop();
             value = format!("{prefix}{value})");
         }
         value
