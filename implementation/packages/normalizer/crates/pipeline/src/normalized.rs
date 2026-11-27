@@ -1033,6 +1033,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 value,
                 ..
             } => expr(value, at, calls)?,
+            S::Throw(E::Lit(JavaLit::Null)) => (),
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Throw(e) if !inside_finally => {
                 if let Some(class) = finally_throw(stmt) {

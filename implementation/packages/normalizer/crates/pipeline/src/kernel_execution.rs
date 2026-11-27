@@ -501,6 +501,11 @@ impl<'a> Engine<'a> {
                         .replace_continue(realtime_state::Completion::Return(realtime_value));
                     return Ok(());
                 }
+                S::Throw(J::Lit(JavaLit::Null)) => {
+                    // The Java throw itself raises NullPointerException;
+                    // a null value is not an exception payload in this case.
+                    self.throw_source_on_path(path, "java.lang.NullPointerException");
+                }
                 S::Throw(expr) => {
                     use crate::normalized::RuntimeThrowMessage;
                     let (class, payload) = match crate::normalized::runtime_throw_message(expr) {
