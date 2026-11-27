@@ -1221,11 +1221,6 @@ impl<'a> Engine<'a> {
                     return self.source_port_call(&port, rooted_identity, values, path);
                 }
                 need(!field_receiver, "field receiver is not a declared external port")?;
-                if let Some(declaration) = self.methods.get(&callee) {
-                    for ((expected, _), actual) in declaration.syntax.params().iter().zip(args) {
-                        self.source_reference_assignment(expected, actual, id)?;
-                    }
-                }
                 if self.project.direct_source && self.program.find_class(id.rsplit_once('.').unwrap().0)
                     .is_some_and(|caller| crate::normalized_text::clock_intrinsic(self.program, caller, &callee, args.len()))
                 {
@@ -1266,9 +1261,19 @@ impl<'a> Engine<'a> {
                     .and_then(|caller| {
                         crate::normalized_text::source_intrinsic(self.program, caller, &callee, args.len())
                     });
+                let resolved = if text_intrinsic.is_none() && self.project.direct_source {
+                    self.program.find_class(owner)
+                        .and_then(|class| crate::normalized::named_method_for_arity(class, method, args.len()))
+                        .map(|(key, _)| key).unwrap_or(callee)
+                } else { callee };
+                if let Some(declaration) = self.methods.get(&resolved).filter(|_| text_intrinsic.is_none()) {
+                    for ((expected, _), actual) in declaration.syntax.params().iter().zip(args) {
+                        self.source_reference_assignment(expected, actual, id)?;
+                    }
+                }
                 let Some((vs, path)) = self.source_arguments(args, id, env, path)? else {
                     let ty = if text_intrinsic.is_some() { Ty::Text } else {
-                        self.methods.get(&callee).ok_or_else(|| fail("missing declared return type for unreachable call"))?.returns.clone()
+                        self.methods.get(&resolved).ok_or_else(|| fail("missing declared return type for unreachable call"))?.returns.clone()
                     };
                     return Ok(Value::Term(ty, b::lit_null()));
                 };
@@ -1289,9 +1294,9 @@ impl<'a> Engine<'a> {
                     return Ok(Value::Term(Ty::Text, expr));
                 }
                 if target.is_none() && !self.methods[id].syntax.is_static() {
-                    return self.java_call_with_receiver(&callee, vs, path, env.get("this").cloned(), true);
+                    return self.java_call_with_receiver(&resolved, vs, path, env.get("this").cloned(), true);
                 }
-                self.java_call(&callee, vs, path)
+                self.java_call(&resolved, vs, path)
             }
             J::UnaryOp {
                 op: U::Not,

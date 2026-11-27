@@ -184,6 +184,7 @@ impl Admission<'_> {
         }
         let owner = match target {
             None => self.class,
+            Some(E::Ident(owner)) if self.binding(owner, scope).is_none() => self.program.find_class(owner)?,
             Some(target) => {
                 let ty = self.declared_type(target, scope)?;
                 match &ty {
@@ -192,7 +193,7 @@ impl Admission<'_> {
                 }
             }
         };
-        owner.methods().iter().find(|m| m.name() == method && m.arity() == arity)
+        super::named_method_for_arity(owner, method, arity).map(|(_, member)| member)
     }
 
     fn declared_type(&self, expr: &E, scope: &Scope) -> Option<JavaType> {

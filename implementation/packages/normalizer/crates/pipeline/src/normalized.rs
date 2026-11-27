@@ -586,6 +586,15 @@ pub(crate) fn method_for_key<'a>(class: &'a JavaClass, key: &str) -> Option<&'a 
         (method_key(class, index, method) == key).then_some(method))
 }
 
+pub(crate) fn named_method_for_arity<'a>(
+    class: &'a JavaClass, member: &str, arity: usize,
+) -> Option<(String, &'a JavaMethod)> {
+    let mut matches = class.methods().iter().enumerate().filter(|(_, method)|
+        !method.is_constructor() && method.name() == member && method.arity() == arity);
+    let (index, method) = matches.next()?;
+    matches.next().is_none().then(|| (method_key(class, index, method), method))
+}
+
 pub(crate) fn constructor_for_arity(class: &JavaClass, arity: usize) -> Option<(String, &JavaMethod)> {
     let mut matches = class.methods().iter().enumerate()
         .filter(|(_, method)| method.is_constructor() && method.arity() == arity);
@@ -782,25 +791,22 @@ pub(crate) fn validate_with_receiver(
                     continue;
                 }
             }
-            if program.find_class(&target_owner).is_some_and(|class| {
-                class.methods().iter().filter(|method| method.name() == target_member).count() > 1
-            }) {
+            let declaring = program.find_class(&target_owner);
+            if declaring.is_some_and(|class| class.methods().iter()
+                .filter(|method| !method.is_constructor() && method.name() == target_member && method.arity() == arity)
+                .count() > 1)
+            {
                 return Err(crate::preprocess::required(
                     "NORM-OVERLOADED-CALL", id, &format!("no checked call-site dispatch for {target}/{arity}"),
-                    "重载入口可用源码参数类型定位；方法体内的重载分派暂不支持，不会猜测目标。",
+                    "同参数个数的重载需要解析实际参数类型；不能靠声明顺序猜测目标。",
                 ));
             }
-            if methods
-                .get(&target)
-                .is_none_or(|(_, method)| method.arity() != arity)
-            {
-                return Err(error(
-                    "NORM-UNBOUND-CALL",
-                    &format!("{id} -> {target}/{arity}"),
-                ));
-            }
-            if target != *id || affine_recursion::prove(m).is_none() {
-                targets.push(target);
+            let resolved = declaring.and_then(|class| named_method_for_arity(class, &target_member, arity))
+                .map(|(key, _)| key)
+                .filter(|key| methods.contains_key(key))
+                .ok_or_else(|| error("NORM-UNBOUND-CALL", &format!("{id} -> {target}/{arity}")))?;
+            if resolved != *id || affine_recursion::prove(m).is_none() {
+                targets.push(resolved);
             }
         }
         graph.insert(id.clone(), targets);
