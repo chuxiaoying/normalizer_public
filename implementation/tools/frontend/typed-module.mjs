@@ -75,8 +75,20 @@ function assertNoResolvedAny(sf, checker, fail) {
     visited.add(type);
     if (type.isUnionOrIntersection() && type.types.some(hasAny)) return true;
     if (type.aliasTypeArguments?.some(hasAny)) return true;
-    return type.flags & ts.TypeFlags.Object && type.objectFlags & ts.ObjectFlags.Reference
-      && checker.getTypeArguments(type).some(hasAny);
+    if (!(type.flags & ts.TypeFlags.Object)) return false;
+    if (type.objectFlags & ts.ObjectFlags.Reference && checker.getTypeArguments(type).some(hasAny)) return true;
+
+    // A source-defined data field's resolved type is part of the supplied
+    // value contract, even if the current method does not read that field.
+    // Don't sweep unused methods on compiler-library prototypes.
+    const sourceDeclaration = declarations => declarations?.find(declaration => !declaration.getSourceFile().isDeclarationFile);
+    for (const property of checker.getPropertiesOfType(type)) {
+      if (!(property.flags & (ts.SymbolFlags.Property | ts.SymbolFlags.GetAccessor | ts.SymbolFlags.SetAccessor))) continue;
+      const declaration = sourceDeclaration(property.declarations);
+      if (declaration && hasAny(checker.getTypeOfSymbolAtLocation(property, declaration))) return true;
+    }
+    return checker.getIndexInfosOfType(type).some(index =>
+      index.declaration && !index.declaration.getSourceFile().isDeclarationFile && hasAny(index.type));
   };
   const inspect = node => {
     const constAssertion = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
