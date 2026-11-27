@@ -9,7 +9,7 @@ export function diagnosticCode(marker) {
     /^([A-Z][A-Z0-9_]*):$/.exec(marker)?.[1];
 }
 
-export function assertRejection({ status, stdout, stderr }, entry, fragments, kind) {
+export function assertRejection({ status, stdout, stderr }, entry, fragments, kind, location) {
   assert.ok(Number.isInteger(status) && status > 0, entry + ': expected a failing CLI exit');
   assert.equal(stdout, '', entry + ': rejection must not emit PERS');
   const lines = stderr.trimStart().split('\n');
@@ -36,7 +36,10 @@ export function assertRejection({ status, stdout, stderr }, entry, fragments, ki
   if (expectedKind) {
     assert.equal(/(?:^|\s)kind=([A-Z_]+)(?:\s|$)/.exec(inner)?.[1], expectedKind, entry + ': wrong diagnostic kind\n' + stderr);
   }
-  if (kind) assert.ok(block.includes(entry), entry + ': missing entry in primary diagnostic\n' + stderr);
+  const requiredLocation = location ?? (kind ? entry : undefined);
+  if (requiredLocation) {
+    assert.ok(block.includes(requiredLocation), entry + ': missing location ' + requiredLocation + ' in primary diagnostic\n' + stderr);
+  }
   for (const fragment of fragments.slice(1)) {
     if (fragment === '[NORM-ENGINE-FAILURE]' && code === 'NORM-OUT-OF-SOURCE') {
       assert.ok(rustPanic && lines.some(line => header.exec(line)?.[1] === 'NORM-ENGINE-FAILURE'),

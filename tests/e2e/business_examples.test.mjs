@@ -29,7 +29,7 @@ for (const { seedId, entry, scene, language, cases } of loadFixtureEntries(root)
       assert.equal(run.signal, null, fixture.file + ': CLI terminated by signal');
       if (fixture.reject) {
         const { fragments, kind, location } = fixture.reject;
-        assertRejection(run, location ?? locator, fragments, kind);
+        assertRejection(run, locator, fragments, kind, location);
       } else {
         assert.equal(run.status, 0, run.stderr.trim() || 'Normalizer failed without a diagnostic');
         const actual = YAML.parse(run.stdout);

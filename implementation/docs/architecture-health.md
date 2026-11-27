@@ -25,5 +25,4 @@ python3 -B implementation/tools/architecture/health.py --json
 
 综合分数是上述五个维度的算术平均，适用于同一版本维度下的静态比较。PERS 的实际业务行为需另行验证。`normalizer.architecture-health/3` 的 JSON 报告还保留每一项的明细，便于 agent 在改动前后比较证据。
 
-
 命名与整理遵循[仓库整理规则](repository-hygiene.md)；日常定位问题用[维护路由](agent-maintenance.md)。

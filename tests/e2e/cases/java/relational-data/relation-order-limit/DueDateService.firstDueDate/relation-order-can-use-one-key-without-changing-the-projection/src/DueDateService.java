@@ -1,3 +1,4 @@
+// 数据源约束：bill.id 是非空唯一主键。
 class BillOrderRow {
     int accountId;
     int dueDate;

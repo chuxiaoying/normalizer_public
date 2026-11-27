@@ -57,12 +57,14 @@ declare const profileClient: ProfileClient
 declare const arrearsClient: ArrearsClient
 
 async function onLoad() {
-  const todayAtEntry = props.today
-  arrears.loadedAccountId = props.accountId
+  const accountIdAtEntry = props.accountId
+  const today = props.today
+  const todayAtEntry = today
+  arrears.loadedAccountId = accountIdAtEntry
   arrears.status.loading = true
 
   try {
-    const profile = await profileClient.fetchProfile(props.accountId)
+    const profile = await profileClient.fetchProfile(accountIdAtEntry)
     const rows = await arrearsClient.queryOpenBills(profile.accountId)
 
     const total = rows
@@ -73,7 +75,7 @@ async function onLoad() {
       .reduce((sum, netAmount) => sum + netAmount, 0)
 
     arrears.status.loading = false
-    arrears.summary.payable = total > profile.quota ? profile.quota : total
+    arrears.summary.payable = accountIdAtEntry === 0 ? todayAtEntry : today
     arrears.status.ready = true
   } catch (error) {
     arrears.status.loading = false

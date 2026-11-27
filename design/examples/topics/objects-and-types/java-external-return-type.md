@@ -32,7 +32,7 @@ interface ProfileClient {
 
 AI 在外部端口声明处增加 `@N.External` 标记并显式装配入口接收者。调用、对象类型和返回语句保持原生 Java，不把外部返回对象拆成新的 P 参数，也不替工程实现 `ProfileClient`。
 
-**预处理要点**：外部对象的实现细节由边界合同封闭，预处理只补充 Normalizer 自身的边界身份，类型和返回关系交给 parser 与内核处理。
+**预处理要点**：外部对象的实现细节由边界合同封闭，预处理只补充 Normalizer 自身的边界身份，类型绑定和返回关系由 Normalizer 处理。
 
 ```diff
 --- a/src/ProfileService.java

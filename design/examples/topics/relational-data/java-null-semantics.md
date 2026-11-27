@@ -83,6 +83,8 @@ R: |-
 
 同账户的一条 NULL memo 和一条空字符串 memo 分别满足 `IS NULL` 和 `IS NOT NULL`，两种计数各为 1；空账户计数为 0。这里统计满足条件的行，不能改为 `COUNT(memo)`，后者会跳过 NULL。
 
+**可空等值不是 IS NULL。** 将行筛选改为 `row.memo == requestedMemo` 时，以 `@N.Nullable String requestedMemo` 交付实参类型，直接返回 `count`。这是 SQL 等值，不是 Java 引用相等或 null-safe equality。对同账户的 NULL 与空字符串两行，参数是 NULL 时两行都不命中，返回 0；参数是空字符串时只命中空字符串，返回 1。PERS 必须保留可空参数以及 SQL 等值谓词，不能仅断言计数非负，也不能把条件改成 `IS NULL`。
+
 ## 选中的首条记录为空值不是没有记录
 
 ```java

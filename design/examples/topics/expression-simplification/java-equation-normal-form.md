@@ -18,7 +18,7 @@ class Equation {
 
 ## AI 预处理结果
 
-**原样通过。** Java 等式和加法属于当前 parser 可处理的纯表达式。
+**原样通过。** 等式和加法用原生 Java 表达，留给 Normalizer 执行与化简。
 
 ## 归一化最终结果
 

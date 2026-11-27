@@ -65,7 +65,14 @@ async function onLoad() {
     const profile = await profileClient.fetchProfile(props.accountId)
     const rows = await arrearsClient.queryOpenBills(profile.accountId)
 
-    const total = rows
+    let total = rows
+      .filter(row => row.dueDate <= todayAtEntry)
+      .filter(row => row.priority >= profile.minPriority)
+      .map(row => row.amount - row.waivedAmount)
+      .filter(netAmount => netAmount > 0)
+      .reduce((sum, netAmount) => sum + netAmount, 0)
+    const first = total
+    total += rows
       .filter(row => row.dueDate <= todayAtEntry)
       .filter(row => row.priority >= profile.minPriority)
       .map(row => row.amount - row.waivedAmount)
@@ -73,7 +80,7 @@ async function onLoad() {
       .reduce((sum, netAmount) => sum + netAmount, 0)
 
     arrears.status.loading = false
-    arrears.summary.payable = total > profile.quota ? profile.quota : total
+    arrears.summary.payable = total === first + first ? 701 : 702
     arrears.status.ready = true
   } catch (error) {
     arrears.status.loading = false

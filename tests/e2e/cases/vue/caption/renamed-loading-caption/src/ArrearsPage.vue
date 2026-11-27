@@ -2,7 +2,7 @@
   <PayableCard
     id="balance"
     :amount="arrears.status.ready ? arrears.summary.payable : 0"
-    :caption="arrears.status.loading ? '加载中' : '应付金额'"
+    :caption="arrears.status.loading ? '查询中' : '应付金额'"
   />
 </template>
 

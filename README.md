@@ -15,8 +15,8 @@ Normalizer 从选定的业务入口归一化参数、返回值、状态、外部
 
 | 目录 | 负责回答 | 怎么组织 |
 |---|---|---|
-| [`design/`](design/README.md) | 系统应该做什么、何时拒绝、输出怎样才唯一 | `chapters/` 的八章是一级裁决依据；`secondary/` 按独立主题细化，不覆盖一级。 `examples/` 是例证和测试来源，按主主题归档，只有以主题交互为重点的种子才放联合主题。种子清单记录身份与归属，目录页只导航。 |
-| [`implementation/`](implementation/README.md) | 规则怎样落到代码，出错在哪一层查 | `packages/` 放内核，`tools/` 放 CLI 和适配工具，`apps/` 放阅览器等应用。 `contracts/` 放机器接口、内部交接与交付约束；`docs/` 放维护者的接线、定位、构建与诊断说明。 |
+| [`design/`](design/README.md) | 系统应该做什么、何时拒绝、输出怎样才唯一 | `chapters/` 的八章是一级裁决依据；`secondary/` 按独立主题细化，不覆盖一级。`examples/` 是例证和测试来源，按主主题归档，只有以主题交互为重点的种子才放联合主题。种子清单记录身份与归属，目录页只导航。 |
+| [`implementation/`](implementation/README.md) | 规则怎样落到代码，出错在哪一层查 | `packages/` 放内核，`tools/` 放 CLI 和适配工具，`apps/` 放阅览器等应用。`contracts/` 放机器接口、内部交接与交付约束；`docs/` 放维护者的接线、定位、构建与诊断说明。 |
 | [`tests/`](tests/README.md) | 怎样证明正式 CLI 符合设计 | `e2e/catalog.yaml` 把种子登记到执行入口；`e2e/cases/` 按[执行分组、入口目录和用例](tests/README.md#登记及文件布局)组织：`src/` 存完整分析工程，`case.yaml` 存入口和一份独立推导的完整 PERS 或拒绝断言。测试目录服务执行，不另建语义主题树。 |
 | [`usage/`](usage/README.md) | 使用者怎么准备输入、运行和处理失败 | 入门示例负责从零跑通；命令、参数、场景与诊断集中到 CLI 参考。`skills/` 放人或 agent 调用 CLI 前要执行的预处理指南。只交代用户需要操作的部分；实现接线和内部协议链接回实现区。 |
 

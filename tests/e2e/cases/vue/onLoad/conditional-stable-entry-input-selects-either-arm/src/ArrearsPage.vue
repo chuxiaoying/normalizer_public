@@ -57,12 +57,13 @@ declare const profileClient: ProfileClient
 declare const arrearsClient: ArrearsClient
 
 async function onLoad() {
+  const accountIdAtEntry = props.accountId
   const todayAtEntry = props.today
-  arrears.loadedAccountId = props.accountId
+  arrears.loadedAccountId = accountIdAtEntry === 0 ? todayAtEntry : accountIdAtEntry
   arrears.status.loading = true
 
   try {
-    const profile = await profileClient.fetchProfile(props.accountId)
+    const profile = await profileClient.fetchProfile(accountIdAtEntry)
     const rows = await arrearsClient.queryOpenBills(profile.accountId)
 
     const total = rows

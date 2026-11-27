@@ -1,6 +1,6 @@
 # 第一次运行 Normalizer
 
-以下命令从 Normalizer 仓库根目录运行，在 macOS 或 Linux 的 Shell 中执行。需要 Bash、Git 和 Rust/Cargo；独立 TypeScript、Vue 和业务回归还需要 Node.js 24 或更高版本及 npm。首次调用会按锁文件编译内核、按需安装前端依赖，需要可用的本机缓存或网络。归一化不需要 JVM 或启动 Vue 服务。
+以下命令从 Normalizer 仓库根目录运行，在 macOS 或 Linux 的 Shell 中执行。用 Git 克隆仓库后运行示例。CLI 需要 Bash、Rust 工具链（含 Cargo）和系统链接器。独立 TypeScript、Vue 和业务回归还需要 Node.js 24 或更高版本及 npm。首次调用会按锁文件编译内核、按需安装前端依赖，需要可用的本机缓存或网络。归一化不需要 JVM 或启动 Vue 服务。
 
 ```sh
 cargo --version
@@ -37,7 +37,7 @@ cp -R tests/e2e/cases/typescript/language-entries/entry-javascript-module/total/
 implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total'
 ```
 
-核对 [该例的完整预期](../tests/e2e/cases/typescript/language-entries/entry-javascript-module/total/original/case.yaml)。`case.yaml` 只用于验收，不是 CLI 输入。
+核对[该例的完整预期](../tests/e2e/cases/typescript/language-entries/entry-javascript-module/total/original/case.yaml)。`case.yaml` 只用于验收，不是 CLI 输入。
 
 ## 3. Vue：运行生产入口与消费入口
 
