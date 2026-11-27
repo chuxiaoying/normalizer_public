@@ -11,7 +11,7 @@
 | 已闭合输入无法解析或进入内核 | `simulator-parser`、`pipeline::kernel_input` | 语法边界和预处理合同 | fixture expected |
 | 已闭合输入的状态、别名、异常或端口关系错误 | `pipeline::kernel_input`、`kernel_execution`、`realtime_state` | 实时状态和完成通道 | 文本格式化特判 |
 | 数学等价式、CASE、关系集合或定序错误 | `math` | 数学归一化和唯一顺序 | 测试用例的偶然表达顺序 |
-| R/E/T/S 内容不完整、PERS 不是唯一形式 | `pipeline`、正式回归的 PERS 校验与比较 | 最终 PERS 产物 | 内核调试输出作为替代 expected |
+| P/E/R/S 或异常记录不完整、定形不唯一 | `pipeline`、正式回归的 PERS 校验与比较 | 最终 PERS 产物 | 内核调试输出作为替代 expected |
 
 ## 每次改动的最小证据链
 
