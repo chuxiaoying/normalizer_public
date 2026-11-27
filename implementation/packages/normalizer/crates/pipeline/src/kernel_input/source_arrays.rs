@@ -275,32 +275,16 @@ impl Engine<'_> {
         let live = self.normal_path(path);
         if live.as_bool() == Some(false) { return Ok(Value::Term(Ty::Integer, b::lit_null())); }
         let reference = array.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
-        let read = |slot: i64, domain: &Expr| -> Result<Expr> {
-            let initial = array.get(slot).ok_or_else(|| fail("local array slot outside the selected domain"))?;
-            self.realtime_store.read_with_initial(&reference, &slot.to_string(), domain, Some(initial))
-                .ok_or_else(|| fail("uninitialized local array element"))
-        };
         let value = if let Some(slot) = literal_integer(&index) {
-            read(slot, &live)?
+            self.read_local_array_slot(array, &reference, slot, &live)?
         } else {
-            let positions = match array {
-                LocalIntArray::Initialized { .. } => (0..length).collect::<BTreeSet<_>>(),
-                LocalIntArray::Zeroed { .. } => {
-                    // Only written positions of a zeroed array can depart
-                    // from zero, even when declared length is large.
-                    self.realtime_store.entries().iter()
-                        .filter(|entry| entry.reference == reference)
-                        .filter_map(|entry| entry.field.parse::<i64>().ok())
-                        .collect()
-                }
-                LocalIntArray::Unreachable => return Err(fail("local array identity is not acquired")),
-            };
+            let positions = self.source_local_array_positions(array, &reference);
             let mut arms = Vec::new();
             for position in positions {
                 let selected = b::eq(index.clone(), b::lit_int(position));
                 let domain = math::normalize(b::and(live.clone(), selected.clone()));
                 if domain.as_bool() == Some(false) { continue; }
-                arms.push((selected, read(position, &domain)?));
+                arms.push((selected, self.read_local_array_slot(array, &reference, position, &domain)?));
             }
             let fallback = match array {
                 LocalIntArray::Initialized { .. } => arms.pop()
@@ -311,6 +295,25 @@ impl Engine<'_> {
             self.normalize_execution_value(b::case_when(arms, fallback))
         };
         Ok(Value::Term(Ty::Integer, value))
+    }
+
+    fn read_local_array_slot(&self, array: &LocalIntArray, reference: &Expr, slot: i64, domain: &Expr) -> Result<Expr> {
+        let initial = array.get(slot).ok_or_else(|| fail("local array slot outside the selected domain"))?;
+        self.realtime_store.read_with_initial(reference, &slot.to_string(), domain, Some(initial))
+            .ok_or_else(|| fail("uninitialized local array element"))
+    }
+
+    fn source_local_array_positions(&self, array: &LocalIntArray, reference: &Expr) -> BTreeSet<i64> {
+        match array {
+            LocalIntArray::Initialized { .. } => (0..array.length()).collect(),
+            // Only written positions can depart from zero, even when the
+            // allocated array would be too large to enumerate.
+            LocalIntArray::Zeroed { .. } => self.realtime_store.entries().iter()
+                .filter(|entry| entry.reference == *reference)
+                .filter_map(|entry| entry.field.parse::<i64>().ok())
+                .collect(),
+            LocalIntArray::Unreachable => unreachable!("a live local identity is required"),
+        }
     }
 
     fn read_symbolic_array_slot(&mut self, root: &str, index: Expr, path: Expr) -> Result<Value> {
@@ -344,8 +347,20 @@ impl Engine<'_> {
 
     pub(super) fn source_array_sum(&mut self, array: Value, start: Expr, offset: i64, path: Expr) -> Result<Value> {
         need(self.project.direct_source, "source array sum requires direct source")?;
-        let root = array_root(array)?;
         let path = self.normal_path(path);
+        if let Value::LocalIntArray(local) = array {
+            let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
+            // Contribution from the fixed per-element offset is independent
+            // of slot contents. Read the actual shared store for each other
+            // contribution at the loop's entry on this path.
+            let adjustment = math::Integer::from(offset) * local.length();
+            let mut total = b::add(start, b::lit_integer(adjustment));
+            for slot in self.source_local_array_positions(&local, &reference) {
+                total = b::add(total, self.read_local_array_slot(&local, &reference, slot, &path)?);
+            }
+            return Ok(Value::Term(Ty::Integer, self.normalize_execution_value(total)));
+        }
+        let root = array_root(array)?;
         let each = b::row_value("value");
         let each = if offset == 0 { each } else { b::add(each, b::lit_int(offset)) };
         let mut total = b::add(start, r::relation_sum(initial_array(&root), each));
