@@ -110,3 +110,17 @@
   edits:
     - {from: 'pending.accountId, posted.accountId', to: 'pending.accountId'}
   reject: ['[SOURCE-PARSE-FAILED]', 'projected union needs at least two closed branches']
+
+- name: two-row-carriers-cannot-give-one-physical-column-conflicting-types
+  edits:
+    - {from: 'class BillReport {', to: 'class TextAccountRow { String accountId; } class BillReport {'}
+    - from: 'long count;'
+      to: 'TextAccountRow[] conflict; /* @normalizer-ir conflict = from pending_bill as c yield {accountId: c.account_id} */ long count;'
+  reject: ['[NORM-PROJECT]', 'conflicting physical column type: pending_bill.account_id']
+
+- name: independently-read-matching-column-contracts-still-deduplicate
+  edits:
+    - {from: 'class BillReport {', to: 'class OtherAccountRow { int id; } class BillReport {'}
+    - from: 'long count;'
+      to: 'OtherAccountRow[] again; /* @normalizer-ir again = from pending_bill as c yield {id: c.account_id} */ long count;'
+    - {from: 'pending.accountId, posted.accountId', to: 'pending.accountId, again.id, posted.accountId'}
