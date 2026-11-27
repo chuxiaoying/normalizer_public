@@ -1,5 +1,25 @@
 entry: src/BillReport.java#BillReport.countAccounts
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - projected union field must be a declared nonnullable integer
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/BillReport.java#BillReport.countAccounts
+    returns: number
+  P:
+    parameters: {}
+  E:
+    pending_bill:
+      kind: table
+      source: pending_bill
+      columns:
+        account_id: text
+    posted_bill:
+      kind: table
+      source: posted_bill
+      columns:
+        account_id: text
+  R: |-
+    SELECT COUNT(*) FROM (
+      SELECT account_id FROM pending_bill
+      UNION
+      SELECT account_id FROM posted_bill
+    ) AS accounts
