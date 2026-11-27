@@ -18,10 +18,10 @@ use std::{
 
 fn error(code: &str, at: &str) -> String {
     let action = match code {
-        "NORM-LOOP" => "按 Skill 将循环改写为固定遍历语义并保留状态、调用顺序及异常；Rust 尚未接入 fold_until，请报告能力缺口，不要伪造无循环实现。",
+        "NORM-LOOP" => "先核实源码是否有可证明的循环边界。合规原生循环不应为绕过内核缺口而改写；其余仅在能证明等价时交付正式扩展语义，并保留状态、调用顺序和异常。",
         "NORM-RECURSION" => "按 Skill 消解递归调用环；无法用已有固定语义表达时报告能力缺口，不要截断递归深度。",
         "NORM-UNBOUND-CALL" | "NORM-MISSING-BODY" => "按 Skill 提供闭合函数体或真实外部交互依据；不得用空实现、默认值或伪造输入隐藏缺口。",
-        _ => "按 Skill 对照当前 scalar-0 能力准备规范 Java；超出当前能力的类型、状态或语义绑定应报告缺口，不得删除业务行为。",
+        _ => "按纯净工程规范交付源码；遇到内核尚不能分析的类型、状态或语义时报告缺口，不得删除业务行为。",
     };
     crate::preprocess::required(code, at, "输入不满足当前规范 Java 合同。", action)
 }
@@ -33,6 +33,7 @@ pub(crate) fn closed_field_initializer(t: &JavaType, e: &E) -> Option<math::Expr
         match e {
             E::Lit(JavaLit::Int(value)) => Some((i128::from(*value), false)),
             E::Lit(JavaLit::Long(value)) => Some((i128::from(*value), true)),
+            E::Lit(JavaLit::Char(unit)) => Some((i128::from(*unit), false)),
             E::UnaryOp { op: U::Neg, operand } =>
                 integer(operand).map(|(value, long)| (-value, long)),
             _ => None,
@@ -44,6 +45,7 @@ pub(crate) fn closed_field_initializer(t: &JavaType, e: &E) -> Option<math::Expr
             let fits = match ty.as_str() {
                 "byte" => !long && i8::try_from(value).is_ok(),
                 "short" => !long && i16::try_from(value).is_ok(),
+                "char" => !long && u16::try_from(value).is_ok(),
                 "int" => !long && i32::try_from(value).is_ok(),
                 "long" => i64::try_from(value).is_ok(),
                 _ => false,
