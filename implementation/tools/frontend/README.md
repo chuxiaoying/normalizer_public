@@ -6,4 +6,4 @@
 - `module-event.mjs` 与 `module-projection.mjs` 解析事先交付的 Vue 规范模块，由场景适配器消费。
 - `ir.mjs` 与 `local-directives.mjs` 提供这些入口共用的表达式和标记处理。
 
-用户使用[统一 CLI](../../../usage/cli.md)，AI 自行阅读并闭合业务，参照[设计种子](../../skills/normalizer-preprocess/references/seed-coverage.md)交付。
+用户使用[统一 CLI](../../../usage/cli.md)，AI 自行阅读并闭合业务，参照[设计种子](../../../design/examples/README.md)交付。

@@ -1,6 +1,6 @@
 # 归一化内核交付合同
 
-发布物应可复现、可校验、可回退。稳定的用户入口是 [`implementation/tools/normalizer`](../../../usage/cli.md)，`normalizer-normalized` 是其内部执行器；正式输出和内部诊断表示的区别见[最终 PERS](final-pers.md)。
+发布物应可复现、可校验、可回退。稳定的用户入口是 [`implementation/tools/normalizer`](../../../usage/cli.md)，`normalizer-normalized` 是其内部执行器；正式输出和内部诊断表示的区别见[最终 PERS 机器接口](../business-pers.md)。
 
 ## 交付内容
 
@@ -10,7 +10,7 @@
 
 发布同一源码提交前执行依据设计建立的完整回归准入，确认编译、最终 PERS、独立行为证据及多语言补充测试满足各自职责。记录实际命令、工具链、目标平台和退出结果；局部测试、零用例、忽略失败或来自其他源码提交的日志不能代替完整准入。
 
-新增规则必须遵守[统一正则规范](../../../design/chapters/第八章%20·%20统一定形规范.md)。发布不得反填 expected、输出内部行为 IR、删场景或缩小观察范围以取得绿灯。
+新增规则必须遵守[统一定形规范](../../../design/chapters/第八章%20·%20统一定形规范.md)。发布不得反填 expected、输出内部行为 IR、删场景或缩小观察范围以取得绿灯。
 
 ## 发布与回退
 

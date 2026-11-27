@@ -1,19 +1,40 @@
 # CLI 参考
 
-从仓库根目录执行。首次使用时需要相应工具链与依赖。
+在 Normalizer 仓库根目录运行以下命令。先按[新手入门](getting-started.md)装好工具，再按[AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md)准备不能直接分析的原工程。CLI 只读取交付物，不调用 AI。
 
-| 输入 | 命令 |
+| 准备好的输入 | 命令 |
 |---|---|
-| 已闭合的 Java 源目录 | `implementation/tools/normalizer source SOURCE_DIR 'src/Entry.java#Entry.run'` |
-| 严格 TypeScript 标量或只读值模块 | `implementation/tools/normalizer module PROJECT_ROOT --entry 'src/module.ts#exportedFunction'` |
-| 独立 TypeScript 局部元组模块 | `implementation/tools/normalizer module PROJECT_ROOT --entry 'src/receipt.ts#traceCount'` |
-| 独立 TypeScript 同步监听模块 | `implementation/tools/normalizer module PROJECT_ROOT --entry 'src/handler.ts#handle'` |
-| 预处理后的 Vue 模块及原组件 | `implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry SOURCE.ts#FUNCTION --source ORIGINAL.vue` |
+| Java 源码工程 | `implementation/tools/normalizer source PROJECT_ROOT 'src/Entry.java#Entry.run'` |
+| 独立 TypeScript 模块 | `implementation/tools/normalizer module PROJECT_ROOT --entry 'src/module.ts#exportedFunction'` |
+| Vue 原组件与 TypeScript 分析模块 | `implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry 'src/page.ts#exportedFunction' --source src/page.vue` |
+| 本仓正式测试 | `implementation/tools/normalizer test business-examples`，见[测试区](../tests/README.md)。 |
 
-用 `implementation/tools/normalizer help` 查看入口。成功时从 stdout 读取最终 PERS，失败时查看退出码和 stderr 中的诊断。见[Java 入门](getting-started.md)。
+`PROJECT_ROOT` 指**分析工程根目录**。例如其中的文件是 `src/Entry.java`，第一个参数传工程目录，入口仍写 `src/Entry.java#Entry.run`，不要把根目录传成 `src/`，也不要在入口写绝对路径、`./` 或实际调用值。用引号包住定位符。Java 重载确有歧义才写源码参数类型，例如 `'src/Add.java#Add.run(int, int)'`；静态接收者可写 `'src/Beans.java#Beans.SERVICE.run'`。入口不是每次运行都提供一组入参的命令；CLI 分析该入口的符号输入。
 
-输入文件必须留在所选的源码目录内。Vue 的原组件与预处理模块分别校验；越界会报错，不产出 PERS。指向目录内文件的链接保留调用时声明的相对路径；Java 源目录扫描不会递归进入目录链接。
+### 源文件与类型检查
 
-`module` 只接收可执行的 `.ts` 源文件，不接收 `.js`、`.mjs` 或类型声明文件 `.d.ts`。原始 JavaScript 须先由 AI 按真实合同准备成 TypeScript；只改文件后缀或补 JSDoc 不算完成。CLI 用固定的 TypeScript 严格选项检查整个准备模块（包括未调用的帮助函数），拒绝显式 `any`、隐式 `any` 和从表达式或类型中解析出的 `any`，也不允许用注释关闭或压制类型检查。失败时不调用内核、不产出 PERS。Vue 的准备 `.ts` 模块也适用同一规则。通过类型检查不代表所有 TypeScript 写法都属于已实现的归一化合同。
+- Java 会读取所选工程下的 Java 源文件，再解析入口，不只读取入口所在文件。不要直接把含无关源码的生产仓库顶层当分析工程。源码必须是有效 UTF-8。源码目录中的目录软链接会被拒绝；文件软链接只能指向工程内部，定位采用提交的相对路径。
+- 独立模块和 Vue 分析模块使用可执行的严格 `.ts`；不接受 `.js`、`.mjs` 或声明文件 `.d.ts`。CLI 用固定严格选项检查交付代码，不用原工程的 `tsconfig.json` 放宽规则。显式、隐式或由类型推得的 `any` 与压制检查的注释不可用。通过类型检查不等于该程序可归一化；普通无源码对象调用不能作为真实外部端口。
 
-独立模块的普通对象入参没有 external 合同。对入口立即执行、无可选链的入参方法调用，模块适配仅交付实际调用目标供内核检查，包括直接 `await input.read()` 的情况；没有源定义时 Panic，不产出 PERS。不把 JSDoc 或 `ports` 等入参名当作边界声明，也不据此宣称支持通用异步执行。
+## Vue 场景
+
+`--entry` 定位实际分析的 `.ts` 导出函数，`--source` 只指原始 `.vue`，两条路径都相对同一个工程。CLI 校验原件可读并保留来源，不编译 Vue、不启动应用，也不证明原件和分析模块等价。
+
+| 场景名 | 选择时机 | 例证 |
+|---|---|---|
+| `frontend-vo-production` | 要看事件或生命周期入口如何读取环境并写入 VO | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
+| `frontend-vo-consumption` | 要看某个组件属性怎样读取已有 VO 并返回观察结果 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
+
+直接可运行的两条完整命令见[新手入门](getting-started.md#3-vue运行生产入口与消费入口)。
+
+## 诊断
+
+先看退出码，再查看输出。成功时 stdout 是最终 PERS YAML；构建和诊断信息看 stderr。重定向可能预先创建空文件，文件存在不等于成功。
+
+| 遇到的失败 | 下一步 |
+|---|---|
+| 构建失败、依赖缺失或命令用法错误 | 先查 Cargo、Node/npm、网络或缓存，以及命令参数顺序；尚未得到业务结果。 |
+| 入口或源码校验未通过 | 核对工程根、文件扩展名和大小写、定位路径与声明、原件和分析副本是否都齐全。 |
+| 诊断要求预处理或不支持 | 保留具体位置及 stderr，回到[预处理 Skill](skills/normalizer-preprocess/SKILL.md)补闭合证据；证据不够就报告缺口。 |
+
+分析拒绝没有成功 PERS。如果合法源码可能抛出业务异常，它仍可以成功归一化，并在 PERS 中出现 `throws`。区分两类结果见[第七章](../design/chapters/第七章%20·%20PERS%20登场.md)。

@@ -1,19 +1,10 @@
 # 基础主题
 
-基础主题收录一种可以独立建立语义合同、持续扩展案例并复用测试方法的能力。目录按测试要证明的主张归档，语言、业务背景和依赖能力通过种子元数据关联。
+按主主题浏览种子。元数据和归档约定见[种子目录](../README.md)。
 
-一个案例依赖另一个主题，不会因此自动成为联合主题。只有测试专门验证多个主题组合后新增的交互规则，才进入 `../compositions/`。
+## 主题
 
-## 归档规则
-
-- 一个种子只有一个主主题。
-- `seed-manifest.yaml` 记录种子的 `kind`、主主题和关联主题，`seeds.yaml` 继续保存稳定 ID 到案例路径的权威映射。
-- 主题必须有自己的语义合同、难度梯度或规模效应。单个基础防御案例先放入 `basic-contracts`。
-- 主题页解释该能力要保留的业务语义，案例正文保留原始代码、AI 预处理结果和 PERS 结果。
-
-## 当前主题
-
-- [统一正则规范](unified-canonical-form/README.md)
+- [统一定形](unified-canonical-form/README.md)
 - [表达式化简](expression-simplification/README.md)
 - [集合](collections/README.md)
 - [控制流](control-flow/README.md)

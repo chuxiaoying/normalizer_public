@@ -14,7 +14,7 @@
 |---|---|---|---|
 | Maven/JAR、`node_modules`、未解析导入或依赖缺失 | 预处理 skill、依赖材料和预处理产物 | AI 预处理和语言工具 | `math`、`pipeline` 的语义规则 |
 | Java/前端语法无法进入统一输入 | `simulator-parser`、`implementation/tools/frontend`、语言测试 | 语言解析和预处理 | PERS formatter |
-| 已闭合输入无法解析或进入内核 | `simulator-parser`、`pipeline::preprocess` | 语法边界和预处理合同 | fixture expected |
+| 已闭合输入无法解析或进入内核 | `simulator-parser`、`pipeline::kernel_input` | 语法边界和预处理合同 | fixture expected |
 | 已闭合输入的状态、别名、异常或端口关系错误 | `pipeline::kernel_input`、`kernel_execution`、`realtime_state` | 实时状态和完成通道 | 文本格式化特判 |
 | 数学等价式、CASE、关系集合或定序错误 | `math` | 数学归一化和唯一顺序 | 测试用例的偶然表达顺序 |
 | R/E/T/S 内容不完整、PERS 不是唯一形式 | `pipeline`、PERS 合同测试 | 最终 PERS 产物 | 内核调试输出作为替代 expected |
@@ -38,7 +38,6 @@ git diff --cached --check
 
 ## 维护边界
 
-- `expected.yaml`、`behavior-expected.yaml` 和拒绝合同分别表达不同责任，不能互相替代。
-- 业务逻辑优先保留，JDK、Maven、框架内部实现和资源细节沿 AI 预处理或原生边界处理。
+- 正式预期在用例 YAML 内，与完整输入共存；不另存 `expected.yaml` 或用内部行为产物替代。
 - 大文件拆分必须先证明职责边界和私有依赖关系，再以可回退的小提交推进。只为降低行数而拆分会增加 agent 的跨文件推理成本。
-- 发现“修好 A 又破坏 B”时暂停局部补丁，回到统一正则、状态域或预处理闭合条件，先重新确定共同规则。
+- 发现“修好 A 又破坏 B”时暂停局部补丁，回到统一定形、状态域或预处理闭合条件，先重新确定共同规则。

@@ -116,7 +116,7 @@ def _maintenance_contract(root: Path) -> dict:
 # build products. The scanner itself necessarily contains the forbidden names.
 PROTOCOL_ROOTS = (
     "AGENTS.md", "README.md", "design", "implementation/contracts",
-    "implementation/docs", "implementation/tools", "implementation/skills",
+    "implementation/docs", "implementation/tools",
     "implementation/apps", "implementation/packages/normalizer/crates",
     "tests", "usage",
 )

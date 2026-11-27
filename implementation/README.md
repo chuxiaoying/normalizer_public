@@ -1,20 +1,11 @@
 # 实现
 
-| 任务 | 位置 |
+业务规则查[设计区](../design/README.md)，公开用法查[使用区](../usage/README.md)，正式验收查[测试区](../tests/README.md)。
+
+| 工作 | 入口 |
 |---|---|
-| 浏览设计案例和架构指导 | [本地 HTML 阅览器](apps/design-reader/README.md) |
-| 准备规范源码和边界材料 | [AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md) |
-| 调用用户入口或分派场景 | [CLI](tools/normalizer) · [场景适配器](tools/scenarios/) |
-| 修改 JS 和 Vue 的语言适配 | [正式入口的内部适配](tools/frontend/README.md) |
-| 修改 Java 解析、符号执行、数学化简或输出 | [Rust workspace](packages/normalizer/Cargo.toml) |
-| 查阅 PERS、统一正则规范和模块交接细则 | [PERS schema](contracts/pers/schema.yaml) · [统一正则规范](../design/chapters/第八章%20·%20统一定形规范.md) · [三模块职责](docs/architecture-three-modules.md) |
-| 检查仓库结构和文档链接 | [架构检查](tools/architecture/) · [文档检查](tools/docs/) |
-
-从仓库根目录检查构建：
-
-```sh
-cargo check --locked --workspace --all-targets --manifest-path implementation/packages/normalizer/Cargo.toml
-implementation/tools/normalizer help
-```
-
-业务语义由[设计区](../design/README.md)定义。从种子派生的 CLI 验收见[独立测试区](../tests/README.md)。
+| 改预处理与语言接线 | [三模块接线](docs/architecture-three-modules.md) · [预处理 Skill（使用区）](../usage/skills/normalizer-preprocess/SKILL.md) · [语言适配](tools/frontend/README.md) |
+| 改内部交接或 PERS 发布 | [规范源码交接](contracts/normalized-source-contract.md) · [PERS 机器接口](contracts/business-pers.md) |
+| 找责任层、排查错误或性能 | [维护路由](docs/agent-maintenance.md) · [内核代码地图](docs/kernel-execution.md) · [诊断与性能](docs/troubleshooting.md) |
+| 开发、验证并交付 | [贡献指南](docs/contributing.md) · [实现原则](docs/principles.md) · [构建和覆盖](docs/validation.md) · [发布合同](contracts/kernel/release.md) |
+| 清理仓库及维护工具 | [整理准入](docs/repository-hygiene.md) · [架构指标](docs/architecture-health.md) · [设计阅览器](apps/design-reader/README.md) |

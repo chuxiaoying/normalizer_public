@@ -27,7 +27,7 @@ class Offers {
 
 ## AI 预处理结果
 
-在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留原生 record、Pick 的三个结果字段及原构造顺序。完整的候选进入选择，两个调用点各有独立身份。[内部选择合同](../../../../implementation/contracts/normalized-choice.md)
+在两个 findAny 的原位置分别绑定一次已有的 choose 语义：items 均取 offers，empty 均取 backup。保留原生 record、Pick 的三个结果字段及原构造顺序。完整的候选进入选择，两个调用点各有独立身份。[成员选择种子](../unified-canonical-form/java-member-choice.md)
 
 ```diff
 --- a/src/Offers.java

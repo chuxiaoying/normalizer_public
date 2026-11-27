@@ -1,6 +1,6 @@
 //! 预处理缺口诊断。内核遇到未闭合输入时必须明确拒绝。
 
-pub const SKILL: &str = "implementation/skills/normalizer-preprocess/SKILL.md";
+pub const SKILL: &str = "usage/skills/normalizer-preprocess/SKILL.md";
 
 pub(crate) fn required(code: &str, location: &str, problem: &str, action: &str) -> String {
     format!("[{code}] kind=PREPROCESS_REQUIRED location={location}\nproblem={problem}\nskill={SKILL}\naction={action}\nresult=not-produced")

@@ -41,7 +41,7 @@ fn is_kernel_input_schema(schema: &str) -> bool {
 
 fn fail(message: impl AsRef<str>) -> String {
     crate::preprocess::required("NORM-PROJECT", "kernel-input/1", message.as_ref(),
-        "按 implementation/skills/normalizer-preprocess/SKILL.md 交付闭合、类型正确的 Java 和语义定义；缺失能力须报告，不得增加黑盒、截断集合或删除异常。")
+        "按诊断 skill 字段中的指南交付闭合、类型正确的 Java 和语义定义；缺失能力须报告，不得增加黑盒、截断集合或删除异常。")
 }
 fn need(ok: bool, msg: &str) -> Result<()> {
     if ok {
