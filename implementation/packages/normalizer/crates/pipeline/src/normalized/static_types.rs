@@ -206,6 +206,9 @@ impl Admission<'_> {
                 Some(JavaType::Array(Box::new(element_type.clone()))),
             E::Cast { target_type, .. } => Some(target_type.clone()),
             E::FieldAccess { target, field } => {
+                if field == "length" && self.declared_type(target, scope).is_some_and(|ty| matches!(ty, JavaType::Array(_))) {
+                    return Some(JavaType::Primitive("int".into()));
+                }
                 let target = self.declared_type(target, scope)?;
                 if let Some(product) = super::generic_product::instantiated(self.program, &target) {
                     return product.field_type(field);
@@ -276,7 +279,10 @@ impl Admission<'_> {
                 if matches!(target.as_ref(), E::Ident(name) if name == "this") {
                     self.check_receiver_use(field)?;
                 }
-                self.expression(target, scope)?;
+                let receiver = self.expression(target, scope)?;
+                if field == "length" && receiver == Kind::Sequence {
+                    return Ok(Kind::Number);
+                }
                 if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
                     if self.program.find_class(&owner).is_some_and(JavaClass::is_record) {
                         return Err(self.diagnostic("NORM-RECORD-ACCESS",
@@ -399,7 +405,11 @@ impl Admission<'_> {
                 Kind::Sequence
             }
             E::ArrayAllocation { length, .. } => {
-                self.expression(length, scope)?;
+                if self.expression(length, scope)? != Kind::Number
+                    || self.integer_width(length, scope) == Some(IntegerWidth::Long)
+                {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "array dimension must have an int-compatible type"));
+                }
                 Kind::Sequence
             }
             E::BinOp { op, left, right } => {
@@ -605,6 +615,9 @@ impl Admission<'_> {
 
     fn check_writable(&self, target: &E, scope: &Scope) -> Result<(), String> {
         if let E::FieldAccess { target: value, field } = target {
+            if field == "length" && self.declared_type(value, scope).is_some_and(|ty| matches!(ty, JavaType::Array(_))) {
+                return Err(self.diagnostic("NORM-SOURCE-TYPE", "cannot update final array length"));
+            }
             if self.declared_type(value, scope).is_some_and(|ty|
                 super::generic_product::instantiated(self.program, &ty).is_some())
             {
