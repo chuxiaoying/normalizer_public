@@ -16,4 +16,4 @@ expected:
       outer:
         position: 0
         type: Outer
-  R: outer.inner.value + 1
+  R: 1 + outer.inner.value
