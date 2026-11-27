@@ -105,12 +105,16 @@ pub(super) struct Engine<'a> {
 
 // Execution and publication compare the same retained REDUCE, not the
 // integer handle that happens to identify it in the execution ledger.
-struct ExecutionOrder<'a> {
+pub(super) struct ExecutionOrder<'a> {
     definitions: &'a [super::temporal_graph::Definition],
     observations: BTreeMap<u64, math::ObservationIdentity>,
+    heap_bindings: BTreeMap<i64, math::HeapBindingIdentity>,
 }
 
 impl math::SortContext for ExecutionOrder<'_> {
+    fn heap_binding_identity(&self, id: i64) -> Option<&math::HeapBindingIdentity> {
+        self.heap_bindings.get(&id)
+    }
 
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> {
         (!self.observations.is_empty()).then_some(&self.observations)
@@ -134,17 +138,18 @@ impl math::SortContext for ExecutionOrder<'_> {
 }
 
 impl<'a> Engine<'a> {
-    fn execution_order(&self) -> ExecutionOrder<'_> {
+    pub(super) fn execution_order(&self, include_heap: bool) -> ExecutionOrder<'_> {
         let mut observations = self.source_objects.state_bindings.iter().map(|(&id, root)| {
             (id, math::ObservationIdentity::EntrySnapshot(vec![root.clone()]))
         }).collect::<BTreeMap<_, _>>();
         observations.extend(self.realtime_effects.observation_identities());
-        ExecutionOrder { definitions: &self.temporal_definitions, observations }
+        let heap_bindings = if include_heap { self.source_objects.heap_binding_keys() } else { BTreeMap::new() };
+        ExecutionOrder { definitions: &self.temporal_definitions, observations, heap_bindings }
     }
 
-    fn normalize_execution_value(&self, value: Expr) -> Expr {
-        let order = self.execution_order();
-        if order.definitions.is_empty() && order.observations.is_empty() {
+    pub(super) fn normalize_execution_value(&self, value: Expr) -> Expr {
+        let order = self.execution_order(value.has_heap_ref());
+        if order.definitions.is_empty() && order.observations.is_empty() && order.heap_bindings.is_empty() {
             math::normalize(value)
         } else {
             math::normalize_with(value, &order)
@@ -152,7 +157,7 @@ impl<'a> Engine<'a> {
     }
 
     fn order_execution_comparison(&self, op: BinOpKind, left: Expr, right: Expr) -> Expr {
-        let order = self.execution_order();
+        let order = self.execution_order(left.has_heap_ref() || right.has_heap_ref());
         if let Some((reverse, true)) = math::canonical_order_ordered_comparison(op, &left, &right, &order) {
             b::binop_public(reverse, right, left)
         } else {

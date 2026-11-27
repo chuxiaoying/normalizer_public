@@ -59,12 +59,21 @@ impl SourceObjects {
             | (Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::EntryReceiver), Some(Origin::Allocation)))
     }
 
-    fn heap_binding_keys(&self) -> BTreeMap<i64, math::HeapBindingIdentity> {
-        self.compared_parameters.iter().map(|(&id, path)| {
-            (id, math::HeapBindingIdentity::Parameter(path.split('.').map(str::to_owned).collect()))
-        }).chain(self.compared_states.iter().map(|(&id, binding)| {
-            (id, math::HeapBindingIdentity::EntrySnapshot(vec![self.state_bindings[binding].clone()]))
-        })).collect()
+    pub(super) fn heap_binding_keys(&self) -> BTreeMap<i64, math::HeapBindingIdentity> {
+        self.objects.iter().filter_map(|(&id, (_, origin))| {
+            let identity = match origin {
+                Origin::Parameter { path, .. } => math::HeapBindingIdentity::Parameter(
+                    path.split('.').map(str::to_owned).collect(),
+                ),
+                Origin::State { binding, path } => {
+                    let mut fields = vec![self.state_bindings.get(binding)?.clone()];
+                    fields.extend(path.iter().cloned());
+                    math::HeapBindingIdentity::EntrySnapshot(fields)
+                }
+                Origin::Allocation | Origin::EntryReceiver => return None,
+            };
+            Some((id, identity))
+        }).collect()
     }
 
     fn knows_identity(&self, value: &Expr) -> bool {
@@ -529,10 +538,7 @@ impl Engine<'_> {
         let left_partition = self.source_objects.has_complete_identity_partition(&left);
         let right_partition = self.source_objects.has_complete_identity_partition(&right);
         if left_partition && right_partition {
-            let roots = self.source_objects.heap_binding_keys();
-            let order = crate::canonical_names::CanonicalNames {
-                heap: &roots, external: None, total_temporals: None, reductions: None, temporals: None,
-            };
+            let order = self.execution_order(true);
             let key = |(guard, _): &(Expr, Expr)| math::canonical_order_key(guard, &order);
             let a = left.as_case_when().unwrap().iter().map(key);
             let z = right.as_case_when().unwrap().iter().map(key);
@@ -558,7 +564,8 @@ impl Engine<'_> {
             for (guard, value) in arms {
                 result.push((guard.clone(), compare(value)?));
             }
-            return Ok(math::normalize(b::case_when(result, compare(fallback)?)));
+            let fallback = compare(fallback)?;
+            return Ok(self.normalize_execution_value(b::case_when(result, fallback)));
         }
         self.compare_reference_roots(left, right, different)
     }
@@ -578,10 +585,7 @@ impl Engine<'_> {
         if self.source_objects.fresh_and_acquired(&left, &right) { return Ok(b::lit_bool(different)); }
         self.check_borrowed_identity(&left, &right)?;
         let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };
-        let roots = self.source_objects.heap_binding_keys();
-        let names = crate::canonical_names::CanonicalNames {
-            heap: &roots, external: None, total_temporals: None, reductions: None, temporals: None,
-        };
+        let names = self.execution_order(true);
         if math::canonical_order_ordered_comparison(kind, &left, &right, &names).is_some() {
             std::mem::swap(&mut left, &mut right);
         }
