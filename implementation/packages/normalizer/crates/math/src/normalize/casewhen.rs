@@ -424,19 +424,17 @@ fn merge_adjacent_same_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     // order under an ordered OR: C1 ? V; C2 ? V; ... == (C1 || C2) ? V; ... .
     // Do not cross an intervening different payload; non-adjacent grouping is
     // handled separately using effective domains.
-    for (cond, value) in branches.iter() {
-        let normalized_value = crate::normalize(value.clone());
+    // Children were already normalized in their effective domains. Do
+    // not recompute payloads with the default, domain-free context.
+    for (cond, value) in branches {
         if let Some((prev_cond, prev_value)) = out.last_mut() {
-            if crate::normalize(prev_value.clone()) == normalized_value {
-                let merged_cond =
-                    crate::normalize(crate::builder::or(prev_cond.clone(), cond.clone()));
-                *prev_cond = merged_cond;
-                *prev_value = normalized_value;
+            if prev_value == value {
+                *prev_cond = crate::builder::or(prev_cond.clone(), cond.clone());
                 changed = true;
                 continue;
             }
         }
-        out.push((cond.clone(), normalized_value));
+        out.push((cond.clone(), value.clone()));
     }
 
     (out, changed)
@@ -456,7 +454,7 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     let explicit_default = branches
         .last()
         .filter(|(cond, _)| cond.as_bool() == Some(true))
-        .map(|(_, value)| crate::normalize(value.clone()));
+        .map(|(_, value)| value.clone());
 
     // Grouping can only remove an arm when at least one payload repeats.
     // In particular a total CASE already emitted by this rule has unique
@@ -465,7 +463,7 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         let mut seen_values = HashSet::new();
         if branches
             .iter()
-            .all(|(_, value)| seen_values.insert(crate::normalize(value.clone())))
+            .all(|(_, value)| seen_values.insert(value))
         {
             return (branches.to_vec(), false);
         }
@@ -482,13 +480,7 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     let raw_covered = crate::builder::conditions_cover_all(&raw_conds);
     let effective_covered = crate::builder::conditions_cover_all(&effective_domains);
     if raw_covered || effective_covered {
-        let mut values: Vec<Expr> = Vec::new();
-        for (_, value) in branches {
-            let normalized_value = crate::normalize(value.clone());
-            if !values.iter().any(|v| v == &normalized_value) {
-                values.push(normalized_value);
-            }
-        }
+        let values: HashSet<_> = branches.iter().map(|(_, value)| value).collect();
         if values.len() == 2 {
             return (branches.to_vec(), false);
         }
@@ -501,14 +493,13 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         if domain.as_bool() == Some(false) {
             continue;
         }
-        let normalized_value = crate::normalize(value.clone());
         if let Some((_, domains)) = groups
             .iter_mut()
-            .find(|(group_value, _)| crate::normalize(group_value.clone()) == normalized_value)
+            .find(|(group_value, _)| group_value == value)
         {
             domains.push(domain);
         } else {
-            groups.push((normalized_value, vec![domain]));
+            groups.push((value.clone(), vec![domain]));
         }
     }
 
