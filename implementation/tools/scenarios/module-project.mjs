@@ -26,6 +26,7 @@ function compileProjection(projection) {
     const label = path.reduce((prefix, part) =>
       /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(part) ? prefix + '.' + part : prefix + '[' + JSON.stringify(part) + ']', root);
     const state = projection.states.get(root);
+    if (!state) throw new Error(`SCENARIO_MODULE_INPUT: projection read has no declared state root: ${root}`);
     let type = state.fields;
     for (const name of path) {
       if (!type || typeof type !== 'object' || !Object.hasOwn(type, name)) throw new Error(`SCENARIO_MODULE_INPUT: missing type for ${label}`);
@@ -61,7 +62,9 @@ function compileProjection(projection) {
       if (test.type === 'bool' && yes.type && yes.type === no.type) {
         return { type: yes.type, body: { op: 'if', cond: test.body, then: yes.body, else: no.body } };
       }
+      throw new Error('SCENARIO_MODULE_INPUT: projection selection needs a Boolean guard and branches of the same supported scalar type');
     }
+    throw new Error(`SCENARIO_MODULE_INPUT: unsupported projection expression: ${expr.text ?? expr.op}`);
   }
 
   const steps = [];
@@ -79,6 +82,9 @@ function compileProjection(projection) {
     bindings.set(local.name, { type, name });
   }
   const returned = compile(projection.expression);
+  if (!returned.type || !Object.hasOwn(carriers, returned.type)) {
+    throw new Error('SCENARIO_MODULE_INPUT: projection result requires a supported scalar value');
+  }
   const body = steps.length
     ? { op: 'action', returns: carriers[returned.type][1], steps: [...steps, { op: 'return', value: returned.body }] }
     : returned.body;
