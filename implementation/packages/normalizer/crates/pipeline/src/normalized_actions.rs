@@ -459,10 +459,8 @@ impl Engine<'_> {
                     body,
                     handler,
                 } => {
-                    need(
-                        !classes.is_empty(),
-                        "catch requires explicit concrete exception classes",
-                    )?;
+                    // No declared failures means no eligible handler path;
+                    // keep the try body's own scope and actual completions.
                     let mut seen = std::collections::BTreeSet::new();
                     for class in classes {
                         need(seen.insert(class), "duplicate caught exception class")?;

@@ -35,6 +35,10 @@ function rejectionNames(method, checker, sf) {
     const name = typeof tag.comment === 'string' && /^rejects\s+([A-Za-z_$][\w$]*)$/.exec(tag.comment.trim())?.[1];
     if (!name || names.includes(name)) fail('external method requires explicit, nonduplicate @N rejects ErrorType tags');
     const declared = checker.resolveName(name, method, ts.SymbolFlags.Value, false)?.valueDeclaration;
+    if (!declared && name === 'ExternalFailure') {
+      names.push(name);
+      continue;
+    }
     const heritage = declared?.heritageClauses?.flatMap(h => h.types) ?? [];
     if (!declared || declared.getSourceFile() !== sf || !ts.isClassDeclaration(declared) ||
         heritage.length !== 1 || heritage[0].expression.getText() !== 'Error' ||
@@ -43,7 +47,6 @@ function rejectionNames(method, checker, sf) {
     }
     names.push(name);
   }
-  if (names.length === 0) fail('awaited external port requires a closed Promise<Element> and named rejection types');
   return names;
 }
 
@@ -55,7 +58,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   const typedIRReads = new Set();
   const inputs = new Map(), ports = new Map(), stateDeclarations = new Map();
   const fn = definedModuleExport(sf, entryName, fail);
-  const async = fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
+  const async = fn.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
   if (synchronous) {
     if (fn.asteriskToken || async || fn.type?.kind !== ts.SyntaxKind.VoidKeyword) {
       fail('selected synchronous event requires an explicitly void exported function');
@@ -68,7 +71,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
         type.typeArguments?.length !== 1 ||
         !checker.getSymbolAtLocation(type.typeName)?.declarations?.some(d => d.getSourceFile().isDeclarationFile) ||
         (allowed && type.typeArguments[0].kind !== allowed)) {
-      fail('awaited external port requires a closed Promise<Element> and named rejection types');
+      fail('awaited external port requires a closed Promise<Element>');
     }
     return type.typeArguments[0];
   }
@@ -135,7 +138,6 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   let serial = 0;
   const local = () => 'observed_' + serial++;
   const variable = (name) => ({ op: 'var', name });
-  const outstanding = new Set();
   // The only callback available in a value expression reads invariant P.
   // State, port and task effects are emitted by sequence at their own site.
   function lowerValue(n, scope) {
@@ -170,7 +172,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
     }
   }
   const directives = localDirectives(sf, fn.body);
-  function sequence(block, caught, caughtTypes, enclosing = new Map()) {
+  function sequence(block, caught, caughtTypes, enclosing = new Map(), outstanding = new Set()) {
     const scope = new Map(enclosing);
     const steps = [];
     const locals = new Map();
@@ -252,12 +254,13 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
         continue;
       }
       if (!synchronous && ts.isTryStatement(st) && st.catchClause && !st.finallyBlock) {
-        outstanding.clear();
-        const body = sequence(st.tryBlock, undefined, undefined, scope);
-        const classes = [...outstanding].sort();
+        const raised = new Set();
+        const body = sequence(st.tryBlock, caught, caughtTypes, scope, raised);
+        const classes = [...raised].sort();
         const name = st.catchClause.variableDeclaration?.name.getText();
-        outstanding.clear();
-        const handler = sequence(st.catchClause.block, name, classes, scope);
+        const escapes = new Set();
+        const handler = sequence(st.catchClause.block, name, classes, scope, escapes);
+        if (classes.length) for (const error of escapes) outstanding.add(error);
         steps.push({ op: 'catch', classes, body, handler });
         continue;
       }
