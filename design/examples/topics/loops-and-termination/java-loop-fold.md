@@ -151,8 +151,8 @@ R: |-
       SELECT bill.amount
       FROM bill
       WHERE bill.account_id == accountId
-        AND bill.amount > 0
         AND bill.status == "OPEN"
+        AND bill.amount > 0
     ),
     0
   )
