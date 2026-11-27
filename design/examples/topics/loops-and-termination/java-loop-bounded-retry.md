@@ -135,8 +135,8 @@ S:
       result: $e_2
       when: |-
         CASE
-          WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
-          ELSE false
+          WHEN completion.is_return($e_0) THEN false
+          ELSE completion.is_throw($e_1, RetryableScoreError)
         END
 
 R: |-

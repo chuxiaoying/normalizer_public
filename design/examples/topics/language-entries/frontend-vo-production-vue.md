@@ -356,8 +356,8 @@ S:
       value: true
       when: |-
         CASE
-          WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
-          ELSE completion.is_throw($e_1, BillQueryError)
+          WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, BillQueryError)
+          ELSE true
         END
 
   - write:
@@ -365,8 +365,8 @@ S:
       value: false
       when: |-
         CASE
-          WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
-          ELSE completion.is_throw($e_1, BillQueryError)
+          WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, BillQueryError)
+          ELSE true
         END
 
 R: void

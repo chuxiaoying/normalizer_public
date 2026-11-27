@@ -106,8 +106,8 @@ S:
 
 R: |-
   CASE
-    WHEN completion.is_throw($e_0, RiskUnavailable) THEN 0
-    ELSE $e_0
+    WHEN completion.is_return($e_0) THEN $e_0
+    ELSE 0
   END
 ```
 
