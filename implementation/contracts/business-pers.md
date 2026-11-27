@@ -11,3 +11,11 @@
 | 固定格式版本和区分最终产物与调试表示 | `pipeline/src/kernel_result.rs` |
 
 `pipeline/` 相对 `implementation/packages/normalizer/crates/`。对接方用 YAML 读取结果；公式保持表达式文本，不由 YAML 库执行。正式回归会在同一次用例执行中先校验预期和实际的 PERS 结构，再比较完整内容，见[测试入口](../../tests/README.md)。变更先核对设计；若仅调整序列化，仍须证明完整输出没有失去来源绑定、观察顺序或完成域。不在这里维护第二套 YAML 示例。
+
+## 动态环境值的当前字段
+
+以下字段描述当前机器接口，不新增设计语义：
+
+- 运行中取得的环境值用 `$a_i` 表示，动作的完成绑定用 `$e_i` 表示。动态 E 用 `kind: acquisition`，有条件取得时以 `when` 表示该条件。
+- 时钟取得用 `operation: normalizer.intrinsics.N.currentTimeMillis` 与 `type: number`。文档同时有 S 时，`afterS` 给出读取之前的已发布 S 前缀长度；前缀里的条件动作不因此变成无条件。没有 S 则不发布该字段。
+- 写后重读的表取得以 `source` 引用表声明，`after` 记录同表成功写入的完成绑定及各自适用条件。关系公式用 `FROM $a_i AS 表名` 引用新快照。语义依据见[关系读取的快照边界](../../design/secondary/关系读取的快照边界.md)。
