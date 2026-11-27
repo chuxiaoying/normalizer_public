@@ -12,6 +12,19 @@ fn is_input_integer(e: &Expr) -> bool {
                 && !name.contains(['.', '[', ']']))
 }
 
+/// CF-07's strict representative for one exact integer bound. Keeping
+/// the acquired value once and changing only the literal cannot move a read.
+pub(super) fn strict_endpoint(expr: &Expr) -> Option<Expr> {
+    let (op, subject, limit) = super::constraint::comparison_literal_rhs(
+        expr.as_binop()?, |value| value.as_lit().and_then(Lit::as_integer))?;
+    if !super::integer_ac::total_integer(subject) { return None; }
+    match op {
+        B::Ge => Some(b::gt(subject.clone(), b::lit_integer(limit - 1))),
+        B::Le => Some(b::lt(subject.clone(), b::lit_integer(limit + 1))),
+        _ => None,
+    }
+}
+
 #[derive(Clone)]
 enum Guard {
     Bool(bool),

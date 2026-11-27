@@ -15,6 +15,7 @@ mod arithmetic;
 mod binop_casewhen;
 mod boolean;
 mod boolean_casewhen;
+mod boolean_domains;
 mod casewhen;
 mod constant;
 pub(crate) mod constraint;
@@ -164,6 +165,22 @@ pub(crate) fn consume_candidate_budget(amount: usize, output_nodes: usize) -> bo
     consume_budget(BudgetKind::CandidateNodes, amount, || output_nodes)
 }
 
+fn stop_candidate_search(observed_nodes: usize) {
+    ACTIVE_BUDGET.with(|budget| {
+        if let Some(budget) = budget.borrow_mut().as_mut() {
+            budget.peak_nodes = budget.peak_nodes.max(observed_nodes);
+            if budget.exhausted.is_none() { budget.exhausted = Some(BudgetKind::CandidateNodes); }
+        }
+    });
+}
+
+/// A required canonical search must not publish a merely available shape.
+fn require_candidate_budget(amount: usize, observed_nodes: usize) -> bool {
+    let admitted = consume_candidate_budget(amount, observed_nodes);
+    if !admitted { stop_candidate_search(observed_nodes); }
+    admitted
+}
+
 fn budget_snapshot() -> Option<NormalizeBudget> {
     ACTIVE_BUDGET.with(|budget| budget.borrow().clone())
 }
@@ -271,7 +288,7 @@ fn normalize_with_impl(
                 peak_intermediate_size: budget.peak_nodes,
             });
         }
-        let next = simplify_once_memo(&current, ctx, &memo, use_default_simplify_once_cache);
+        let next = simplify_once_memo(&current, ctx, None, &memo, use_default_simplify_once_cache);
         if next == current {
             converged = Some(iteration + 1);
             break;
@@ -353,14 +370,15 @@ pub fn normalize(expr: Expr) -> Expr {
 fn simplify_once_memo(
     expr: &Expr,
     ctx: &dyn crate::sort_context::SortContext,
-    memo: &RefCell<HashMap<Expr, Expr>>,
+    parent: Option<&Expr>,
+    memo: &RefCell<HashMap<(Expr, Option<Expr>), Expr>>,
     use_default_simplify_once_cache: bool,
 ) -> Expr {
     if is_normalize_atom(expr) {
         return expr.clone();
     }
 
-    let key = expr.clone();
+    let key = (expr.clone(), parent.cloned());
     if let Some(cached) = memo.borrow().get(&key).cloned() {
         crate::profile::count(&NORMALIZE_MEMO_HITS, "math.normalize.memo_hit", |_| {
             format!("size={} depth={}", expr.size(), expr.depth())
@@ -368,8 +386,8 @@ fn simplify_once_memo(
         return cached;
     }
 
-    if use_default_simplify_once_cache {
-        if let Some(cached) = default_simplify_once_cache_get(&key) {
+    if use_default_simplify_once_cache && parent.is_none() {
+        if let Some(cached) = default_simplify_once_cache_get(expr) {
             crate::profile::count(
                 &NORMALIZE_SIMPLIFY_ONCE_CACHE_HITS,
                 "math.normalize.simplify_once_cache_hit",
@@ -389,15 +407,49 @@ fn simplify_once_memo(
         format!("size={} depth={}", expr.size(), expr.depth())
     });
 
-    // 先递归化简子表达式
-    let closure = |e: &Expr| simplify_once_memo(e, ctx, memo, use_default_simplify_once_cache);
-    let with_simplified_children = rebuild::rebuild_with_children_simplified(expr, &closure);
-    // 再对自身做本地化简
-    let out = simplify_self(&with_simplified_children, ctx);
+    let recurse = |e: &Expr, domain: Option<&Expr>| {
+        simplify_once_memo(e, ctx, domain, memo, use_default_simplify_once_cache)
+    };
+    let with_simplified_children = if let Some(arms) = expr.as_case_when() {
+        use crate::builder as b;
+        let mut remaining = parent.cloned();
+        let mut rewritten = Vec::with_capacity(arms.len());
+        for (guard, value) in arms {
+            let guard = recurse(guard, remaining.as_ref());
+            let (selected, later) = if boolean_domains::is_closed_boolean(&guard) {
+                if guard.as_bool() == Some(true) {
+                    (remaining.clone(), Some(b::lit_bool(false)))
+                } else if guard.as_bool() == Some(false) {
+                    (Some(b::lit_bool(false)), remaining.clone())
+                } else {
+                    let inverted = b::not(guard.clone());
+                    (
+                        Some(remaining.as_ref().map_or_else(|| guard.clone(), |domain| b::and(domain.clone(), guard.clone()))),
+                        Some(remaining.as_ref().map_or_else(|| inverted.clone(), |domain| b::and(domain.clone(), inverted.clone()))),
+                    )
+                }
+            } else {
+                // A non-Boolean-domain observation is not a new proof
+                // atom. Keeping the parent premise alone is conservative.
+                (remaining.clone(), remaining.clone())
+            };
+            let value = if selected.as_ref().and_then(Expr::as_bool) == Some(false) {
+                value.clone()
+            } else {
+                recurse(value, selected.as_ref())
+            };
+            rewritten.push((guard, value));
+            remaining = later;
+        }
+        if rewritten == arms { expr.clone() } else { Expr::new(ExprKind::CaseWhen { branches: rewritten }) }
+    } else {
+        rebuild::rebuild_with_children_simplified(expr, &|child| recurse(child, parent))
+    };
+    let out = simplify_self(&with_simplified_children, ctx, parent);
     let _ = consume_candidate_budget(out.size(), out.size());
     memo.borrow_mut().insert(key.clone(), out.clone());
-    if use_default_simplify_once_cache {
-        admit_cache(&DEFAULT_SIMPLIFY_ONCE_CACHE, "simplify_once", key, &out);
+    if use_default_simplify_once_cache && parent.is_none() {
+        admit_cache(&DEFAULT_SIMPLIFY_ONCE_CACHE, "simplify_once", key.0, &out);
     }
     out
 }
@@ -412,6 +464,11 @@ fn admit_cache(
     key: Expr,
     output: &Expr,
 ) {
+    if ACTIVE_BUDGET.with(|budget| budget.borrow().as_ref().is_some_and(|budget| budget.exhausted.is_some()))
+        || ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow().is_some())
+    {
+        return;
+    }
     let weight = key.size().saturating_add(output.size());
     if weight > crate::profile::cache_entry_limit() {
         return;
@@ -429,7 +486,7 @@ fn is_normalize_atom(expr: &Expr) -> bool {
 }
 
 /// 本地化简：只对顶层节点应用规则，不递归。
-pub(crate) fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
+fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>) -> Expr {
     // 顺序：常量折叠 → 算术代数 → 布尔代数 → CaseWhen 化简
     //
     // 常量折叠必须先于 arithmetic：例如 `(3 - 2) > 0` 应先折叠为 `true`，
@@ -437,10 +494,14 @@ pub(crate) fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortCont
     let e = constant::fold(expr);
     let e = arithmetic::simplify(&e);
     let e = integer_ac::simplify(&e, ctx);
+    let e = integer_ranges::strict_endpoint(&e).unwrap_or(e);
     let e = crate::canonical_order::orient_ordered_expression(&e, ctx);
     let e = integer_equations::isolate_offset(&e, ctx).unwrap_or(e);
     let e = boolean::simplify(&e, ctx);
     let e = binop_casewhen::simplify(&e, ctx);
+    if let Some(canonical) = boolean_domains::simplify(&e, ctx, parent) {
+        return canonical;
+    }
     let e = boolean_casewhen::simplify(&e);
     let e = relation::simplify(&e);
     let e = casewhen::simplify(&e, ctx);

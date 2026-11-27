@@ -34,7 +34,6 @@ pub struct FormatCtx {
     business_acquisitions: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
-    business_value_guard: bool,
     /// Public receipt ordinal; the raw binding ID remains an internal identity.
     e_renumber: HashMap<u64, usize>,
 
@@ -56,7 +55,6 @@ impl Default for FormatCtx {
             business_acquisitions: Default::default(),
             business_receipt_guards: Default::default(),
             business_evaluation_guard: None,
-            business_value_guard: false,
             e_renumber: HashMap::new(),
         }
     }
@@ -276,9 +274,6 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         }
     }
     if let Some((op, left, right)) = expr.as_binop() {
-        if let Some(rendered) = try_format_array_bound(op, left, right, ctx) {
-            return rendered;
-        }
         if let Some(rendered) = business_value::format_guarded_boolean(op, left, right, ctx) {
             return rendered;
         }
@@ -367,7 +362,7 @@ fn array_cardinality_name(expr: &Expr, expected: RelationAggregateKind) -> Optio
 fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<String> {
     let name = array_cardinality_name(expr, RelationAggregateKind::Exists)?;
     (ctx.scalar_arrays.contains(name) || ctx.record_arrays.contains(name))
-        .then(|| format!("LENGTH({}) == 0", array_name(name, ctx)))
+        .then(|| format!("0 == LENGTH({})", array_name(name, ctx)))
 }
 
 fn array_name<'a>(raw: &'a str, ctx: &'a FormatCtx) -> &'a str {
@@ -394,15 +389,11 @@ pub(crate) fn format_array_failure_union(expr: &Expr, ctx: &FormatCtx) -> Option
     if !matches!(expr.as_binop(), Some((BinOpKind::Or, ..))) { return None; }
     let (name, upper) = extract(expr)?;
     if !ctx.scalar_arrays.contains(name) { return None; }
-    Some(format!("LENGTH({}) <= {upper}", array_name(name, ctx)))
-}
-
-fn try_format_array_bound(op: BinOpKind, left: &Expr, right: &Expr, ctx: &FormatCtx) -> Option<String> {
-    if ctx.business_value_guard || op != BinOpKind::Gt { return None; }
-    let name = array_cardinality_name(left, RelationAggregateKind::Count)?;
-    let Some(Lit::Int(index)) = right.as_lit() else { return None };
-    if !ctx.scalar_arrays.contains(name) || *index <= 0 { return None; }
-    Some(format!("LENGTH({}) >= {}", array_name(name, ctx), index.checked_add(1)?))
+    Some(if upper == 0 {
+        format!("0 == LENGTH({})", array_name(name, ctx))
+    } else {
+        format!("{} > LENGTH({})", math::Integer::from(upper) + 1, array_name(name, ctx))
+    })
 }
 
 fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {
@@ -418,7 +409,7 @@ fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<S
     let array = array_name(name, ctx).to_owned();
     match (kind, select, default) {
         (Count, None, None) => Some(format!("LENGTH({array})")),
-        (Exists, _, None) => Some(format!("LENGTH({array}) > 0")),
+        (Exists, _, None) => Some(format!("0 < LENGTH({array})")),
         (NthValue, Some(index), _) =>
             Some(format!("{array}[{}]", format_expr_with_ctx(index, ctx))),
         _ => None,
@@ -452,15 +443,17 @@ fn format_binop_child_with_precedence(
         return rendered;
     };
 
-    let needs_parens = matches!(
-        (parent_op, child_op),
-        (BinOpKind::And, BinOpKind::Or)
-            | (BinOpKind::Mul, BinOpKind::Add)
-            | (BinOpKind::Mul, BinOpKind::Sub)
-    ) || (right && matches!((parent_op,child_op),
-        (BinOpKind::Sub, BinOpKind::Add | BinOpKind::Sub)
-        | (BinOpKind::Add, BinOpKind::Sub)));
-
+    let precedence = |op| match op {
+        BinOpKind::Or => 0,
+        BinOpKind::And => 1,
+        BinOpKind::Eq | BinOpKind::Ne => 2,
+        BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge => 3,
+        BinOpKind::Add | BinOpKind::Sub => 4,
+        BinOpKind::Mul => 5,
+    };
+    let parent = precedence(parent_op);
+    let child = precedence(child_op);
+    let needs_parens = child < parent || (child == parent && (right || parent == 2 || parent == 3));
 
     if needs_parens {
         format!("({})", rendered)
@@ -490,9 +483,7 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
             parts.push(format!("ELSE {text}"));
             break;
         }
-        let prior = std::mem::replace(&mut ctx.business_value_guard, business);
         let guard = format_expr_with_ctx(guard, ctx);
-        ctx.business_value_guard = prior;
         parts.push(format!("WHEN {guard} THEN {text}"));
     }
     ctx.relation_scope.active = outer_domain;

@@ -88,9 +88,9 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
         return None;
     };
     let n = point.as_lit()?.as_integer()?;
-    // A finite boundary on this discrete domain has one shared threshold:
-    // [0..k] and [k+1..] render as <= k and > k. That keeps the
-    // base predicate and its complement identical except for their polarity.
+    // Work in inclusive upper bounds internally, then emit the strict
+    // CF-07 representative. At the edge of the natural domain, excluding
+    // zero denotes a positive range, not a punctured integer domain.
     let (op, n) = match op {
         Ge => (Gt, n - 1),
         Lt => (Le, n - 1),
@@ -101,10 +101,10 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
         Gt if n < zero => b::lit_bool(true),
         Le | Eq if n < zero => b::lit_bool(false),
         Ne if n < zero => b::lit_bool(true),
-        Gt if n == zero => b::ne(subject.clone(), b::lit_int(0)),
+        Ne if n == zero => b::gt(subject.clone(), b::lit_int(0)),
         Le if n == zero => b::eq(subject.clone(), b::lit_int(0)),
         Gt => b::gt(subject.clone(), b::lit_integer(n)),
-        Le => b::le(subject.clone(), b::lit_integer(n)),
+        Le => b::lt(subject.clone(), b::lit_integer(n + 1)),
         _ => return None,
     };
     (canonical != *expr).then_some(canonical)

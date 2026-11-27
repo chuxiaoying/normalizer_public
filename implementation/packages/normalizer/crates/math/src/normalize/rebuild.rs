@@ -106,7 +106,10 @@ pub(crate) fn rebuild_with_children_simplified(
             }
         }
 
-        ExprKind::ArrayLit(_) => expr.clone(),
+        ExprKind::ArrayLit(items) => {
+            let rebuilt: Vec<_> = items.iter().map(recurse).collect();
+            if rebuilt == *items { expr.clone() } else { Expr::new(ExprKind::ArrayLit(rebuilt)) }
+        },
     }
 }
 
