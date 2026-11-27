@@ -14,17 +14,8 @@
 | 外部事件、回执或顺序 | `kernel_input/business_event.rs`、`kernel_input/port_completion.rs` | [有界重试](../../design/examples/topics/loops-and-termination/java-loop-bounded-retry.md) |
 | 入口返回或出口内容 | `kernel_input/business_entry.rs`、`kernel_input/source_objects.rs` | [环与无环的出口](../../design/examples/topics/state-and-aliasing/java-cycle-observable.md) |
 
-## 复核状态转移
+## 怎样缩小偏差
 
-先用原源码的具体值定位，再以符号输入核对定义域。给已绑定的非空引用做写前写后的独立对照：
-
-```text
-read(write(H,r,f,v),q,g)
-  = CASE WHEN r=q AND f=g THEN v ELSE read(H,q,g) END
-```
-
-未知别名保留身份条件，不能用变量名比较引用。每步同时对照堆、效果轨迹和完成方式；核对前一步终止后，续体没有在该路径执行。外部调用先取得当时的实参，再登记实际调用；失败响应不能抹掉已发生的调用。检查批量或有序循环时，对照真实长度与前缀，不用一个运行样本代替全域。
-
-## 复核出口
-
-内部返回沿原引用继续执行。入口返回、调用参数和可观察写入各用其发生时的状态，发布阶段不重新读取后来才写入的值。只遍历边界声明的字段；检测环核对当前路径是否返回祖先，不把兄弟路径共享同一子对象判成环。缺少足够的投影证据时走诊断，不截断对象、不凭空生成编号。完整 PERS 的验收仍通过[正式回归](../../tests/README.md)。采样与日志见[排查入口](troubleshooting.md)。
+1. 对同一个入口先复现具体值，再用符号输入检查别名、分支条件和完成路径。对照[身份与稳定编号](../../design/secondary/观察身份与稳定编号.md)与表中的种子，不从调试输出反推规则。
+2. 对照首次分歧时的堆、执行轨迹及最终发布：如果状态正确但输出不对，先查出口投影；如果动作已在轨迹里丢失，回查执行，不改序列化补救。外部结果和异常按[完成合同](../../design/secondary/回执与异常怎样进入%20PERS.md)核对。
+3. 用[诊断与采样](troubleshooting.md)定位，再用[正式回归](../../tests/README.md)验收完整输出。

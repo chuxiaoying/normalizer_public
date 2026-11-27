@@ -7,7 +7,6 @@
 ```sh
 python3 -B implementation/tools/architecture/health.py
 python3 -B implementation/tools/architecture/health.py --json
-python3 -B implementation/tools/docs/check_links.py
 ```
 
 ## 健康标准
@@ -20,35 +19,11 @@ python3 -B implementation/tools/docs/check_links.py
 | AI 维护合同 | 检查 agent 维护、贡献和三模块架构文档中的责任层、证据链和输入输出边界 | 三份维护合同都存在且关键主张不漂移 | AI 可能在错误层补丁、从 actual 反填 expected 或绕过统一 IR |
 | 内核输入协议分层 | 检查 `normalizer.kernel-input/1`、当前文档、源码、场景适配和测试中的协议名与职责术语，并检查诊断类别 | 所有入口统一使用当前协议；加载诊断使用 `kernel_input`，执行诊断使用 `kernel_execution` | 旧协议名或旧模块术语泄漏到公共入口，导致 AI 把历史职责当成当前职责 |
 
+报告命令即使发现违规也会正常退出；检查报告中的缺失路径、循环和违规明细，不凭退出码判定通过。链接检查命令见[验证入口](validation.md)。
+
 协议明细的 `active_materials` 是扫描范围内第一方文本材料的文件数；不包含依赖、缓存、构建产物和扫描器本身。
 
 综合分数是上述五个维度的算术平均，适用于同一版本维度下的静态比较。PERS 的实际业务行为需另行验证。`normalizer.architecture-health/3` 的 JSON 报告还保留每一项的明细，便于 agent 在改动前后比较证据。
 
-## 命名规则
 
-名称必须同时满足三点：立意准确、与代码的实际用途相符、与架构合同中的职责层相符。目录名按产品用途、设计合同、实现职责区分。
-
-生产模块也使用同一规则。输入协议 `normalizer.kernel-input/1` 是当前 wire schema。Rust 实现入口使用 `pipeline/src/kernel_input.rs` 表示它加载、验证并交付闭合内核输入；`kernel_execution.rs` 表示符号执行和预算，`kernel_result.rs` 表示最终 PERS 与内部行为投影。
-
-## 当前验收
-
-当前版本不在仓库内保存某次审查的数字快照。需要判断准入状态时，直接运行 `health.py --json` ，并把本次基线、命令、输出和时间线留在 agent 的临时工作区。这样仓库中的架构文档描述长期规则，运行记录不会被后来人误读成当前状态。
-
-## 重构边界
-
-治理按以下顺序推进：
-
-1. 先修复登记材料、入口、路径命名和文档索引的一致性，让失败能准确指向语义或工程问题。
-2. 再按职责拆分超大文件，保持每次拆分前后 PERS、异常、状态、身份和调用顺序不变；如果拆分不能形成清晰边界，就保留原文件并记录原因。
-3. 最后收敛重复的辅助代码和 agent 入口，保留一条可追踪的验证路径，删除真正无引用的适配残余；历史来源若有追溯价值则显式标为历史，不伪装成当前实现。
-
-每个阶段必须保留实际 diff 和与本次变更对应的验证结果。测试 expected 由源码和规范合同独立推导，不能由 actual 自动反填。AI 预处理、解析器和归一化内核的责任不能因为拆文件或改名而改变。
-
-日常改动的责任层和最小证据链见[Agent 维护路由](agent-maintenance.md)；本页只维护静态指标和治理边界。
-
-## agent 工作入口
-
-- 先读根目录 [AGENTS.md](../../AGENTS.md) 和 [README.md](../../README.md)。
-- 架构边界读 [三模块架构](architecture-three-modules.md)，维护路由读 [Agent 维护路由](agent-maintenance.md)。
-- 架构评分由 `implementation/tools/architecture/health.py` 生成；可用 `python3 -B implementation/tools/docs/check_links.py` 检查文档链接。
-- 归一化代码按 crate 和最终产物合同定位，避免从 fixture 名称反推内核责任。
+命名与整理遵循[仓库整理规则](repository-hygiene.md)；日常定位问题用[维护路由](agent-maintenance.md)。

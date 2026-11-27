@@ -66,9 +66,10 @@ if implementation/tools/normalizer source "$java_project" \
      'src/HelloWorld.java#HelloWorld.missing' \
      > "$java_project/pers.yaml" 2> "$java_project/diagnostic.log"; then
   printf '意外成功\n' >&2
+  false
 else
   cat "$java_project/diagnostic.log" >&2
-  test ! -s "$java_project/pers.yaml"
+  test ! -s "$java_project/pers.yaml" && grep -F '[NORM-ENTRY]' "$java_project/diagnostic.log" >/dev/null
 fi
 ```
 

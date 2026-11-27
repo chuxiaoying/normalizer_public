@@ -10,4 +10,4 @@
 | 发布纯递推和成员选择的已绑定定义 | 同目录的 `pure_fold.rs`、`member_choice.rs`、`temporal_graph.rs` |
 | 固定格式版本和区分最终产物与调试表示 | `pipeline/src/kernel_result.rs` |
 
-`pipeline/` 相对 `implementation/packages/normalizer/crates/`。对接方用 YAML 读取结果；公式保持表达式文本，不由 YAML 库执行。结构校验和完整业务行为回归分开运行，见[测试入口](../../tests/README.md)。变更先核对设计；若仅调整序列化，仍须证明完整输出没有失去来源绑定、观察顺序或完成域。不在这里维护第二套 YAML 示例。
+`pipeline/` 相对 `implementation/packages/normalizer/crates/`。对接方用 YAML 读取结果；公式保持表达式文本，不由 YAML 库执行。正式回归会在同一次用例执行中先校验预期和实际的 PERS 结构，再比较完整内容，见[测试入口](../../tests/README.md)。变更先核对设计；若仅调整序列化，仍须证明完整输出没有失去来源绑定、观察顺序或完成域。不在这里维护第二套 YAML 示例。

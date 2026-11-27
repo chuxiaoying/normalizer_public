@@ -12,6 +12,6 @@
 
 ## 内部适配信封
 
-以 `kernel_input.rs` 的 `Project`、入口上下文类型及装载测试为准。适配方同时提供原业务入口与独立签名载体：`source`、`source_text` 和 `functions` 供内部装载，`entry_contexts` 把入口和声明绑定回业务来源。 `parameter_value_types` 与 `result_value_types` 分别覆盖形参与结果的载体检查，不能互为别名。局部关系指令在装载时成为结构化查询，执行再按真实行绑定检查类型。
+以 `kernel_input.rs` 的 `Project`、入口上下文类型及正式回归为准。适配方同时提供原业务入口与独立签名载体：`source`、`source_text` 和 `functions` 供内部装载，`entry_contexts` 把入口和声明绑定回业务来源。 `parameter_value_types` 与 `result_value_types` 分别覆盖形参与结果的载体检查，不能互为别名。局部关系指令在装载时成为结构化查询，执行再按真实行绑定检查类型。
 
 排查时核对入口上下文是否齐全、参数位置是否连续、外部类型的字段是否闭合。不能从其他入口借同名声明；参数与结果的绑定以显式字段为准，不依赖 JSON 键顺序。样例载体见场景适配器，工程验收见[验证入口](../docs/validation.md)。

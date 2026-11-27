@@ -5,7 +5,7 @@
 | 原始材料 | 准备好的输入 | 下一步 |
 |---|---|---|
 | 已闭合的 Java | 依赖可见的 Java 源码；入口是可定位的静态方法或静态可达的接收者调用 | `source` |
-| JavaScript / TypeScript | 用有效类型检查闭合的严格 `.ts` 模块和导出入口；不接受 `.js`、`.mjs` 或 `.d.ts` | `module` |
+| JavaScript / TypeScript | 严格 `.ts` 分析模块和适配器可定位的导出入口，见[CLI 支持范围](cli.md#源文件与类型检查) | `module` |
 | Vue | 原始 `.vue` 供来源定位，加上准备好的严格 `.ts` 分析模块 | `scenario`，选择 VO 生产或消费 |
 
 入口统一写作 `工程相对路径#入口调用`，不附带某次调用的实际参数。准备时先核对可见源码、边界、状态和类型；需要修改时按[AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md)操作。分析副本缺少关键证据时，说明缺口后停止，不用占位值换取运行成功。

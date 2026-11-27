@@ -8,16 +8,28 @@ implementation/tools/normalizer test business-examples
 
 这是正式业务回归，也是唯一的业务覆盖率入口。它按[正式清单](e2e/catalog.yaml)执行种子的原例和变体。`pending` 表示尚未派生，不是执行时跳过。构建与采集覆盖的命令见[验证入口](../implementation/docs/validation.md)。
 
+## 定向复现
+
+正式入口会准备前端依赖和内核后运行完整清单，不接收筛选参数。若只需重复某个用例，可在已有一次正式引导运行的检出里使用 Node 的名称筛选；测试体仍调用同一生产 CLI：
+
+```sh
+node --test --test-name-pattern='^control-early-return / Early\.choose / original$' \
+  tests/e2e/business_examples.test.mjs
+```
+
+用例名由「种子 ID / 清单入口 / 用例目录名」组成。确认结果实际执行了目标用例；未命中或定向通过都不能充当完整回归或覆盖证据。
+
 ## 登记及文件布局
 
-先按[种子目录](../design/examples/README.md)登记稳定 ID，再在 [CLI 清单](e2e/catalog.yaml)以同一 ID 登记入口和场景。用例位于 `e2e/cases/<分组>/<入口>/<用例>/`；主主题分组在入口前加种子 ID。每个入口有一个 `original/` 用例。参见[早返回原例](e2e/cases/java/control-flow/control-early-return/Early.choose/original/case.yaml)和[取负变体](e2e/cases/java/control-flow/control-early-return/Early.choose/select-negative-fallback/case.yaml)。
+先按[种子目录](../design/examples/README.md)登记稳定 ID，再在 [CLI 清单](e2e/catalog.yaml)以同一 ID 登记入口和场景。用例位于 `e2e/cases/<分组>/<入口目录>/<用例>/`；按主主题分组时，在入口目录前加种子 ID。入口目录由[登记加载器](e2e/catalog.mjs)从清单计算，不总是入口定位符原文。每个入口有一个 `original/` 用例。参见[早返回原例](e2e/cases/java/control-flow/control-early-return/Early.choose/original/case.yaml)和[取负变体](e2e/cases/java/control-flow/control-early-return/Early.choose/select-negative-fallback/case.yaml)。
 
 | 字段 | 内容 |
 |---|---|
-| `entry` | 项目相对路径和精确调用定位；Vue 另有 `vueSource` 指向原组件。 |
-| `expected` 或 `reject` | 二选一：独立推导的完整 PERS，或 `reject.fragments` 与必要的诊断类别、位置。 |
+| `entry` | 分析工程相对路径和精确调用定位。以 [CLI 的入口格式](../usage/cli.md)为准。 |
+| `vueSource` | 仅 Vue：相对于分析工程的原始 `.vue` 路径，与 `entry` 指向的 `.ts` 一起存入 `src/`。场景名在清单登记。 |
+| `expected` 或 `reject` | 二选一：独立推导的完整 PERS，或 `reject.fragments` 精确核对诊断。拒绝首项必须是期望的主诊断码，后续项匹配该诊断的内容；必要时另用 `reject.kind` 和 `reject.location` 收紧。 |
 
-每个用例目录的 `src/` 保存真实源码与完整路径，Vue 另保留原组件；`case.yaml` 只登记上表中的入口和断言，不进入 CLI 输入。用例不保存相对原例的补丁；相同场景、入口与分析源码不得重复登记。执行器把 `src/` 原样复制到独立临时工程，用[正式 CLI](../usage/cli.md)运行，不从种子 Markdown 拼接源码、不重放预处理补丁，也不调用 AI。成功时先验证结构，再逐字段比较完整 PERS；拒绝时核对非零退出、空 stdout 和具体诊断。
+每个用例目录的 `src/` 保存真实源码与完整路径，Vue 另保留原组件；`case.yaml` 只登记上表中的入口和断言，不进入 CLI 输入。用例不保存相对原例的补丁；同一语言和场景下，入口、Vue 来源定位和分析源码均相同的用例不可重复登记；只改原始 `.vue` 内容不会构成新的分析输入。执行器把 `src/` 原样复制到独立临时工程，用[正式 CLI](../usage/cli.md)运行，不从种子 Markdown 拼接源码、不重放预处理补丁，也不调用 AI。成功时先验证结构，再逐字段比较完整 PERS；拒绝时核对非零退出、空 stdout 和具体诊断。
 
 ## 如何写预期
 
