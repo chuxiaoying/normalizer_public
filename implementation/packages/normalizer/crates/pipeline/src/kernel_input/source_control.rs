@@ -486,7 +486,9 @@ impl Engine<'_> {
                             .filter(|class| !matches!(*class, "RuntimeException" | crate::normalized::RUNTIME_EXCEPTION))
                             .map(|class| (class, prefix)));
             let body = trailing_throw.map_or(finally, |(_, prefix)| prefix);
-            self.source_steps(body, id, &mut env.clone(), path.clone())?;
+            // The finally block has its own local declarations, but a
+            // write to an existing binding survives a continuing completion.
+            self.source_scope(body, id, env, path.clone())?;
             if let Some((class, _)) = trailing_throw {
                 let class = self.project.source_exception_bindings[id][class].clone();
                 self.realtime_completion = self.realtime_completion.replace_continue(

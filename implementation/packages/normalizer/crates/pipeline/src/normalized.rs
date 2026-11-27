@@ -604,7 +604,11 @@ fn validate_protected_try(body: &[S], catches: &[simulator_parser::ast::CatchCla
     let closed_handlers = catches.iter().all(|handler|
         closed_terminal_block(handler.body()) || finally.is_none() && handler.body().is_empty());
     let terminal = closed_terminal_block(body);
-    let continuing = catches.len() == 1 && finally.is_none() && continuing_try_body(body);
+    // In both forms the protected block changes only shared guarded
+    // storage, not the local bindings that the handler or finally sees.
+    let continuing = continuing_try_body(body) && (
+        (catches.len() == 1 && finally.is_none()) || (catches.is_empty() && finally.is_some())
+    );
     if closed_handlers && (!catches.is_empty() || finally.is_some()) && (terminal || continuing) {
         return Ok(());
     }
