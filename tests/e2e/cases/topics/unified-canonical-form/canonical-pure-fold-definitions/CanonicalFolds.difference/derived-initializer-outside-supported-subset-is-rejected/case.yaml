@@ -1,5 +1,0 @@
-entry: src/CanonicalFolds.java#CanonicalFolds.difference
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold

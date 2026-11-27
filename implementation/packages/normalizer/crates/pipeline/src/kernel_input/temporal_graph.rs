@@ -36,10 +36,20 @@ pub(super) struct Publication {
     pub(super) reductions: BTreeMap<u64, math::ReduceShape>,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-enum Ready {
-    Fold(String, Operand, std::rc::Rc<math::CanonicalKey>),
-    Choice(u64),
+/// Supported computed operands are already acquired exact integers.
+fn acquired_integer_math(value: &Expr, domains: &BTreeMap<String, String>, names: &BTreeMap<String, String>) -> bool {
+    if value.as_lit().and_then(math::Lit::as_integer).is_some() { return true; }
+    if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
+        return primitive_type == "integer" && domains.get(name).is_some_and(|kind| kind == "number")
+            && names.contains_key(name);
+    }
+    if let Some((math::UnaryOpKind::Neg, operand)) = value.as_unary_op() {
+        return acquired_integer_math(operand, domains, names);
+    }
+    value.as_binop().is_some_and(|(op, left, right)| {
+        matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
+            && acquired_integer_math(left, domains, names) && acquired_integer_math(right, domains, names)
+    })
 }
 
 pub(super) fn publish(
@@ -62,55 +72,47 @@ pub(super) fn publish(
     let mut published = Publication::default();
     let array_name = |name: &str| names.get(name).filter(|_| arrays.contains(name))
         .ok_or_else(|| fail("temporal source requires a published array parameter"));
-    while !pending.is_empty() {
-        let mut ready = Vec::new();
-        let mut first_choice = true;
-        for &id in &pending {
-            let node = &nodes[id as usize];
-            if matches!(node, Definition::Choice(_)) && !std::mem::take(&mut first_choice) { continue; }
-            let value = if let Definition::Choice(Occurrence {empty: Fallback::RecordParameter {owner, name}, ..}) = node {
-                need(domains.get(name) == Some(owner), "record choice fallback needs its published record parameter")?;
-                Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid record fallback name"))?)
+    // Dependency validation above proves that ascending acquisition order
+    // is topological. These handles are only for wiring rendering, not a
+    // second structural ordering for REDUCE.
+    for id in pending {
+        let node = &nodes[id as usize];
+        let value = if let Definition::Choice(Occurrence {empty: Fallback::RecordParameter {owner, name}, ..}) = node {
+            need(domains.get(name) == Some(owner), "record choice fallback needs its published record parameter")?;
+            Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid record fallback name"))?)
+        } else {
+            let operand = node.operand().ok_or_else(|| fail("missing scalar temporal operand"))?;
+            if let Some(dep) = integer_definition_id(operand) {
+                let &slot = published.aliases.get(&dep).ok_or_else(|| fail("relation dependency was not published"))?;
+                let guard = match node { Definition::Fold(fold) => &fold.guard, Definition::Choice(choice) => &choice.guard };
+                let prior_guard = match &nodes[dep as usize] {
+                    Definition::Fold(fold) => &fold.guard,
+                    Definition::Choice(choice) => &choice.guard,
+                };
+                need(b::path_implies(guard, prior_guard),
+                    "relation operand is not available on its path")?;
+                Operand::Prior(slot)
+            } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
+                Operand::Integer(n)
+            } else if let Some(SymVarOrigin::Parameter { name, .. }) = operand.as_sym_var() {
+                // Fold initials and numeric choice fallbacks admit an
+                // exact integer before entering the temporal graph.
+                need(domains.get(name).is_some_and(|domain| domain == "number"),
+                    "temporal parameter must be a declared number")?;
+                Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid temporal input name"))?)
+            } else if let Some(SymVarOrigin::External {binding_id, path, primitive_type}) = operand.as_sym_var() {
+                need(primitive_type == "integer", "temporal acquired value must be a declared number")?;
+                Operand::Acquired(acquired_path(*binding_id, path)
+                    .ok_or_else(|| fail("temporal input requires an acquired declared integer"))?)
+            } else if acquired_integer_math(operand, domains, names) {
+                Operand::Arithmetic(operand.clone())
             } else {
-                let operand = node.operand().ok_or_else(|| fail("missing scalar temporal operand"))?;
-                if let Some(dep) = integer_definition_id(operand) {
-                    let Some(&slot) = published.aliases.get(&dep) else { continue; };
-                    let guard = match node { Definition::Fold(fold) => &fold.guard, Definition::Choice(choice) => &choice.guard };
-                    let prior_guard = match &nodes[dep as usize] {
-                        Definition::Fold(fold) => &fold.guard,
-                        Definition::Choice(choice) => &choice.guard,
-                    };
-                    need(b::path_implies(guard, prior_guard),
-                        "relation operand is not available on its path")?;
-                    Operand::Prior(slot)
-                } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
-                    Operand::Integer(n)
-                } else if let Some(SymVarOrigin::Parameter { name, .. }) = operand.as_sym_var() {
-                    // Fold initials and numeric choice fallbacks admit an
-                    // exact integer before entering the temporal graph.
-                    need(domains.get(name).is_some_and(|domain| domain == "number"),
-                        "temporal parameter must be a declared number")?;
-                    Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid temporal input name"))?)
-                } else if let Some(SymVarOrigin::External {binding_id, path, primitive_type}) = operand.as_sym_var() {
-                    need(primitive_type == "integer", "temporal acquired value must be a declared number")?;
-                    Operand::Acquired(acquired_path(*binding_id, path)
-                        .ok_or_else(|| fail("temporal input requires an acquired declared integer"))?)
-                } else {
-                    return Err(fail(match node {
-                        Definition::Fold(_) => "pure fold initial must be an integer, numeric parameter, acquired state field, or prior pure fold",
-                        Definition::Choice(_) => "member choice fallback must be a constant or an acquired integer",
-                    }));
-                }
-            };
-            let key = match node {
-                Definition::Fold(fold) => Ready::Fold(array_name(&fold.source)?.clone(), value.clone(),
-                    math::canonical_order_key(&fold.body, &math::DefaultSortContext)),
-                Definition::Choice(_) => Ready::Choice(id),
-            };
-            ready.push((key, id, value));
-        }
-        let (_, id, value) = ready.into_iter().min_by(|a,b| a.0.cmp(&b.0))
-            .ok_or_else(|| fail("temporal definition dependency cycle"))?;
+                return Err(fail(match node {
+                    Definition::Fold(_) => "pure fold initial must be supported acquired integer arithmetic, an acquired state field, or a prior scoped value",
+                    Definition::Choice(_) => "member choice fallback must be supported acquired integer arithmetic or a prior scoped value",
+                }));
+            }
+        };
         let slot = published.aliases.len();
         let row = match &nodes[id as usize] {
             Definition::Fold(fold) => {
@@ -146,7 +148,6 @@ pub(super) fn publish(
         published.aliases.insert(id, slot);
         if nodes[id as usize].is_total() { published.total.insert(id); }
         published.slots.push(row);
-        pending.remove(&id);
     }
     Ok(published)
 }

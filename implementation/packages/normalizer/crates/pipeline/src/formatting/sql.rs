@@ -115,6 +115,27 @@ impl FormatCtx {
         self.relation_scope.slots = slots.into();
     }
 
+    fn relation_operand(&mut self, operand: &scoped_relation::Operand) -> String {
+        use scoped_relation::Operand;
+        match operand {
+            Operand::Integer(value) => value.to_string(),
+            Operand::Parameter(name) | Operand::Acquired(name) => name.clone(),
+            Operand::Prior(slot) => self.relation_slot(*slot),
+            Operand::Arithmetic(expression) => format_expr_with_ctx(expression, self),
+        }
+    }
+
+    fn relation_slot(&mut self, slot: usize) -> String {
+        use scoped_relation::Slot;
+        let slots = self.relation_scope.slots.clone();
+        match &slots[slot] {
+            Slot::Fold { source, initial, body } =>
+                format!("REDUCE({source} FROM {} AS (acc, item) YIELD {body})", self.relation_operand(initial)),
+            Slot::Choice { .. } => self.relation_scope.members.get(&slot)
+                .expect("choice must be bound in its certified acquisition domain").clone(),
+        }
+    }
+
     pub(crate) fn in_relation_scope(&mut self, expression: &Expr, render: impl FnOnce(&mut Self) -> String) -> String {
         let active = self.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
         let mut needed = std::collections::BTreeSet::new();
@@ -133,7 +154,7 @@ impl FormatCtx {
                 if self.relation_scope.members.contains_key(&slot) || !math::builder::path_implies(&active, guard) {
                     continue;
                 }
-                let empty = self.relation_scope.operand(empty);
+                let empty = self.relation_operand(empty);
                 let name = format!("member{}", self.relation_scope.members.len());
                 self.relation_scope.members.insert(slot, name.clone());
                 bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD ")));
@@ -531,7 +552,7 @@ fn format_lit(lit: &Lit) -> String {
     }
 }
 
-fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
+fn format_sym_var(origin: &SymVarOrigin, ctx: &mut FormatCtx) -> String {
     match origin {
         SymVarOrigin::Parameter { name, .. } => {
             if let Some(display) = ctx.business_inputs.as_ref().and_then(|names| names.get(name)) { return display.clone(); }
@@ -559,7 +580,7 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
                 ctx.temporal_names.get(binding_id).copied().expect("closed temporal definition")
             } else { *binding_id as usize };
             if ctx.business_inputs.is_some() && ctx.temporal_names.contains_key(binding_id) {
-                ctx.relation_scope.slot(slot)
+                ctx.relation_slot(slot)
             } else {
                 format!("$t_{slot}")
             }
