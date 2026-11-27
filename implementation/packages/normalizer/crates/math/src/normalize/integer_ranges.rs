@@ -12,12 +12,32 @@ fn is_input_integer(e: &Expr) -> bool {
                 && !name.contains(['.', '[', ']']))
 }
 
+// Unlike a lower-bound proof, this establishes the domain of the
+// evaluated expression, not whether it is nonnegative or always acquired.
+fn has_exact_integer_domain(value: &Expr) -> bool {
+    if super::integer_ac::total_integer(value) { return true; }
+    if crate::domains::composite::vector_length_input(value).is_some() { return true; }
+    if let Some((kind, _, projection, _)) = value.as_relation_aggregate() {
+        use crate::RelationAggregateKind::*;
+        return kind == Count || kind == Sum && projection.is_some_and(has_exact_integer_domain);
+    }
+    if let Some((B::Add | B::Sub | B::Mul, left, right)) = value.as_binop() {
+        return has_exact_integer_domain(left) && has_exact_integer_domain(right);
+    }
+    false
+}
+
 /// CF-07's strict representative for one exact integer bound. Keeping
 /// the acquired value once and changing only the literal cannot move a read.
 pub(super) fn strict_endpoint(expr: &Expr) -> Option<Expr> {
     let (op, subject, limit) = super::constraint::comparison_literal_rhs(
         expr.as_binop()?, |value| value.as_lit().and_then(Lit::as_integer))?;
-    if !super::integer_ac::total_integer(subject) { return None; }
+    if !has_exact_integer_domain(subject) { return None; }
+    // Preserve the existing zero/empty representative for an exact count.
+    if op == B::Le && limit == BigInt::from(0)
+        && subject.as_relation_aggregate().is_some_and(|(kind, _, projection, _)|
+            kind == crate::RelationAggregateKind::Count && projection.is_none())
+    { return None; }
     match op {
         B::Ge => Some(b::gt(subject.clone(), b::lit_integer(limit - 1))),
         B::Le => Some(b::lt(subject.clone(), b::lit_integer(limit + 1))),
