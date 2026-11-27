@@ -911,6 +911,20 @@ impl<'a> Engine<'a> {
         }
     }
 
+    fn source_arguments(
+        &mut self, args: &[J], id: &str, env: &mut Env, mut path: Expr,
+    ) -> Result<Option<(Vec<Value>, Expr)>> {
+        path = self.normal_path(path);
+        if path.as_bool() == Some(false) { return Ok(None); }
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.java_expr(arg, id, env, path.clone())?);
+            path = self.normal_path(path);
+            if path.as_bool() == Some(false) { return Ok(None); }
+        }
+        Ok(Some((values, path)))
+    }
+
     pub(super) fn java_expr(
         &mut self,
         j: &J,
@@ -985,17 +999,17 @@ impl<'a> Engine<'a> {
                 java_type: JavaType::Class(owner),
                 args,
             } => {
-                let args = args
-                    .iter()
-                    .map(|expr| self.java_expr(expr, id, env, path.clone()))
-                    .collect::<Result<_>>()?;
+                let Some((args, path)) = self.source_arguments(args, id, env, path)? else {
+                    return Ok(Value::Term(Ty::Ref, b::lit_null()));
+                };
                 self.construct_source_object(owner, args, path)
             }
             J::New { java_type: ty @ JavaType::Generic(..), args } => {
                 let proof = crate::normalized::generic_product::instantiated(self.program, ty)
                     .ok_or_else(|| fail("generic allocation requires concrete source constructor proof"))?;
-                let evaluated = args.iter().map(|expr| self.java_expr(expr, id, env, path.clone()))
-                    .collect::<Result<Vec<_>>>()?;
+                let Some((evaluated, _)) = self.source_arguments(args, id, env, path)? else {
+                    return Ok(Value::Term(Ty::Ref, b::lit_null()));
+                };
                 self.construct_generic_product(&proof, evaluated)
             }
             J::ArrayInitializer { element_type, elements } => self
@@ -1068,8 +1082,9 @@ impl<'a> Engine<'a> {
                             for ((expected, _), actual) in declaration.params().iter().zip(args) {
                                 self.source_reference_assignment(expected, actual, id)?;
                             }
-                            let values = args.iter().map(|arg| self.java_expr(arg, id, env, path.clone()))
-                                .collect::<Result<Vec<_>>>()?;
+                            let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                                return Ok(Value::Term(self.methods[&key].returns.clone(), b::lit_null()));
+                            };
                             let previous = self.active_static_receiver.replace((owner, locator));
                             let call = self.java_call_with_receiver(&key, values, path, None, true);
                             self.active_static_receiver = previous;
@@ -1138,9 +1153,10 @@ impl<'a> Engine<'a> {
                             None
                         }
                     } else { None };
-                    let values = args.iter()
-                        .map(|arg| self.java_expr(arg, id, env, path.clone()))
-                        .collect::<Result<_>>()?;
+                    let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                        let ty = self.checked_ports[&port].completion.returns.clone();
+                        return Ok(Value::Term(ty, b::lit_null()));
+                    };
                     return self.source_port_call(&port, rooted_identity, values, path);
                 }
                 need(!field_receiver, "field receiver is not a declared external port")?;
@@ -1161,35 +1177,41 @@ impl<'a> Engine<'a> {
                 if let Some(intrinsic) = self.program.find_class(id.rsplit_once('.').unwrap().0)
                     .and_then(|caller| decimal_intrinsic(self.program, caller, &callee))
                 {
-                    let mut operand = |expr| {
-                        let value = self.java_expr(expr, id, env, path.clone())?;
+                    let operand = |value: &Value| {
                         need(value.ty() == Ty::Decimal, "standard decimal operation requires exact decimal operands")?;
                         value.scalar()
                     };
                     use math::domains::decimal;
                     let result = match (intrinsic, args.as_slice()) {
-                        (DecimalIntrinsic::Multiply, [left, right]) =>
-                            decimal::multiply(operand(left)?, operand(right)?),
+                        (DecimalIntrinsic::Multiply, [_, _]) => {
+                            let Some((values, _)) = self.source_arguments(args, id, env, path)? else {
+                                return Ok(Value::Term(Ty::Decimal, b::lit_null()));
+                            };
+                            decimal::multiply(operand(&values[0])?, operand(&values[1])?)
+                        }
                         (DecimalIntrinsic::Round, [value, scale, mode]) => {
                             let (scale, mode) = round_rule(scale, mode)
                                 .ok_or_else(|| fail("N.round requires a scale and explicit mode"))?;
-                            decimal::round(operand(value)?, scale, mode)
+                            let Some((values, _)) = self.source_arguments(std::slice::from_ref(value), id, env, path)? else {
+                                return Ok(Value::Term(Ty::Decimal, b::lit_null()));
+                            };
+                            decimal::round(operand(&values[0])?, scale, mode)
                         }
                         _ => return Err(fail("invalid standard decimal operation")),
                     };
                     return Ok(Value::Term(Ty::Decimal, math::normalize(result)));
                 }
-                let vs: Vec<_> = args
-                    .iter()
-                    .map(|a| self.java_expr(a, id, env, path.clone()))
-                    .collect::<Result<_>>()?;
-                if let Some(intrinsic) = self
-                    .program
-                    .find_class(id.rsplit_once('.').unwrap().0)
+                let text_intrinsic = self.program.find_class(id.rsplit_once('.').unwrap().0)
                     .and_then(|caller| {
-                        crate::normalized_text::source_intrinsic(self.program, caller, &callee, vs.len())
-                    })
-                {
+                        crate::normalized_text::source_intrinsic(self.program, caller, &callee, args.len())
+                    });
+                let Some((vs, path)) = self.source_arguments(args, id, env, path)? else {
+                    let ty = if text_intrinsic.is_some() { Ty::Text } else {
+                        self.methods.get(&callee).ok_or_else(|| fail("missing declared return type for unreachable call"))?.returns.clone()
+                    };
+                    return Ok(Value::Term(ty, b::lit_null()));
+                };
+                if let Some(intrinsic) = text_intrinsic {
                     need(
                         vs.iter().all(|v| {
                             v.ty() == Ty::Text || v.scalar().is_ok_and(|expr| expr.is_null())
