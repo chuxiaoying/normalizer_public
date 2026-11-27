@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, posix } from 'node:path';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
 import { frontendScenario } from '../../implementation/tools/scenarios/registry.mjs';
 
@@ -138,40 +138,34 @@ export function loadCases(root, seeds = loadSeeds(root)) {
   const seedPlan = loadSeedPlan(root, seeds, seedMetadata);
   const fixtures = 'tests/e2e/cases';
   const catalog = readYaml(root, 'tests/e2e/catalog.yaml');
-  assert.deepEqual(Object.keys(catalog).sort(), ['groups', 'pending', 'version'], 'Unknown or missing test catalog section');
-  assert.equal(catalog.version, 1, 'Unsupported test catalog version');
+  assert.deepEqual(Object.keys(catalog).sort(), ['pending', 'seeds', 'version'], 'Unknown or missing test catalog section');
+  assert.equal(catalog.version, 2, 'Unsupported test catalog version');
   const assigned = new Set();
   const series = new Set();
   const cases = [];
-  for (const [group, bindings] of record(catalog.groups, 'test groups')) {
-    assert.match(group, /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/, 'Invalid test group');
-    const bindingsInGroup = record(bindings, group);
-    assert.ok(bindingsInGroup.length, 'Empty test group: ' + group);
-    for (const [seedId, binding] of bindingsInGroup) {
-      assert.ok(seeds.has(seedId), 'Unknown design seed: ' + seedId);
-      register(assigned, seedId, 'seed assignment');
-      let entries = binding;
-      let scene;
-      if (group.split('/')[0] === 'vue') {
-        assert.deepEqual(Object.keys(binding ?? {}).sort(), ['entries', 'scene'], 'Vue seed requires explicit entries and scene: ' + seedId);
-        ({ entries, scene } = binding);
-        assert.ok(frontendScenario(scene),
-          'Unknown or incompatible Vue CLI scene: ' + scene);
-      }
-      assert.ok(Array.isArray(entries) && entries.length, 'No test entry for seed: ' + seedId);
-      const document = examples + '/' + seeds.get(seedId);
+  for (const [seedId, binding] of record(catalog.seeds, 'test seeds')) {
+    assert.ok(seeds.has(seedId), 'Unknown design seed: ' + seedId);
+    register(assigned, seedId, 'seed assignment');
+    const seedPath = seeds.get(seedId);
+    const document = examples + '/' + seedPath;
+    const runners = record(binding, 'CLI runners for ' + seedId);
+    assert.ok(runners.length, 'No CLI runner for seed: ' + seedId);
+    for (const [runner, entries] of runners) {
+      const scene = frontendScenario(runner) ? runner : undefined;
+      assert.ok(scene || runner === 'source' || runner === 'module', 'Unknown test runner: ' + runner);
+      assert.ok(Array.isArray(entries) && entries.length, 'No test entry for seed: ' + seedId + ' / ' + runner);
+      const language = runner === 'source' ? 'java' : 'typescript';
+      const syntax = runner === 'module'
+        ? /^[\w-]+\.ts#[\w$]+(?:\.[\w$]+)*$/
+        : scene ? /^[\w$]+$/ : /^[\w$]+(?:[.#][\w$]+)*$/;
       for (const entry of entries) {
-        const language = group.split('/')[0];
-        const extension = { javascript: 'js', typescript: 'ts' }[language];
-        assert.match(entry, extension
-          ? new RegExp('^[\\w-]+\\.' + extension + '#[\\w$]+(?:\\.[\\w$]+)*$')
-          : /^[\w$]+(?:[.#][\w$]+)*$/, 'Invalid seed entry');
-        const primaryTopic = seedMetadata.get(seedId).topic;
-        const directory = group === language + '/' + primaryTopic ? group + '/' + seedId : group;
-        const filename = directory + '/' + (extension ? entry.split('#')[0].slice(0, -3) : entry.replaceAll('#', '-')) + '.yaml';
-        register(series, filename, 'case directory');
+        assert.match(entry, syntax, 'Invalid seed entry: ' + seedId + ' / ' + runner);
+        const label = entry.replaceAll('#', '--');
+        const entryDirectory = scene ? scene + '--' + label : label;
+        const relative = posix.join(posix.dirname(seedPath), seedId, entryDirectory);
+        register(series, relative, 'case directory');
         cases.push({
-          seedId, document, entry, group, scene, caseDirectory: fixtures + '/' + filename.slice(0, -5),
+          seedId, document, entry, language, scene, caseDirectory: fixtures + '/' + relative,
           ...seedMetadata.get(seedId), planStatus: seedPlan.get(seedId).status,
         });
       }
@@ -192,8 +186,8 @@ export function loadCases(root, seeds = loadSeeds(root)) {
   }
   assert.deepEqual([...assigned].sort(), [...seeds.keys()].sort(), 'Every seed needs a test binding or an explicit pending status');
   const directories = [...new Set(inventory(root, fixtures, file => file.endsWith('/case.yaml'))
-    .map(file => dirname(dirname(file))))].sort();
-  assert.deepEqual([...series].map(file => file.slice(0, -5)).sort(), directories,
+    .map(file => posix.dirname(posix.dirname(file))))].sort();
+  assert.deepEqual([...series].sort(), directories,
     'Registered entries and fixture directories must correspond one to one');
   return cases;
 }

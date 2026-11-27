@@ -21,7 +21,9 @@ node --test --test-name-pattern='^control-early-return / Early\.choose / origina
 
 ## 登记及文件布局
 
-先按[种子目录](../design/examples/README.md)登记稳定 ID，再在 [CLI 清单](e2e/catalog.yaml)以同一 ID 登记入口和场景。用例位于 `e2e/cases/<分组>/<入口目录>/<用例>/`；按主主题分组时，在入口目录前加种子 ID。入口目录由[登记加载器](e2e/catalog.mjs)从清单计算，不总是入口定位符原文。每个入口有一个 `original/` 用例。参见[早返回原例](e2e/cases/java/control-flow/control-early-return/Early.choose/original/case.yaml)和[取负变体](e2e/cases/java/control-flow/control-early-return/Early.choose/select-negative-fallback/case.yaml)。
+先按[种子目录](../design/examples/README.md)登记稳定 ID。测试沿用种子文件的主题路径：将 `design/examples/` 换为 `tests/e2e/cases/`，将种子文件名换为种子 ID。种子所在主题只由[种子清单](../design/examples/seeds.yaml)决定；[CLI 清单](e2e/catalog.yaml)只按 ID 登记运行方式和入口。同一种子可以登记不同语言或场景，无需复制主题目录。
+
+种子下依次是入口、原例和变体。入口目录由[登记加载器](e2e/catalog.mjs)推导：Java 使用调用名，独立 TypeScript 将定位符里的 `#` 写作 `--`，前端场景用「场景名--入口名」区分。同一入口有一个 `original/`，其余以变体名称组织。参见[早返回原例](e2e/cases/topics/control-flow/control-early-return/Early.choose/original/case.yaml)和[取负变体](e2e/cases/topics/control-flow/control-early-return/Early.choose/select-negative-fallback/case.yaml)。
 
 | 字段 | 内容 |
 |---|---|

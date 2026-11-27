@@ -45,11 +45,11 @@ implementation/tools/normalizer source "$java_project" 'src/HelloWorld.java#Hell
 
 ```sh
 ts_project=$(mktemp -d)
-cp -R tests/e2e/cases/typescript/language-entries/entry-javascript-module/total/original/src "$ts_project/"
+cp -R tests/e2e/cases/topics/language-entries/entry-javascript-module/total.ts--total/original/src "$ts_project/"
 implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total'
 ```
 
-核对[该例的完整预期](../tests/e2e/cases/typescript/language-entries/entry-javascript-module/total/original/case.yaml)。`case.yaml` 只用于验收，不是 CLI 输入。
+核对[该例的完整预期](../tests/e2e/cases/topics/language-entries/entry-javascript-module/total.ts--total/original/case.yaml)。`case.yaml` 只用于验收，不是 CLI 输入。
 
 ## 3. 前端 VO：运行生产入口与消费入口
 
@@ -59,7 +59,7 @@ implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total
 
 ```sh
 producer=$(mktemp -d)
-cp -R tests/e2e/cases/vue/onLoad/original/src "$producer/"
+cp -R tests/e2e/cases/topics/language-entries/frontend-vo-production-vue/frontend-vo-production--onLoad/original/src "$producer/"
 implementation/tools/normalizer scenario frontend-vo-production "$producer" \
   --entry 'src/ArrearsPage.ts#onLoad'
 ```
@@ -68,12 +68,12 @@ implementation/tools/normalizer scenario frontend-vo-production "$producer" \
 
 ```sh
 consumer=$(mktemp -d)
-cp -R tests/e2e/cases/vue/caption/original/src "$consumer/"
+cp -R tests/e2e/cases/topics/language-entries/frontend-vo-consumption-vue/frontend-vo-consumption--caption/original/src "$consumer/"
 implementation/tools/normalizer scenario frontend-vo-consumption "$consumer" \
   --entry 'src/ArrearsPage.ts#caption'
 ```
 
-[生产预期](../tests/e2e/cases/vue/onLoad/original/case.yaml)可查看有序效果；[消费预期](../tests/e2e/cases/vue/caption/original/case.yaml)可查看状态读取与属性结果。自行准备前端分析模块时，先看[生产与消费的 CLI 选择](cli.md#前端-vo-场景)。
+[生产预期](../tests/e2e/cases/topics/language-entries/frontend-vo-production-vue/frontend-vo-production--onLoad/original/case.yaml)可查看有序效果；[消费预期](../tests/e2e/cases/topics/language-entries/frontend-vo-consumption-vue/frontend-vo-consumption--caption/original/case.yaml)可查看状态读取与属性结果。自行准备前端分析模块时，先看[生产与消费的 CLI 选择](cli.md#前端-vo-场景)。
 
 ## 4. 辨认失败
 

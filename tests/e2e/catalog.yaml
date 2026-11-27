@@ -1,332 +1,426 @@
-# 正式 CLI 测试，按主题和稳定种子 ID 定位。
-version: 1
-groups:
-  java/basic-contracts:
-    basic-nonnull-input:
-    - Greeting.label
-    basic-nullable-input:
-    - OptionalText.isMissing
-    basic-return-shape:
-    - PairFactory.make
-    basic-unsupported-source-boundary:
-    - UnsupportedBoundary.format
-    java-invalid-declaration:
-    - TicketCode.read
-    - TicketCode.readValid
-    - TicketCode.Nested.readNested
-    java-source-name-closure:
-    - Catalog.price
-    java-lexical-declaration-scope:
-    - LexicalScope.INSTANCE.read
-    java-assignment-conversion:
-    - AssignmentConversion.read
-    java-grouping-signed-operand:
-    - SignedGrouping.read
-    java-conditional-type-admission:
-    - Shape.read
-  java/collections:
-    collection-eager-map-fallback:
-    - FallbackCaption.INSTANCE.select
-    collection-alias-and-mutation:
-    - AliasCollection.total
-    collection-empty-and-singleton:
-    - FirstValue.firstOrZero
-    - FirstValue.firstRequired
-    collection-filter:
-    - PositiveCount.count
-    collection-find-first:
-    - First.first
-    collection-map:
-    - MapValues.sumPlusOne
-    collection-nested:
-    - NestedValues.total
-    collection-order-and-duplicates:
-    - DistinctValues.distinctCount
-    collection-reduce:
-    - ReduceValues.sumFrom
-    java-eager-first:
-    - Batch.firstId
-    java-independent-choice:
-    - Offers.sample
-    java-map-present-null:
-    - Caption.select
-  java/control-flow:
-    control-early-return:
-    - Early.choose
-    control-exception-path:
-    - Guarded.read
-    control-if-else:
-    - Branch.clamp
-    control-short-circuit:
-    - Guard.allowed
-    - GuardWithProbe.INSTANCE.allowed
-    control-switch-branch:
-    - SwitchMode.classify
-    control-try-catch-finally:
-    - FinallyService.INSTANCE.read
-  java/expression-simplification:
-    expr-boolean-algebra:
-    - Eligibility.eligible
-    expr-case-when-let-extraction:
-    - CaseReuse.cap
-    - CaseReuse.square
-    - CaseReuse.difference
-    expr-constant-folding:
-    - Constant.normalize
-    expr-equation-inequality-normal-form:
-    - System.consistent
-    expr-equation-normal-form:
-    - Equation.matches
-    expr-unknown-condition-preservation:
-    - Unknown.choose
-  java/external-boundaries:
-    external-request-snapshot:
-    - Beans.ENTRY.send
-    external-clock-read:
-    - ClockRead.run
-    java-external-declaration-types:
-    - Beans.ENTRY.label
-    external-callback-order:
-    - Beans.ENTRY.send
-    external-exception-propagation:
-    - Beans.ENTRY.read
-    external-nondeterministic-result:
-    - Beans.ENTRY.doubled
-    external-object-success-failure:
-    - Beans.ENTRY.score
-    external-scalar-success-failure:
-    - Beans.ENTRY.riskScore
-    external-timeout:
-    - Beans.ENTRY.quote
-  java/language-entries:
-    entry-java-instance:
-    - InstanceEntry.INSTANCE.add
-  java/loops:
-    java-loop-bounded-retry:
-    - ScoreService.INSTANCE.fetchScore
-    java-loop-early-exit:
-    - ArrearsService.INSTANCE.firstPayableAmount
-    java-loop-fold:
-    - ArrearsService.INSTANCE.positiveTotal
-    java-loop-unknown:
-    - ReadinessService.INSTANCE.readWhenReady
-  java/loops-and-termination:
-    loop-break-continue:
-    - BreakContinue.sum
-    loop-constant-bound:
-    - SmallLoop.total
-    loop-nested:
-    - NestedLoop.count
-    loop-recursive:
-    - Recursive.down
-    - Recursive.finiteDown
-    loop-variable-finite-bound:
-    - VariableLoop.count
-  java/number-domain:
-    java-explicit-rollover:
-    - Sequence.next
-    number-business-unbounded:
-    - Balance.addFee
-    number-compare-boundaries:
-    - Bound.safe
-    number-decimal-rounding:
-    - DecimalPrice.roundPrice
-    number-division-zero:
-    - Ratio.safeDivide
-    - AdditionControl.addNonzero
-    - Ratio.unchecked
-    number-money-precision:
-    - Money.toMinorUnits
-  java/objects-and-boundaries:
-    java-external-library:
-    - Beans.ENTRY.normalizeLabel
-    java-name-collision:
-    - QuotaService.INSTANCE.difference
-    java-static-object:
-    - Calculator.summarize
-  java/objects-and-types:
-    object-collection-records:
-    - ProfileScores.total
-    object-external-return-type:
-    - Beans.ENTRY.load
-    object-nested-record:
-    - Nested.read
-    object-optional-field:
-    - OptionalField.hasLabel
-    object-polymorphic-dispatch:
-    - Billing.charge
-    - Billing.chargeClosed
-    object-structural-vs-identity:
-    - Identity.sameValue
-    - Identity.sameIdentity
-    - Identity.samePairs
-  java/pure:
-    java-expression-simplification:
-    - Adjustment.adjust
-    java-static:
-    - HelloWorld.addOne
-    java-static-case-when:
-    - Decision.choose
-    java-static-deep-calls:
-    - Pricing.calculate
-  java/relational-data:
-    relation-read-after-write:
-    - Snapshot.delta
-    relation-batch-write:
-    - PayableService.close
-    - PayableAudit.closeWithAudit
-    relation-delete:
-    - CleanupService.removeClosed
-    relation-group-aggregate:
-    - GroupService.statusGroupCount
-    relation-join:
-    - JoinService.openBillCount
-    relation-null-semantics:
-    - NullMemoService.missingMemoCount
-    - NullMemoService.firstRowHasNullMemo
-    - NullMemoService.fallbackStillPreservesNull
-    relation-order-limit:
-    - DueDateService.firstDueDate
-    sql-projected-distinct:
-    - BillReport.countAccounts
-  java/sql:
-    java-static-external-sql:
-    - ArrearsBeans.SERVICE.calculatePayable
-    - PayableService.recordPayable
-    - WaiverService.setOpenBillWaiver
-  java/state-and-aliasing:
-    java-lifo-release:
-    - TaskBatch.complete
-    java-state-alias:
-    - Beans.ENTRY.reset
-    state-call-to-call:
-    - Beans.ENTRY.increment
-    - Beans.ENTRY.read
-    - Beans.ENTRY.incrementThenRead
-    state-collection-mutation:
-    - Beans.ENTRY.update
-    state-cycle-and-observable-output:
-    - Beans.ENTRY.read
-    - LocalCycle.readSelf
-    - LocalCycle.exportSelf
-    state-explicit-marker:
-    - Beans.ENTRY.read
-    - Beans.ENTRY.readPair
-    state-multi-write-read-order:
-    - Beans.ENTRY.delta
-    - Beans.ENTRY.next
-    - StoreRoute.local
-    state-nested-alias:
-    - Beans.ENTRY.read
-  java/unified-canonical-form:
-    canonical-binary-case:
-    - CanonicalCount.clamp
-    - CanonicalCount.present
-    - GuardedResult.pure
-    - GuardedResult.INSTANCE.state
-    canonical-constant-array:
-    - CanonicalArray.digits
-    - CanonicalArray.sized
-    - CanonicalArray.guarded
-    canonical-constant-quotient:
-    - CanonicalQuotient.signed
-    - CanonicalQuotient.large
-    - CanonicalQuotient.guarded
-    - CanonicalQuotient.caught
-    canonical-exception-payload:
-    - CanonicalFailure.validate
-    - GuardedCanonicalFailure.INSTANCE.validate
-    - RemotePayload.INSTANCE.read
-    canonical-integer-partition:
-    - CanonicalQuantity.band
-    - CanonicalQuantity.signGuarded
-    canonical-member-choice:
-    - CanonicalPick.total
-    - StatePick.INSTANCE.choose
-    - ReceiptPick.INSTANCE.choose
-    - MixedTemporal.settle
-    canonical-ordinary-case-reuse:
-    - CaseParity.evaluate
-    canonical-number-selection:
-    - CanonicalQuota.smaller
-    canonical-pure-fold-definitions:
-    - CanonicalFolds.difference
-    - CanonicalFolds.INSTANCE.fromState
-    canonical-text-order:
-    - CanonicalLabel.label
-    - CanonicalLabel.charCode
-    canonical-total-boolean-order:
-    - CanonicalChecks.approved
-    - CanonicalChecks.tier
-    - CanonicalChecks.priority
-    - CanonicalChecks.remainder
-    expr-associative-commutative-normal-form:
-    - Order.total
-  typescript/language-entries:
-    entry-frontend-refactor:
-    - QuotePanel.ts#refreshQuote
-    entry-event-handler:
-    - Click.ts#onClick
-    entry-typescript-standard-binding:
-    - labels.ts#normalized
-    entry-typescript-project-import:
-    - main.ts#run
-    entry-typescript-object-receiver:
-    - main.ts#controller.read
-    entry-async-await:
-    - total.ts#total
-    entry-typescript-function:
-    - value.ts#read
-    entry-javascript-module:
-    - total.ts#total
-    - vector-case.ts#choose
-    - vector-construction.ts#pair
-    - ordered-map.ts#labels
-  typescript/collections:
-    typescript-tuple-slots:
-    - receipt.ts#traceCount
-  typescript/external-boundaries-and-control-flow:
-    composition-callback-and-state:
-    - Dispatch.ts#dispatch
-  typescript/external-boundaries:
-    frontend-deferred-listener:
-    - handler.ts#handle
-  vue:
-    frontend-vo-consumption-vue:
-      scene: frontend-vo-consumption
-      entries:
+# 只登记稳定种子 ID 与 CLI 入口；主题路径来自种子目录。
+version: 2
+seeds:
+  basic-nonnull-input:
+    source:
+      - Greeting.label
+  basic-nullable-input:
+    source:
+      - OptionalText.isMissing
+  basic-return-shape:
+    source:
+      - PairFactory.make
+  basic-unsupported-source-boundary:
+    source:
+      - UnsupportedBoundary.format
+  java-invalid-declaration:
+    source:
+      - TicketCode.read
+      - TicketCode.readValid
+      - TicketCode.Nested.readNested
+  java-source-name-closure:
+    source:
+      - Catalog.price
+  java-lexical-declaration-scope:
+    source:
+      - LexicalScope.INSTANCE.read
+  java-assignment-conversion:
+    source:
+      - AssignmentConversion.read
+  java-grouping-signed-operand:
+    source:
+      - SignedGrouping.read
+  java-conditional-type-admission:
+    source:
+      - Shape.read
+  collection-eager-map-fallback:
+    source:
+      - FallbackCaption.INSTANCE.select
+  collection-alias-and-mutation:
+    source:
+      - AliasCollection.total
+  collection-empty-and-singleton:
+    source:
+      - FirstValue.firstOrZero
+      - FirstValue.firstRequired
+  collection-filter:
+    source:
+      - PositiveCount.count
+  collection-find-first:
+    source:
+      - First.first
+  collection-map:
+    source:
+      - MapValues.sumPlusOne
+  collection-nested:
+    source:
+      - NestedValues.total
+  collection-order-and-duplicates:
+    source:
+      - DistinctValues.distinctCount
+  collection-reduce:
+    source:
+      - ReduceValues.sumFrom
+  java-eager-first:
+    source:
+      - Batch.firstId
+  java-independent-choice:
+    source:
+      - Offers.sample
+  java-map-present-null:
+    source:
+      - Caption.select
+  control-early-return:
+    source:
+      - Early.choose
+  control-exception-path:
+    source:
+      - Guarded.read
+  control-if-else:
+    source:
+      - Branch.clamp
+  control-short-circuit:
+    source:
+      - Guard.allowed
+      - GuardWithProbe.INSTANCE.allowed
+  control-switch-branch:
+    source:
+      - SwitchMode.classify
+  control-try-catch-finally:
+    source:
+      - FinallyService.INSTANCE.read
+  expr-boolean-algebra:
+    source:
+      - Eligibility.eligible
+  expr-case-when-let-extraction:
+    source:
+      - CaseReuse.cap
+      - CaseReuse.square
+      - CaseReuse.difference
+  expr-constant-folding:
+    source:
+      - Constant.normalize
+  expr-equation-inequality-normal-form:
+    source:
+      - System.consistent
+  expr-equation-normal-form:
+    source:
+      - Equation.matches
+  expr-unknown-condition-preservation:
+    source:
+      - Unknown.choose
+  external-request-snapshot:
+    source:
+      - Beans.ENTRY.send
+  external-clock-read:
+    source:
+      - ClockRead.run
+  java-external-declaration-types:
+    source:
+      - Beans.ENTRY.label
+  external-callback-order:
+    source:
+      - Beans.ENTRY.send
+  external-exception-propagation:
+    source:
+      - Beans.ENTRY.read
+  external-nondeterministic-result:
+    source:
+      - Beans.ENTRY.doubled
+  external-object-success-failure:
+    source:
+      - Beans.ENTRY.score
+  external-scalar-success-failure:
+    source:
+      - Beans.ENTRY.riskScore
+  external-timeout:
+    source:
+      - Beans.ENTRY.quote
+  entry-java-instance:
+    source:
+      - InstanceEntry.INSTANCE.add
+  java-loop-bounded-retry:
+    source:
+      - ScoreService.INSTANCE.fetchScore
+  java-loop-early-exit:
+    source:
+      - ArrearsService.INSTANCE.firstPayableAmount
+  java-loop-fold:
+    source:
+      - ArrearsService.INSTANCE.positiveTotal
+  java-loop-unknown:
+    source:
+      - ReadinessService.INSTANCE.readWhenReady
+  loop-break-continue:
+    source:
+      - BreakContinue.sum
+  loop-constant-bound:
+    source:
+      - SmallLoop.total
+  loop-nested:
+    source:
+      - NestedLoop.count
+  loop-recursive:
+    source:
+      - Recursive.down
+      - Recursive.finiteDown
+  loop-variable-finite-bound:
+    source:
+      - VariableLoop.count
+  java-explicit-rollover:
+    source:
+      - Sequence.next
+  number-business-unbounded:
+    source:
+      - Balance.addFee
+  number-compare-boundaries:
+    source:
+      - Bound.safe
+  number-decimal-rounding:
+    source:
+      - DecimalPrice.roundPrice
+  number-division-zero:
+    source:
+      - Ratio.safeDivide
+      - AdditionControl.addNonzero
+      - Ratio.unchecked
+  number-money-precision:
+    source:
+      - Money.toMinorUnits
+  java-external-library:
+    source:
+      - Beans.ENTRY.normalizeLabel
+  java-name-collision:
+    source:
+      - QuotaService.INSTANCE.difference
+  java-static-object:
+    source:
+      - Calculator.summarize
+  object-collection-records:
+    source:
+      - ProfileScores.total
+  object-external-return-type:
+    source:
+      - Beans.ENTRY.load
+  object-nested-record:
+    source:
+      - Nested.read
+  object-optional-field:
+    source:
+      - OptionalField.hasLabel
+  object-polymorphic-dispatch:
+    source:
+      - Billing.charge
+      - Billing.chargeClosed
+  object-structural-vs-identity:
+    source:
+      - Identity.sameValue
+      - Identity.sameIdentity
+      - Identity.samePairs
+  java-expression-simplification:
+    source:
+      - Adjustment.adjust
+  java-static:
+    source:
+      - HelloWorld.addOne
+  java-static-case-when:
+    source:
+      - Decision.choose
+  java-static-deep-calls:
+    source:
+      - Pricing.calculate
+  relation-read-after-write:
+    source:
+      - Snapshot.delta
+  relation-batch-write:
+    source:
+      - PayableService.close
+      - PayableAudit.closeWithAudit
+  relation-delete:
+    source:
+      - CleanupService.removeClosed
+  relation-group-aggregate:
+    source:
+      - GroupService.statusGroupCount
+  relation-join:
+    source:
+      - JoinService.openBillCount
+  relation-null-semantics:
+    source:
+      - NullMemoService.missingMemoCount
+      - NullMemoService.firstRowHasNullMemo
+      - NullMemoService.fallbackStillPreservesNull
+  relation-order-limit:
+    source:
+      - DueDateService.firstDueDate
+  sql-projected-distinct:
+    source:
+      - BillReport.countAccounts
+  java-static-external-sql:
+    source:
+      - ArrearsBeans.SERVICE.calculatePayable
+      - PayableService.recordPayable
+      - WaiverService.setOpenBillWaiver
+  java-lifo-release:
+    source:
+      - TaskBatch.complete
+  java-state-alias:
+    source:
+      - Beans.ENTRY.reset
+  state-call-to-call:
+    source:
+      - Beans.ENTRY.increment
+      - Beans.ENTRY.read
+      - Beans.ENTRY.incrementThenRead
+  state-collection-mutation:
+    source:
+      - Beans.ENTRY.update
+  state-cycle-and-observable-output:
+    source:
+      - Beans.ENTRY.read
+      - LocalCycle.readSelf
+      - LocalCycle.exportSelf
+  state-explicit-marker:
+    source:
+      - Beans.ENTRY.read
+      - Beans.ENTRY.readPair
+  state-multi-write-read-order:
+    source:
+      - Beans.ENTRY.delta
+      - Beans.ENTRY.next
+      - StoreRoute.local
+  state-nested-alias:
+    source:
+      - Beans.ENTRY.read
+  canonical-binary-case:
+    source:
+      - CanonicalCount.clamp
+      - CanonicalCount.present
+      - GuardedResult.pure
+      - GuardedResult.INSTANCE.state
+  canonical-constant-array:
+    source:
+      - CanonicalArray.digits
+      - CanonicalArray.sized
+      - CanonicalArray.guarded
+  canonical-constant-quotient:
+    source:
+      - CanonicalQuotient.signed
+      - CanonicalQuotient.large
+      - CanonicalQuotient.guarded
+      - CanonicalQuotient.caught
+  canonical-exception-payload:
+    source:
+      - CanonicalFailure.validate
+      - GuardedCanonicalFailure.INSTANCE.validate
+      - RemotePayload.INSTANCE.read
+  canonical-integer-partition:
+    source:
+      - CanonicalQuantity.band
+      - CanonicalQuantity.signGuarded
+  canonical-member-choice:
+    source:
+      - CanonicalPick.total
+      - StatePick.INSTANCE.choose
+      - ReceiptPick.INSTANCE.choose
+      - MixedTemporal.settle
+  canonical-ordinary-case-reuse:
+    source:
+      - CaseParity.evaluate
+  canonical-number-selection:
+    source:
+      - CanonicalQuota.smaller
+  canonical-pure-fold-definitions:
+    source:
+      - CanonicalFolds.difference
+      - CanonicalFolds.INSTANCE.fromState
+  canonical-text-order:
+    source:
+      - CanonicalLabel.label
+      - CanonicalLabel.charCode
+  canonical-total-boolean-order:
+    source:
+      - CanonicalChecks.approved
+      - CanonicalChecks.tier
+      - CanonicalChecks.priority
+      - CanonicalChecks.remainder
+  expr-associative-commutative-normal-form:
+    source:
+      - Order.total
+  entry-frontend-refactor:
+    module:
+      - QuotePanel.ts#refreshQuote
+  entry-event-handler:
+    module:
+      - Click.ts#onClick
+  entry-typescript-standard-binding:
+    module:
+      - labels.ts#normalized
+  entry-typescript-project-import:
+    module:
+      - main.ts#run
+  entry-typescript-object-receiver:
+    module:
+      - main.ts#controller.read
+  entry-async-await:
+    module:
+      - total.ts#total
+  entry-typescript-function:
+    module:
+      - value.ts#read
+  entry-javascript-module:
+    module:
+      - total.ts#total
+      - vector-case.ts#choose
+      - vector-construction.ts#pair
+      - ordered-map.ts#labels
+  typescript-tuple-slots:
+    module:
+      - receipt.ts#traceCount
+  composition-callback-and-state:
+    module:
+      - Dispatch.ts#dispatch
+  frontend-deferred-listener:
+    module:
+      - handler.ts#handle
+  frontend-vo-consumption-vue:
+    frontend-vo-consumption:
       - amount
       - caption
-    frontend-vo-production-vue:
-      scene: frontend-vo-production
-      entries:
+  frontend-vo-production-vue:
+    frontend-vo-production:
       - onLoad
-  java/collections-and-expression-simplification:
-    composition-filter-boolean-equation:
-    - Filter.run
-    composition-reduce-case-let:
-    - Reduce.run
-    composition-map-arithmetic:
-    - RowArithmetic.sum
-  java/loops-and-collections:
-    composition-loop-early-selection:
-    - PrefixSelection.firstAbove
-    composition-loop-nested-collection:
-    - BucketImpact.score
-    composition-loop-filter-fold:
-    - QuotaFold.charge
-  java/relational-data-and-state:
-    composition-sql-write-and-inmemory-state:
-    - CleanupLog.INSTANCE.removeClosed
-  java/external-boundaries-and-control-flow:
-    composition-retry-and-exception-path:
-    - QuoteRetry.INSTANCE.quote
-  java/state-and-objects:
-    composition-state-object-projection:
-    - Beans.ENTRY.run
-  java/relational-data-and-collections:
-    composition-relation-to-array:
-    - OrderedMemo.atOffset
-    composition-relation-distinct-aggregate:
-    - DistinctMemo.count
+  composition-filter-boolean-equation:
+    source:
+      - Filter.run
+  composition-reduce-case-let:
+    source:
+      - Reduce.run
+  composition-map-arithmetic:
+    source:
+      - RowArithmetic.sum
+  composition-loop-early-selection:
+    source:
+      - PrefixSelection.firstAbove
+  composition-loop-nested-collection:
+    source:
+      - BucketImpact.score
+  composition-loop-filter-fold:
+    source:
+      - QuotaFold.charge
+  composition-sql-write-and-inmemory-state:
+    source:
+      - CleanupLog.INSTANCE.removeClosed
+  composition-retry-and-exception-path:
+    source:
+      - QuoteRetry.INSTANCE.quote
+  composition-state-object-projection:
+    source:
+      - Beans.ENTRY.run
+  composition-relation-to-array:
+    source:
+      - OrderedMemo.atOffset
+  composition-relation-distinct-aggregate:
+    source:
+      - DistinctMemo.count
 pending: []

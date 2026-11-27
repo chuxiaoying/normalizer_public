@@ -67,8 +67,7 @@ function loadFixture(root, directory, language, entry, scene, inputs, caseId) {
 export function* loadFixtureEntries(root, seeds) {
   const inputs = new Map();
   for (const registration of loadCases(root, seeds)) {
-    const { entry, group, scene, caseDirectory } = registration;
-    const language = group.split('/')[0];
+    const { entry, language, scene, caseDirectory } = registration;
     const files = readdirSync(join(root, caseDirectory), { withFileTypes: true });
     assert.ok(files.some(file => file.name === 'original'), caseDirectory + ': missing original');
     assert.ok(files.every(file => file.isDirectory() && caseName.test(file.name)), caseDirectory + ': unexpected fixture item');
@@ -76,6 +75,6 @@ export function* loadFixtureEntries(root, seeds) {
     const cases = names.map(name => ({
       name, ...loadFixture(root, caseDirectory + '/' + name, language, entry, scene, inputs, name),
     }));
-    yield { ...registration, language, entry: language === 'typescript' ? entry.split('#')[1] : entry, cases };
+    yield { ...registration, entry: !scene && language === 'typescript' ? entry.split('#')[1] : entry, cases };
   }
 }
