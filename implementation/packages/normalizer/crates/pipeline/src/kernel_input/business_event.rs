@@ -8,33 +8,10 @@ use super::{
 };
 use serde_json::json;
 
-// Guards use the PERS condition grammar. Parentheses preserve the math tree,
-// and operands remain in their original evaluation order.
+// Guards use the same PERS grammar and precedence as every value.
 pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
-    fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
-        if let Some(bound) = crate::formatting::sql::format_array_failure_union(expr, ctx) {
-            return bound;
-        }
-        if let Some((op, left, right)) = expr.as_binop() {
-            let symbol = match op {
-                BinOpKind::Or => "or",
-                BinOpKind::And => "and",
-                _ => return crate::format_expr_with_ctx(expr, ctx),
-            };
-            if let Some(guarded) =
-                crate::formatting::sql::business_value::format_guarded_boolean(op, left, right, ctx)
-            {
-                return guarded;
-            }
-            return format!(
-                "{} {symbol} {}",
-                render(left, ctx),
-                render(right, ctx)
-            );
-        }
-        crate::format_expr_with_ctx(expr, ctx)
-    }
-    render(expr, ctx)
+    crate::formatting::sql::format_array_failure_union(expr, ctx)
+        .unwrap_or_else(|| crate::format_expr_with_ctx(expr, ctx))
 }
 
 fn bind_receipt<'a>(
