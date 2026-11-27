@@ -20,6 +20,9 @@ function compileProjection(projection) {
   function read(target) {
     const [binding, ...fields] = target;
     const alias = bindings.get(binding);
+    if (alias && !alias.statePath) {
+      throw new Error(`SCENARIO_MODULE_INPUT: projection property read needs a record binding: ${binding}`);
+    }
     const statePath = [...(alias?.statePath ?? [binding]), ...fields];
     const [root, ...path] = statePath;
     const key = JSON.stringify(statePath);
@@ -47,9 +50,10 @@ function compileProjection(projection) {
     if (expr.op === 'read') return read(expr.target);
     if (expr.op === 'var') {
       const binding = bindings.get(expr.name);
-      if (binding?.statePath || projection.states.has(expr.name)) return read([expr.name]);
-      if (!binding) throw new Error(`SCENARIO_MODULE_INPUT: unbound projection local ${expr.name}`);
-      return { type: binding.type, body: { op: 'var', name: binding.name } };
+      if (binding?.statePath) return read([expr.name]);
+      if (binding) return { type: binding.type, body: { op: 'var', name: binding.name } };
+      if (projection.states.has(expr.name)) return read([expr.name]);
+      throw new Error(`SCENARIO_MODULE_INPUT: unbound projection local ${expr.name}`);
     }
     if (expr.op === 'literal') {
       const type = { number: 'number', boolean: 'bool', string: 'text' }[expr.type];
