@@ -61,6 +61,9 @@ pub(super) fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> boo
             right,
         } => exact_business_integer(left, ctx) && exact_business_integer(right, ctx),
         ExprKind::RowValue { acquired_integer: true, .. } => true,
+        // The current physical SQL number binding is constructed only
+        // for a declared exact integer column, not an unchecked number.
+        ExprKind::RowValue { sql: Some(column), .. } => column.scalar_type == "number",
         ExprKind::Call { key, .. } if crate::domains::completion::output_name(&crate::func_name(*key)) == "completion.value" =>
             crate::domains::primitive::registry::func_return_type(*key) == Some(crate::Primitive::Number),
         ExprKind::Call { .. } => crate::domains::composite::field_projection(value)
@@ -89,7 +92,10 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         // This strict rewrite keeps the exact same acquired base exactly
         // once. The two other values are integer literals, so no evaluation,
         // observation or completion domain can be lost or reordered.
-        if let Some((B::Add, base, first)) = left.as_binop() {
+        if let Some((B::Add, x, y)) = left.as_binop() {
+            let (base, first) = if y.as_lit().and_then(Lit::as_integer).is_some() {
+                (x, y)
+            } else { (y, x) };
             if exact_business_integer(base, ctx) {
                 if let (Some(first), Some(second)) = (
                     first.as_lit().and_then(Lit::as_integer),
