@@ -149,7 +149,7 @@ impl<'a> Engine<'a> {
         leaf.is_some_and(|ty| match primitive_type {
             "integer" => crate::normalized::integral(ty),
             "boolean" => matches!(ty, JavaType::Primitive(name) if name == "boolean"),
-            "text" => matches!(ty, JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String")),
+            "text" | "text?" => matches!(ty, JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String")),
             _ => false,
         })
     }

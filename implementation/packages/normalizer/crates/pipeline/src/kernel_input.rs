@@ -832,6 +832,8 @@ impl Loaded {
                     let owner = entry.rsplit_once('.').ok_or_else(|| fail("missing entry owner"))?.0;
                     let class = e.program.find_class(owner).ok_or_else(|| fail("entry owner missing"))?;
                     crate::normalized::source_nullable_parameter(class, m, n, t)?
+                        || self.project.entry_contexts.get(entry).and_then(|ctx| ctx.binding(n).ok())
+                            .is_some_and(|(_, ty)| ty == "text?")
                 };
                 e.entry_argument(n, t, &expected, nullable)
             })

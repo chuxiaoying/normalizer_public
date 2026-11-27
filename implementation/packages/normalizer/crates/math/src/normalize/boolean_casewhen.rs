@@ -10,7 +10,7 @@ pub(super) fn total_value(expr: &Expr) -> bool {
         ExprKind::Lit(_) => true,
         ExprKind::SymVar { origin: crate::SymVarOrigin::Parameter { name, primitive_type } } =>
             !name.starts_with('$') && !name.contains(['.', '[', ']'])
-                && matches!(primitive_type.as_str(), "boolean" | "integer" | "text"),
+                && matches!(primitive_type.as_str(), "boolean" | "integer" | "text" | "text?"),
         ExprKind::UnaryOp { operand, .. } => total_value(operand),
         ExprKind::BinOp { left, right, .. } => total_value(left) && total_value(right),
         ExprKind::CaseWhen { .. } => expr.as_total_case_when().is_some_and(|(arms, fallback)| {

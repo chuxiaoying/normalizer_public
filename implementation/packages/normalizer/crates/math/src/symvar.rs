@@ -10,6 +10,7 @@ pub enum ScalarSymbolType {
     CalendarDate,
     Boolean,
     Text,
+    NullableText,
     UntrustedSourceValue,
 }
 
@@ -20,6 +21,7 @@ impl ScalarSymbolType {
             Self::ExactDecimal => crate::domains::decimal::VALUE_TAG,
             Self::Boolean => "boolean",
             Self::Text => "text",
+            Self::NullableText => "text?",
             Self::UntrustedSourceValue => "ts_unknown",
             Self::CalendarDate => "date",
         }

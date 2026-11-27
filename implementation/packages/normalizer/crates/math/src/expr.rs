@@ -531,6 +531,9 @@ impl Expr {
     /// aggregate/relationship boundaries: an acquired COUNT is not a row value.
     pub(crate) fn may_observe_sql_unknown(&self) -> bool {
         let mut nullable = false;
+        let sql_column = |value: &Expr| matches!(value.kind(), ExprKind::RowValue { sql: Some(_), .. });
+        let nullable_symbol = |value: &Expr| value.as_sym_var()
+            .is_some_and(|symbol| symbol.primitive_type() == "text?");
         self.walk_pruned(&mut |node| match node.kind() {
             ExprKind::RelationAggregate { .. } | ExprKind::Relation(_) => false,
             ExprKind::BinOp { op: BinOpKind::Eq | BinOpKind::Ne, left, right }
@@ -540,6 +543,15 @@ impl Expr {
                 // The relational front end encodes the explicit IS [NOT]
                 // NULL predicate this way. It is total over nullable columns,
                 // unlike SQL equality with an arbitrary nullable operand.
+                false
+            }
+            ExprKind::BinOp { op, left, right } if matches!(op, BinOpKind::Eq | BinOpKind::Ne | BinOpKind::Gt | BinOpKind::Lt | BinOpKind::Ge | BinOpKind::Le)
+                && ((sql_column(left) && nullable_symbol(right))
+                    || (sql_column(right) && nullable_symbol(left))) =>
+            {
+                // A non-null physical column can still compare to a
+                // nullable parameter or captured field in SQL.
+                nullable = true;
                 false
             }
             ExprKind::RowValue { sql: Some(column), .. } => {

@@ -301,7 +301,7 @@ impl EntryContext {
         }
     }
 
-    fn binding(&self, name: &str) -> Result<(String, &str)> {
+    pub(super) fn binding(&self, name: &str) -> Result<(String, &str)> {
         let Some(path) = self.bindings.get(name) else {
             let parameter = self.parameters.get(name).ok_or_else(|| format!("undeclared input {name}"))?;
             return Ok((self.qualified("P", name), &parameter.ty));

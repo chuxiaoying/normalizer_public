@@ -119,6 +119,8 @@ impl Engine<'_> {
                 (owner.into(), Origin::Parameter { path: name.into(), nullable }),
             );
             Ok(Value::Term(Ty::Ref, b::heap_ref(reference.id())))
+        } else if nullable && *ty == Ty::Text {
+            Ok(Value::Term(Ty::Text, b::param(name, ScalarSymbolType::NullableText)))
         } else {
             symbolic(name, ty, &mut self.heap, Some(declared))
         }
@@ -429,21 +431,23 @@ impl Engine<'_> {
                     .ok_or_else(|| fail("unresolved source receiver"))?,
             )
             .ok_or_else(|| fail("unknown source receiver"))?;
-        let field = self
-            .program
-            .find_class(owner)
-            .and_then(|c| c.fields().iter().find(|f| f.name() == name))
+        let class = self.program.find_class(owner).ok_or_else(|| fail("unknown source class"))?;
+        let field = class.fields().iter().find(|f| f.name() == name)
             .ok_or_else(|| fail("unknown source field"))?;
         let ty = self.project.parameter_type(field.java_type())?;
+        let primitive = || {
+            if crate::normalized::nullable_text_field(class, field) { Ok(ScalarSymbolType::NullableText) }
+            else { scalar_origin_type(&ty) }
+        };
         let expr = match origin {
             Origin::EntryReceiver => return Err(fail("live receiver must acquire declared state")),
             Origin::Allocation => self
                 .realtime_store
                 .read_on_path(reference, name, path)
                 .ok_or_else(|| fail("uninitialized source field"))?,
-            Origin::Parameter { path: root, .. } => b::param(format!("{root}.{name}"), scalar_origin_type(&ty)?),
+            Origin::Parameter { path: root, .. } => b::param(format!("{root}.{name}"), primitive()?),
             Origin::State { binding, path } => {
-                let primitive = scalar_origin_type(&ty)?;
+                let primitive = primitive()?;
                 let mut field_path = path.clone();
                 field_path.push(name.to_owned());
                 b::sym_e_path(*binding, field_path, primitive)
