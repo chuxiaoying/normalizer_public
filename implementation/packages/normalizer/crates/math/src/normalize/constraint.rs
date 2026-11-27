@@ -1,47 +1,19 @@
-//! 线性约束域求解器。
-//!
-//! 本模块为 AND 上下文提供体系化的**同 subject 算术约束矛盾/蕴含判定**，
-//! 替代零散的单点规则（如 `x < x → false`）。
-//!
-//! ## 设计
-//!
-//! 对 `x op c` 形式的比较表达式（x 为任意 Expr subject，op 为比较运算符，
-//! c 为整数字面量），提取为 `LinearConstraint { subject, bound }`。
-//!
-//! 给定 AND 上下文中的约束集合，对每个 subject 构建一维整数域，
-//! 检测新约束是否与已知域矛盾（恒 false）或被蕴含（恒 true）。
-//!
-//! ## 不变式
-//!
-//! - 不调用 `path_implies` / `path_contradicts`（避免递归）
-//! - Subject 识别使用 Expr structural equality（`==`）
-//! - O(n) 扫描 AND 子式，无递归风险
-//! - 只处理整数字面量 bound；非字面量 bound 不参与求解
+//! Exact bound proofs for an acquired integer subject. Strict bounds
+//! become inclusive endpoints without using a machine-word limit.
 
 use crate::expr::{BinOpKind, Comparison, Expr, ExprKind, Lit};
+use num_bigint::BigInt;
 
-/// 约束的 bound 部分。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ConstraintBound {
-    /// subject > value
-    Gt(i64),
-    /// subject >= value
-    Ge(i64),
-    /// subject < value
-    Lt(i64),
-    /// subject <= value
-    Le(i64),
-    /// subject == value
-    Eq(i64),
-    /// subject != value
-    Ne(i64),
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ConstraintBound {
+    Interval { low: Option<BigInt>, high: Option<BigInt> },
+    Excludes(BigInt),
 }
 
-/// 从比较表达式中提取的线性约束。
 #[derive(Debug, Clone)]
-pub(crate) struct LinearConstraint {
-    pub subject: Expr,
-    pub bound: ConstraintBound,
+struct LinearConstraint {
+    subject: Expr,
+    bound: ConstraintBound,
 }
 
 /// Align a recognized literal on the right without widening any caller's policy.
@@ -66,6 +38,7 @@ fn align_comparison_literal<'a, T>(
     }
 }
 
+// A separate bounded legacy matcher; not used by the proof below.
 pub(super) fn compact_integer(expr: &Expr) -> Option<i64> {
     match expr.as_lit()? {
         Lit::Int(value) => Some(*value),
@@ -73,88 +46,60 @@ pub(super) fn compact_integer(expr: &Expr) -> Option<i64> {
     }
 }
 
-/// 从比较表达式中提取线性约束。
-///
-/// 支持的形式：
-/// - `x op c`（x 为任意非字面量 Expr，c 为整数字面量）
-/// - `c op x`（自动翻转为 `x flip(op) c`）
-///
-/// 返回 None 如果表达式不是上述形式。
-pub(crate) fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
-    let (subject, bound) = compact_bound(expr)?;
-    // An ordinary local context proof requires a nonliteral subject.
-    subject.as_lit().is_none().then(|| LinearConstraint {
-        subject: subject.clone(),
-        bound,
-    })
-}
-
-fn compact_bound(expr: &Expr) -> Option<(&Expr, ConstraintBound)> {
+fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
     let (op, left, right) = expr.as_binop()?;
-    let (op, subject, value) = align_comparison_literal(op.comparison()?, left, right, compact_integer)?;
-    use Comparison::*;
+    let (op, subject, value) =
+        align_comparison_literal(op.comparison()?, left, right, |literal| literal.as_lit()?.as_integer())?;
+    if subject.as_lit().is_some() || !super::integer_ac::total_integer(subject) {
+        return None;
+    }
+    use ConstraintBound::{Excludes, Interval};
     let bound = match op {
-        Lt => ConstraintBound::Lt(value),
-        Gt => ConstraintBound::Gt(value),
-        Le => ConstraintBound::Le(value),
-        Ge => ConstraintBound::Ge(value),
-        Eq => ConstraintBound::Eq(value),
-        Ne => ConstraintBound::Ne(value),
+        Comparison::Gt => Interval { low: Some(value + 1), high: None },
+        Comparison::Ge => Interval { low: Some(value), high: None },
+        Comparison::Lt => Interval { low: None, high: Some(value - 1) },
+        Comparison::Le => Interval { low: None, high: Some(value) },
+        Comparison::Eq => Interval { low: Some(value.clone()), high: Some(value) },
+        Comparison::Ne => Excludes(value),
     };
-    Some((subject, bound))
+    Some(LinearConstraint { subject: subject.clone(), bound })
 }
 
-/// 检查两个同 subject 约束是否矛盾（域交集为空）。
-///
-/// 前提：调用方已确认 `a.subject == b.subject`。
-pub(crate) fn bounds_contradict(a: ConstraintBound, b: ConstraintBound) -> bool {
-    use ConstraintBound::*;
+fn bounds_contradict(a: &ConstraintBound, b: &ConstraintBound) -> bool {
+    use ConstraintBound::{Excludes, Interval};
     match (a, b) {
-        (Eq(point), bound) | (bound, Eq(point)) => !point_satisfies(bound, point),
-        (Gt(lo), Lt(hi)) | (Lt(hi), Gt(lo))
-        | (Gt(lo), Le(hi)) | (Le(hi), Gt(lo))
-        | (Ge(lo), Lt(hi)) | (Lt(hi), Ge(lo)) => hi <= lo,
-        (Ge(lo), Le(hi)) | (Le(hi), Ge(lo)) => hi < lo,
-        _ => false,
+        (Interval { low: a_low, high: a_high }, Interval { low: b_low, high: b_high }) => {
+            a_low.as_ref().zip(b_high.as_ref()).is_some_and(|(low, high)| low > high)
+                || b_low.as_ref().zip(a_high.as_ref()).is_some_and(|(low, high)| low > high)
+        }
+        (Interval { low, high }, Excludes(value)) | (Excludes(value), Interval { low, high }) =>
+            low.as_ref() == Some(value) && high.as_ref() == Some(value),
+        (Excludes(_), Excludes(_)) => false,
     }
 }
 
-fn point_satisfies(bound: ConstraintBound, point: i64) -> bool {
-    use ConstraintBound::*;
-    match bound {
-        Gt(value) => point > value,
-        Ge(value) => point >= value,
-        Lt(value) => point < value,
-        Le(value) => point <= value,
-        Eq(value) => point == value,
-        Ne(value) => point != value,
-    }
-}
-
-/// 检查 `existing` 是否蕴含 `target`（在 existing 成立时 target 恒 true）。
-///
-/// 前提：调用方已确认 subject 相同。
-pub(crate) fn bound_implies(existing: ConstraintBound, target: ConstraintBound) -> bool {
-    use ConstraintBound::*;
+fn bound_implies(existing: &ConstraintBound, target: &ConstraintBound) -> bool {
+    use ConstraintBound::{Excludes, Interval};
     match (existing, target) {
-        (Eq(point), required) => point_satisfies(required, point),
-        (Ne(_), _) => false,
-        (Gt(a), Gt(b) | Ge(b)) | (Ge(a), Ge(b)) => a >= b,
-        (Lt(a), Lt(b)) | (Le(a), Le(b)) => a <= b,
-        (Lt(a), Le(b)) => i128::from(a) <= i128::from(b) + 1,
-        (Le(a), Lt(b)) => a < b,
-        _ => false,
+        (Interval { low: a_low, high: a_high }, Interval { low: b_low, high: b_high }) => {
+            b_low.as_ref().is_none_or(|low| a_low.as_ref().is_some_and(|own| own >= low))
+                && b_high.as_ref().is_none_or(|high| a_high.as_ref().is_some_and(|own| own <= high))
+        }
+        (Interval { low, high }, Excludes(value)) =>
+            low.as_ref().is_some_and(|low| value < low) || high.as_ref().is_some_and(|high| value > high),
+        (Excludes(a), Excludes(b)) => a == b,
+        (Excludes(_), Interval { .. }) => false,
     }
 }
 
 fn any_matching_bound(
     expr: &Expr,
     context: &[Expr],
-    proves: impl Fn(ConstraintBound, ConstraintBound) -> bool,
+    proves: impl Fn(&ConstraintBound, &ConstraintBound) -> bool,
 ) -> bool {
     let Some(target) = extract_linear_constraint(expr) else { return false; };
     context.iter().filter_map(extract_linear_constraint).any(|candidate| {
-        candidate.subject == target.subject && proves(candidate.bound, target.bound)
+        candidate.subject == target.subject && proves(&candidate.bound, &target.bound)
     })
 }
 
