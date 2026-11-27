@@ -266,6 +266,41 @@ impl EntryContext {
         Ok(None)
     }
 
+    /// The adapter transport cannot relabel a checked business value.
+    pub(super) fn validate_carrier_domains(
+        &self, method: &JavaMethod, params: &[super::Ty], returns: &super::Ty,
+    ) -> Result<()> {
+        for ((_, name), ty) in method.params().iter().zip(params) {
+            let (_, domain) = self.binding(name)?;
+            if !self.matches_adapter_domain(ty, domain) {
+                return Err(format!("adapter parameter {name} disagrees with its declared domain {domain}").into());
+            }
+        }
+        if !self.matches_adapter_domain(returns, &self.returns) {
+            return Err(format!("adapter result disagrees with declared domain {}", self.returns).into());
+        }
+        Ok(())
+    }
+
+    fn matches_adapter_domain(&self, ty: &super::Ty, domain: &str) -> bool {
+        use super::Ty;
+        match ty {
+            Ty::Unit => domain == "void",
+            Ty::Integer | Ty::Decimal => domain == "number",
+            Ty::Bool => domain == "bool",
+            Ty::CalendarDate => domain == "date",
+            Ty::Text => matches!(domain, "text" | "text?"),
+            Ty::UnknownInput => domain == "unknown",
+            Ty::OrderedTextMap => domain == "map<text,text>",
+            Ty::Seq(item) | Ty::Vector(item) => domain.strip_suffix("[]")
+                .is_some_and(|item_domain| self.matches_adapter_domain(item, item_domain)),
+            Ty::Record(fields) => self.types.get(domain).is_some_and(|record|
+                record.fields.len() == fields.len() && fields.iter().all(|(name, ty)|
+                    record.fields.get(name).is_some_and(|domain| self.matches_adapter_domain(ty, domain)))),
+            Ty::Ref | Ty::Task(_) | Ty::LocalRelation | Ty::LocalTextMap => false,
+        }
+    }
+
     fn binding(&self, name: &str) -> Result<(String, &str)> {
         let Some(path) = self.bindings.get(name) else {
             let parameter = self.parameters.get(name).ok_or_else(|| format!("undeclared input {name}"))?;
@@ -441,15 +476,12 @@ impl EntryContext {
 
     fn render_output(&self, output: BusinessOutput, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool) -> Result<String> {
         let mut names = BTreeMap::new();
-        for (ty, name) in method.params() {
-            let (display, domain) = self.binding(name)?;
-            check_domain(ty, domain)?;
-            names.insert(name.clone(), display);
+        for (_, name) in method.params() {
+            names.insert(name.clone(), self.binding(name)?.0);
         }
         for name in self.parameters.keys() {
             names.insert(super::host_input_symbol(name), self.qualified("P", name));
         }
-        if !certified_composite_return { check_domain(method.return_type(), &self.returns)?; }
         self.add_initial_state_names(&mut names);
         let states = result.source_state_bindings.iter().map(|(id, root)| (*id, self.qualified("E", root))).collect::<BTreeMap<_,_>>();
         let arrays = self.scalar_array_symbols();
@@ -661,10 +693,4 @@ impl EntryContext {
         }
         published
     }
-}
-
-
-fn check_domain(ty: &JavaType, domain: &str) -> Result<()> {
-    let _ = (ty, domain);
-    Ok(())
 }

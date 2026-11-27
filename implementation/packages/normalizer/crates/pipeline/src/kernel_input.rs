@@ -767,6 +767,9 @@ impl Loaded {
                     && matches!(&f.body, Node::Var { name } if name == &f.params[0].name),
                     "unknown result must preserve the exact original source value")?;
             }
+            if let Some(context) = self.project.entry_contexts.get(id) {
+                context.validate_carrier_domains(m, &parameters, &declared.returns)?;
+            }
             need(
                 declared.binding.replace(Rc::new(CheckedBinding { name, function: f, parameters })).is_none(),
                 "duplicate binding",
