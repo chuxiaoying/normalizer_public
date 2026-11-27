@@ -37,10 +37,10 @@ S:
   - write:
       target: 'values[0]'
       value: next
-      when: LENGTH(values) > 0
+      when: 0 < LENGTH(values)
 R: COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values) + next
 throws:
-  - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
+  - { type: java.lang.ArrayIndexOutOfBoundsException, when: '0 == LENGTH(values)' }
 ```
 
 R 中扣的是写入前的有序首项，按[统一定形](../../../chapters/08-统一定形.md)记作 `FIRST(value FROM values)`；S 中的 `values[0]` 仍是精确的写入目标，不能改成读公式。

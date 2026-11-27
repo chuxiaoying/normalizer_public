@@ -36,7 +36,7 @@ entry: { function: src/FirstValue.java#FirstValue.firstOrZero, returns: number }
 P:
   parameters:
     values: { position: 0, type: 'number[]' }
-R: CASE WHEN LENGTH(values) == 0 THEN 0 ELSE FIRST(value FROM values) END
+R: CASE WHEN 0 == LENGTH(values) THEN 0 ELSE FIRST(value FROM values) END
 ```
 
 **验收要点**：空集合、单元素和多元素是同一个首项合同的不同输入域，默认值和位置读取都必须保留。
@@ -67,7 +67,7 @@ P:
     values: { position: 0, type: 'number[]' }
 R: FIRST(value FROM values)
 throws:
-  - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
+  - { type: java.lang.ArrayIndexOutOfBoundsException, when: '0 == LENGTH(values)' }
 ```
 
 长度也可在源码可见的辅助函数中观察。把已绑定的 `values` 传给以 `items` 为形参名的长度函数，返回 `LENGTH(values)`；辅助函数形参名不能覆盖借用来源，也不能凭空产生数组读写、越界或 S。

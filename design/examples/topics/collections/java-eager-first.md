@@ -62,7 +62,7 @@ P:
     rows: { position: 0, type: 'Row[]' }
 R: FIRST(r.ticket.id FROM rows AS r)
 throws:
-  - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(rows) == 0' }
+  - { type: java.lang.ArrayIndexOutOfBoundsException, when: '0 == LENGTH(rows)' }
   - { type: java.lang.NullPointerException, when: 'EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)' }
 ```
 

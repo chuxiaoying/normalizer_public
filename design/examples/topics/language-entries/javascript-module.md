@@ -82,7 +82,7 @@ P:
     values: { position: 0, type: 'number[]' }
 R: |-
   CASE
-    WHEN LENGTH(values) == 0 THEN 11
+    WHEN 0 == LENGTH(values) THEN 11
     ELSE 7
   END
 ```
