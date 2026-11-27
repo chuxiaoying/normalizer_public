@@ -39,3 +39,9 @@
     - { from: '(balance && address) && consent', to: '(address && balance) || (address && !consent)' }
   expect:
     - { path: [R], value: 'address AND (balance OR NOT (consent))' }
+
+- name: nested-boolean-choice-keeps-only-the-independent-truth-set
+  edits:
+    - {from: '(balance && address) && consent', to: '(address ? consent : !consent) ? true : address'}
+  expect:
+    - {path: [R], value: 'address OR NOT (consent)'}

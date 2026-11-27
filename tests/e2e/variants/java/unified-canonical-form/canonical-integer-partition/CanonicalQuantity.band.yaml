@@ -131,3 +131,14 @@
           WHEN quantity < 1 THEN 20
           ELSE 30
         END
+
+- name: explicit-adjacent-integer-intervals-eliminate-the-unreachable-fallback
+  edits:
+    - from: |-
+        if (quantity < 3) return 20;
+                if (quantity <= 5) return 20;
+                return 30;
+      to: |-
+        if (quantity >= 0 && quantity <= 5) return 20;
+                if (quantity >= 6) return 30;
+                return 99;
