@@ -1,0 +1,17 @@
+entry: src/FallbackCaption.java#FallbackCaption.INSTANCE.select
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/FallbackCaption.java#FallbackCaption.INSTANCE.select, returns: 'text?' }
+  P:
+    parameters:
+      cleared: { position: 0, type: bool }
+  S:
+    - call:
+        args: []
+        external: src/FallbackCaption.java#FallbackCaption.INSTANCE.defaults.get
+        result: $e_0
+        returns: text
+  throws:
+    - type: CaptionUnavailable
+      when: completion.is_throw($e_0, CaptionUnavailable)
+  R: 'null'

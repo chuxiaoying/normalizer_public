@@ -25,6 +25,8 @@ groups:
     java-conditional-type-admission:
     - Shape.read
   java/collections:
+    collection-eager-map-fallback:
+    - FallbackCaption.INSTANCE.select
     collection-alias-and-mutation:
     - AliasCollection.total
     collection-empty-and-singleton:

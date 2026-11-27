@@ -103,3 +103,4 @@ collection-alias-and-mutation: topics/collections/java-alias-mutation.md
 object-polymorphic-dispatch: topics/objects-and-types/java-polymorphic-dispatch.md
 state-cycle-and-observable-output: topics/state-and-aliasing/java-cycle-observable.md
 composition-map-arithmetic: compositions/collections-and-expression-simplification/java-map-arithmetic.md
+collection-eager-map-fallback: topics/collections/java-eager-map-fallback.md

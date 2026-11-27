@@ -3,8 +3,8 @@ model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
   total: 125
-  seeded: 103
-  planned: 22
+  seeded: 104
+  planned: 21
 topics:
   expression-simplification:
     title: 表达式化简
@@ -183,7 +183,8 @@ topics:
         surface: java/javascript/typescript
         focus: 集合别名、原地修改和读取时点
       - id: collection-eager-map-fallback
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java
         focus: 键存在但值为空仍返回空值，同时保留已求值后备实参的效果和异常
   control-flow:
