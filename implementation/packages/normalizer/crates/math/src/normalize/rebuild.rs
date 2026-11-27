@@ -150,6 +150,14 @@ fn rebuild_relation_with_children_simplified(
             left: left.clone(), right: right.clone(), on: recurse(on),
             filters: filters.iter().map(recurse).collect(),
         },
-        RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. } => relation.clone(),
+        RelationExpr::ProjectedUnion(branches) => {
+            let mut mapped = branches.iter().map(|branch| {
+                let mut branch = branch.clone();
+                branch.filters = branch.filters.iter().map(recurse).collect();
+                branch
+            });
+            RelationExpr::projected_union(mapped.next().expect("nonempty projected union"), mapped)
+        }
+        RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. } => relation.clone(),
     }
 }

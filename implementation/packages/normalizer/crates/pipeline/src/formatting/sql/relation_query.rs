@@ -12,7 +12,7 @@ fn predicate_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
             else if left.is_null() { right.as_row_value() } else { None };
         if let Some(row) = row {
             let test = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
-            return format!("{row} {test}");
+            return format!("{} {test}", ctx.projected_column_label(row));
         }
     }
     crate::format_expr_with_ctx(expr, ctx)
@@ -69,9 +69,18 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     if kind == math::RelationAggregateKind::Count && value.is_none() {
         if let RelationExpr::ProjectedUnion(branches) = relation {
             let distinct = if branches.iter().len() == 1 { "DISTINCT " } else { "" };
-            let selection = branches.iter().map(|(table, column)| {
-                let from = table_reference(&table.name, table.snapshot, ctx)?;
-                Some(format!("  SELECT {distinct}{column} FROM {from}"))
+            let selection = branches.iter().map(|branch| {
+                let from = table_reference(&branch.table.name, branch.table.snapshot, ctx)?;
+                let mut sql = format!("  SELECT {distinct}{} FROM {from}", branch.column);
+                let mut filters: Vec<_> = branch.filters.iter().collect();
+                sort_predicates(&mut filters, ctx);
+                for (index, filter) in filters.into_iter().enumerate() {
+                    sql.push_str(if index == 0 { " WHERE " } else { " AND " });
+                    let previous = ctx.projected_table.replace(branch.table.name.clone());
+                    sql.push_str(&predicate_text(filter, ctx));
+                    ctx.projected_table = previous;
+                }
+                Some(sql)
             }).collect::<Option<Vec<_>>>()?.join("\n  UNION\n");
             return Some(format!("SELECT COUNT(*) FROM (\n{selection}\n) AS accounts"));
         }

@@ -20,7 +20,7 @@ use crate::{
     Expr, builder,
     expr::{ExprKind, RelationAggregateKind},
 };
-use std::collections::BTreeSet;
+use crate::{canonical_order_key, DefaultSortContext};
 
 /// Physical table provenance, optionally refined to one acquired snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -29,14 +29,35 @@ pub struct TableSource {
     pub snapshot: Option<u64>,
 }
 
-/// At least one already-bound physical column. Sorting and deduplication
-/// belong to the set, not to a later SQL alias recognizer.
+/// A projection preserves both its acquired source and the source's domain.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ProjectedColumns(BTreeSet<(TableSource, String)>);
+pub struct ProjectedColumn {
+    pub table: TableSource,
+    pub column: String,
+    pub filters: Vec<Expr>,
+}
+
+/// Nonempty canonical set of projected source columns with their filters.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ProjectedColumns(Vec<ProjectedColumn>);
 
 impl ProjectedColumns {
-    pub fn iter(&self) -> impl Iterator<Item = (&TableSource, &str)> + ExactSizeIterator {
-        self.0.iter().map(|(table, column)| (table, column.as_str()))
+    pub fn iter(&self) -> impl Iterator<Item = &ProjectedColumn> + ExactSizeIterator {
+        self.0.iter()
+    }
+
+    pub(crate) fn new(mut columns: Vec<ProjectedColumn>) -> Self {
+        for branch in &mut columns {
+            branch.filters.retain(|predicate| predicate.as_bool() != Some(true));
+            branch.filters.sort_by_cached_key(|predicate| canonical_order_key(predicate, &DefaultSortContext));
+            branch.filters.dedup();
+        }
+        columns.sort_by_cached_key(|branch| (
+            branch.table.clone(), branch.column.clone(),
+            branch.filters.iter().map(|predicate| canonical_order_key(predicate, &DefaultSortContext)).collect::<Vec<_>>(),
+        ));
+        columns.dedup();
+        Self(columns)
     }
 }
 
@@ -137,12 +158,10 @@ impl RelationExpr {
     }
 
     pub fn projected_union(
-        first: (TableSource, String),
-        remaining: impl IntoIterator<Item = (TableSource, String)>,
+        first: ProjectedColumn,
+        remaining: impl IntoIterator<Item = ProjectedColumn>,
     ) -> Self {
-        let mut columns = BTreeSet::from([first]);
-        columns.extend(remaining);
-        Self::ProjectedUnion(ProjectedColumns(columns))
+        Self::ProjectedUnion(ProjectedColumns::new(std::iter::once(first).chain(remaining).collect()))
     }
 
     pub fn grouped(table: TableSource, first: String, remaining: Vec<String>) -> Self {
@@ -156,8 +175,8 @@ impl RelationExpr {
             Self::Base { snapshot: Some(id), .. } => visit(*id),
             Self::Select { input, .. } | Self::Project { input, .. } | Self::Distinct(input) =>
                 input.visit_acquisitions(visit),
-            Self::ProjectedUnion(columns) => columns.iter().for_each(|(table, _)| {
-                if let Some(id) = table.snapshot { visit(id); }
+            Self::ProjectedUnion(columns) => columns.iter().for_each(|branch| {
+                if let Some(id) = branch.table.snapshot { visit(id); }
             }),
             Self::Grouped(group) => {
                 if let Some(id) = group.table().snapshot { visit(id); }

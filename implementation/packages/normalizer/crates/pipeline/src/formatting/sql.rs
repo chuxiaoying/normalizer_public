@@ -21,6 +21,7 @@ use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKin
 
 /// Formatting context shared by one business result and its boundary events.
 pub struct FormatCtx {
+    projected_table: Option<String>,
     business_inputs: Option<std::collections::BTreeMap<String, String>>,
     captured_parameters: std::collections::BTreeMap<String, String>,
     nullable_columns: std::collections::BTreeSet<String>,
@@ -50,6 +51,7 @@ pub struct FormatCtx {
 impl Default for FormatCtx {
     fn default() -> Self {
         FormatCtx {
+            projected_table: None,
             business_inputs: None,
             captured_parameters: Default::default(),
             nullable_columns: Default::default(),
@@ -77,6 +79,13 @@ impl Default for FormatCtx {
 }
 
 impl FormatCtx {
+    fn projected_column_label<'a>(&self, path: &'a str) -> &'a str {
+        if let (Some(table), Some((owner, column))) = (&self.projected_table, path.split_once('.')) {
+            if owner == table { return column; }
+        }
+        path
+    }
+
     pub(crate) fn set_nested_arrays(&mut self, arrays: std::collections::BTreeSet<String>) {
         self.nested_arrays = arrays;
     }
@@ -494,7 +503,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return format_sym_var(origin, ctx);
     }
     if let Some(alias) = expr.as_row_value() {
-        return alias.to_owned();
+        return ctx.projected_column_label(alias).to_owned();
     }
     if let Some(id) = expr.as_heap_ref() {
         // Business projection verifies named identities before rendering.

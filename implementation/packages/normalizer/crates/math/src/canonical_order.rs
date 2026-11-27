@@ -375,9 +375,15 @@ impl Keys<'_> {
                 ("project", vec![Payload::Text(alias.clone())], vec![Some(self.relation(input)), Some(self.expr(value))]),
             RelationExpr::Distinct(input) => ("distinct", vec![], vec![Some(self.relation(input))]),
             RelationExpr::ProjectedUnion(columns) => {
-                let mut sources: Vec<_> = columns.iter().map(|(table, column)| (physical(table, self.context), column.to_owned())).collect();
-                sources.sort();
-                ("projected_union", vec![Payload::Tables(sources)], vec![])
+                let mut branches: Vec<_> = columns.iter().map(|branch| {
+                    let mut filters: Vec<_> = branch.filters.iter().map(|filter| Some(self.expr(filter))).collect();
+                    filters.sort();
+                    node(Class::Relation, named("projected_column"), vec![], vec![],
+                        vec![Payload::Table(physical(&branch.table, self.context)),
+                            Payload::Text(branch.column.clone())], filters, None, 0, 1)
+                }).collect();
+                branches.sort();
+                ("projected_union", vec![], branches.into_iter().map(Some).collect())
             }
             RelationExpr::Grouped(group) => ("group", vec![
                 Payload::Table(physical(group.table(), self.context)), Payload::Texts(group.columns().map(str::to_owned).collect()),

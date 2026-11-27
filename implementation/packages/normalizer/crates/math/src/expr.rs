@@ -737,8 +737,10 @@ impl Expr {
 fn walk_relation_expr<F: FnMut(&Expr) -> bool>(rel: &crate::domains::relation::RelationExpr, f: &mut F) {
     use crate::domains::relation::RelationExpr;
     match rel {
-        RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_)
+        RelationExpr::Empty | RelationExpr::Base { .. }
         | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. } => {}
+        RelationExpr::ProjectedUnion(branches) => branches.iter().for_each(|branch|
+            branch.filters.iter().for_each(|predicate| predicate.walk_pruned(f))),
         RelationExpr::Vector { value, .. } => value.walk_pruned(f),
         RelationExpr::Select { predicate, input } => {
             predicate.walk_pruned(f);
@@ -867,9 +869,10 @@ impl ExprProfile {
             }
             R::ProjectedUnion(columns) => {
                 let mut parent = Self::leaf();
-                for (table, column) in columns.iter() {
-                    parent.vars.insert(table.name.clone());
-                    parent.vars.insert(format!("{}.{column}", table.name));
+                for branch in columns.iter() {
+                    parent.vars.insert(branch.table.name.clone());
+                    parent.vars.insert(format!("{}.{}", branch.table.name, branch.column));
+                    for predicate in &branch.filters { parent.include_child(predicate.1.as_ref()); }
                 }
                 parent
             }

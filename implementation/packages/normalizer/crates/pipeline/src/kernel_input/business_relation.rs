@@ -370,12 +370,18 @@ impl<'a> Engine<'a> {
     pub(super) fn projected_union_count(
         &self, binding: &str, first: &(String, String), remaining: &[(String, String)], env: &mut Env,
     ) -> Result<()> {
-        let projection = |(source, field): &(String, String)| -> Result<((TableSource, String), &'static str)> {
+        let projection = |(source, field): &(String, String)| -> Result<(r::ProjectedColumn, &'static str)> {
             let Some(Value::Rows(rows)) = env.get(source) else {
                 return Err(fail("projected union needs a declared table row source"));
             };
-            let RelationExpr::Base {name, alias, snapshot} = &rows.input else {
-                return Err(fail("projected union needs direct table rows without filters"));
+            let mut input = &rows.input;
+            let mut filters = Vec::new();
+            while let RelationExpr::Select { predicate, input: inner } = input {
+                filters.push(predicate.clone());
+                input = inner;
+            }
+            let RelationExpr::Base {name, alias, snapshot} = input else {
+                return Err(fail("projected union needs bound table rows"));
             };
             need(rows.ordering.is_empty() && self.source_relations.tables.contains_key(name),
                 "projected union requires an unordered read-only table")?;
@@ -389,7 +395,10 @@ impl<'a> Engine<'a> {
                 .map(|(_, column)| column)
                 .filter(|column| self.source_relations.tables[name].get(*column).is_some_and(|declared| declared == ty))
                 .ok_or_else(|| fail("projected union field must be a direct nonnullable table column"))?;
-            Ok(((TableSource { name: name.clone(), snapshot: *snapshot }, column.into()), ty))
+            Ok((r::ProjectedColumn {
+                table: TableSource { name: name.clone(), snapshot: *snapshot },
+                column: column.into(), filters,
+            }, ty))
         };
         let (first, ty) = projection(first)?;
         let remaining = remaining.iter().map(|branch| {
@@ -1001,8 +1010,8 @@ pub(super) fn is_table_expression(
                     RelationExpr::Distinct(input) => input, other => other,
                 }))
                 || (value.is_none() && matches!(relation, RelationExpr::ProjectedUnion(branches) if {
-                    let mut domains = branches.iter().map(|(table, column)| {
-                        tables.get(&table.name).and_then(|columns| columns.get(column)).map(String::as_str)
+                    let mut domains = branches.iter().map(|branch| {
+                        tables.get(&branch.table.name).and_then(|columns| columns.get(&branch.column)).map(String::as_str)
                     });
                     domains.next().flatten().is_some_and(|first|
                         matches!(first, "number" | "text") && domains.all(|domain| domain == Some(first)))
