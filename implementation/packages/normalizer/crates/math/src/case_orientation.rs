@@ -41,10 +41,15 @@ pub fn ordered_number_selection(
     context: &dyn SortContext,
 ) -> Option<Expr> {
     let op = selection_comparison(condition, yes, no)?;
-    Some(order_selection(op, yes, no, context))
+    order_selection(op, yes, no, context)
 }
 
-fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortContext) -> Expr {
+fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortContext) -> Option<Expr> {
+    if !crate::canonical_order::comparison_operands_are_bound(yes, context)
+        || !crate::canonical_order::comparison_operands_are_bound(no, context)
+    {
+        return None;
+    }
     // CF-04: fix the operand order before generating strict comparison
     // candidates. Both have the same slots and cost, so > wins over <.
     let (left, right) = if crate::canonical_order_compare(yes, no, context).is_gt() {
@@ -58,10 +63,14 @@ fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortConte
     } else {
         (left, right)
     };
-    crate::builder::case_when(vec![(guard, when_greater.clone())], otherwise.clone())
+    Some(crate::builder::case_when(vec![(guard, when_greater.clone())], otherwise.clone()))
 }
 
-fn has_total_number_selection_evidence(value: &Expr) -> bool {
+fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) -> bool {
+    if let Some(SymVarOrigin::Temporal { binding_id, primitive_type }) = value.as_sym_var() {
+        return primitive_type == "integer" && (context.temporal_is_total(*binding_id)
+            || context.choice_slots().is_some_and(|slots| slots.contains_key(binding_id)));
+    }
     has_integer_evidence(value)
         || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
         // The adapter tags finite exact decimal inputs explicitly. Only a
@@ -111,10 +120,10 @@ pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) ->
         return None;
     }
     if let Some(op) = selection_comparison(condition, yes, no) {
-        if !has_total_number_selection_evidence(yes) || !has_total_number_selection_evidence(no) {
+        if !has_total_number_selection_evidence(yes, context) || !has_total_number_selection_evidence(no, context) {
             return None;
         }
-        let canonical = order_selection(op, yes, no, context);
+        let canonical = order_selection(op, yes, no, context)?;
         return (canonical != *expression).then_some(canonical);
     }
     let complement = preferred_complement_for_case(condition, yes, no, context)?;

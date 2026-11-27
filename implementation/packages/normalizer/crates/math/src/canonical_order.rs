@@ -335,7 +335,7 @@ pub fn canonical_order_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext)
 
 /// Construction of provisional execution keys still needs to distinguish
 /// handles. They are not eligible to decide a canonical operand direction.
-fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) -> bool {
+pub(crate) fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) -> bool {
     let mut bound = true;
     expr.walk_pruned(&mut |part| {
         if !bound || ctx.case_arm_keys(part).is_some() { return false; }
