@@ -144,14 +144,31 @@ impl Engine<'_> {
         Ok(LocalIntArray::Zeroed { length, identity: self.heap.new_object().id() })
     }
 
-    pub(super) fn local_array_may_have_writes(&self, array: &LocalIntArray, path: &Expr) -> bool {
+    pub(super) fn snapshot_local_choice(&mut self, array: &LocalIntArray, path: &Expr) -> Result<Vec<Expr>> {
+        self.budget()?;
         if let LocalIntArray::Selection { guard, yes, no } = array {
-            return self.local_array_may_have_writes(yes, &b::and(path.clone(), guard.clone()))
-                || self.local_array_may_have_writes(no, &b::and(path.clone(), b::not(guard.clone())));
+            return match self.condition_under_path(guard.clone(), path).as_bool() {
+                Some(true) => self.snapshot_local_choice(yes, path),
+                Some(false) => self.snapshot_local_choice(no, path),
+                None => {
+                    let a = self.snapshot_local_choice(yes, &b::and(path.clone(), guard.clone()))?;
+                    let b = self.snapshot_local_choice(no, &b::and(path.clone(), b::not(guard.clone())))?;
+                    need(a == b, "conditional local array choice needs a closed candidate snapshot for each path")?;
+                    Ok(a)
+                }
+            };
         }
-        array.reference().is_some_and(|reference| self.realtime_store.entries().iter().any(|entry| {
-            entry.reference == reference && !b::path_implies(path, &b::not(entry.guard.clone()))
-        }))
+        let reference = array.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
+        let positions = self.source_local_array_positions(array, &reference);
+        let remaining_zeroes = matches!(array, LocalIntArray::Zeroed { .. })
+            && (positions.len() as i64) < array.length();
+        let mut values = Vec::new();
+        if remaining_zeroes { values.push(b::lit_int(0)); }
+        for slot in positions {
+            self.budget()?;
+            values.push(self.read_local_array_slot(array, &reference, slot, path)?);
+        }
+        Ok(values)
     }
 
     fn source_array_reference(&mut self, root: &str) -> Expr {

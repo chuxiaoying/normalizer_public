@@ -2,7 +2,6 @@
 //! an identity and stays in execution order even when candidate sets agree.
 use super::*;
 use normalizer_ir::local::MemberChoiceFallback;
-use super::source_arrays::LocalIntArray;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum Candidates {
@@ -55,25 +54,25 @@ impl Engine<'_> {
             Independent(Candidates),
         }
         let choice = match env.get(members) {
-            Some(Value::LocalIntArray(array)) if self.local_array_may_have_writes(array, &path) =>
-                return Err(fail("local member choice requires a snapshot of the updated array")),
-            Some(Value::LocalIntArray(LocalIntArray::Zeroed { length: 0, .. })) => Choice::Fixed(empty.clone()),
-            Some(Value::LocalIntArray(LocalIntArray::Zeroed { .. })) => Choice::Fixed(b::lit_int(0)),
-            Some(Value::LocalIntArray(LocalIntArray::Initialized { values, .. })) => match values.as_ref() {
-                [] => Choice::Fixed(empty.clone()),
-                [value, rest @ ..] if rest.iter().all(|other| other == value) =>
-                    Choice::Fixed(value.clone()),
-                _ => {
-                    // The array has already been evaluated. For a choice with
-                    // no order or distribution promise, only the support set
-                    // of this literal is observable.
-                    let mut support = values.iter().map(|value| {
-                        value.as_lit().and_then(math::Lit::as_integer)
-                            .ok_or_else(|| fail("independent local member choice requires a certified constant support set"))
-                    }).collect::<Result<Vec<_>>>()?;
-                    support.sort_unstable();
-                    support.dedup();
-                    Choice::Independent(Candidates::Literal(support))
+            Some(Value::LocalIntArray(array)) => {
+                // A choice uses the acquired contents at this instruction,
+                // not the values that happened to initialize its aliases.
+                let snapshot = self.snapshot_local_choice(array, &path)?;
+                match snapshot.as_slice() {
+                    [] => Choice::Fixed(empty.clone()),
+                    [value, rest @ ..] if rest.iter().all(|other| other == value) =>
+                        Choice::Fixed(value.clone()),
+                    _ => {
+                        // No order or distribution is observed in this
+                        // contract. Deduplicate the actual constant support.
+                        let mut support = snapshot.iter().map(|value| {
+                            value.as_lit().and_then(math::Lit::as_integer)
+                                .ok_or_else(|| fail("independent local member choice requires a certified constant support set"))
+                        }).collect::<Result<Vec<_>>>()?;
+                        support.sort_unstable();
+                        support.dedup();
+                        Choice::Independent(Candidates::Literal(support))
+                    }
                 }
             },
             Some(Value::Sequence {item: Ty::Integer, name, ..}) => {
