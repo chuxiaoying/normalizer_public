@@ -1,6 +1,6 @@
 # 最终 PERS 的机器接口
 
-本页只定位实现和校验入口。P、E、R、S、T、异常以及定形的含义，以[PERS登场](../../design/chapters/07-PERS登场.md)、[统一定形](../../design/chapters/08-统一定形.md)及其二级专题为准。
+本页只定位实现和校验入口。P、E、R、S、异常以及定形的设计含义，以[PERS登场](../../design/chapters/07-PERS登场.md)、[统一定形](../../design/chapters/08-统一定形.md)的章内规则为准。
 
 | 责任 | 实现入口 |
 |---|---|

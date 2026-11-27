@@ -22,25 +22,7 @@ class PrefixSelection {
 
 ## AI 预处理结果
 
-此入口的数组固定四项，计数器只取 0、1、2、3。由于目前不支持一般的符号下标读取，把这一处索引明确交付成四个等义固定位置选择。只访问命中的一项，仍由原循环决定何时执行索引、何时停止；不排序数组，不提前选费率，也不把原循环展开成 PERS。
-
-```diff
---- a/src/PrefixSelection.java
-+++ b/src/PrefixSelection.java
-@@ -1,11 +1,11 @@
- class PrefixSelection {
-     static int firstAbove(int cutoff, int fallback) {
-         int[] tariff = {7, 2, 0, 9};
-         for (int i = 0; i < 4; i++) {
--            int value = tariff[i];
-+            int value = i == 0 ? tariff[0] : i == 1 ? tariff[1] : i == 2 ? tariff[2] : tariff[3];
-             if (value == 0) return fallback;
-             if (value > cutoff) return value;
-         }
-         return fallback;
-     }
- }
-```
+**原样通过。** 数组固定四项，进入循环体时 `i` 只可能为 0、1、2、3。下标读取、步进和提前返回都是有界的原生 Java，交给内核按实际路径执行。AI 不把下标改成四个三元表达式，也不提前选择费率。
 
 ## 归一化最终结果
 
