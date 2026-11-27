@@ -81,7 +81,10 @@ impl Default for FormatCtx {
 impl FormatCtx {
     fn projected_column_label<'a>(&self, path: &'a str) -> &'a str {
         if let (Some(table), Some((owner, column))) = (&self.projected_table, path.split_once('.')) {
-            if owner == table { return column; }
+            let conflicts = self.business_inputs.as_ref().is_some_and(|names|
+                names.values().any(|name| name == column))
+                || self.business_states.values().any(|name| name == column);
+            if owner == table && !conflicts { return column; }
         }
         path
     }
