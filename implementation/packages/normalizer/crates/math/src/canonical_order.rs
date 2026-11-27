@@ -195,6 +195,24 @@ impl Keys<'_> {
     fn expr_uncached(&mut self, expression: &Expr) -> Rc<CanonicalKey> {
         use ExprKind::*;
         let ctx = self.context;
+        // Bare relation existence and emptiness are the exact zero or
+        // positive cardinality test used in the business IR. Count the
+        // same value and comparison on both sides of a CASE candidate.
+        let negative = expression.as_unary_op().filter(|(op, _)| *op == UnaryOpKind::Not);
+        let cardinality = negative.map_or(expression, |(_, value)| value);
+        if let Some((RelationAggregateKind::Exists, relation @ RelationExpr::Base { .. }, Some(witness), None)) =
+            cardinality.as_relation_aggregate()
+        {
+            if witness.as_bool() == Some(true) {
+                let comparison = if negative.is_some() { BinOpKind::Eq } else { BinOpKind::Lt };
+                let zero = crate::builder::lit_int(0);
+                let count = crate::domains::relation::relation_count(relation.clone());
+                let left = self.expr(&zero);
+                let right = self.expr(&count);
+                return node(Class::Scalar, bin_op(comparison), vec!["bool".into()], vec![],
+                    vec![], vec![Some(left), Some(right)], None, 0, 1);
+            }
+        }
         if let Some(decimal::View::Literal(coefficient, scale)) = decimal::view(expression) {
             return literal("number", vec![Payload::Number(Exact(coefficient, scale))]);
         }
