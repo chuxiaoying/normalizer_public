@@ -40,14 +40,14 @@ pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String 
 fn bind_receipt<'a>(
     receipt: &'a EffectReceipt,
     guard: &Expr,
-    event_slot: usize,
+    identities: &BTreeMap<u64, math::ObservationIdentity>,
     issued: &mut BTreeSet<u64>,
     ctx: &mut crate::FormatCtx,
 ) -> Result<(&'a Expr, u64, String)> {
     let binding_id = receipt.binding_id();
     let position = ctx.receipt_count();
     need(issued.insert(binding_id), "duplicate operation receipt")?;
-    ctx.bind_business_event(binding_id, position, event_slot, guard.clone());
+    ctx.bind_business_event(binding_id, position, identities[&binding_id].clone(), guard.clone());
     Ok((receipt.response(), binding_id, format!("$e_{position}")))
 }
 
@@ -158,7 +158,8 @@ pub(super) fn observations(
         need(closed && heap_operands.values().all(|(actual, allowed)| actual == allowed),
             "unbound local or external value in settled output")
     };
-    for (event_slot, event) in result.realtime_effects.events().iter().enumerate() {
+    let event_identities = result.realtime_effects.observation_identities().collect::<BTreeMap<_, _>>();
+    for event in result.realtime_effects.events() {
         validate_ids(&event.guard, &issued, None)?;
         for arg in event.arguments() {
             validate_ids(arg, &issued, None)?;
@@ -194,12 +195,12 @@ pub(super) fn observations(
                 };
                 if let Some(guard) = condition { item["when"] = json!(guard); }
                 need(issued.insert(*binding_id), "duplicate environment acquisition identity")?;
-                ctx.bind_acquisition(*binding_id, label.clone(), event_slot, event.guard.clone());
+                ctx.bind_acquisition(*binding_id, label.clone(), event_identities[binding_id].clone(), event.guard.clone());
                 acquisitions.insert(label, item);
                 continue;
             }
             EffectOperation::Sql { statement: sql, receipt } => {
-                let (response, _, receipt) = bind_receipt(receipt, &event.guard, event_slot, &mut issued, &mut ctx)?;
+                let (response, _, receipt) = bind_receipt(receipt, &event.guard, &event_identities, &mut issued, &mut ctx)?;
                 let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                     sql.project(event.arguments(), &receipt, &mut tables, ctx)
                 })?;
@@ -224,7 +225,7 @@ pub(super) fn observations(
                     spec.returns == ty,
                     "external business result disagrees with port type",
                 )?;
-                let (response, binding_id, output) = bind_receipt(receipt, &event.guard, event_slot, &mut issued, &mut ctx)?;
+                let (response, binding_id, output) = bind_receipt(receipt, &event.guard, &event_identities, &mut issued, &mut ctx)?;
                 let variants = spec.throw_variants(response);
                 if variants.len() > 1 {
                     // Only declared tags of this issued occurrence share a partition.

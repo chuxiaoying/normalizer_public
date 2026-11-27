@@ -513,6 +513,21 @@ impl EffectSequence {
         }
     }
 
+    /// Slots count acquired observations of either kind, not writes that
+    /// may be coalesced at joins. Extending the ledger preserves its prefix.
+    pub(super) fn observation_identities(&self) -> impl Iterator<Item = (u64, math::ObservationIdentity)> + '_ {
+        self.events.iter().filter_map(|event| match &event.operation {
+            EffectOperation::Acquire { binding_id, .. } => Some((*binding_id, false)),
+            EffectOperation::Port { receipt, .. } | EffectOperation::Sql { receipt, .. } =>
+                Some((receipt.binding_id(), true)),
+            EffectOperation::StateWrite { .. } | EffectOperation::ArrayWrite { .. } => None,
+        }).enumerate().map(|(slot, (id, receipt))| {
+            let identity = if receipt { math::ObservationIdentity::Receipt(slot) }
+                else { math::ObservationIdentity::RuntimeObservation(slot) };
+            (id, identity)
+        })
+    }
+
     pub(crate) fn events(&self) -> &[EffectEvent] {
         &self.events
     }

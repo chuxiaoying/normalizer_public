@@ -76,17 +76,17 @@ impl FormatCtx {
         self.business_projections.push((value,label));
     }
     pub(crate) fn forget_business_value(&mut self) { self.business_projections.pop(); }
-    pub(crate) fn bind_business_event(&mut self, id: u64, position: usize, event_slot: usize, guard: Expr) {
+    pub(crate) fn bind_business_event(&mut self, id: u64, position: usize, identity: math::ObservationIdentity, guard: Expr) {
         self.e_renumber.insert(id, position);
-        self.observation_identities.insert(id, math::ObservationIdentity::Receipt(event_slot));
+        self.observation_identities.insert(id, identity);
         if guard.as_bool() != Some(true) {
             self.business_receipt_guards.insert(id, guard);
         }
     }
 
-    pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, event_slot: usize, guard: Expr) {
+    pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, identity: math::ObservationIdentity, guard: Expr) {
         self.business_acquisitions.insert(id, label);
-        self.observation_identities.insert(id, math::ObservationIdentity::RuntimeObservation(event_slot));
+        self.observation_identities.insert(id, identity);
         if guard.as_bool() != Some(true) {
             self.business_receipt_guards.insert(id, guard);
         }

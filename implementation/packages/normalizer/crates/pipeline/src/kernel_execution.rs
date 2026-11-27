@@ -105,21 +105,28 @@ pub(super) struct Engine<'a> {
 
 // Execution and publication compare the same retained REDUCE, not the
 // integer handle that happens to identify it in the execution ledger.
-struct ExecutionOrder<'a>(&'a [super::temporal_graph::Definition]);
+struct ExecutionOrder<'a> {
+    definitions: &'a [super::temporal_graph::Definition],
+    observations: BTreeMap<u64, math::ObservationIdentity>,
+}
 
 impl math::SortContext for ExecutionOrder<'_> {
 
+    fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> {
+        (!self.observations.is_empty()).then_some(&self.observations)
+    }
+
     fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> {
-        match self.0.get(usize::try_from(id).ok()?)? {
+        match self.definitions.get(usize::try_from(id).ok()?)? {
             super::temporal_graph::Definition::Fold(fold) => Some(&fold.shape),
             super::temporal_graph::Definition::Choice(_) => None,
         }
     }
 
-    fn has_reduce_shapes(&self) -> bool { !self.0.is_empty() }
+    fn has_reduce_shapes(&self) -> bool { !self.definitions.is_empty() }
 
     fn temporal_is_total(&self, id: u64) -> bool {
-        usize::try_from(id).ok().and_then(|i| self.0.get(i)).is_some_and(|definition| {
+        usize::try_from(id).ok().and_then(|i| self.definitions.get(i)).is_some_and(|definition| {
             matches!(definition, super::temporal_graph::Definition::Fold(fold)
                 if fold.guard.as_bool() == Some(true))
         })
@@ -127,16 +134,25 @@ impl math::SortContext for ExecutionOrder<'_> {
 }
 
 impl<'a> Engine<'a> {
+    fn execution_order(&self) -> ExecutionOrder<'_> {
+        let mut observations = self.source_objects.state_bindings.iter().map(|(&id, root)| {
+            (id, math::ObservationIdentity::EntrySnapshot(vec![root.clone()]))
+        }).collect::<BTreeMap<_, _>>();
+        observations.extend(self.realtime_effects.observation_identities());
+        ExecutionOrder { definitions: &self.temporal_definitions, observations }
+    }
+
     fn normalize_execution_value(&self, value: Expr) -> Expr {
-        if self.temporal_definitions.is_empty() {
+        let order = self.execution_order();
+        if order.definitions.is_empty() && order.observations.is_empty() {
             math::normalize(value)
         } else {
-            math::normalize_with(value, &ExecutionOrder(&self.temporal_definitions))
+            math::normalize_with(value, &order)
         }
     }
 
     fn order_execution_comparison(&self, op: BinOpKind, left: Expr, right: Expr) -> Expr {
-        let order = ExecutionOrder(&self.temporal_definitions);
+        let order = self.execution_order();
         if let Some((reverse, true)) = math::canonical_order_ordered_comparison(op, &left, &right, &order) {
             b::binop_public(reverse, right, left)
         } else {
