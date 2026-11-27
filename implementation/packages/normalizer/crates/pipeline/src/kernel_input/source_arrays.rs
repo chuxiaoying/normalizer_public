@@ -288,7 +288,7 @@ impl Engine<'_> {
             let index = index_value(index)?;
             if index < 0 {
                 self.throw_source_on_path(path, OUT_OF_BOUNDS);
-                return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+                return Ok(Value::Term(Ty::Integer, b::lit_null()));
             }
             let base = RelationExpr::base(&source, "r");
             // Projection has already evaluated, including null failures on any
@@ -314,13 +314,15 @@ impl Engine<'_> {
         let expression = math::normalize(index.scalar()?);
         let path = self.normal_path(path);
         let Some(index) = literal_integer(&expression) else {
-            need(expression.as_lit().is_none(), "array subscript outside Java int range")?;
+            // A noncompact exact integer can still participate in the
+            // same bounds proof. Never truncate it to a machine subscript.
+            need(expression.as_lit().is_none_or(|value| value.as_integer().is_some()),
+                "array subscript must be an exact integer")?;
             return self.read_symbolic_array_slot(&root, expression, path);
         };
-        need(i32::try_from(index).is_ok(), "array subscript outside Java int range")?;
         let guard = self.check_source_bounds(&root, index, &path);
         if guard.as_bool() == Some(false) {
-            return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+            return Ok(Value::Term(Ty::Integer, b::lit_null()));
         }
         let sources = self.array_slot_sources(&root, index);
         let slot = self.realtime_store.read_matching_with_initial(&index.to_string(), &guard, Some(original_slot(&root, index)),
@@ -438,7 +440,7 @@ impl Engine<'_> {
         self.throw_source_on_path(b::and(path.clone(), outside), OUT_OF_BOUNDS);
         let live = self.normal_path(path);
         if live.as_bool() == Some(false) {
-            return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+            return Ok(Value::Term(Ty::Integer, b::lit_null()));
         }
         let original = r::relation_nth_value(initial_array(root), index.clone());
         let positions: BTreeSet<_> = self.source_array_writes.values().flatten().copied().collect();
