@@ -315,6 +315,8 @@ enum Node {
     ThrowUnknownInput { name: String },
     #[serde(rename = "source.clock")]
     ReadClock,
+    #[serde(rename = "source.state_value")]
+    ReadState { path: Vec<String> },
     #[serde(rename = "value.observe_tuple")]
     ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.text_trim")]

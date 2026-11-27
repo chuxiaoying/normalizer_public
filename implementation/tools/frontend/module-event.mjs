@@ -167,6 +167,16 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       return { op: 'const', type: 'bool', value: n.kind === ts.SyntaxKind.TrueKeyword };
     if (ts.isPropertyAccessExpression(n)) {
       if (n.questionDotToken) fail('optional access needs a checked nullish branch before field observation');
+      const fields = [];
+      let root = n;
+      while (ts.isPropertyAccessExpression(root) && !root.questionDotToken) {
+        fields.unshift(root.name.text);
+        root = unwrapParens(root.expression);
+      }
+      if (ts.isIdentifier(root) && stateDeclarations.has(root.text)
+          && symbol(root) === stateDeclarations.get(root.text)) {
+        return {op: 'source.state_value', path: [root.text, ...fields]};
+      }
       return { op: 'value.field', value: lowerValue(n.expression, scope), name: n.name.text };
     }
     if (ts.isConditionalExpression(n)) {
@@ -307,27 +317,26 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   let environment = states;
   if (synchronous) {
     environment = Object.create(null);
-    const retainWrites = actions => {
-      for (const step of actions) {
-        if (step.op === 'catch') {
-          retainWrites(step.body);
-          retainWrites(step.handler);
-        }
-        if (step.op !== 'write_state') continue;
-        const [root, ...path] = step.target;
-        const declared = states[root];
-        environment[root] ??= {kind: 'state', source: declared.source, fields: Object.create(null)};
-        let full = declared.fields;
-        let observed = environment[root].fields;
-        for (const name of path.slice(0, -1)) {
-          full = full[name];
-          observed = observed[name] ??= Object.create(null);
-        }
-        const last = path.at(-1);
-        observed[last] = full[last];
+    const retain = target => {
+      const [root, ...path] = target;
+      const declared = states[root];
+      environment[root] ??= {kind: 'state', source: declared.source, fields: Object.create(null)};
+      let full = declared.fields;
+      let observed = environment[root].fields;
+      for (const name of path.slice(0, -1)) {
+        full = full[name];
+        observed = observed[name] ??= Object.create(null);
       }
+      const last = path.at(-1);
+      observed[last] = full[last];
     };
-    retainWrites(steps);
+    const retainAccesses = node => {
+      if (!node || typeof node !== 'object') return;
+      if (node.op === 'write_state') retain(node.target);
+      if (node.op === 'source.state_value') retain(node.path);
+      for (const item of Object.values(node)) retainAccesses(item);
+    };
+    retainAccesses(steps);
   }
   return {
     function: modulePath + '#' + entryName,

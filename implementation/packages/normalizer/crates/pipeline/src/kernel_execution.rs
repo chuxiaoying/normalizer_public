@@ -198,6 +198,7 @@ impl<'a> Engine<'a> {
         }
         match n {
             Node::ReadClock => Ok(self.observe_clock(path)),
+            Node::ReadState { path: fields } => self.read_adapter_state(fields, &path),
             Node::ObserveTuple(observation) =>
                 self.observe_tuple(&observation.tuple, &observation.body, env, path),
             Node::OrderedTextMap { entries } => {

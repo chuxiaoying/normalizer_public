@@ -387,6 +387,33 @@ impl Engine<'_> {
         Self::bind_local(env, name, value)
     }
 
+    fn adapter_state_reference(&mut self, root: &str) -> Expr {
+        self.acquire_source_state_root(format!("$adapter_state.{root}"))
+    }
+
+    pub(super) fn read_adapter_state(&mut self, target: &[String], guard: &Expr) -> Result<Value> {
+        let (root, fields) = target.split_first().ok_or_else(|| fail("empty state read path"))?;
+        need(target.iter().all(|part| identifier(part)), "invalid state field path")?;
+        let context = self.entry_context.ok_or_else(|| fail("state read requires the selected entry context"))?;
+        let domain = context.state_field(root, fields)?;
+        let (ty, scalar) = match domain {
+            "bool" => (Ty::Bool, ScalarSymbolType::Boolean),
+            "number" => (Ty::Integer, ScalarSymbolType::Integer),
+            _ => return Err(fail("unsupported state field read type")),
+        };
+        let existing = self.source_objects.state_bindings.iter().find_map(|(&id, name)| (name == root).then_some(id));
+        let binding = if let Some(id) = existing { id } else {
+            let id = self.fresh_binding();
+            self.source_objects.state_bindings.insert(id, root.clone());
+            id
+        };
+        let initial = b::sym_e_path(binding, fields.to_vec(), scalar);
+        let reference = self.adapter_state_reference(root);
+        let value = self.realtime_store.read_with_initial(&reference, &fields.join("."), guard, Some(initial))
+            .ok_or_else(|| fail("state read has no initial or reaching write"))?;
+        Ok(Value::Term(ty, value))
+    }
+
     pub(super) fn action_steps(
         &mut self,
         steps: &[Action],
@@ -432,8 +459,11 @@ impl Engine<'_> {
                         self.action_path.clone(),
                         self.realtime_completion.continuing_guard(),
                     ));
-                    // Adapter state writes have no readable heap identity; S owns them.
-                    self.realtime_effects.write_state(guard, target, value);
+                    if guard.as_bool() != Some(false) {
+                        let reference = self.adapter_state_reference(root);
+                        self.realtime_store.store_guarded(guard.clone(), reference, fields.join("."), value.clone());
+                        self.realtime_effects.write_state(guard, target, value);
+                    }
                 }
                 Action::ReadInput { name, input } => self.read_host_input(env, name, input)?,
                 Action::CallSync { port, target, site, condition } => {

@@ -5,7 +5,7 @@ use realtime_state::Completion;
 
 pub(super) fn expression_is_closed(node: &Node) -> bool {
     match node {
-        Node::Const(_) | Node::Var { .. } => true,
+        Node::Const(_) | Node::Var { .. } | Node::ReadState { .. } => true,
         Node::Field { value, .. } | Node::Not { value } => expression_is_closed(value),
         Node::Add { left, right }
         | Node::Sub { left, right }
