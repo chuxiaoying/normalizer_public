@@ -834,8 +834,12 @@ impl<'a> Engine<'a> {
         }
         let (rows, _) = r::order_components(ordered)?;
         let (owner, column) = value.as_row_value()?.split_once('.')?;
-        if self.source_relations.tables.get(owner)?.get(column)? != "text?" {
-            return None;
+        match self.source_relations.tables.get(owner)?.get(column)?.as_str() {
+            // A present row supplies declared non-null text; absence uses
+            // the non-null fallback already proved above.
+            "text" => return Some(b::lit_bool(different)),
+            "text?" => {}
+            _ => return None,
         }
         let present = r::relation_exists(rows.clone());
         let first = r::relation_first_value(ordered.clone(), value.clone(), b::lit_null());

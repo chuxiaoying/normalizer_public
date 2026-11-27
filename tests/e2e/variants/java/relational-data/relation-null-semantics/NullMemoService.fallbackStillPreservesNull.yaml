@@ -24,3 +24,18 @@
           WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) != null
           ELSE true
         END
+
+- name: nonnullable-row-value-and-nonnull-fallback-cannot-produce-null
+  edits:
+    - {from: '@N.Nullable String memo;', to: 'String memo;'}
+  expect:
+    - {path: [E, bill, columns, memo], value: text}
+    - {path: [R], value: 'false'}
+
+- name: nonnullable-row-value-and-nonnull-fallback-always-produce-text
+  edits:
+    - {from: '@N.Nullable String memo;', to: 'String memo;'}
+    - {from: 'return value == null;', to: 'return value != null;'}
+  expect:
+    - {path: [E, bill, columns, memo], value: text}
+    - {path: [R], value: 'true'}
