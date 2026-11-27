@@ -12,11 +12,11 @@ impl Ty {
     fn value_allowed(&self, boundary: ValueBoundary) -> bool {
         let state = boundary == ValueBoundary::State;
         match self {
-            Self::Unit | Self::Bool | Self::Integer | Self::Text => true,
+            Self::Bool | Self::Integer | Self::Text => true,
             Self::OrderedTextMap | Self::Ref => state,
             Self::Vector(t) => t.value_allowed(boundary),
             Self::Record(fields) => fields.values().all(|field| field.value_allowed(boundary)),
-            Self::Task(_) | Self::UnknownInput | Self::Decimal | Self::CalendarDate | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
+            Self::Unit | Self::Task(_) | Self::UnknownInput | Self::Decimal | Self::CalendarDate | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
         }
     }
 
@@ -58,7 +58,25 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
     }
     if let Some(t) = s.strip_prefix("record<").and_then(|s| s.strip_suffix('>')) {
         let mut fields = BTreeMap::new();
-        for p in t.split(',').filter(|_| !t.is_empty()) {
+        let mut start = 0;
+        let mut depth = 0usize;
+        let mut declarations = Vec::new();
+        for (index, c) in t.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => {
+                    depth = depth.checked_sub(1).ok_or_else(|| fail("unbalanced record field type"))?;
+                }
+                ',' if depth == 0 => {
+                    declarations.push(&t[start..index]);
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        }
+        need(depth == 0, "unbalanced record field type")?;
+        if !t.is_empty() { declarations.push(&t[start..]); }
+        for p in declarations {
             let (name, typ) = p
                 .split_once(':')
                 .ok_or_else(|| fail("record field needs name:type"))?;

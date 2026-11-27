@@ -207,10 +207,12 @@ impl Project {
                 "unsupported port effect; declare sync or async-barrier",
             )?;
             let validate = |ty: &Ty| -> Result<()> {
-                need(ty.port_value(), "immutable port values cannot contain object references or source sequences")
+                need(ty.port_value(), "port value requires a closed immutable data type, not void or an object reference")
             };
             let returns = p.returns.resolve()?;
-            validate(&returns)?;
+            // Void is a normal completion without a value, not a value
+            // type available to either parameters or composite fields.
+            if returns != Ty::Unit { validate(&returns)?; }
             let mut names = BTreeSet::new();
             let mut parameters = Vec::with_capacity(p.params.len());
             for a in &p.params {
