@@ -25,6 +25,7 @@ use simulator_parser::{
 mod realtime_state;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::Read,
     path::{Path, PathBuf},
     rc::Rc,
     time::Instant,
@@ -395,14 +396,17 @@ fn local_path(root: &Path, relative: &str) -> Result<PathBuf> {
 // declarations. The entry closure remains lazy; input size is a resource guard.
 const MAX_PROJECT_FILE_BYTES: u64 = 32 * 1024 * 1024;
 fn read(path: &Path) -> Result<String> {
-    need(
-        std::fs::metadata(path)
-            .map_err(|e| fail(e.to_string()))?
-            .len()
-            <= MAX_PROJECT_FILE_BYTES,
-        "file exceeds 32 MiB",
-    )?;
-    std::fs::read_to_string(path).map_err(|e| fail(e.to_string()))
+    let file = std::fs::File::open(path).map_err(|e| fail(e.to_string()))?;
+    let metadata = file.metadata().map_err(|e| fail(e.to_string()))?;
+    need(metadata.is_file(), "project input must be a regular file")?;
+    need(metadata.len() <= MAX_PROJECT_FILE_BYTES, "file exceeds 32 MiB")?;
+    // Check the actual snapshot too; the observed length can change while
+    // reading. Never pass a truncated prefix off as the complete source.
+    let mut bytes = Vec::new();
+    file.take(MAX_PROJECT_FILE_BYTES + 1).read_to_end(&mut bytes)
+        .map_err(|e| fail(e.to_string()))?;
+    need(bytes.len() as u64 <= MAX_PROJECT_FILE_BYTES, "file exceeds 32 MiB")?;
+    String::from_utf8(bytes).map_err(|e| fail(e.to_string()))
 }
 fn emit_stage_profile(stage: &str, started: Instant, detail: impl AsRef<str>) {
     if crate::profile::enabled() {
@@ -457,10 +461,15 @@ impl Project {
             JavaType::Class(name) | JavaType::Generic(name, _) => name,
             _ => return None,
         };
-        self.source_layouts
-            .keys()
-            .find(|owner| *owner == name || owner.rsplit('.').next() == Some(name.as_str()))
-            .map(String::as_str)
+        if let Some((owner, _)) = self.source_layouts.get_key_value(name) {
+            return Some(owner.as_str());
+        }
+        let mut candidates = self.source_layouts.keys()
+            .filter(|owner| owner.rsplit('.').next() == Some(name.as_str()));
+        let owner = candidates.next()?;
+        // An unqualified name without lexical evidence is insufficient
+        // when more than one declaration could match it.
+        candidates.next().is_none().then_some(owner.as_str())
     }
     fn parameter_type(&self, t: &JavaType) -> Result<Ty> {
         if matches!(t, JavaType::Class(n) if self.source_ports.values().any(|port| &port.interface == n)) {
