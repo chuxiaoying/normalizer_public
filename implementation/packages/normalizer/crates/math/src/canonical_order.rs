@@ -174,13 +174,9 @@ impl Keys<'_> {
             SymVar { origin } => {
                 let (class, id) = match origin {
                     SymVarOrigin::Parameter { name, primitive_type: _ } => {
-                        let local = match (self.in_reduce_body, name.as_str()) {
-                            (true, "acc") => Some(0),
-                            (true, "item") => Some(1),
-                            _ => None,
-                        };
-                        (if name.contains('.') { Class::Read } else { Class::Reference },
-                            local.map_or_else(|| Identity::Parameter(path(name)), Identity::Local))
+                        let local = self.in_reduce_body.then(|| crate::ReduceBodyContext::resolve(name)).flatten();
+                        let class = if local.is_none() && name.contains('.') { Class::Read } else { Class::Reference };
+                        (class, local.map_or_else(|| Identity::Parameter(path(name)), |(slot, _)| Identity::Local(slot)))
                     },
                     SymVarOrigin::External { binding_id, path: parts, primitive_type: _ } => {
                         let id = match observation(ctx, *binding_id) {

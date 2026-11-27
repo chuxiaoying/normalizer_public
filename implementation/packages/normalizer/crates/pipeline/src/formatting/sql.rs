@@ -117,7 +117,9 @@ impl FormatCtx {
 
     fn uncaptured_name(&self, namespace: &str, name: &str) -> String {
         let root = name.split('.').next().unwrap_or(name);
-        if self.relation_scope.members.values().any(|member| member == root) {
+        if self.relation_scope.members.values().any(|member| member == root)
+            || (self.relation_scope.in_reduce_yield && matches!(root, "acc" | "item"))
+        {
             format!("{namespace}.{name}")
         } else {
             name.to_owned()
@@ -599,8 +601,10 @@ fn format_lit(lit: &Lit) -> String {
 fn format_sym_var(origin: &SymVarOrigin, ctx: &mut FormatCtx) -> String {
     match origin {
         SymVarOrigin::Parameter { name, .. } => {
-            if ctx.relation_scope.in_reduce_yield && matches!(name.as_str(), "acc" | "item") {
-                return name.clone();
+            if ctx.relation_scope.in_reduce_yield {
+                if let Some((_, display)) = math::ReduceBodyContext::resolve(name) {
+                    return display.to_owned();
+                }
             }
             let display = ctx.business_inputs.as_ref().and_then(|names| names.get(name)).map_or(name.as_str(), String::as_str);
             ctx.uncaptured_name("P", display)

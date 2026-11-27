@@ -12,7 +12,7 @@ pub(super) struct Definition {
 
 fn direct_capture_input(engine: &Engine<'_>, expr: &Expr, primitive: &str) -> bool {
     matches!(expr.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
-        if primitive_type == primitive && !matches!(name.as_str(), "acc" | "item") && !name.contains(['.', '[', ']'])
+        if primitive_type == primitive && !name.contains(['.', '[', ']'])
             && engine.declared_relation_input(name, primitive))
 }
 
@@ -35,8 +35,8 @@ fn closed_integer_capture(engine: &Engine<'_>, expr: &Expr) -> bool {
 
 fn local_body(engine: &Engine<'_>, expr: &Scalar, acc: &str, item: &str, env: &Env) -> Result<Expr> {
     Ok(match expr {
-        Scalar::Path(parts) if parts.len() == 1 && parts[0] == acc => b::param("acc", ScalarSymbolType::Integer),
-        Scalar::Path(parts) if parts.len() == 1 && parts[0] == item => b::param("item", ScalarSymbolType::Integer),
+        Scalar::Path(parts) if parts.len() == 1 && parts[0] == acc => math::ReduceBodyContext::binding(0),
+        Scalar::Path(parts) if parts.len() == 1 && parts[0] == item => math::ReduceBodyContext::binding(1),
         Scalar::Path(parts) if parts.len() == 1 => {
             let value = env.get(&parts[0]).filter(|value| value.ty() == Ty::Integer)
                 .ok_or_else(|| fail("pure fold body requires closed exact-integer arithmetic; capture is not an acquired exact integer"))?;

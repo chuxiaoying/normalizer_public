@@ -57,6 +57,19 @@ impl SortContext for DefaultSortContext {
 
 /// A recurrence YIELD with its own accumulator and member slots.
 pub struct ReduceBodyContext;
+impl ReduceBodyContext {
+    // These qualified internal atoms cannot be Java parameter declarations.
+    const BINDINGS: [(&str, &str); 2] = [("$reduce.acc", "acc"), ("$reduce.item", "item")];
+
+    pub fn binding(slot: usize) -> crate::Expr {
+        crate::builder::param(Self::BINDINGS[slot].0, crate::ScalarSymbolType::Integer)
+    }
+
+    pub fn resolve(atom: &str) -> Option<(usize, &'static str)> {
+        Self::BINDINGS.iter().enumerate().find_map(|(slot, &(name, display))|
+            (name == atom).then_some((slot, display)))
+    }
+}
 impl SortContext for ReduceBodyContext {
     fn heap_display_name(&self, _heap_id: i64) -> Option<String> { None }
     fn in_reduce_body(&self) -> bool { true }
