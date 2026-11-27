@@ -1,5 +1,7 @@
 entry: src/total.ts#total
 reject:
+  kind: ABORT
   fragments:
-    - "[NORM-TS-MODULE]"
-    - async entry requires a closed completion contract
+    - "[NORM-OUT-OF-SOURCE]"
+    - "[NORM-ENGINE-FAILURE]"
+    - source.read

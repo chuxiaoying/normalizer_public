@@ -13,7 +13,7 @@ expected:
       accountId:
         position: 0
         type: number
-  R: $e_0.score + 1
+  R: 1 + $e_0.score
   S:
     - call:
         external: src/ProfileService.java#Beans.ENTRY.client.fetch
