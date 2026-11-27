@@ -5,6 +5,14 @@
 //! math 层不依赖 pipeline/heap，但排序需要 HeapRef 的 display_name。
 //! 通过 trait 让 pipeline 实现信息提供能力，math 通过 interface 查询。
 
+/// The three RA-09 slots of a retained exact-integer recurrence.
+#[derive(Clone)]
+pub struct ReduceShape {
+    pub source: String,
+    pub initial: crate::Expr,
+    pub body: crate::Expr,
+}
+
 /// 排序上下文 trait — 提供 HeapRef display_name 查询能力
 pub trait SortContext {
     /// 查询 HeapRef 的 display_name（入口参数或命名状态的公开路径）
@@ -23,6 +31,12 @@ pub trait SortContext {
         None
     }
 
+    /// Retained evaluation handles lower to this structure for comparison.
+    fn reduce_shapes(&self) -> Option<&std::collections::BTreeMap<u64, ReduceShape>> { None }
+
+    /// Body parameters are lexical slots only inside a recurrence's YIELD.
+    fn in_reduce_body(&self) -> bool { false }
+
     /// Explicit evidence that the binding is acquired on every path.
     fn temporal_is_total(&self, _id: u64) -> bool { false }
 }
@@ -34,4 +48,12 @@ impl SortContext for DefaultSortContext {
     fn heap_display_name(&self, _heap_id: i64) -> Option<String> {
         None
     }
+}
+
+
+/// A recurrence YIELD with its own accumulator and member slots.
+pub struct ReduceBodyContext;
+impl SortContext for ReduceBodyContext {
+    fn heap_display_name(&self, _heap_id: i64) -> Option<String> { None }
+    fn in_reduce_body(&self) -> bool { true }
 }

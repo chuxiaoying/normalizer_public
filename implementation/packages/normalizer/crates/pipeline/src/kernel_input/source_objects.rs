@@ -434,7 +434,7 @@ impl Engine<'_> {
         if left_partition && right_partition {
             let names = &self.source_objects.compared_parameters;
             let order = crate::canonical_names::CanonicalNames {
-                heap: names, external: None, total_temporals: None, temporals: None,
+                heap: names, external: None, total_temporals: None, reductions: None, temporals: None,
             };
             let key = |(guard, _): &(Expr, Expr)| math::canonical_order_key(guard, &order);
             let a = left.as_case_when().unwrap().iter().map(key);
@@ -482,7 +482,7 @@ impl Engine<'_> {
         self.check_borrowed_identity(&left, &right)?;
         let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };
         let names = crate::canonical_names::CanonicalNames {
-            heap: &self.source_objects.compared_parameters, external: None, total_temporals: None, temporals: None,
+            heap: &self.source_objects.compared_parameters, external: None, total_temporals: None, reductions: None, temporals: None,
         };
         if math::canonical_order_ordered_comparison(kind, &left, &right, &names).is_some() {
             std::mem::swap(&mut left, &mut right);

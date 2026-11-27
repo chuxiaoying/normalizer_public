@@ -44,6 +44,7 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut F
         heap: &ctx.business_identities,
         external: (!external.is_empty()).then_some(&external),
         total_temporals: None,
+        reductions: Some(&ctx.reductions),
         temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
     };
     let plan = math::canonical_let_plan(value, &compare, |expr| closed_candidate(expr, ctx))

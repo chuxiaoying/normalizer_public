@@ -33,6 +33,7 @@ pub(super) struct Publication {
     pub(super) aliases: BTreeMap<u64, usize>,
     pub(super) total: BTreeSet<u64>,
     pub(super) slots: Vec<Slot>,
+    pub(super) reductions: BTreeMap<u64, math::ReduceShape>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -113,6 +114,9 @@ pub(super) fn publish(
         let slot = published.aliases.len();
         let row = match &nodes[id as usize] {
             Definition::Fold(fold) => {
+                published.reductions.insert(id, math::ReduceShape {
+                    source: fold.source.clone(), initial: fold.initial.clone(), body: fold.body.clone(),
+                });
                 let mut ctx = crate::FormatCtx::for_business(BTreeMap::new(), BTreeMap::new());
                 let body = crate::format_expr_with_ctx(&fold.body, &mut ctx);
                 Slot::Fold { source: array_name(&fold.source)?.clone(), initial: value, body }

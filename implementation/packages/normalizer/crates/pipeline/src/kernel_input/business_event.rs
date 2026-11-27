@@ -371,7 +371,7 @@ pub(super) fn observations(
         let public = crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
             external: Some(&public_names),
-            total_temporals: None, temporals: None,
+            total_temporals: None, reductions: None, temporals: None,
         };
         exceptions.sort_by_cached_key(|(name, payload, cond)| (
             name.clone(),
@@ -421,13 +421,14 @@ pub(super) fn observations(
             let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
                 heap: &BTreeMap::new(),
                 external: Some(&external_names),
-                total_temporals: Some(&publication.total), temporals: Some(temporal_names),
+                total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: Some(temporal_names),
             }).map_err(|error| fail(error.to_string()))?;
             super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
             normalized
         };
         ctx.set_temporal_names(publication.aliases);
         ctx.set_relation_slots(publication.slots);
+        ctx.set_reductions(publication.reductions);
         Some(if let Some(fields) = projected_record {
             need(returned.as_array_lit().is_some_and(|values| values.len() == fields.len()),
                 "projected record lost its declared fields")?;

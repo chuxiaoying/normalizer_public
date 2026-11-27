@@ -24,6 +24,7 @@ fn sort_predicates(predicates: &mut Vec<&Expr>, ctx: &crate::FormatCtx) {
         heap: &ctx.business_identities,
         external: (!external.is_empty()).then_some(&external),
         total_temporals: None,
+        reductions: Some(&ctx.reductions),
         temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
     };
     predicates.sort_by_cached_key(|expr| math::canonical_order_key(expr, &public));

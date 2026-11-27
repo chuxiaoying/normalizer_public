@@ -64,7 +64,8 @@ impl Engine<'_> {
         let definition = Definition {
             source: source.into(),
             initial,
-            body: math::normalize(local_body(self, body, acc, item, env)?),
+            body: math::try_normalize_with(local_body(self, body, acc, item, env)?, &math::ReduceBodyContext)
+                .map_err(|error| fail(error.to_string()))?,
             guard: guard.clone(),
         };
         let node = super::temporal_graph::Definition::Fold(definition);

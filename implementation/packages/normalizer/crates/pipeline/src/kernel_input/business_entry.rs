@@ -533,7 +533,7 @@ impl EntryContext {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &identities,
                     external: (!states.is_empty()).then_some(&states),
-                    total_temporals: Some(&publication.total), temporals: (!definition_names.is_empty()).then_some(definition_names),
+                    total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
                     .map_err(|error| error.to_string())?
@@ -546,6 +546,7 @@ impl EntryContext {
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_temporal_names(definition_names.clone());
             ctx.set_relation_slots(publication.slots.clone());
+            ctx.set_reductions(publication.reductions.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());

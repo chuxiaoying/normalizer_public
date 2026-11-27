@@ -145,6 +145,7 @@ fn binding(class: Class, ty: &str, id: Identity) -> Rc<CanonicalKey> {
 struct Keys<'a> {
     context: &'a dyn SortContext,
     memo: HashMap<Expr, Rc<CanonicalKey>>,
+    in_reduce_body: bool,
 }
 
 impl Keys<'_> {
@@ -171,8 +172,15 @@ impl Keys<'_> {
             },
             SymVar { origin } => {
                 let (class, id) = match origin {
-                    SymVarOrigin::Parameter { name, primitive_type: _ } =>
-                        (if name.contains('.') { Class::Read } else { Class::Reference }, Identity::Parameter(path(name))),
+                    SymVarOrigin::Parameter { name, primitive_type: _ } => {
+                        let local = match (self.in_reduce_body, name.as_str()) {
+                            (true, "acc") => Some(0),
+                            (true, "item") => Some(1),
+                            _ => None,
+                        };
+                        (if name.contains('.') { Class::Read } else { Class::Reference },
+                            local.map_or_else(|| Identity::Parameter(path(name)), Identity::Local))
+                    },
                     SymVarOrigin::External { binding_id, path: parts, primitive_type: _ } => {
                         let id = match observation(ctx, *binding_id) {
                             Observation::Entry(mut root) => { root.extend(parts.iter().cloned()); Identity::EntrySnapshot(root) }
@@ -183,6 +191,15 @@ impl Keys<'_> {
                         (if parts.is_empty() { Class::Reference } else { Class::Read }, id)
                     }
                     SymVarOrigin::Temporal { binding_id, primitive_type: _ } => {
+                        if let Some(reduce) = ctx.reduce_shapes().and_then(|shapes| shapes.get(binding_id)) {
+                            let source = binding(Class::Reference, "number[]",
+                                Identity::Parameter(path(&reduce.source)));
+                            let initial = self.expr(&reduce.initial);
+                            let mut scope = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: true };
+                            let body = scope.expr(&reduce.body);
+                            return node(Class::Relation, named("reduce"), vec!["number".into()],
+                                vec![], vec![], vec![Some(source), Some(initial), Some(body)], None, 0, 1);
+                        }
                         let slot = ctx.temporal_aliases().and_then(|aliases| aliases.get(binding_id)).copied()
                             .unwrap_or_else(|| usize::try_from(*binding_id).expect("local identity does not fit its slot"));
                         (Class::Reference, Identity::Local(slot))
@@ -295,8 +312,10 @@ thread_local! {
 }
 
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
-    let mut keys = Keys { context: ctx, memo: HashMap::new() };
-    if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.external_names().is_some() {
+    let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
+    if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.external_names().is_some()
+        || ctx.in_reduce_body() || ctx.reduce_shapes().is_some_and(|shapes| !shapes.is_empty())
+    {
         return keys.expr(expr);
     }
     if let Some(key) = CACHE.with(|cache| cache.borrow().get(expr).cloned()) { return key; }

@@ -46,7 +46,7 @@ pub use canonical_order::{
     canonical_let_plan, let_eager_children,
 };
 pub use primitive_enum::Primitive;
-pub use sort_context::{DefaultSortContext, SortContext};
+pub use sort_context::{DefaultSortContext, ReduceBodyContext, ReduceShape, SortContext};
 pub use symvar::{ScalarSymbolType, SymVarOrigin};
 
 /// Exact mathematical integer, distinct from source-language machine words.

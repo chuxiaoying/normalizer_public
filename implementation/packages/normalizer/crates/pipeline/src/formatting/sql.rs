@@ -27,6 +27,7 @@ pub struct FormatCtx {
     nested_arrays: std::collections::BTreeSet<String>,
     record_arrays: std::collections::BTreeSet<String>,
     temporal_names: std::collections::BTreeMap<u64, usize>,
+    reductions: std::collections::BTreeMap<u64, math::ReduceShape>,
     relation_scope: scoped_relation::Scope,
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
@@ -48,6 +49,7 @@ impl Default for FormatCtx {
             nested_arrays: Default::default(),
             record_arrays: Default::default(),
             temporal_names: Default::default(),
+            reductions: Default::default(),
             relation_scope: Default::default(),
             business_identities: Default::default(),
             business_projections: Vec::new(),
@@ -103,6 +105,10 @@ impl FormatCtx {
 
     pub(crate) fn set_temporal_names(&mut self, names: std::collections::BTreeMap<u64, usize>) {
         self.temporal_names = names;
+    }
+
+    pub(crate) fn set_reductions(&mut self, reductions: std::collections::BTreeMap<u64, math::ReduceShape>) {
+        self.reductions = reductions;
     }
 
     pub(crate) fn set_relation_slots(&mut self, slots: Vec<scoped_relation::Slot>) {
@@ -292,7 +298,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         let public = CanonicalNames {
             heap: &ctx.business_identities,
             external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
-            total_temporals: None, temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
+            total_temporals: None, reductions: Some(&ctx.reductions), temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
         };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.

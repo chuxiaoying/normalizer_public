@@ -6,6 +6,7 @@ pub(crate) struct CanonicalNames<'a> {
     pub(crate) heap: &'a BTreeMap<i64, String>,
     pub(crate) external: Option<&'a BTreeMap<u64, String>>,
     pub(crate) total_temporals: Option<&'a BTreeSet<u64>>,
+    pub(crate) reductions: Option<&'a BTreeMap<u64, math::ReduceShape>>,
     pub(crate) temporals: Option<&'a BTreeMap<u64, usize>>,
 }
 
@@ -19,6 +20,8 @@ impl math::SortContext for CanonicalNames<'_> {
     fn temporal_is_total(&self, id: u64) -> bool {
         self.total_temporals.is_some_and(|ids| ids.contains(&id))
     }
+
+    fn reduce_shapes(&self) -> Option<&BTreeMap<u64, math::ReduceShape>> { self.reductions }
 
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.temporals }
 }
