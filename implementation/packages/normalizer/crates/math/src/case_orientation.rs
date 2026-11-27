@@ -80,6 +80,11 @@ fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) 
         return primitive_type == "integer" && (context.temporal_is_total(*binding_id)
             || context.choice_slots().is_some_and(|slots| slots.contains_key(binding_id)));
     }
+    if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
+        return path.is_empty() && matches!(primitive_type.as_str(), "integer" | crate::domains::decimal::VALUE_TAG)
+            && context.observation_identities().and_then(|identities| identities.get(binding_id))
+                .is_some_and(|identity| matches!(identity, crate::ObservationIdentity::EntrySnapshot(_)));
+    }
     direct_exact_number(value) || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
 }
 

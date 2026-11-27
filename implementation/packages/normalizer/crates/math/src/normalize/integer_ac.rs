@@ -17,6 +17,10 @@ fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
             primitive_type == "integer" && (ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
                 || (ctx.temporal_is_total(*binding_id)
                     && crate::canonical_order::comparison_operands_are_bound(value, ctx))),
+        ExprKind::SymVar { origin: SymVarOrigin::External { binding_id, path, primitive_type } } =>
+            primitive_type == "integer" && path.is_empty()
+                && ctx.observation_identities().and_then(|identities| identities.get(binding_id))
+                    .is_some_and(|identity| matches!(identity, crate::ObservationIdentity::EntrySnapshot(_))),
         ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_))
         | ExprKind::RowValue { acquired_integer: true, .. } => true,
         ExprKind::SymVar {

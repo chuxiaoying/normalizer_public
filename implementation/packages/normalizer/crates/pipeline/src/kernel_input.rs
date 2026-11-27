@@ -929,9 +929,8 @@ fn adapter_parameter(t: &JavaType) -> Result<(Ty, String)> {
     }
     Err(fail("unsupported Java type"))
 }
-// Unlike an external receipt, the declared initial value of an entry-state
-// scalar is available on every path. Keep it a typed math input in a separate
-// namespace and project it to E, never to a public entry parameter.
+// Business relation expressions refer to declared entry-state arrays by
+// this internal relation-source name. Scalars use typed snapshot bindings.
 fn source_state_symbol(name: &str) -> String {
     format!("$initial_state.{name}")
 }

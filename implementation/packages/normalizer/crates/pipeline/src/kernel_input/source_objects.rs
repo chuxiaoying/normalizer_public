@@ -178,7 +178,9 @@ impl Engine<'_> {
             b::heap_ref(reference.id())
         } else {
             let primitive = scalar_origin_type(&ty)?;
-            b::param(source_state_symbol(name), primitive)
+            // This is the declared entry snapshot, not an additional P
+            // binding disguised under an internal string prefix.
+            b::sym_e(bind, primitive)
         };
         self.source_objects.states.insert(key, value.clone());
         Ok(Value::Term(ty, value))

@@ -411,13 +411,19 @@ pub(crate) fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) 
     let mut bound = true;
     expr.walk_pruned(&mut |part| {
         if !bound || ctx.case_arm_keys(part).is_some() { return false; }
-        if let Some(SymVarOrigin::Temporal { binding_id, .. }) = part.as_sym_var() {
-            bound = if let Some(reduce) = ctx.reduce_shape(*binding_id) {
-                comparison_operands_are_bound(&reduce.initial, ctx)
-                    && comparison_operands_are_bound(&reduce.body, ctx)
-            } else {
-                ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
-            };
+        match part.kind() {
+            ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, .. } } => {
+                bound = if let Some(reduce) = ctx.reduce_shape(*binding_id) {
+                    comparison_operands_are_bound(&reduce.initial, ctx)
+                        && comparison_operands_are_bound(&reduce.body, ctx)
+                } else {
+                    ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
+                };
+            }
+            ExprKind::SymVar { origin: SymVarOrigin::External { binding_id, .. } } =>
+                bound = ctx.observation_identities().is_some_and(|ids| ids.contains_key(binding_id)),
+            ExprKind::HeapRef(id) => bound = ctx.heap_binding_identity(*id).is_some(),
+            _ => {}
         }
         bound
     });
