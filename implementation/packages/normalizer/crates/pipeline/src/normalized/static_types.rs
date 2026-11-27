@@ -584,6 +584,7 @@ impl Admission<'_> {
             let fits = match name.as_str() {
                 "byte" => i8::try_from(literal).is_ok(),
                 "short" => i16::try_from(literal).is_ok(),
+                "char" => u16::try_from(literal).is_ok(),
                 _ => true,
             };
             if !fits {
@@ -596,7 +597,7 @@ impl Admission<'_> {
         // constant, so leave it to a separate constant-expression proof.
         if let (Some(JavaType::Primitive(target)), E::Ident(name)) = (expected, value) {
             if let Some(Binding { ty: JavaType::Primitive(source), initialized_final: false, .. }) = scope.get(name) {
-                if matches!((source.as_str(), target.as_str()), ("int", "byte" | "short") | ("short", "byte")) {
+                if matches!((source.as_str(), target.as_str()), ("int", "byte" | "short" | "char") | ("short", "byte" | "char") | ("byte", "char") | ("char", "byte" | "short")) {
                     return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
                         "{label}: nonconstant {source} binding {name} cannot implicitly narrow to Java {target}")));
                 }

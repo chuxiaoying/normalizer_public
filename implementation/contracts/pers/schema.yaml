@@ -105,12 +105,13 @@ $defs:
     pattern: '^(number|money|date|instant|bool|text|bytes)(\[\])+\??$'
   named-type-reference:
     type: string
-    pattern: '^[A-Za-z_][A-Za-z0-9_]*(\[\])*\??$'
+    pattern: '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*(\[\])*\??$'
     not:
       pattern: '^(void|number|money|date|instant|bool|text|bytes|unknown)(\[\])*\??$'
   type-name:
     allOf:
-      - $ref: '#/$defs/identifier'
+      - type: string
+        pattern: '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$'
       - $ref: '#/$defs/named-type-reference'
   value-type:
     oneOf:

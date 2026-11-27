@@ -72,7 +72,7 @@ pub(crate) fn host_collection_allocation(declared: &JavaType, init: &E) -> bool 
 }
 
 pub(crate) fn integral(t: &JavaType) -> bool {
-    matches!(t, JavaType::Primitive(n) if matches!(n.as_str(), "byte" | "short" | "int" | "long"))
+    matches!(t, JavaType::Primitive(n) if matches!(n.as_str(), "byte" | "short" | "char" | "int" | "long"))
 }
 pub(crate) fn native_decimal_type(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Primitive(name) if matches!(name.as_str(), "float" | "double"))

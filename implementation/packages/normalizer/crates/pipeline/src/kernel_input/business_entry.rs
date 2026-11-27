@@ -92,10 +92,10 @@ fn source_type(ty: &JavaType) -> Result<String> {
         t if crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t) => Ok("number".into()),
         t if crate::normalized::calendar_date_type(t) => Ok("date".into()),
         JavaType::Array(item) => Ok(format!("{}[]", source_type(item)?)),
-        JavaType::Primitive(t) if matches!(t.as_str(), "byte" | "short" | "int" | "long") => Ok("number".into()),
+        t if crate::normalized::integral(t) => Ok("number".into()),
         JavaType::Primitive(t) if t == "boolean" => Ok("bool".into()),
         JavaType::Class(t) if matches!(t.as_str(), "String" | "java.lang.String") => Ok("text".into()),
-        JavaType::Class(t) if identifier(t) => Ok(t.clone()),
+        JavaType::Class(t) if t.split('.').all(identifier) => Ok(t.clone()),
         _ => Err(format!("[NORM-BUSINESS-TYPE] unsupported source type {ty:?}")),
     }
 }
