@@ -613,6 +613,15 @@ impl SymbolicStore {
             }
             branches.push((guard, entry.value.clone()));
         }
+        if fallback.is_none() && !branches.is_empty() {
+            // Writes that separately do not cover the read may cover it
+            // together. Pick the oldest reachable write as ELSE only when
+            // the other writes plus that one exhaust this read's domain.
+            let covered = coverage(branches.iter().map(|(guard, _)| guard));
+            if b::path_implies(path, &covered) {
+                fallback = branches.pop().map(|(_, value)| value);
+            }
+        }
         let fallback = fallback?;
         Some(branches.into_iter().rev().fold(fallback, |old, (guard, value)| {
             join_value(guard, value, old)
@@ -675,6 +684,8 @@ fn factor_array_sum_delta(expression: &Expr) -> Option<Expr> {
     use math::domains::relation::RelationExpr;
     use math::{BinOpKind::{Add, Sub}, RelationAggregateKind::{FirstValue, NthValue, Sum}};
     let ([(guard, yes)], no) = expression.as_total_case_when()? else { return None; };
+    let ctx = &math::DefaultSortContext;
+    let mut best = None;
     for (adjusted, original, enabled) in [(yes, no, guard.clone()), (no, yes, b::not(guard.clone()))] {
         let Some((Sum, RelationExpr::Base { name, alias, snapshot: None }, Some(row), None)) = original.as_relation_aggregate() else { continue; };
         if alias != "value" || row.as_row_value() != Some("value") { continue; }
@@ -687,10 +698,14 @@ fn factor_array_sum_delta(expression: &Expr) -> Option<Expr> {
             if source != name || alias != "value" { continue; }
             let delta = b::case_when(vec![(enabled.clone(), b::sub(replacement.clone(), slot.clone()))], b::lit_int(0));
             let candidate = math::normalize(b::add(original.clone(), delta));
-            if candidate.size() < expression.size() { return Some(candidate); }
+            if math::canonical_order::canonical_cost_compare(&candidate, expression, ctx).is_lt()
+                && best.as_ref().is_none_or(|old| math::canonical_order_compare(&candidate, old, ctx).is_lt())
+            {
+                best = Some(candidate);
+            }
         }
     }
-    None
+    best
 }
 
 /// Join two completion outcomes at their earliest common continuation.

@@ -405,7 +405,8 @@ pub fn canonical_order_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext)
     canonical_order_key(left, ctx).cmp(&canonical_order_key(right, ctx))
 }
 
-pub(crate) fn canonical_cost_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> Ordering {
+/// Compare only the two components of the CF-02 complexity measure.
+pub fn canonical_cost_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> Ordering {
     let (left, right) = (canonical_order_key(left, ctx), canonical_order_key(right, ctx));
     (&left.arms, &left.operations).cmp(&(&right.arms, &right.operations))
 }
