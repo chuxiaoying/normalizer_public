@@ -11,6 +11,6 @@ expected:
         type: number
   R: |-
     CASE
-      WHEN value < 0 THEN 1
-      ELSE 2
+      WHEN value > -1 THEN 2
+      ELSE 1
     END
