@@ -624,9 +624,16 @@ impl<'a> Engine<'a> {
                 }
                 S::Assign { target: J::ArrayAccess { target, index }, value, .. } => {
                     let array = self.java_expr(target, id, env, path.clone())?;
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
                     let index = self.java_expr(index, id, env, path.clone())?;
-                    // A simple store evaluates its RHS before its bounds check.
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
+                    // A simple store evaluates its RHS before null and
+                    // bounds checks, but not after failed operand evaluation.
                     let rhs = self.java_expr(value, id, env, path.clone())?;
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
                     self.source_array_store(array, index, rhs, path)?;
                 }
                 S::Assign {target: J::Ident(name), value, ..} => {
