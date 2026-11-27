@@ -562,7 +562,8 @@ impl<'a> Engine<'a> {
                 let fields = row.fields().iter().map(|field| {
                     let ty = self.project.parameter_type(field.java_type())?;
                     need(matches!(ty, Ty::Integer | Ty::Bool | Ty::Text), "unsupported collection row field type")?;
-                    let value = b::row_value(format!("{}.{}", query.alias, field.name()));
+                    let name = format!("{}.{}", query.alias, field.name());
+                    let value = if ty == Ty::Integer { b::acquired_integer_row(name) } else { b::row_value(name) };
                     Ok((field.name().into(), Value::Term(ty, value)))
                 }).collect::<Result<_>>()?;
                 Rows { input: RelationExpr::base(name, &query.alias), fields, ordering: vec![] }
@@ -577,7 +578,8 @@ impl<'a> Engine<'a> {
                 let fields = fields
                     .into_iter()
                     .map(|(name, ty)| {
-                        let field = b::row_value(format!("{}.{}", query.alias, name));
+                        let path = format!("{}.{}", query.alias, name);
+                        let field = if ty == Ty::Integer { b::acquired_integer_row(path) } else { b::row_value(path) };
                         (name, Value::Term(ty, field))
                     })
                     .collect();

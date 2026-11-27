@@ -306,6 +306,18 @@ impl Engine<'_> {
         if let Some(taken) = condition.as_bool() {
             return Ok(if taken { yes } else { no });
         }
+        if yes.ty() == Ty::Integer && no.ty() == Ty::Integer {
+            // The source already compared these two exact values in this
+            // domain. Use their real bindings (including settled receipts)
+            // when choosing the shared minimum/maximum representative.
+            let (yes, no) = (yes.scalar()?, no.scalar()?);
+            let order = self.execution_order(yes.has_heap_ref() || no.has_heap_ref());
+            if let Some(extremum) = math::case_orientation::ordered_number_selection(
+                &condition, &yes, &no, &order,
+            ) {
+                return Ok(Value::Term(Ty::Integer, math::normalize_with(extremum, &order)));
+            }
+        }
         select(condition, yes, no)
     }
 
