@@ -12,7 +12,6 @@ pub(super) struct BusinessObservations {
     pub(super) effects: Vec<serde_json::Value>,
     pub(super) acquisitions: BTreeMap<String, serde_json::Value>,
     pub(super) throws: Vec<serde_json::Value>,
-    pub(super) definitions: Vec<serde_json::Value>,
 }
 
 enum BusinessOutput {
@@ -459,7 +458,7 @@ impl EntryContext {
             _ => super::temporal_graph::Publication::default(),
         };
         let definition_names = &publication.aliases;
-        let render_value = |expression: &Expr| -> Result<String> {
+        let render_value = |expression: &Expr, record_fields: Option<&[(String, Expr)]>| -> Result<String> {
             if !result.temporal_definitions.is_empty() {
                 super::temporal_graph::validate_reads(expression, &result.temporal_definitions)?;
             }
@@ -514,7 +513,7 @@ impl EntryContext {
                     Some(SymVarOrigin::Temporal { .. }) => super::temporal_definition_id(node)
                         .is_some_and(|id| definition_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &record_inputs, &record_rows)
-                        || (certified_composite_return && node.as_array_lit().is_some())
+                        || ((certified_composite_return || record_fields.is_some()) && node.as_array_lit().is_some())
                         || (certified_composite_return && self.returns == "map<text,text>"
                             && math::domains::composite::ordered_text_map_entries(node).is_some())
                         || super::record_choice_projection(node).is_some()
@@ -546,13 +545,17 @@ impl EntryContext {
             }
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_temporal_names(definition_names.clone());
-            ctx.set_inline_folds(publication.inline_folds.clone());
+            ctx.set_relation_slots(publication.slots.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());
             ctx.set_record_arrays(record_inputs.keys().cloned().collect());
             ctx.set_business_identities(identities.clone());
-            Ok(crate::formatting::sql::business_value::format_value(&expression, &mut ctx))
+            Ok(if let Some(fields) = record_fields {
+                crate::formatting::sql::business_value::format_record(&expression, fields, &mut ctx)
+            } else {
+                crate::formatting::sql::business_value::format_value(&expression, &mut ctx)
+            })
         };
 
         let value = match &output {
@@ -560,16 +563,13 @@ impl EntryContext {
             BusinessOutput::Pure(returned) => Some(
                 if let Some(record) = &result.source_record_return {
                     self.types.get(&self.returns).ok_or("result record type is undeclared")?;
-                    let fields = record.iter().map(|(name, value)| {
-                        let rendered = render_value(value)?.replace('\n', "\n  ");
-                        Ok(format!("  {name}: {rendered}"))
-                    }).collect::<Result<Vec<_>>>()?;
-                    format!("{{\n{}\n}}", fields.join(",\n"))
+                    let aggregate = math::builder::array_lit(record.iter().map(|(_, value)| value.clone()).collect());
+                    render_value(&aggregate, Some(record))?
                 } else if self.returns == "void" {
                     if !returned.is_null() { return Err("non-void return for void entry".into()); }
                     "void".into()
                 } else {
-                    render_value(returned)?
+                    render_value(returned, None)?
                 }
             ),
         };
@@ -580,8 +580,6 @@ impl EntryContext {
         let mut doc = json!({"schema": super::kernel_result::PERS_SCHEMA, "entry": {"function": self.function, "returns": self.returns},
             "P": {"parameters": self.parameters}});
         if let Some(value) = value { doc["R"] = json!(value); }
-        let definitions = observations.map_or(&publication.rows, |o| &o.definitions);
-        if !definitions.is_empty() { doc["T"] = json!(definitions); }
         if !self.environment.is_empty() {
             let environment = self.environment.iter().map(|(name, state)| {
                 let rendered = match state.ty.as_ref().and_then(|ty| self.types.get(ty)) {

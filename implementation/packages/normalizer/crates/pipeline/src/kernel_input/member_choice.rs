@@ -31,7 +31,7 @@ impl Engine<'_> {
         if let Some(owner) = self.project.source_owner(declared) {
             return self.choose_record_member(binding, members, empty, owner, method, env, path);
         }
-        let empty = match empty {
+        let mut empty = match empty {
             MemberChoiceFallback::Integer(value) => b::lit_integer(value.clone()),
             MemberChoiceFallback::Local(name) => {
                 let value = env.get(name).ok_or_else(|| fail("unbound member choice empty fallback"))?;
@@ -39,6 +39,17 @@ impl Engine<'_> {
                 value.scalar()?
             }
         };
+        // MA-02: on an acquired equality point the exact constant is the
+        // smaller representative of this integer fallback, not a new read.
+        let mut point = None;
+        path.walk(&mut |predicate| {
+            let Some((BinOpKind::Eq, left, right)) = predicate.as_binop() else { return; };
+            let literal = if left == &empty { right } else if right == &empty { left } else { return; };
+            if literal.as_lit().and_then(math::Lit::as_integer).is_some() && b::path_implies(&path, predicate) {
+                point = Some(literal.clone());
+            }
+        });
+        if let Some(point) = point { empty = point; }
         enum Choice {
             Fixed(Expr),
             Independent(Candidates),

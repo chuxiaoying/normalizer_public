@@ -1,8 +1,8 @@
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: normalizer.pers/1
-title: Hello World PERS subset schema
+title: Normalizer PERS schema
 description: >-
-  Hello World 实际案例使用的 PERS YAML 子集。来源定义统一使用 kind、source
+  Normalizer 当前发布的 PERS YAML 结构。来源定义统一使用 kind、source
   和来源载荷。types 定义本文档引用的具名业务类型。entry.returns 与
   S 中操作的 returns 声明正常返回类型。类型引用的名称必须在本文档中闭合。
   普通业务类型默认非空，后缀 ? 显式表示可空；这一规则统一适用于 P、
@@ -14,9 +14,9 @@ description: >-
   普通 Java 整数和源码声明的 number 映射为 number；字段名、金额或日期用途不改变类型。
   money 与 date 需要独立的来源类型依据。
   number 表示无固定大小上限、可全序比较的业务数值，普通算术按数学关系归约。
-  Java 与 Vue/JS 共用这个数值域，NaN、正负无穷和宿主浮点舍入不属于业务合同。
+  该字段描述当前业务数值表示，不决定何时必须保留宿主数值行为；语义见 BF-02。
 x-enums:
-  top-level-keys: [schema, types, entry, P, E, S, T, R, throws]
+  top-level-keys: [schema, types, entry, P, E, S, R, throws]
   entry-variants: [function]
   source-kinds: [state, table, acquisition]
   operation-kinds: [write, call, sql]
@@ -75,14 +75,6 @@ properties:
     minItems: 1
     items:
       $ref: '#/$defs/operation'
-  T:
-    description: 内部定义按依赖声明。成员选择保留每次发生的独立身份，纯递推按稳定结构命名。
-    type: array
-    minItems: 1
-    items:
-      oneOf:
-        - $ref: '#/$defs/member-choice'
-        - $ref: '#/$defs/pure-fold'
   R:
     description: 仅代表实际可能发生的正常完成；正常完成的无值入口使用 void。全域抛出时省略。
     allOf:
@@ -335,44 +327,6 @@ $defs:
           call:
             $ref: '#/$defs/call'
       - $ref: '#/$defs/sql-write'
-  member-choice:
-    type: object
-    additionalProperties: false
-    required: [id, op, when, members, empty]
-    properties:
-      id:
-        type: string
-        pattern: '^\$t_[0-9]+$'
-      op:
-        const: member_choice
-      when:
-        $ref: '#/$defs/expression'
-      members:
-        $ref: '#/$defs/expression'
-      empty:
-        $ref: '#/$defs/expression'
-  pure-fold:
-    type: object
-    additionalProperties: false
-    required: [id, op, type, source, initial, accumulator, element, body]
-    properties:
-      id:
-        type: string
-        pattern: '^\$t_[0-9]+$'
-      op:
-        const: fold
-      type:
-        const: number
-      source:
-        $ref: '#/$defs/expression'
-      initial:
-        $ref: '#/$defs/expression'
-      accumulator:
-        const: acc
-      element:
-        const: item
-      body:
-        $ref: '#/$defs/expression'
   throw-declaration:
     type: object
     additionalProperties: false

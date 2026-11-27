@@ -11,6 +11,7 @@
 //! - HeapRef(id) → verified business identity, or internal debug representation
 
 mod relation_query;
+pub(crate) mod scoped_relation;
 pub(crate) mod business_value;
 
 use crate::canonical_names::CanonicalNames;
@@ -26,7 +27,7 @@ pub struct FormatCtx {
     nested_arrays: std::collections::BTreeSet<String>,
     record_arrays: std::collections::BTreeSet<String>,
     temporal_names: std::collections::BTreeMap<u64, usize>,
-    inline_folds: std::collections::BTreeMap<u64, String>,
+    relation_scope: scoped_relation::Scope,
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
@@ -34,7 +35,7 @@ pub struct FormatCtx {
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
     business_value_guard: bool,
-    /// PERST: External binding_id → 0-based 编号
+    /// Public receipt ordinal; the raw binding ID remains an internal identity.
     e_renumber: HashMap<u64, usize>,
 
 }
@@ -48,7 +49,7 @@ impl Default for FormatCtx {
             nested_arrays: Default::default(),
             record_arrays: Default::default(),
             temporal_names: Default::default(),
-            inline_folds: Default::default(),
+            relation_scope: Default::default(),
             business_identities: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
@@ -106,8 +107,40 @@ impl FormatCtx {
         self.temporal_names = names;
     }
 
-    pub(crate) fn set_inline_folds(&mut self, forms: std::collections::BTreeMap<u64, String>) {
-        self.inline_folds = forms;
+    pub(crate) fn set_relation_slots(&mut self, slots: Vec<scoped_relation::Slot>) {
+        self.relation_scope.slots = slots.into();
+    }
+
+    pub(crate) fn in_relation_scope(&mut self, expression: &Expr, render: impl FnOnce(&mut Self) -> String) -> String {
+        let active = self.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+        let mut needed = std::collections::BTreeSet::new();
+        let slots = self.relation_scope.slots.clone();
+        if slots.is_empty() { return render(self); }
+        expression.walk(&mut |part| {
+            if let Some(SymVarOrigin::Temporal { binding_id, .. }) = part.as_sym_var() {
+                if let Some(&slot) = self.temporal_names.get(binding_id) {
+                    scoped_relation::add_dependencies(&slots, slot, &mut needed);
+                }
+            }
+        });
+        let mut bindings = Vec::new();
+        for slot in needed {
+            if let scoped_relation::Slot::Choice { members, empty, guard } = &slots[slot] {
+                if self.relation_scope.members.contains_key(&slot) || !math::builder::path_implies(&active, guard) {
+                    continue;
+                }
+                let empty = self.relation_scope.operand(empty);
+                let name = format!("member{}", self.relation_scope.members.len());
+                self.relation_scope.members.insert(slot, name.clone());
+                bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD ")));
+            }
+        }
+        let mut value = render(self);
+        for (slot, prefix) in bindings.into_iter().rev() {
+            self.relation_scope.members.remove(&slot);
+            value = format!("{prefix}{value})");
+        }
+        value
     }
 
     pub(crate) fn set_business_identities(&mut self, roots: std::collections::BTreeMap<i64, String>) {
@@ -149,7 +182,7 @@ impl FormatCtx {
         Self::default()
     }
 
-    /// 查 External 的 renumber 结果；PERST 主格式中若 bindings 存在但未命中，说明 R 引用了未登记的 $e。
+    /// Resolve an external binding for display; closed business expressions are validated before rendering.
     pub(crate) fn e_slot(&self, raw: u64) -> usize {
         self.e_renumber.get(&raw).copied().unwrap_or(raw as usize)
     }
@@ -271,8 +304,10 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     }
     if let Some(branches) = expr.as_case_when() {
         if ctx.business_inputs.is_some() {
-            if let Some(selection) = business_value::format_selection(expr, ctx) {
-                return selection;
+            if ctx.relation_scope.slots.is_empty() {
+                if let Some(selection) = business_value::format_selection(expr, ctx) {
+                    return selection;
+                }
             }
         }
         return format_case_when(branches, ctx);
@@ -444,24 +479,37 @@ fn format_binop_child_with_precedence(
 fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     let business = ctx.business_inputs.is_some();
     let mut parts = vec!["CASE".to_string()];
+    let scoped = !ctx.relation_scope.slots.is_empty();
+    let outer_domain = ctx.relation_scope.active.clone();
+    let mut remaining = outer_domain.clone().unwrap_or_else(|| math::builder::lit_bool(true));
     for (guard, value) in branches {
-        let value = format_expr_with_ctx(value, ctx);
+        let text = if scoped {
+            let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
+            ctx.relation_scope.active = Some(selected);
+            let text = ctx.in_relation_scope(value, |ctx| format_expr_with_ctx(value, ctx));
+            ctx.relation_scope.active = Some(remaining);
+            remaining = next;
+            text
+        } else {
+            format_expr_with_ctx(value, ctx)
+        };
         if guard.as_bool() == Some(true) {
-            parts.push(format!("ELSE {value}"));
+            parts.push(format!("ELSE {text}"));
             break;
         }
         let prior = std::mem::replace(&mut ctx.business_value_guard, business);
         let guard = format_expr_with_ctx(guard, ctx);
         ctx.business_value_guard = prior;
-        parts.push(format!("WHEN {guard} THEN {value}"));
+        parts.push(format!("WHEN {guard} THEN {text}"));
     }
+    ctx.relation_scope.active = outer_domain;
     let array_index_arm = business && branches.len() == 2
         && branches.iter().any(|(_, value)| value.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
             kind == RelationAggregateKind::NthValue
                 && matches!(relation, math::domains::relation::RelationExpr::Base { name, .. }
                     if ctx.scalar_arrays.contains(name))
         }));
-    if business && branches.len() == 2 && (branches[0].0.as_sym_var().is_some() || array_index_arm) {
+    if business && branches.len() == 2 && (scoped || branches[0].0.as_sym_var().is_some() || array_index_arm) {
         parts.push("END".into());
         return parts.join(" ");
     }
@@ -498,13 +546,14 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
             }
         }
         SymVarOrigin::Temporal { binding_id, primitive_type } => {
-            if let Some(expression) = ctx.inline_folds.get(binding_id) {
-                return expression.clone();
-            }
             let slot = if matches!(primitive_type.as_str(), "integer" | math::builder::RECORD_TEMPORAL_TAG) && ctx.business_inputs.is_some() {
                 ctx.temporal_names.get(binding_id).copied().expect("closed temporal definition")
             } else { *binding_id as usize };
-            format!("$t_{slot}")
+            if ctx.business_inputs.is_some() && ctx.temporal_names.contains_key(binding_id) {
+                ctx.relation_scope.slot(slot)
+            } else {
+                format!("$t_{slot}")
+            }
         }
     }
 }

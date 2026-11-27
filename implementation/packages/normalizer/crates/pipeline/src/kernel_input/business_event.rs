@@ -429,15 +429,11 @@ pub(super) fn observations(
             normalized
         };
         ctx.set_temporal_names(publication.aliases);
-        ctx.set_inline_folds(publication.inline_folds);
+        ctx.set_relation_slots(publication.slots);
         Some(if let Some(fields) = projected_record {
-            let values = returned.as_array_lit().filter(|values| values.len() == fields.len())
-                .ok_or_else(|| fail("projected record lost its declared fields"))?;
-            let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
-                let value = crate::formatting::sql::business_value::format_value(value, &mut ctx);
-                format!("  {name}: {}", value.replace('\n', "\n  "))
-            }).collect();
-            format!("{{\n{}\n}}", lines.join(",\n"))
+            need(returned.as_array_lit().is_some_and(|values| values.len() == fields.len()),
+                "projected record lost its declared fields")?;
+            crate::formatting::sql::business_value::format_record(&returned, &fields, &mut ctx)
         } else if entry.return_type() == "void" {
             need(returned.is_null(), "non-void return in void event")?;
             "void".into()
@@ -455,6 +451,5 @@ pub(super) fn observations(
         effects,
         acquisitions,
         throws,
-        definitions: publication.rows,
     })
 }

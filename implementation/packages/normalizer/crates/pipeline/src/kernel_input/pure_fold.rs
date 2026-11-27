@@ -7,6 +7,7 @@ pub(super) struct Definition {
     pub(super) source: String,
     pub(super) initial: Expr,
     pub(super) body: Expr,
+    pub(super) guard: Expr,
 }
 
 fn direct_capture_input(engine: &Engine<'_>, expr: &Expr, primitive: &str) -> bool {
@@ -59,12 +60,12 @@ impl Engine<'_> {
         &mut self, source: &str, acc: &str, item: &str,
         initial: Expr, body: &Scalar, guard: &Expr, env: &Env,
     ) -> Result<Value> {
-        need(guard.as_bool() == Some(true) && acc != item,
-            "pure fold requires unconditional evaluation over one ordered source array")?;
+        need(acc != item, "fold needs separate accumulator and element bindings")?;
         let definition = Definition {
             source: source.into(),
             initial,
             body: math::normalize(local_body(self, body, acc, item, env)?),
+            guard: guard.clone(),
         };
         let node = super::temporal_graph::Definition::Fold(definition);
         let id = self.temporal_definitions.iter().position(|old| old == &node).unwrap_or_else(|| {

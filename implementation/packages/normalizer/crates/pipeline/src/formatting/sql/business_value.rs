@@ -112,7 +112,7 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
         ));
         ctx.display_business_value(query, name);
     }
-    let mut result = super::format_expr_with_ctx(value, ctx);
+    let mut result = ctx.in_relation_scope(value, |ctx| super::format_expr_with_ctx(value, ctx));
     if !definitions.is_empty() {
         result = format!("{}\nIN {result}", definitions.join("\n"));
         for _ in definitions {
@@ -257,4 +257,15 @@ pub(crate) fn format_guarded_boolean(
     let yes = yes.replace('\n', "\n  ");
     let no = no.replace('\n', "\n  ");
     Some(format!("CASE\n  WHEN {guard_text} THEN {yes}\n  ELSE {no}\nEND"))
+}
+
+pub(crate) fn format_record(expression: &Expr, fields: &[(String, Expr)], ctx: &mut FormatCtx) -> String {
+    let values = expression.as_array_lit().expect("declared record projection");
+    ctx.in_relation_scope(expression, |ctx| {
+        let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
+            let value = format_value(value, ctx);
+            format!("  {name}: {}", value.replace('\n', "\n  "))
+        }).collect();
+        format!("{{\n{}\n}}", lines.join(",\n"))
+    })
 }

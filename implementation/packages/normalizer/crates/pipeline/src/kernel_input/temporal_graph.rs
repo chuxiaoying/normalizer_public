@@ -1,7 +1,7 @@
 //! One identity and publication graph for deterministic folds and independent choices.
 use super::*;
 use super::member_choice::{Candidates, Fallback, Occurrence};
-use serde_json::{json, Value as Json};
+use crate::formatting::sql::scoped_relation::{Operand, Slot};
 
 #[derive(PartialEq, Eq)]
 pub(super) enum Definition {
@@ -22,7 +22,7 @@ impl Definition {
 
     fn is_total(&self) -> bool {
         match self {
-            Self::Fold(_) => true,
+            Self::Fold(node) => node.guard.as_bool() == Some(true),
             Self::Choice(node) => node.guard.as_bool() == Some(true),
         }
     }
@@ -32,26 +32,7 @@ impl Definition {
 pub(super) struct Publication {
     pub(super) aliases: BTreeMap<u64, usize>,
     pub(super) total: BTreeSet<u64>,
-    pub(super) rows: Vec<Json>,
-    pub(super) inline_folds: BTreeMap<u64, String>,
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Operand {
-    Integer(math::Integer),
-    Parameter(String),
-    Acquired(String),
-    Prior(usize),
-}
-
-impl Operand {
-    fn render(&self, inline: &[String]) -> String {
-        match self {
-            Self::Integer(n) => n.to_string(),
-            Self::Parameter(name) | Self::Acquired(name) => name.clone(),
-            Self::Prior(slot) => inline.get(*slot).cloned().unwrap_or_else(|| format!("$t_{slot}")),
-        }
-    }
+    pub(super) slots: Vec<Slot>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -65,8 +46,7 @@ pub(super) fn publish(
     domains: &BTreeMap<String, String>, names: &BTreeMap<String, String>,
     acquired_path: impl Fn(u64, &[String]) -> Option<String>,
 ) -> Result<Publication> {
-    let mut pending: BTreeSet<_> = nodes.iter().enumerate().filter_map(|(id, node)|
-        matches!(node, Definition::Choice(_)).then_some(id as u64)).collect();
+    let mut pending = BTreeSet::new();
     if let Some(expression) = expression {
         expression.walk(&mut |node| { pending.extend(temporal_definition_id(node)); });
     }
@@ -79,10 +59,6 @@ pub(super) fn publish(
         }
     }
     let mut published = Publication::default();
-    // RA-09 / PERS-06: deterministic folds need no published identity.
-    // Inline in dependency order; their accumulator and element are only in scope in YIELD.
-    let inline_folds_only = pending.iter().all(|&id| matches!(nodes.get(id as usize), Some(Definition::Fold(_))));
-    let mut inline = Vec::new();
     let array_name = |name: &str| names.get(name).filter(|_| arrays.contains(name))
         .ok_or_else(|| fail("temporal source requires a published array parameter"));
     while !pending.is_empty() {
@@ -98,13 +74,13 @@ pub(super) fn publish(
                 let operand = node.operand().ok_or_else(|| fail("missing scalar temporal operand"))?;
                 if let Some(dep) = integer_definition_id(operand) {
                     let Some(&slot) = published.aliases.get(&dep) else { continue; };
-                    if let Definition::Choice(prior) = &nodes[dep as usize] {
-                        let available = match node {
-                            Definition::Choice(choice) => b::path_implies(&choice.guard, &prior.guard),
-                            Definition::Fold(_) => prior.guard.as_bool() == Some(true),
-                        };
-                        need(available, "temporal operand is not acquired on this definition's path")?;
-                    }
+                    let guard = match node { Definition::Fold(fold) => &fold.guard, Definition::Choice(choice) => &choice.guard };
+                    let prior_guard = match &nodes[dep as usize] {
+                        Definition::Fold(fold) => &fold.guard,
+                        Definition::Choice(choice) => &choice.guard,
+                    };
+                    need(b::path_implies(guard, prior_guard),
+                        "relation operand is not available on its path")?;
                     Operand::Prior(slot)
                 } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
                     Operand::Integer(n)
@@ -135,22 +111,11 @@ pub(super) fn publish(
         let (_, id, value) = ready.into_iter().min_by(|a,b| a.0.cmp(&b.0))
             .ok_or_else(|| fail("temporal definition dependency cycle"))?;
         let slot = published.aliases.len();
-        let label = format!("$t_{slot}");
         let row = match &nodes[id as usize] {
             Definition::Fold(fold) => {
                 let mut ctx = crate::FormatCtx::for_business(BTreeMap::new(), BTreeMap::new());
                 let body = crate::format_expr_with_ctx(&fold.body, &mut ctx);
-                let source = array_name(&fold.source)?;
-                let initial = value.render(&inline);
-                if inline_folds_only {
-                    let expression = format!("REDUCE({source} FROM {initial} AS (acc, item) YIELD {body})");
-                    inline.push(expression.clone());
-                    published.inline_folds.insert(id, expression);
-                    Json::Null
-                } else {
-                    json!({"id":label,"op":"fold","type":"number","source":source,
-                        "initial":initial,"accumulator":"acc","element":"item","body":body})
-                }
+                Slot::Fold { source: array_name(&fold.source)?.clone(), initial: value, body }
             }
             Definition::Choice(choice) => {
                 let mut entry_guard = true;
@@ -171,14 +136,12 @@ pub(super) fn publish(
                     },
                     Candidates::Literal(values) => format!("[{}]", values.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")),
                 };
-                let mut ctx = crate::FormatCtx::for_business(names.clone(), BTreeMap::new());
-                let guard = super::business_event::condition_text(&choice.guard, &mut ctx);
-                json!({"id":label,"op":"member_choice","when":guard,"members":members,"empty":value.render(&inline)})
+                Slot::Choice { members, empty: value, guard: choice.guard.clone() }
             }
         };
         published.aliases.insert(id, slot);
         if nodes[id as usize].is_total() { published.total.insert(id); }
-        if !inline_folds_only { published.rows.push(row); }
+        published.slots.push(row);
         pending.remove(&id);
     }
     Ok(published)
@@ -190,9 +153,18 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
         if let Some(id) = temporal_definition_id(expression) {
             let def = nodes.get(id as usize).ok_or_else(|| fail("unknown temporal reference"))?;
             return match def {
-                Definition::Fold(_) => Ok(()),
-                Definition::Choice(choice) => need(b::path_implies(active, &choice.guard),
-                    "member choice read outside its acquisition guard"),
+                Definition::Fold(fold) => {
+                    need(b::path_implies(active, &fold.guard), "fold use outside its source path")?;
+                    check(&fold.initial, active, nodes)
+                },
+                Definition::Choice(choice) => {
+                    need(b::path_implies(active, &choice.guard),
+                        "member choice read outside its acquisition guard")?;
+                    if let Fallback::Integer(value) = &choice.empty {
+                        check(value, &choice.guard, nodes)?;
+                    }
+                    Ok(())
+                },
             };
         }
         if let Some(record) = record_choice_projection(expression) {
@@ -209,6 +181,10 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
         } else if let Some((_, left, right)) = expression.as_binop() {
             check(left, active, nodes)?;
             check(right, active, nodes)?;
+        } else if let Some((_, operand)) = expression.as_unary_op() {
+            check(operand, active, nodes)?;
+        } else if let Some(args) = expression.as_array_lit().or_else(|| expression.as_call().map(|(_, args)| args)) {
+            for arg in args { check(arg, active, nodes)?; }
         }
         Ok(())
     }
