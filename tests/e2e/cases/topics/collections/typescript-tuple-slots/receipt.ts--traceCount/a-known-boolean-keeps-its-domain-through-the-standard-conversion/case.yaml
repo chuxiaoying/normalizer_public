@@ -1,6 +1,19 @@
 entry: src/receipt.ts#traceCount
-reject:
-  kind: ABORT
-  fragments:
-    - "[NORM-OUT-OF-SOURCE]"
-    - Boolean
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/receipt.ts#traceCount
+    returns: number
+  P:
+    parameters:
+      failed:
+        position: 0
+        type: bool
+      detailed:
+        position: 1
+        type: bool
+  R: |-
+    CASE
+      WHEN detailed == (detailed AND failed) THEN 0
+      ELSE 2
+    END
