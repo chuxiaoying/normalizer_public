@@ -192,10 +192,14 @@ impl<'a> Engine<'a> {
             Some((receipt.binding_id(), relative))
         }).collect();
         if guard.as_bool() == Some(false) { return RelationExpr::base(table, table); }
-        // The base table denotes the initial snapshot. A second physical
-        // read is its own observation even without a known preceding write.
+        // A plain table binding can represent the unconditional initial
+        // snapshot. It has no occurrence condition: a guarded first read
+        // needs an acquisition even if no prior write could affect it.
+        // A later physical read is a separate observation in either case.
         let first = self.source_relations.physically_read.insert(table.into());
-        if first && after.is_empty() { return RelationExpr::base(table, table); }
+        if first && after.is_empty() && guard.as_bool() == Some(true) {
+            return RelationExpr::base(table, table);
+        }
         let id = self.fresh_binding();
         self.realtime_effects.acquire(guard, Acquisition::Sql { source: table.into(), after }, id);
         RelationExpr::acquired_table(table, id)
