@@ -424,7 +424,8 @@ pub(super) fn observations(
                 record["type"] = json!(name);
             }
             if let Some(value) = payload {
-                record["payload"] = json!(crate::format_expr_with_ctx(&value, &mut ctx));
+                record["payload"] = json!(ctx.with_business_evaluation_guard(&cond, |ctx|
+                    crate::format_expr_with_ctx(&value, ctx)));
                 if let Some(ty) = name.as_ref().and_then(|name| project.exceptions.get(name)).filter(|ty| ty.as_str() != "unit") {
                     record["payload_type"] = json!(ty);
                 } else if name.is_none() {
@@ -439,19 +440,16 @@ pub(super) fn observations(
         // Supply settled observation identities to normalization, without
         // using the renderer's receipt ordinals as ordering keys.
         let mut reads_total_integer_field = false;
-        let mut reads_rebound_receipt = false;
         if temporal_names.is_empty() {
             returned.walk(&mut |value| {
                 if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
                     reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
                         && total_port_receipts.contains(binding_id);
-                    reads_rebound_receipt |= matches!(ctx.observation_identities().get(binding_id),
-                        Some(math::ObservationIdentity::Receipt(slot)) if u64::try_from(*slot).ok() != Some(*binding_id));
                 }
             });
         }
         let completion_classes = result.realtime_effects.total_single_failure_classes().collect::<BTreeMap<_, _>>();
-        let returned = if completion_classes.is_empty() && temporal_names.is_empty() && !(reads_total_integer_field && reads_rebound_receipt) {
+        let returned = if completion_classes.is_empty() && temporal_names.is_empty() && !reads_total_integer_field {
             returned
         } else {
             let observation_identities = ctx.observation_identities();
