@@ -14,6 +14,6 @@ expected:
         type: number
   R: |-
     CASE
-      WHEN columns > 0 AND rows >= 0 THEN columns * (rows + 1)
+      WHEN columns > 0 AND rows > -1 THEN columns * (rows + 1)
       ELSE 0
     END

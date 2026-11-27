@@ -34,8 +34,8 @@ expected:
         result: $e_2
         when: |-
           CASE
-            WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
-            ELSE false
+            WHEN completion.is_return($e_0) THEN false
+            ELSE completion.is_throw($e_1, RetryableScoreError)
           END
     - call:
         external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.readPoints
@@ -45,11 +45,9 @@ expected:
         result: $e_3
         when: |-
           CASE
-            WHEN CASE
-              WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
-              ELSE false
-            END THEN completion.is_throw($e_2, RetryableScoreError)
-            ELSE false
+            WHEN completion.is_return($e_0) THEN false
+            WHEN completion.is_return($e_1) THEN false
+            ELSE completion.is_throw($e_2, RetryableScoreError)
           END
   R: |-
     CASE

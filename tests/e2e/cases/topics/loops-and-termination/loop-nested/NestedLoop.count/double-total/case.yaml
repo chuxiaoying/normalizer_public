@@ -13,7 +13,7 @@ expected:
         position: 1
         type: number
   R: |-
-    CASE
+    2 * CASE
       WHEN columns > 0 AND rows > 0 THEN columns * rows
       ELSE 0
-    END * 2
+    END
