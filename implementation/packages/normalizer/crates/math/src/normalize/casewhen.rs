@@ -10,7 +10,9 @@ use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
 use crate::expr::{Expr, ExprKind, Lit, UnaryOpKind};
 use std::collections::HashSet;
 
-pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
+pub(crate) fn simplify(
+    expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>,
+) -> Expr {
     let Some(branches) = expr.as_case_when() else {
         return expr.clone();
     };
@@ -24,7 +26,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
              depth.max(value.depth()))
         },
     );
-    let output = simplify_impl(expr, branches, ctx);
+    let output = simplify_impl(expr, branches, ctx, parent);
     if let Some(start) = start {
         let (flatten_size, flatten_depth) = cost_gate();
         let skip_reason = if flatten_size > 32_768 || flatten_depth > 16 {
@@ -70,7 +72,9 @@ fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr
     None
 }
 
-fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext) -> Expr {
+fn simplify_impl(
+    expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>,
+) -> Expr {
     if let Some(value) = crate::domains::text::redundant_null_default(expr) {
         return value;
     }
@@ -80,7 +84,7 @@ fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_c
     // An exhaustive binary partition may be complemented only together
     // with swapping its values. Use the shared predicate ordering so source
     // branch order cannot choose two different normal forms.
-    if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(expr, ctx) {
+    if let Some(oriented) = crate::case_orientation::canonicalize_binary_case(expr, ctx, parent) {
         return oriented;
     }
 

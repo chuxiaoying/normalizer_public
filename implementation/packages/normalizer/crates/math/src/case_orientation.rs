@@ -9,8 +9,17 @@ use crate::{
     Expr, Lit,
 };
 
-fn has_integer_evidence(value: &Expr) -> bool {
-    value.as_sym_var().is_some_and(|origin| origin.primitive_type() == "integer")
+fn direct_exact_number(value: &Expr) -> bool {
+    matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
+        if matches!(primitive_type.as_str(), "integer" | crate::domains::decimal::VALUE_TAG)
+            && !name.starts_with('$') && !name.contains(['.', '[', ']']))
+}
+
+/// Equality of already-acquired input numbers can establish an effective
+/// arm domain without admitting arbitrary observations as proof atoms.
+pub(crate) fn is_exact_input_equality(expression: &Expr) -> bool {
+    matches!(expression.as_binop(), Some((BinOpKind::Eq, left, right))
+        if direct_exact_number(left) && direct_exact_number(right))
 }
 
 /// Comparison with the THEN value on the left. Both arms must be exactly
@@ -71,18 +80,7 @@ fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) 
         return primitive_type == "integer" && (context.temporal_is_total(*binding_id)
             || context.choice_slots().is_some_and(|slots| slots.contains_key(binding_id)));
     }
-    has_integer_evidence(value)
-        || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
-        // The adapter tags finite exact decimal inputs explicitly. Only a
-        // direct parameter is acquired unconditionally; a numeric field or
-        // receipt annotation alone would not prove its evaluation domain.
-        || matches!(
-            value.as_sym_var(),
-            Some(SymVarOrigin::Parameter { name, primitive_type })
-                if primitive_type == crate::domains::decimal::VALUE_TAG
-                    && !name.starts_with('$')
-                    && !name.contains(['.', '[', ']'])
-        )
+    direct_exact_number(value) || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
 }
 
 /// Compare the full trees after normalizing the complement. Terminal selection
@@ -112,7 +110,9 @@ fn preferred_complement_for_case(
 /// its complemented guard.  This is the single structural entry point for
 /// callers that must preserve CASE laziness while sharing the published
 /// predicate polarity and ordering key.
-pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
+pub(crate) fn canonicalize_binary_case(
+    expression: &Expr, context: &dyn SortContext, parent: Option<&Expr>,
+) -> Option<Expr> {
     let ([(condition, yes)], no) = expression.as_total_case_when()? else {
         return None;
     };
@@ -122,6 +122,18 @@ pub fn canonicalize_binary_case(expression: &Expr, context: &dyn SortContext) ->
     if let Some(op) = selection_comparison(condition, yes, no) {
         if !has_total_number_selection_evidence(yes, context) || !has_total_number_selection_evidence(no, context) {
             return None;
+        }
+        // Under a proven reachable equality domain, the two equivalent
+        // extreme-value spellings collapse to different acquired operands.
+        // Run the candidate selection before ordinary guard simplification.
+        // A single equality of two direct exact inputs is reachable; don't
+        // infer reachability from a general implication on an unknown domain.
+        if direct_exact_number(yes) && direct_exact_number(no)
+            && parent.and_then(Expr::as_binop).is_some_and(|(op, left, right)|
+                op == BinOpKind::Eq && ((left == yes && right == no) || (left == no && right == yes)))
+        {
+            let selected = if crate::canonical_order_compare(yes, no, context).is_gt() { no } else { yes };
+            return Some(selected.clone());
         }
         let canonical = order_selection(op, yes, no, context)?;
         return (canonical != *expression).then_some(canonical);
