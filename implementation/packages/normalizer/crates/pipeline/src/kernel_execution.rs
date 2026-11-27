@@ -901,7 +901,7 @@ impl<'a> Engine<'a> {
                     // Charge the child identifier visit just as generic expression
                     // evaluation did; the immutable length itself needs no path.
                     self.budget()?;
-                    return Ok(Some(b::lit_int(array.length())));
+                    return Ok(Some(self.normalize_execution_value(array.length_expr())));
                 }
                 if let Some(Value::Sequence { item: Ty::Integer, name: root, .. }) = env.get(name) {
                     // This Java expression path has no adapter-signature

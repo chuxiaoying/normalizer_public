@@ -1097,7 +1097,9 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
 // accepts only addresses with no observable evaluation to duplicate.
 fn constant_array_address(target: &E, index: &E) -> bool {
     source_ports::receiver(target).is_some()
-        && matches!(index, E::Lit(JavaLit::Int(i)) if *i >= 0)
+        && (matches!(index, E::Lit(JavaLit::Int(_)))
+            || matches!(index, E::UnaryOp { op: U::Neg, operand }
+                if matches!(operand.as_ref(), E::Lit(JavaLit::Int(_)))))
 }
 
 // Index eligibility is checked by the static type pass, not its syntax.

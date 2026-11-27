@@ -985,6 +985,8 @@ fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
     let (yes, no) = match (yes, no) {
         (Value::LocalTextMap(yes), Value::LocalTextMap(no)) =>
             return Ok(Value::LocalTextMap(yes.join(c, no))),
+        (Value::LocalIntArray(yes), Value::LocalIntArray(no)) =>
+            return Ok(Value::LocalIntArray(source_arrays::LocalIntArray::select(c, yes, no))),
         other => other,
     };
     let ty = then_ty;

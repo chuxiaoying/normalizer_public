@@ -9,14 +9,33 @@ const NEGATIVE_SIZE: &str = "java.lang.NegativeArraySizeException";
 pub(super) enum LocalIntArray {
     Initialized { values: std::rc::Rc<[Expr]>, identity: i64 },
     Zeroed { length: i32, identity: i64 },
+    Selection { guard: Expr, yes: std::rc::Rc<Self>, no: std::rc::Rc<Self> },
     Unreachable,
 }
 
 impl LocalIntArray {
+    pub(super) fn select(guard: Expr, yes: Self, no: Self) -> Self {
+        if yes == no { return yes; }
+        match guard.as_bool() {
+            Some(true) => yes,
+            Some(false) => no,
+            None => Self::Selection { guard, yes: yes.into(), no: no.into() },
+        }
+    }
+
+    pub(super) fn length_expr(&self) -> Expr {
+        match self {
+            Self::Selection { guard, yes, no } => b::case_when(
+                vec![(guard.clone(), yes.length_expr())], no.length_expr()),
+            array => b::lit_int(array.length()),
+        }
+    }
+
     pub(super) fn length(&self) -> i64 {
         match self {
             Self::Initialized { values, .. } => values.len() as i64,
             Self::Zeroed { length, .. } => i64::from(*length),
+            Self::Selection { .. } => unreachable!("select a concrete local identity before reading the length"),
             Self::Unreachable => 0,
         }
     }
@@ -25,7 +44,7 @@ impl LocalIntArray {
         match self {
             Self::Initialized { identity, .. } | Self::Zeroed { identity, .. } =>
                 Some(b::heap_ref(*identity)),
-            Self::Unreachable => None,
+            Self::Selection { .. } | Self::Unreachable => None,
         }
     }
 
@@ -34,7 +53,7 @@ impl LocalIntArray {
         match self {
             Self::Initialized { values, .. } => Some(values[index as usize].clone()),
             Self::Zeroed { .. } => Some(b::lit_int(0)),
-            Self::Unreachable => None,
+            Self::Selection { .. } | Self::Unreachable => None,
         }
     }
 }
@@ -126,6 +145,10 @@ impl Engine<'_> {
     }
 
     pub(super) fn local_array_may_have_writes(&self, array: &LocalIntArray, path: &Expr) -> bool {
+        if let LocalIntArray::Selection { guard, yes, no } = array {
+            return self.local_array_may_have_writes(yes, &b::and(path.clone(), guard.clone()))
+                || self.local_array_may_have_writes(no, &b::and(path.clone(), b::not(guard.clone())));
+        }
         array.reference().is_some_and(|reference| self.realtime_store.entries().iter().any(|entry| {
             entry.reference == reference && !b::path_implies(path, &b::not(entry.guard.clone()))
         }))
@@ -179,11 +202,18 @@ impl Engine<'_> {
     }
 
     pub(super) fn source_array_store(&mut self, array: Value, index: Value, rhs: Value, path: Expr) -> Result<()> {
+        let path = self.normal_path(path);
+        if path.as_bool() == Some(false) { return Ok(()); }
         need(rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
         if let Value::LocalIntArray(local) = array {
+            if let LocalIntArray::Selection { guard, yes, no } = local {
+                self.budget()?;
+                self.source_array_store(Value::LocalIntArray((*yes).clone()), index.clone(), rhs.clone(),
+                    b::and(path.clone(), guard.clone()))?;
+                return self.source_array_store(Value::LocalIntArray((*no).clone()), index, rhs,
+                    b::and(path, b::not(guard)));
+            }
             let index = index_value(index)?;
-            let path = self.normal_path(path);
-            if path.as_bool() == Some(false) { return Ok(()); }
             let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
             if local.get(index).is_none() {
                 self.throw_source_on_path(path, OUT_OF_BOUNDS);
@@ -267,6 +297,10 @@ impl Engine<'_> {
     }
 
     fn source_local_array_read(&mut self, array: &LocalIntArray, index: Expr, path: Expr) -> Result<Value> {
+        if let LocalIntArray::Selection { guard, yes, no } = array {
+            return self.observe_local_array_selection(guard, yes, no, path, |engine, arm, domain|
+                engine.source_local_array_read(arm, index.clone(), domain));
+        }
         let length = array.length();
         let outside = if length == 0 { b::lit_bool(true) } else {
             b::or(b::lt(index.clone(), b::lit_int(0)), b::ge(index.clone(), b::lit_int(length)))
@@ -291,7 +325,8 @@ impl Engine<'_> {
                 LocalIntArray::Initialized { .. } => arms.pop()
                     .ok_or_else(|| fail("local array read has no live element on the bounds domain"))?.1,
                 LocalIntArray::Zeroed { .. } => b::lit_int(0),
-                LocalIntArray::Unreachable => unreachable!("unreachable array rejected above"),
+                LocalIntArray::Selection { .. } | LocalIntArray::Unreachable =>
+                    unreachable!("read needs the selected concrete identity"),
             };
             self.normalize_execution_value(b::case_when(arms, fallback))
         };
@@ -313,7 +348,30 @@ impl Engine<'_> {
                 .filter(|entry| entry.reference == *reference)
                 .filter_map(|entry| entry.field.parse::<i64>().ok())
                 .collect(),
-            LocalIntArray::Unreachable => unreachable!("a live local identity is required"),
+            LocalIntArray::Selection { .. } | LocalIntArray::Unreachable =>
+                unreachable!("a concrete local identity is required"),
+        }
+    }
+
+    // The selection has already been evaluated. Dispatch only the current
+    // observation, preserving the original array identity in each arm.
+    fn observe_local_array_selection(
+        &mut self, guard: &Expr, yes: &LocalIntArray, no: &LocalIntArray, path: Expr,
+        mut observe: impl FnMut(&mut Self, &LocalIntArray, Expr) -> Result<Value>,
+    ) -> Result<Value> {
+        self.budget()?;
+        let mut on = |array, path| -> Result<Option<Value>> {
+            let path = self.normal_path(path);
+            if path.as_bool() == Some(false) { return Ok(None); }
+            let value = observe(self, array, path.clone())?;
+            Ok((self.normal_path(path).as_bool() != Some(false)).then_some(value))
+        };
+        let yes_value = on(yes, b::and(path.clone(), guard.clone()))?;
+        let no_value = on(no, b::and(path, b::not(guard.clone())))?;
+        match (yes_value, no_value) {
+            (Some(yes), Some(no)) => self.choose(guard.clone(), yes, no),
+            (Some(value), None) | (None, Some(value)) => Ok(value),
+            (None, None) => Ok(Value::Term(Ty::Integer, b::lit_null())),
         }
     }
 
@@ -350,6 +408,10 @@ impl Engine<'_> {
         need(self.project.direct_source, "source array sum requires direct source")?;
         let path = self.normal_path(path);
         if let Value::LocalIntArray(local) = array {
+            if let LocalIntArray::Selection { guard, yes, no } = local {
+                return self.observe_local_array_selection(&guard, &yes, &no, path, |engine, arm, domain|
+                    engine.source_array_sum(Value::LocalIntArray(arm.clone()), start.clone(), offset, domain));
+            }
             let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
             // Contribution from the fixed per-element offset is independent
             // of slot contents. Read the actual shared store for each other
