@@ -18,11 +18,14 @@ expected:
       source: posted_bill
       columns:
         account_id: number
+    $a_0:
+      kind: acquisition
+      source: pending_bill
   R: |-
     SELECT COUNT(*) FROM (
       SELECT account_id FROM pending_bill
       UNION
-      SELECT alternate_account_id FROM pending_bill
+      SELECT alternate_account_id FROM $a_0 AS pending_bill
       UNION
       SELECT account_id FROM posted_bill
     ) AS accounts
