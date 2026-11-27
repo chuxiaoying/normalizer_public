@@ -17,7 +17,7 @@ expected:
         type: bool
   R: |-
     CASE
-      WHEN a OR NOT (b) AND c THEN 10
-      WHEN b THEN 20
+      WHEN a != (a OR b) THEN 20
+      WHEN a OR c THEN 10
       ELSE 30
     END

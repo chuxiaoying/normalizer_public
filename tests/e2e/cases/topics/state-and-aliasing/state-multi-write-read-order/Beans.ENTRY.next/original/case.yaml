@@ -19,14 +19,8 @@ expected:
       fields:
         units: number
   S:
-    - write:
-        target: quota.units
-        value: units
-        when: replace and units > 0
-    - write:
-        target: quota.units
-        value: "2"
-        when: NOT (replace)
+    - write: { target: quota.units, value: units, when: replace AND units > 0 }
+    - write: { target: quota.units, value: '2', when: NOT (replace) }
   R: |-
     CASE
       WHEN NOT (replace) THEN 2

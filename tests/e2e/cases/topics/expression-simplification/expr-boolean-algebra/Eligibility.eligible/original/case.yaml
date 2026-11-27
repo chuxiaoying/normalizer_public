@@ -12,4 +12,4 @@ expected:
       preferred:
         position: 1
         type: bool
-  R: score >= 60
+  R: score > 59

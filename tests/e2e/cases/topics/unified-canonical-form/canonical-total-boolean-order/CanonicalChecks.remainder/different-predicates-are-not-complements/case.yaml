@@ -18,4 +18,4 @@ expected:
       other:
         position: 3
         type: bool
-  R: common AND (first OR NOT (second)) OR other
+  R: other OR common AND (first OR NOT (second))

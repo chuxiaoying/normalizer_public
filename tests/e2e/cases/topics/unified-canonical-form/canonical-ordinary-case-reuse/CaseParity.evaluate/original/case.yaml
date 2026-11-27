@@ -11,4 +11,4 @@ expected:
       include: { position: 4, type: bool }
   R: |-
     LET $l_0 = CASE WHEN enabled THEN a ELSE b END
-    IN ($l_0 + shift) * ($l_0 - shift)
+    IN (shift + $l_0) * ($l_0 - shift)

@@ -17,6 +17,6 @@ expected:
         type: number
   R: |-
     CASE
-      WHEN limit < base + value + 1 THEN limit
-      ELSE base + value + 1
+      WHEN limit > base + value + 1 THEN base + value + 1
+      ELSE limit
     END

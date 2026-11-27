@@ -11,7 +11,7 @@ expected:
         type: number
   R: |-
     CASE
-      WHEN quantity <= -1 THEN 10
-      WHEN quantity <= 5 THEN 20
+      WHEN quantity < 0 THEN 10
+      WHEN quantity < 6 THEN 20
       ELSE 30
     END

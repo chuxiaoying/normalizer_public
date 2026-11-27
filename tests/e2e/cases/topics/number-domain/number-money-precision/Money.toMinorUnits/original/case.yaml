@@ -12,4 +12,4 @@ expected:
       minor:
         position: 1
         type: number
-  R: major * 100 + minor
+  R: minor + major * 100

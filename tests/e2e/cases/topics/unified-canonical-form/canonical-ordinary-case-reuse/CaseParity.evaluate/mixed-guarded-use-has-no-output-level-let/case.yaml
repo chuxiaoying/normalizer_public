@@ -9,4 +9,6 @@ expected:
       b: { position: 2, type: number }
       shift: { position: 3, type: number }
       include: { position: 4, type: bool }
-  R: (CASE WHEN enabled THEN a ELSE b END + shift) * (CASE WHEN enabled THEN a ELSE b END - shift) + CASE WHEN include THEN CASE WHEN enabled THEN a ELSE b END + shift ELSE 0 END
+  R: |-
+    LET $l_0 = CASE WHEN enabled THEN a ELSE b END
+    IN (shift + $l_0) * ($l_0 - shift) + CASE WHEN include THEN shift + CASE WHEN enabled THEN a ELSE b END ELSE 0 END

@@ -16,13 +16,5 @@ expected:
       fields:
         value: number
         offset: number
-  T:
-    - id: $t_0
-      op: fold
-      type: number
-      source: values
-      initial: seed.offset
-      accumulator: acc
-      element: item
-      body: acc * 2 + item
-  R: $t_0
+  R: |-
+    REDUCE(values FROM seed.offset AS (acc, item) YIELD item + acc * 2)

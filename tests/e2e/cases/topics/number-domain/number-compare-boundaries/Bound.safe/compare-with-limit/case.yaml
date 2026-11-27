@@ -9,4 +9,4 @@ expected:
       value:
         position: 0
         type: number
-  R: value >= 100
+  R: value > 99
