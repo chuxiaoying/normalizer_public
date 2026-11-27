@@ -102,6 +102,12 @@ impl<'a> Tokens<'a> {
         let Some(rest) = self.rest().strip_prefix(token) else {
             return false;
         };
+        let word_byte = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+        // A reserved token is one word, never the prefix of a longer
+        // identifier (for example, countfrom is not count followed by from).
+        if token.bytes().all(word_byte) && rest.bytes().next().is_some_and(word_byte) {
+            return false;
+        }
         self.source = rest;
         true
     }
