@@ -25,10 +25,5 @@ expected:
           - $e_0
         returns: number
         result: $e_1
-  T:
-    - id: $t_0
-      op: member_choice
-      when: "true"
-      members: values
-      empty: $e_1
-  R: $t_0
+  R: |-
+    CHOOSE(values DEFAULT $e_1 AS member0 YIELD member0)

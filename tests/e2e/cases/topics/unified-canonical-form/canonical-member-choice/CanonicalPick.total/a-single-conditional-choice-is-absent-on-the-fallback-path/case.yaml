@@ -12,14 +12,5 @@ expected:
       backup:
         position: 1
         type: number
-  T:
-    - id: $t_0
-      op: member_choice
-      when: backup == 0
-      members: values
-      empty: backup
   R: |-
-    CASE
-      WHEN backup == 0 THEN $t_0
-      ELSE backup
-    END
+    CASE WHEN backup == 0 THEN CHOOSE(values DEFAULT 0 AS member0 YIELD member0) ELSE backup END

@@ -25,13 +25,5 @@ expected:
           - $e_0
         returns: number
         result: $e_1
-  T:
-    - id: $t_0
-      op: fold
-      type: number
-      source: values
-      initial: $e_1
-      accumulator: acc
-      element: item
-      body: acc * 2 + item
-  R: $t_0
+  R: |-
+    REDUCE(values FROM $e_1 AS (acc, item) YIELD item + acc * 2)

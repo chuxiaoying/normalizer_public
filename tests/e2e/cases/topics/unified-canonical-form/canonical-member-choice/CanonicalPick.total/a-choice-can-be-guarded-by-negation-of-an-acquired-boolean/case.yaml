@@ -15,10 +15,5 @@ expected:
       enabled:
         position: 2
         type: bool
-  T:
-    - id: $t_0
-      op: member_choice
-      when: NOT (enabled)
-      members: values
-      empty: backup
-  R: CASE WHEN enabled THEN backup ELSE $t_0 END
+  R: |-
+    CASE WHEN enabled THEN backup ELSE CHOOSE(values DEFAULT backup AS member0 YIELD member0) END

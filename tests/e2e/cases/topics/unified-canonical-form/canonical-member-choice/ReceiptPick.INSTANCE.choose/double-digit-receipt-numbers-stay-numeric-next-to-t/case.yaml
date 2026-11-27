@@ -79,10 +79,5 @@ expected:
           - $e_9
         returns: number
         result: $e_10
-  T:
-    - id: $t_0
-      op: member_choice
-      when: "true"
-      members: values
-      empty: $e_1
-  R: $e_2 + $e_10 + $t_0
+  R: |-
+    CHOOSE(values DEFAULT $e_1 AS member0 YIELD member0 + $e_2 + $e_10)

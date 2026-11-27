@@ -25,14 +25,5 @@ expected:
           - $e_0
         returns: number
         result: $e_1
-  T:
-    - id: $t_0
-      op: member_choice
-      when: code == 0
-      members: values
-      empty: $e_1
   R: |-
-    CASE
-      WHEN code == 0 THEN $t_0
-      ELSE $e_1
-    END
+    CASE WHEN code == 0 THEN CHOOSE(values DEFAULT $e_1 AS member0 YIELD member0) ELSE $e_1 END

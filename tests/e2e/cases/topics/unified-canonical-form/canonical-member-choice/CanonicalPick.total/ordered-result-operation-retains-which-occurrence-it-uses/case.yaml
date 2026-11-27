@@ -12,15 +12,6 @@ expected:
       backup:
         position: 1
         type: number
-  T:
-    - id: $t_0
-      op: member_choice
-      when: "true"
-      members: values
-      empty: backup
-    - id: $t_1
-      op: member_choice
-      when: "true"
-      members: values
-      empty: backup
-  R: $t_1 - $t_0
+  R: |-
+    CHOOSE(values DEFAULT backup AS member0 YIELD
+      CHOOSE(values DEFAULT backup AS member1 YIELD member1 - member0))

@@ -12,18 +12,5 @@ expected:
       backup:
         position: 1
         type: number
-  T:
-    - id: $t_0
-      op: member_choice
-      when: "true"
-      members: values
-      empty: backup
-    - id: $t_1
-      op: fold
-      type: number
-      source: values
-      initial: $t_0
-      accumulator: acc
-      element: item
-      body: acc * 2 + item
-  R: $t_0 + $t_1
+  R: |-
+    CHOOSE(values DEFAULT backup AS member0 YIELD member0 + REDUCE(values FROM member0 AS (acc, item) YIELD item + acc * 2))
