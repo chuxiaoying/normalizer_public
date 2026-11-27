@@ -290,14 +290,11 @@ impl Engine<'_> {
         let terminal = local_completion.terminal_alternatives()
             .ok_or_else(|| fail("action has a normal path without method return"))?;
         let returned = terminal.normal_return_value();
-        let completion = parent_completion.replace_continue(local_completion);
-        // A normally completed helper is a value in the caller; a settled
-        // entry, or a mixed/throwing helper, retains its completion.
-        self.realtime_completion = if !settled && matches!(completion, realtime_state::Completion::Return(_)) {
-            parent_completion
-        } else {
-            completion
-        };
+        // A helper returns to the caller on every normal alternative,
+        // not only when all alternatives return. Its exceptional paths
+        // still propagate; a settled entry keeps its own terminal outputs.
+        let continuation = if settled { local_completion } else { local_completion.resume_after_normal_return() };
+        self.realtime_completion = parent_completion.replace_continue(continuation);
         match returned {
             Some(value) => Ok(Value::Term(returns.clone(), value)),
             // The caller has no live normal path on which to observe a value.
@@ -426,6 +423,7 @@ impl Engine<'_> {
                 entry_path.clone(),
                 self.realtime_completion.continuing_guard(),
             ));
+            if self.action_path.as_bool() == Some(false) { break; }
             self.budget()?;
             match action {
                 Action::LocalIr { query } => {
