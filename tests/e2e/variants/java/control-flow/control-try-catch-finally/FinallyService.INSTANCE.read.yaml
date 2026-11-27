@@ -253,3 +253,38 @@
           WHEN accountId == 0 THEN 42
           ELSE 43
         END
+
+- name: qualified-native-resource-closes-using-its-two-bound-final-fields
+  edits:
+    - from: 'class FinallyService {'
+      to: |-
+        class LocalResource implements java.lang.AutoCloseable {
+            private final FinallyService owner;
+            private final int increment;
+            LocalResource(FinallyService owner, int increment) {
+                this.owner = owner;
+                this.increment = increment;
+            }
+            public void close() { owner.attempts = owner.attempts + increment; }
+        }
+
+        class FinallyService {
+    - {from: 'try {', to: 'try (LocalResource resource = new LocalResource(this, 10)) {'}
+  expect:
+    - path: [S]
+      value:
+        - call: {external: 'src/FinallyService.java#FinallyService.INSTANCE.client.fetch', args: [accountId], returns: number, result: '$e_0'}
+        - write: {target: attempts, value: 'attempts + 10'}
+        - write: {target: attempts, value: 'attempts + 11'}
+
+- name: a-throwing-resource-close-is-not-assumed-to-complete-normally
+  edits:
+    - from: 'class FinallyService {'
+      to: |-
+        class LocalResource implements AutoCloseable {
+            public void close() throws RemoteError { throw new RemoteError(); }
+        }
+
+        class FinallyService {
+    - {from: 'try {', to: 'try (LocalResource resource = new LocalResource()) {'}
+  reject: ['[NORM-CLASS-SHAPE]', 'LocalResource']
