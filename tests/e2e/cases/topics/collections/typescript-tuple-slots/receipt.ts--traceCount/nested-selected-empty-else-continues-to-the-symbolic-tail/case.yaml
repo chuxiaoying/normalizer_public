@@ -14,6 +14,6 @@ expected:
         type: bool
   R: |-
     CASE
-      WHEN detailed AND NOT (failed) THEN 2
-      ELSE 0
+      WHEN detailed == (detailed AND failed) THEN 0
+      ELSE 2
     END
