@@ -255,9 +255,18 @@ pub(super) fn observations(
                 if normal.as_bool().is_none() {
                     ctx.display_business_value(normal, format!("completion.is_return({output})"));
                 }
-                let args: Vec<_> = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
-                    event.arguments().iter().map(|arg| crate::format_expr_with_ctx(arg, ctx)).collect()
-                });
+                let args = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
+                    event.arguments().iter().enumerate().map(|(position, arg)| {
+                        if project.direct_source {
+                            if let (Ty::Record(fields), Some(values)) = (contract.parameter_type(position)?, arg.as_array_lit()) {
+                                need(values.len() == fields.len(), "source port argument lost declared record fields")?;
+                                let named = fields.into_keys().zip(values.iter().cloned()).collect::<Vec<_>>();
+                                return Ok(crate::formatting::sql::business_value::format_record(arg, &named, ctx));
+                            }
+                        }
+                        Ok(crate::format_expr_with_ctx(arg, ctx))
+                    }).collect::<Result<Vec<_>>>()
+                })?;
                 let endpoint = if project.direct_source {
                     source_identity.clone()
                         .map_or_else(|| entry.direct_port_identity(&contract.endpoint), Ok)?

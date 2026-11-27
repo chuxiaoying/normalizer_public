@@ -678,6 +678,27 @@ impl Engine<'_> {
         Ok(())
     }
 
+    pub(super) fn freeze_source_port_record(
+        &mut self, reference: Expr, declared: &JavaType, fields: &BTreeMap<String, Ty>, path: &Expr,
+    ) -> Result<Expr> {
+        let expected = self.project.source_owner(declared).ok_or_else(|| fail("port data record has no source declaration"))?;
+        let id = reference.as_heap_ref().ok_or_else(|| fail("port data record requires its acquired identity"))?;
+        need(self.source_objects.objects.get(&id).is_some_and(|(owner, _)| owner == expected),
+            "port data record does not have the declared source type")?;
+        let null = self.source_object_null(&reference);
+        need(b::path_implies(path, &b::not(null)), "port data record must be acquired and non-null")?;
+        // The declared by-value argument is captured at the invocation,
+        // after evaluating all actual arguments. Nothing retains a live
+        // object pointer that later mutations could change.
+        let mut snapshot = Vec::with_capacity(fields.len());
+        for (name, expected) in fields {
+            let value = self.read_or_bind_source_field(&reference, name, path)?;
+            need(value.ty() == *expected, "port data record field type mismatch")?;
+            snapshot.push(value.scalar()?);
+        }
+        Ok(b::array_lit(snapshot))
+    }
+
     pub(super) fn source_record(
         &mut self,
         declared: &JavaType,

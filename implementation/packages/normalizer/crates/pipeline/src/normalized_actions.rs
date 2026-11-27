@@ -66,6 +66,10 @@ pub(super) struct Port {
 }
 
 impl Port {
+    pub(super) fn parameter_type(&self, position: usize) -> Result<Ty> {
+        self.params.get(position).ok_or_else(|| fail("missing port parameter"))?.typ.resolve()
+    }
+
     pub(super) fn from_source(
         origin: Origin,
         endpoint: String,

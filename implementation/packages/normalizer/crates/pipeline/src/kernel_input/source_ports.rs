@@ -23,12 +23,14 @@ fn domain(ty: &JavaType, program: &JavaProgram) -> Result<Ty> {
                 .find_class(name)
                 .ok_or_else(|| fail("unknown external result domain"))?;
             need(
-                !class.is_interface() && !class.fields().is_empty() && class.methods().is_empty(),
+                !class.is_interface() && class.fields().iter().any(|field| !field.is_static())
+                    && class.methods().is_empty(),
                 "port result requires a declared data record",
             )?;
             let fields = class
                 .fields()
                 .iter()
+                .filter(|field| !field.is_static())
                 .map(|field| {
                     let ty = scalar_domain(field.java_type())
                         .ok_or_else(|| fail("port record field requires a supported scalar"))?;
@@ -54,8 +56,8 @@ pub(super) fn contracts(
                 .map(|(ty, name)| {
                     let ty = domain(ty, program)?;
                     need(
-                        matches!(ty, Ty::Integer | Ty::Bool | Ty::Text),
-                        "source port arguments must be immutable scalars",
+                        matches!(ty, Ty::Integer | Ty::Bool | Ty::Text | Ty::Record(_)),
+                        "source port arguments must be a declared scalar or data record",
                     )?;
                     Ok(Parameter {
                         name: name.clone(),
@@ -93,16 +95,18 @@ impl Engine<'_> {
             // No call occurs, so this carrier cannot denote a receipt.
             return Ok(Value::Term(contract.completion.returns.clone(), b::lit_null()));
         }
-        need(
-            args.len() == contract.parameters.len(),
-            "source port argument count mismatch",
-        )?;
-        let mut values = vec![];
-        for (arg, expected) in args.iter().zip(&contract.parameters) {
-            need(
-                arg.ty() == *expected,
-                "source port argument type mismatch",
-            )?;
+        need(args.len() == contract.parameters.len(), "source port argument count mismatch")?;
+        let parameters = contract.parameters.clone();
+        let declarations: Vec<_> = self.project.source_ports[id].params.iter().map(|(ty, _)| ty.clone()).collect();
+        let mut values = Vec::with_capacity(args.len());
+        for ((arg, expected), declared) in args.iter().zip(&parameters).zip(&declarations) {
+            if let Ty::Record(fields) = expected {
+                if arg.ty() == Ty::Ref {
+                    values.push(self.freeze_source_port_record(arg.scalar()?, declared, fields, &guard)?);
+                    continue;
+                }
+            }
+            need(arg.ty() == *expected, "source port argument type mismatch")?;
             values.push(arg.scalar()?);
         }
         let bind = self.fresh_binding();
