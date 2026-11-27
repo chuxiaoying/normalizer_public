@@ -122,16 +122,38 @@ pub(crate) fn override_matches(interface: &simulator_parser::JavaMethod, concret
 }
 
 pub(crate) fn source_record_accessor<'a>(
-    class: &'a JavaClass, member: &str, arity: usize, selected_content: bool,
-) -> Option<&'a JavaType> {
+    class: &'a JavaClass, member: &str, arity: usize,
+) -> Option<(&'a str, &'a JavaType)> {
     if arity != 0 { return None; }
-    let field = class.fields().iter().find(|field| !field.is_static() && field.name() == member)?;
-    if class.is_record() { return Some(field.java_type()); }
-    if !selected_content { return None; }
-    let method = class.methods().iter().find(|m| m.name() == member && m.arity() == 0
-        && !m.is_static() && m.return_type() == field.java_type())?;
-    let [S::Return(Some(E::Ident(returned)))] = method.body()? else { return None; };
-    (returned == field.name()).then(|| field.java_type())
+    let field_name = if let Some((_, method)) = named_method_for_arity(class, member, arity) {
+        if method.is_static() { return None; }
+        let [S::Return(Some(returned))] = method.body()? else { return None; };
+        let name = match returned {
+            E::Ident(name) => name,
+            E::FieldAccess { target, field } if matches!(target.as_ref(), E::Ident(name) if name == "this") => field,
+            _ => return None,
+        };
+        let field = class.fields().iter().find(|field| !field.is_static() && field.name() == name)?;
+        return (method.return_type() == field.java_type()).then(|| (field.name(), field.java_type()));
+    } else if class.is_record() { member } else { return None; };
+    class.fields().iter().find(|field| !field.is_static() && field.name() == field_name)
+        .map(|field| (field.name(), field.java_type()))
+}
+
+pub(crate) fn plain_source_data_method(class: &JavaClass, method: &JavaMethod) -> bool {
+    if method.is_static() || method.body().is_none() { return false; }
+    if method.is_constructor() { return true; }
+    if source_record_accessor(class, method.name(), method.arity()).is_some() { return true; }
+    let [(input_type, input)] = method.params() else { return false; };
+    let Some([S::Assign { target, value: E::Ident(value), is_compound: false }]) = method.body() else { return false; };
+    let field = match target {
+        E::Ident(field) if field != input => field,
+        E::FieldAccess { target, field } if matches!(target.as_ref(), E::Ident(name) if name == "this") => field,
+        _ => return false,
+    };
+    value == input && matches!(method.return_type(), JavaType::Void)
+        && class.fields().iter().any(|declared| !declared.is_static()
+            && declared.name() == field && declared.java_type() == input_type)
 }
 
 fn source_local_class<'a>(program: &'a JavaProgram, method: &JavaMethod, local: &str) -> Option<&'a JavaClass> {
@@ -146,9 +168,7 @@ fn source_local_class<'a>(program: &'a JavaProgram, method: &JavaMethod, local: 
 
 fn source_record_local(program: &JavaProgram, method: &JavaMethod, local: &str, member: &str, arity: usize) -> bool {
     let Some(class) = source_local_class(program, method, local) else { return false; };
-    let selected = method.body().is_some_and(|body| body.iter().any(|statement|
-        matches!(statement, S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. }) if binding == local)));
-    source_record_accessor(class, member, arity, selected).is_some()
+    source_record_accessor(class, member, arity).is_some()
 }
 
 fn unambiguous_interface_defaults(program: &JavaProgram, class: &JavaClass) -> bool {

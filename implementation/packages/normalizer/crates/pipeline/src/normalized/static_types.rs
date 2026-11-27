@@ -230,8 +230,8 @@ impl Admission<'_> {
                 }
                 if let Some(target) = target.as_deref() {
                     if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
-                        if let Some(ty) = self.program.find_class(&owner).and_then(|class|
-                            super::source_record_accessor(class, method, args.len(), false))
+                        if let Some((_, ty)) = self.program.find_class(&owner).and_then(|class|
+                            super::source_record_accessor(class, method, args.len()))
                         { return Some(ty.clone()); }
                     }
                 }

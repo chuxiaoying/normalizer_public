@@ -24,8 +24,8 @@ fn domain(ty: &JavaType, program: &JavaProgram) -> Result<Ty> {
                 .ok_or_else(|| fail("unknown external result domain"))?;
             need(
                 !class.is_interface() && class.fields().iter().any(|field| !field.is_static())
-                    && class.methods().is_empty(),
-                "port result requires a declared data record",
+                    && class.methods().iter().all(|method| crate::normalized::plain_source_data_method(class, method)),
+                "port data needs source-declared fields and closed accessors",
             )?;
             let fields = class
                 .fields()

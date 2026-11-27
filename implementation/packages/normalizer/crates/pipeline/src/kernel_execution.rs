@@ -1198,12 +1198,11 @@ impl<'a> Engine<'a> {
                             return self.invoke_interface(&interface.full_name(), &receiver_type, method, receiver, values, path);
                         }
                         if let JavaType::Class(interface) = receiver_type {
-                            if self.program.find_class(&interface).is_some_and(|class|
-                                crate::normalized::source_record_accessor(class, method, args.len(),
-                                    matches!(receiver.ty(), Ty::Record(_))).is_some())
+                            if let Some((field, _)) = self.program.find_class(&interface).and_then(|class|
+                                crate::normalized::source_record_accessor(class, method, args.len()))
                             {
                                 return self.java_expr(&J::FieldAccess {
-                                    target: Box::new(J::Ident(local.clone())), field: method.clone(),
+                                    target: Box::new(J::Ident(local.clone())), field: field.into(),
                                 }, id, env, path);
                             }
                             // A fresh source allocation has an exact receiver.
