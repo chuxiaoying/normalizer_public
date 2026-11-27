@@ -40,7 +40,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
                     let candidate = b::case_when(
                         vec![(guard.clone(), run(then_value))], run(else_value),
                     );
-                    if cost(&candidate) < cost(expr) {
+                    if crate::canonical_order::canonical_cost_compare(&candidate, expr, ctx).is_lt() {
                         return candidate;
                     }
                 }
@@ -110,21 +110,7 @@ fn reduce_integer_case(
     }).collect::<Vec<_>>();
     let last = result.pop()?;
     let candidate = b::normal_return_case_when(result, last);
-    (cost(&candidate) < cost(expr)).then_some(candidate)
-}
-
-fn cost(value: &Expr) -> (usize, usize) {
-    let mut arms = 0usize;
-    let mut operations = 0usize;
-    // walk counts occurrences, not Arc/DAG nodes. Duplicating an operator
-    // in two arms is still two operations in the delivered representation.
-    value.walk(&mut |e| match e.kind() {
-        ExprKind::CaseWhen { branches } => arms = arms.saturating_add(branches.len()),
-        ExprKind::BinOp { .. } | ExprKind::UnaryOp { .. } | ExprKind::Call { .. } =>
-            operations = operations.saturating_add(1),
-        _ => (),
-    });
-    (arms, operations)
+    crate::canonical_order::canonical_cost_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
 }
 
 fn acquired_parameter(name: &str) -> bool {

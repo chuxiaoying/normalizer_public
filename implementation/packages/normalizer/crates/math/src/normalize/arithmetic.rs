@@ -134,12 +134,15 @@ fn simplify_reflexive_equality(expr: &Expr) -> Option<Expr> {
     let ExprKind::BinOp { op, left, right } = expr.kind() else {
         return None;
     };
-    if left != right {
+    if left != right || expr.may_observe_sql_unknown() {
         return None;
     }
     match op {
-        BinOpKind::Eq | BinOpKind::Le | BinOpKind::Ge => Some(crate::builder::lit_bool(true)),
-        BinOpKind::Ne | BinOpKind::Lt | BinOpKind::Gt => Some(crate::builder::lit_bool(false)),
+        BinOpKind::Eq => Some(crate::builder::lit_bool(true)),
+        BinOpKind::Ne => Some(crate::builder::lit_bool(false)),
+        BinOpKind::Le | BinOpKind::Ge | BinOpKind::Lt | BinOpKind::Gt
+            if left.has_exact_numeric_order() =>
+                Some(crate::builder::lit_bool(matches!(op, BinOpKind::Le | BinOpKind::Ge))),
         _ => None,
     }
 }
@@ -186,7 +189,7 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
     }
     let (base_l, off_l) = decompose(left);
     let (base_r, off_r) = decompose(right);
-    if base_l != base_r {
+    if base_l != base_r || !super::integer_ac::total_integer(base_l) {
         return None;
     }
     Some(crate::builder::lit_bool(op.comparison_test()?(&off_l, &off_r)))
@@ -210,6 +213,7 @@ fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
         return None;
     };
 
+    if !x.has_exact_numeric_order() || !y.has_exact_numeric_order() { return None; }
     Some(crate::builder::binop_public(cmp_op, x.clone(), y.clone()))
 }
 

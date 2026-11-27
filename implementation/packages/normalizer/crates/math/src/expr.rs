@@ -505,7 +505,7 @@ impl Expr {
 
     // Value contract only. This cannot authorize eliding or moving a read;
     // replacing a comparison token still evaluates these same two operands.
-    fn has_exact_numeric_order(&self) -> bool {
+    pub(crate) fn has_exact_numeric_order(&self) -> bool {
         use crate::domains::decimal::{self, View};
         match self.kind() {
             ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_)) => true,
