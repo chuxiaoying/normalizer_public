@@ -32,19 +32,19 @@ pub(super) struct Relations {
 /// zero default. Admit that sum into AC only with ordinary already-bound
 /// exact integer inputs/literals in the initializer; other expressions
 /// retain their scope and the conservative generic math behavior.
-fn add_closed_integer_sum(initial: Expr, sum: Expr) -> Expr {
-    fn terms(value: &Expr, out: &mut Vec<Expr>) -> bool {
+fn add_closed_integer_sum(initial: Expr, sum: Expr, integer_input: impl Fn(&str) -> bool) -> Expr {
+    fn terms(value: &Expr, out: &mut Vec<Expr>, integer_input: &impl Fn(&str) -> bool) -> bool {
         if let Some((BinOpKind::Add, left, right)) = value.as_binop() {
-            return terms(left, out) && terms(right, out);
+            return terms(left, out, integer_input) && terms(right, out, integer_input);
         }
         let admitted = matches!(value.as_lit(), Some(math::Lit::Int(_) | math::Lit::BigInt(_)))
             || matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter {name, primitive_type})
-                if primitive_type == "integer" && !name.starts_with('$') && !name.contains(['.', '[', ']']));
+                if primitive_type == "integer" && integer_input(name));
         if admitted && value != &b::lit_int(0) { out.push(value.clone()); }
         admitted
     }
     let mut addends = vec![sum.clone()];
-    if !terms(&initial, &mut addends) { return b::add(initial, sum); }
+    if !terms(&initial, &mut addends, &integer_input) { return b::add(initial, sum); }
     addends.sort_by_cached_key(|term| math::canonical_order_key(term, &math::DefaultSortContext));
     addends.into_iter().reduce(b::add).expect("closed sum is present")
 }
@@ -223,7 +223,7 @@ impl<'a> Engine<'a> {
                     owned_column_domain(columns, table, qualified)).is_some();
             }
             if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
-                return entry.closed_count_parameter(name, primitive_type);
+                return entry.declared_relation_input(name, primitive_type);
             }
             if let Some((op, left, right)) = expr.as_binop() {
                 return matches!(op, BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne
@@ -236,7 +236,7 @@ impl<'a> Engine<'a> {
         predicates.into_iter().all(|p| closed(p, name, columns, self))
     }
 
-    fn closed_count_parameter(&self, name: &str, primitive_type: &str) -> bool {
+    fn declared_relation_input(&self, name: &str, primitive_type: &str) -> bool {
         let mut path = name.split('.');
         let root = path.next().expect("split always yields a root");
         let Some((declared, _)) = self.selected_entry.syntax.params().iter().find(|(_, parameter)| parameter == root)
@@ -248,6 +248,7 @@ impl<'a> Engine<'a> {
         leaf.is_some_and(|ty| match primitive_type {
             "integer" => crate::normalized::integral(ty),
             "boolean" => matches!(ty, JavaType::Primitive(name) if name == "boolean"),
+            "text" => matches!(ty, JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String")),
             _ => false,
         })
     }
@@ -537,7 +538,7 @@ impl<'a> Engine<'a> {
                 let summed = if query.accumulate {
                     let prior = env.get(&query.binding).ok_or_else(|| fail("+= needs an initialized local"))?;
                     need(prior.ty() == Ty::Integer, "+= requires a number")?;
-                    add_closed_integer_sum(prior.scalar()?, summed)
+                    add_closed_integer_sum(prior.scalar()?, summed, |name| self.declared_relation_input(name, "integer"))
                 } else { summed };
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, math::normalize(summed)));
                 return Ok(());
@@ -779,7 +780,7 @@ impl<'a> Engine<'a> {
                         let sum = r::relation_sum(RelationExpr::base(name, "value"),
                             b::acquired_integer_row("value"));
                         let value = match op {
-                            Op::Add => add_closed_integer_sum(start.scalar()?, sum),
+                            Op::Add => add_closed_integer_sum(start.scalar()?, sum, |name| self.declared_relation_input(name, "integer")),
                             Op::Sub => b::sub(start.scalar()?, sum),
                             _ => unreachable!("fold above admits only add/sub"),
                         };

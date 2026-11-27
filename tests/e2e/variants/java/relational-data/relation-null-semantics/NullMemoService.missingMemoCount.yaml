@@ -261,3 +261,12 @@
       value:
         request: {position: 0, type: MemoFilter}
     - {path: [R], value: '7'}
+
+- name: nullable-column-equality-with-a-text-input-does-not-make-count-negative
+  edits:
+    - {from: 'missingMemoCount(int accountId)', to: 'missingMemoCount(int accountId, java.lang.String requestedMemo)'}
+    - {from: 'row.memo IS NULL', to: 'row.memo == requestedMemo'}
+    - {from: 'return count;', to: 'return count >= 0 ? 7 : 11;'}
+  expect:
+    - {path: [P, parameters, requestedMemo], add: {position: 1, type: text}}
+    - {path: [R], value: '7'}

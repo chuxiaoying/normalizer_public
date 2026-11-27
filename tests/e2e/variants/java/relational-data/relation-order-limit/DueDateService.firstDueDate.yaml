@@ -128,3 +128,15 @@
           ),
           0
         )
+
+- name: a-row-local-binding-cannot-shadow-an-acquired-entry-input
+  edits:
+    - {from: 'order by row.dueDate, row.id', to: 'let accountId = row.dueDate + 1 order by row.dueDate, row.id'}
+    - {from: 'yield row.dueDate else 0', to: 'yield accountId else 0'}
+  reject: ['[NORM-PROJECT]', 'duplicate local query binding']
+
+- name: a-row-local-binding-cannot-shadow-the-row-alias
+  edits:
+    - {from: 'order by row.dueDate, row.id', to: 'let row = row.dueDate + 1 order by row.dueDate, row.id'}
+    - {from: 'yield row.dueDate else 0', to: 'yield row else 0'}
+  reject: ['[NORM-PROJECT]', 'duplicate local query binding']
