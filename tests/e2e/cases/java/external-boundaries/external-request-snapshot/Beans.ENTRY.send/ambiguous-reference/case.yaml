@@ -1,0 +1,5 @@
+entry: src/Dispatch.java#Beans.ENTRY.send
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - source port arguments must be immutable scalars

@@ -22,27 +22,34 @@ use crate::{
 };
 use std::collections::BTreeSet;
 
+/// Physical table provenance, optionally refined to one acquired snapshot.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TableSource {
+    pub name: String,
+    pub snapshot: Option<u64>,
+}
+
 /// At least one already-bound physical column. Sorting and deduplication
 /// belong to the set, not to a later SQL alias recognizer.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ProjectedColumns(BTreeSet<(String, String)>);
+pub struct ProjectedColumns(BTreeSet<(TableSource, String)>);
 
 impl ProjectedColumns {
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> + ExactSizeIterator {
-        self.0.iter().map(|(table, column)| (table.as_str(), column.as_str()))
+    pub fn iter(&self) -> impl Iterator<Item = (&TableSource, &str)> + ExactSizeIterator {
+        self.0.iter().map(|(table, column)| (table, column.as_str()))
     }
 }
 
 /// An ordered, nonempty tuple of columns bound to one physical table.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GroupedColumns {
-    table: String,
+    table: TableSource,
     first: String,
     remaining: Vec<String>,
 }
 
 impl GroupedColumns {
-    pub fn table(&self) -> &str { &self.table }
+    pub fn table(&self) -> &TableSource { &self.table }
 
     pub fn columns(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.first.as_str()).chain(self.remaining.iter().map(String::as_str))
@@ -55,6 +62,7 @@ pub enum RelationExpr {
     Base {
         name: String,
         alias: String,
+        snapshot: Option<u64>,
     },
     /// A finite ordered relation backed by an immutable vector expression.
     ///
@@ -83,8 +91,8 @@ pub enum RelationExpr {
     /// Inner join of two bound table aliases. Predicates remain separate
     /// so a generic nested SUM cannot masquerade as an authored join.
     Join {
-        left: (String, String),
-        right: (String, String),
+        left: (TableSource, String),
+        right: (TableSource, String),
         on: Expr,
         filters: Vec<Expr>,
     },
@@ -95,7 +103,12 @@ impl RelationExpr {
         Self::Base {
             name: name.into(),
             alias: alias.into(),
+            snapshot: None,
         }
+    }
+
+    pub fn acquired_table(table: &str, binding: u64) -> Self {
+        Self::Base { name: table.into(), alias: table.into(), snapshot: Some(binding) }
     }
 
     pub fn vector<S: Into<String>>(value: Expr, alias: S) -> Self {
@@ -124,16 +137,38 @@ impl RelationExpr {
     }
 
     pub fn projected_union(
-        first: (String, String),
-        remaining: impl IntoIterator<Item = (String, String)>,
+        first: (TableSource, String),
+        remaining: impl IntoIterator<Item = (TableSource, String)>,
     ) -> Self {
         let mut columns = BTreeSet::from([first]);
         columns.extend(remaining);
         Self::ProjectedUnion(ProjectedColumns(columns))
     }
 
-    pub fn grouped(table: String, first: String, remaining: Vec<String>) -> Self {
+    pub fn grouped(table: TableSource, first: String, remaining: Vec<String>) -> Self {
         Self::Grouped(GroupedColumns { table, first, remaining })
+    }
+
+    /// Visit the identities of concrete table reads carried by this relation.
+    /// Child scalar expressions are visited separately by Expr's walker.
+    pub fn visit_acquisitions(&self, visit: &mut impl FnMut(u64)) {
+        match self {
+            Self::Base { snapshot: Some(id), .. } => visit(*id),
+            Self::Select { input, .. } | Self::Project { input, .. } | Self::Distinct(input) =>
+                input.visit_acquisitions(visit),
+            Self::ProjectedUnion(columns) => columns.iter().for_each(|(table, _)| {
+                if let Some(id) = table.snapshot { visit(id); }
+            }),
+            Self::Grouped(group) => {
+                if let Some(id) = group.table().snapshot { visit(id); }
+            }
+            Self::Join { left, right, .. } => {
+                for (table, _) in [left, right] {
+                    if let Some(id) = table.snapshot { visit(id); }
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn distinct(input: RelationExpr) -> Self {

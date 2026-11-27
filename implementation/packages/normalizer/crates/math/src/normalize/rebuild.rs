@@ -118,9 +118,10 @@ fn rebuild_relation_with_children_simplified(
 
     match relation {
         RelationExpr::Empty => RelationExpr::Empty,
-        RelationExpr::Base { name, alias } => RelationExpr::Base {
+        RelationExpr::Base { name, alias, snapshot } => RelationExpr::Base {
             name: name.clone(),
             alias: alias.clone(),
+            snapshot: *snapshot,
         },
         RelationExpr::Vector { value, alias } => RelationExpr::Vector {
             value: recurse(value),

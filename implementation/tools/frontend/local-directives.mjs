@@ -37,10 +37,11 @@ export function localDirectives(sourceFile, body) {
       }
       return directives;
     },
-    requireConsumed() {
+    requireConsumed(unsupported) {
       if (pending.size) {
         const position = pending.keys().next().value;
         const { line } = sourceFile.getLineAndCharacterOfPosition(position);
+        if (unsupported) return unsupported(line + 1);
         throw new Error(
           `SCENARIO_MODULE_INPUT: @normalizer-ir must appear between statements (line ${line + 1})`,
         );

@@ -29,6 +29,7 @@ pub struct FormatCtx {
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
+    business_acquisitions: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
     business_value_guard: bool,
@@ -49,6 +50,7 @@ impl Default for FormatCtx {
             business_identities: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
+            business_acquisitions: Default::default(),
             business_receipt_guards: Default::default(),
             business_evaluation_guard: None,
             business_value_guard: false,
@@ -72,8 +74,28 @@ impl FormatCtx {
         }
     }
 
+    pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, guard: Expr) {
+        self.business_acquisitions.insert(id, label);
+        if guard.as_bool() != Some(true) {
+            self.business_receipt_guards.insert(id, guard);
+        }
+    }
+
+    pub(crate) fn acquisition_name(&self, id: u64) -> Option<&str> {
+        self.business_acquisitions.get(&id).map(String::as_str)
+    }
+
+    pub(crate) fn receipt_name(&self, id: u64) -> Option<String> {
+        self.e_renumber.get(&id).map(|position| format!("$e_{position}"))
+    }
+
+    pub(crate) fn receipt_count(&self) -> usize {
+        self.e_renumber.len()
+    }
+
     pub(crate) fn published_external_names(&self) -> std::collections::BTreeMap<u64, String> {
         let mut names = self.business_states.clone();
+        names.extend(self.business_acquisitions.clone());
         names.extend(self.e_renumber.iter().map(|(&id, position)| (id, format!("$e_{position}"))));
         names
     }
@@ -449,7 +471,7 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
         SymVarOrigin::External {
             binding_id, path, ..
         } => {
-            if let Some(root) = ctx.business_states.get(binding_id) {
+            if let Some(root) = ctx.business_states.get(binding_id).or_else(|| ctx.business_acquisitions.get(binding_id)) {
                 return std::iter::once(root.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join(".");
             }
             let n = ctx.e_slot(*binding_id);

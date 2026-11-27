@@ -24,7 +24,9 @@ mod integer_ranges;
 
 /// Canonicalize a closed, exact integer condition at its terminal boundary.
 pub fn canonical_terminal_guard(value: Expr) -> Expr {
-    integer_ranges::canonical_terminal_guard(&value).map(normalize).unwrap_or(value)
+    integer_ranges::canonical_terminal_guard(&value).map(normalize)
+        .or_else(|| crate::domains::completion::factor_terminal_tag_guard(&value))
+        .unwrap_or(value)
 }
 
 mod logical_chain;

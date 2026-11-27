@@ -1,0 +1,8 @@
+entry: src/BucketImpact.java#BucketImpact.score
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/BucketImpact.java#BucketImpact.score, returns: number}
+  P:
+    parameters:
+      weight: {position: 0, type: number}
+  R: weight * 40

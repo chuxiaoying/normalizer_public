@@ -1,0 +1,21 @@
+entry: src/ClockRead.java#ClockRead.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ClockRead.java#ClockRead.run
+    returns: number
+  P:
+    parameters:
+      sample:
+        position: 0
+        type: bool
+      fallback:
+        position: 1
+        type: number
+  E:
+    $a_0:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+      when: sample
+  R: CASE WHEN sample THEN $a_0 ELSE fallback END

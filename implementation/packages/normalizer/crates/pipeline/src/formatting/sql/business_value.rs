@@ -3,23 +3,56 @@ use math::{builder as b, BinOpKind, Expr, SymVarOrigin};
 use std::collections::HashMap;
 
 struct Repetition {
-    query: Expr,
+    definition: Expr,
     eager: usize,
 }
 
-// Count only eager uses of a closed, CASE-bearing sum over an acquired
-// numeric input array. Never take a projection out of a guarded CASE or move
-// a partial E/T observation. A row binder remains local to its query.
-fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<Repetition>) {
+fn direct_input(value: &Expr, primitive: &str, ctx: &FormatCtx) -> bool {
+    matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
+        if primitive_type == primitive && !name.starts_with('$') && !name.contains('.')
+            && ctx.business_inputs.as_ref().is_some_and(|inputs| inputs.contains_key(name)))
+}
+
+fn closed_scalar_integer(value: &Expr, ctx: &FormatCtx) -> bool {
+    if value.as_lit().and_then(math::Lit::as_integer).is_some() || direct_input(value, "integer", ctx) {
+        return true;
+    }
+    if let Some((math::UnaryOpKind::Neg, operand)) = value.as_unary_op() {
+        return closed_scalar_integer(operand, ctx);
+    }
+    value.as_binop().is_some_and(|(op, left, right)| {
+        matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
+            && closed_scalar_integer(left, ctx) && closed_scalar_integer(right, ctx)
+    })
+}
+
+fn closed_scalar_case(value: &Expr, ctx: &FormatCtx) -> bool {
+    matches!(value.as_total_case_when(), Some(([(guard, then_value)], fallback))
+        if direct_input(guard, "boolean", ctx) && closed_scalar_integer(then_value, ctx)
+            && closed_scalar_integer(fallback, ctx))
+}
+
+fn record_repetition(value: &Expr, repetitions: &mut Vec<Repetition>) {
+    if let Some(repetition) = repetitions.iter_mut().find(|repetition| &repetition.definition == value) {
+        repetition.eager += 1;
+    } else {
+        repetitions.push(Repetition { definition: value.clone(), eager: 1 });
+    }
+}
+
+// Only visit eager arithmetic children. Certified scalar CASEs depend on
+// direct parameters; certified sums retain their own row binder. Neither
+// can capture a partial observation or a dependency on another definition.
+fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, repetitions: &mut Vec<Repetition>) {
     use math::{domains::relation::RelationExpr, BinOpKind, RelationAggregateKind, SymVarOrigin};
 
-    if let Some((RelationAggregateKind::Sum, RelationExpr::Base { name, alias }, Some(select), None)) =
+    if closed_scalar_case(value, ctx) {
+        record_repetition(value, repetitions);
+        return;
+    }
+    if let Some((RelationAggregateKind::Sum, RelationExpr::Base { name, alias, snapshot: None }, Some(select), None)) =
         value.as_relation_aggregate()
     {
-        if let Some(repetition) = queries.iter_mut().find(|repetition| &repetition.query == value) {
-            repetition.eager += 1;
-            return;
-        }
         if name.starts_with('$') || !ctx.scalar_arrays.contains(name) || !select.has_case_when() {
             return;
         }
@@ -36,11 +69,11 @@ fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, queries: &mut Vec<R
             };
         });
         if closed {
-            queries.push(Repetition { query: value.clone(), eager: 1 });
+            record_repetition(value, repetitions);
         }
     } else if let Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right)) = value.as_binop() {
-        collect_closed_repetitions(left, ctx, queries);
-        collect_closed_repetitions(right, ctx, queries);
+        collect_closed_repetitions(left, ctx, repetitions);
+        collect_closed_repetitions(right, ctx, repetitions);
     }
 }
 
@@ -53,7 +86,7 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
     let mut total_counts = vec![0; queries.len()];
     if !queries.is_empty() {
         let indices: HashMap<_, _> = queries.iter().enumerate()
-            .map(|(index, repetition)| (&repetition.query, index))
+            .map(|(index, repetition)| (&repetition.definition, index))
             .collect();
         value.walk(&mut |expr| {
             if let Some(&index) = indices.get(expr) {
@@ -61,11 +94,13 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
             }
         });
     }
-    // Certified sums depend only on acquired inputs and their own row binder.
-    // They do not depend on each other, so numbering uses the shared order
+    // Certified cases and sums are independent; the latter have a private row
+    // binder. Because no eligible definition contains another eligible eager
+    // definition, extracting one cannot alter the gain of the others. Use
+    // the shared order
     // rather than the traversal order of the surrounding value.
     let mut independent: Vec<_> = queries.into_iter().zip(total_counts)
-        .filter_map(|(repetition, total)| (repetition.eager == total).then_some(repetition.query))
+        .filter_map(|(repetition, total)| (repetition.eager == total).then_some(repetition.definition))
         .collect();
     independent.sort_by_cached_key(|query| math::canonical_order_key(query, &math::DefaultSortContext));
     let mut definitions = Vec::new();

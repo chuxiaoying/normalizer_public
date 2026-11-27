@@ -1,0 +1,13 @@
+entry: src/Reduce.java#Reduce.run
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/Reduce.java#Reduce.run, returns: number }
+  P:
+    parameters:
+      values: { position: 0, type: 'number[]' }
+      enabled: { position: 1, type: bool }
+      initial: { position: 2, type: number }
+      step: { position: 3, type: number }
+  T:
+    - { id: $t_0, op: fold, type: number, source: values, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item + step' }
+  R: $t_0 * $t_0

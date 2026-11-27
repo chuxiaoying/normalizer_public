@@ -1,0 +1,5 @@
+entry: src/Click.ts#onClick
+reject:
+  fragments:
+  - "SCENARIO_MODULE_INPUT:"
+  - "synchronous event module data requires a declared source role, such as @N entryState"

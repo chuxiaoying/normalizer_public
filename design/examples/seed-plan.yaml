@@ -3,8 +3,8 @@ model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
   total: 125
-  seeded: 104
-  planned: 21
+  seeded: 124
+  planned: 1
 topics:
   expression-simplification:
     title: 表达式化简
@@ -115,7 +115,8 @@ topics:
         focus: 纯有序递推依赖、局部词法绑定和稳定公开编号
         test_status: covered
       - id: canonical-ordinary-case-reuse
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java
         focus: 同域标量 CASE 重复，先核对化简是否改变 LET 资格，与单次使用、受保护值对照
   collections:
@@ -408,11 +409,13 @@ topics:
         surface: java/javascript/typescript
         focus: 回调注册、触发和调用顺序
       - id: external-clock-read
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/typescript
         focus: 一次、两次及受保护的时钟读取分别取得 E；身份不同不等于值不同，不虚构 S
       - id: external-request-snapshot
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java
         focus: 请求对象在实际序列化时的字段快照；调用后突变和延迟读取不能互相替代
   relational-data:
@@ -460,7 +463,8 @@ topics:
         surface: sql/java
         focus: 批量插入、更新和部分失败
       - id: relation-read-after-write
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/sql
         focus: 区分同表写前写后两次取得、复用旧行、读其他表及写入失败路径
   number-domain:
@@ -531,23 +535,28 @@ topics:
         surface: javascript/typescript
         focus: 异步入口和 await 后状态
       - id: entry-event-handler
-        status: planned
+        status: seeded
+        test_status: covered
         surface: javascript/typescript/vue
         focus: 事件处理函数和观察范围
       - id: entry-frontend-refactor
-        status: planned
+        status: seeded
+        test_status: covered
         surface: vue/javascript/typescript
         focus: 前端复杂页面重构为明确入口
       - id: entry-typescript-project-import
-        status: planned
+        status: seeded
+        test_status: covered
         surface: typescript
         focus: 严格多文件依赖的绑定；与缺失依赖、同名绑定及绕过类型检查区分
       - id: entry-typescript-object-receiver
-        status: planned
+        status: seeded
+        test_status: covered
         surface: typescript
         focus: 从导出对象定位方法并保留接收者；与未导出、脱离接收者或错误对象对照
       - id: entry-typescript-standard-binding
-        status: planned
+        status: seeded
+        test_status: covered
         surface: typescript
         focus: 官方标准库 N 才获得标准语义；应用同名对象及遮蔽不冒充官方绑定
   basic-contracts:
@@ -618,15 +627,18 @@ compositions:
     scope: 循环和集合组合后的筛选、首项与聚合规则
     seeds:
       - id: composition-loop-filter-fold
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/javascript
         focus: 循环、筛选和聚合同时改变时的结果
       - id: composition-loop-early-selection
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/javascript
         focus: 循环提前退出与集合顺序共同决定首项
       - id: composition-loop-nested-collection
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/javascript
         focus: 嵌套集合循环的有限性和聚合
   relational-data-and-collections:
@@ -637,15 +649,25 @@ compositions:
     scope: 关系投影进入语言集合后的重复、顺序和聚合
     seeds:
       - id: composition-relation-to-array
-        status: planned
+        status: seeded
+        test_status: covered
         surface: sql/java/javascript
         focus: SQL 投影进入数组后的顺序和空值
       - id: composition-relation-distinct-aggregate
-        status: planned
+        status: seeded
+        test_status: covered
         surface: sql/java/javascript
         focus: 关系去重和集合聚合的组合
+  relational-data-and-state:
+    topics:
+      - relational-data
+      - state-and-aliasing
+    title: 关系数据与内存状态
+    scope: 写入完成的观察与后续状态更新
+    seeds:
       - id: composition-sql-write-and-inmemory-state
-        status: planned
+        status: seeded
+        test_status: covered
         surface: sql/java
         focus: SQL 写入后内存状态读取的一致性
   collections-and-expression-simplification:
@@ -661,11 +683,13 @@ compositions:
         surface: java/javascript
         focus: 集合映射中的算术抵消
       - id: composition-filter-boolean-equation
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/javascript
         focus: 集合筛选同时使用布尔和方程约束
       - id: composition-reduce-case-let
-        status: planned
+        status: seeded
+        test_status: covered
         surface: pers/java
         focus: 聚合包含 CASE 时与无 CASE 聚合的 LET 资格对照
   external-boundaries-and-control-flow:
@@ -676,11 +700,13 @@ compositions:
     scope: 外部成功失败和内部路径分裂的交互
     seeds:
       - id: composition-retry-and-exception-path
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/javascript
         focus: 重试、捕获和正常返回的组合路径
       - id: composition-callback-and-state
-        status: planned
+        status: seeded
+        test_status: covered
         surface: javascript/typescript/vue
         focus: 回调触发顺序和状态写入的组合
   state-and-objects:
@@ -691,6 +717,7 @@ compositions:
     scope: 对象类型、别名写入和最终出口投影的交互
     seeds:
       - id: composition-state-object-projection
-        status: planned
+        status: seeded
+        test_status: covered
         surface: java/javascript/typescript
         focus: 对象写入后不同别名的字段投影

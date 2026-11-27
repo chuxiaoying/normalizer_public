@@ -1,0 +1,14 @@
+entry: src/PrefixSelection.java#PrefixSelection.firstAbove
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/PrefixSelection.java#PrefixSelection.firstAbove, returns: number}
+  P:
+    parameters:
+      cutoff: {position: 0, type: number}
+      fallback: {position: 1, type: number}
+  R: |-
+    CASE
+      WHEN cutoff <= 1 THEN 2
+      WHEN cutoff <= 6 THEN 7
+      ELSE fallback
+    END

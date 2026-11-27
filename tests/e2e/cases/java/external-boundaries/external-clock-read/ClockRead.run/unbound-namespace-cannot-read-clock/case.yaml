@@ -1,0 +1,6 @@
+entry: src/ClockRead.java#ClockRead.run
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+  - '[NORM-UNBOUND-CALL]'
+  - N.currentTimeMillis/0

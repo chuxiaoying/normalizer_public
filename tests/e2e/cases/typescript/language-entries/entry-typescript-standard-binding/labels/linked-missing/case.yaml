@@ -1,0 +1,5 @@
+entry: src/labels.ts#normalized
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - relative source ./display.js is missing

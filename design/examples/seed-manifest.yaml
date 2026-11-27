@@ -18,6 +18,9 @@ topics:
   basic-contracts: { path: topics/basic-contracts }
 
 compositions:
+  state-and-objects: { path: compositions/state-and-objects }
+  external-boundaries-and-control-flow: { path: compositions/external-boundaries-and-control-flow }
+  relational-data-and-state: { path: compositions/relational-data-and-state }
   loops-and-collections: { path: compositions/loops-and-collections }
   relational-data-and-collections: { path: compositions/relational-data-and-collections }
   collections-and-expression-simplification: { path: compositions/collections-and-expression-simplification }
@@ -128,3 +131,23 @@ seeds:
   collection-nested: { kind: topic, topic: collections, related: [loops-and-termination] }
   composition-map-arithmetic: { kind: composition, topic: collections-and-expression-simplification, related: [collections, expression-simplification] }
   collection-eager-map-fallback: { kind: topic, topic: collections, related: [external-boundaries, control-flow] }
+  composition-loop-filter-fold: { kind: composition, topic: loops-and-collections, related: [loops-and-termination, collections] }
+  entry-typescript-object-receiver: { kind: topic, topic: language-entries, related: [state-and-aliasing] }
+  composition-sql-write-and-inmemory-state: { kind: composition, topic: relational-data-and-state, related: [relational-data, state-and-aliasing] }
+  canonical-ordinary-case-reuse: { kind: topic, topic: unified-canonical-form, related: [expression-simplification, control-flow] }
+  entry-typescript-project-import: { kind: topic, topic: language-entries, related: [unified-canonical-form] }
+  external-clock-read: { kind: topic, topic: external-boundaries, related: [state-and-aliasing, control-flow] }
+  relation-read-after-write: { kind: topic, topic: relational-data, related: [state-and-aliasing, external-boundaries] }
+  composition-retry-and-exception-path: { kind: composition, topic: external-boundaries-and-control-flow, related: [external-boundaries, control-flow, loops-and-termination] }
+  composition-filter-boolean-equation: { kind: composition, topic: collections-and-expression-simplification, related: [collections, expression-simplification] }
+  composition-reduce-case-let: { kind: composition, topic: collections-and-expression-simplification, related: [collections, expression-simplification] }
+  entry-typescript-standard-binding: { kind: topic, topic: language-entries, related: [external-boundaries] }
+  composition-loop-early-selection: { kind: composition, topic: loops-and-collections, related: [loops-and-termination, collections, control-flow] }
+  external-request-snapshot: { kind: topic, topic: external-boundaries, related: [state-and-aliasing] }
+  entry-event-handler: { kind: topic, topic: language-entries, related: [state-and-aliasing] }
+  composition-state-object-projection: { kind: composition, topic: state-and-objects, related: [state-and-aliasing, objects-and-types] }
+  composition-loop-nested-collection: { kind: composition, topic: loops-and-collections, related: [loops-and-termination, collections] }
+  composition-relation-to-array: { kind: composition, topic: relational-data-and-collections, related: [relational-data, collections] }
+  composition-relation-distinct-aggregate: { kind: composition, topic: relational-data-and-collections, related: [relational-data, collections] }
+  entry-frontend-refactor: { kind: topic, topic: language-entries, related: [state-and-aliasing, expression-simplification] }
+  composition-callback-and-state: { kind: composition, topic: external-boundaries-and-control-flow, related: [external-boundaries, control-flow, state-and-aliasing] }

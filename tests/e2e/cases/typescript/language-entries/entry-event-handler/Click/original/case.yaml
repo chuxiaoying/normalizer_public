@@ -1,0 +1,16 @@
+entry: src/Click.ts#onClick
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/Click.ts#onClick, returns: void }
+  P:
+    parameters:
+      reset: { position: 0, type: bool }
+      value: { position: 1, type: number }
+  E:
+    counter:
+      kind: state
+      source: src/Click.ts#counter
+      fields: { count: number }
+  S:
+    - write: { target: counter.count, value: CASE WHEN reset THEN 0 ELSE value END }
+  R: void

@@ -777,7 +777,8 @@ pub(crate) fn validate_with_receiver(
             }
             if !m.params().iter().any(|(_, parameter)| parameter == &target_owner)
                 && (crate::normalized_text::source_intrinsic(program, owner, &target, arity).is_some()
-                    || crate::normalized_decimal::decimal_intrinsic(program, owner, &target).is_some()) {
+                    || crate::normalized_decimal::decimal_intrinsic(program, owner, &target).is_some()
+                    || crate::normalized_text::clock_intrinsic(program, owner, &target, arity)) {
                 continue;
             }
             // Calls already have their declaring name and member. Preserve

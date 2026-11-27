@@ -1,0 +1,5 @@
+entry: src/labels.ts#normalized
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - N call does not bind to the official @normalizer/stdlib namespace

@@ -149,6 +149,11 @@ fn simplify_admitted(
             terms.push(leaf);
         }
     }
+    // Only the total exact fragment reaches here. A zero factor can
+    // absorb already acquired values, but not a partial observation.
+    if op == B::Mul && constant.is_zero() {
+        return b::lit_int(0);
+    }
     let identity = if op == B::Add {
         constant.is_zero()
     } else {
@@ -176,5 +181,23 @@ fn apply_offset(base: &Expr, offset: BigInt) -> Expr {
         std::cmp::Ordering::Equal => base.clone(),
         std::cmp::Ordering::Less => b::sub(base.clone(), b::lit_integer(-offset)),
         std::cmp::Ordering::Greater => b::add(base.clone(), b::lit_integer(offset)),
+    }
+}
+
+
+#[cfg(test)]
+mod absorbing_zero {
+    use super::*;
+
+    #[test]
+    fn exact_total_product_may_erase_factors_but_a_protected_value_may_not() {
+        let zero = b::lit_int(0);
+        let parameter = b::param("weight", crate::ScalarSymbolType::Integer);
+        assert_eq!(crate::normalize(b::mul(parameter.clone(), zero.clone())), zero);
+        assert_eq!(crate::normalize(b::mul(zero.clone(), b::mul(parameter, b::lit_int(5)))), zero);
+        let outstanding = b::sym_e(0, crate::ScalarSymbolType::Integer);
+        let partial = crate::normalize(b::mul(outstanding.clone(), zero.clone()));
+        let (B::Mul, left, right) = partial.as_binop().expect("protected factor must remain") else { panic!("not a product"); };
+        assert!(left == &outstanding && right == &zero || left == &zero && right == &outstanding);
     }
 }

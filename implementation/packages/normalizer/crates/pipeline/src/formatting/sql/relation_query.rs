@@ -20,18 +20,39 @@ fn symbol_origins(expr: &Expr) -> (bool, bool) {
     (parameter, external)
 }
 
+fn relation_name<'a>(physical: &'a str, snapshot: Option<u64>, ctx: &'a crate::FormatCtx) -> Option<&'a str> {
+    match snapshot { Some(id) => ctx.acquisition_name(id), None => Some(physical) }
+}
+
+fn table_reference(physical: &str, snapshot: Option<u64>, ctx: &crate::FormatCtx) -> Option<String> {
+    let relation = relation_name(physical, snapshot, ctx)?;
+    Some(if snapshot.is_some() { format!("{relation} AS {physical}") } else { physical.into() })
+}
+
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
-    let (kind, relation, value, default) = expr.as_relation_aggregate()?;
+    let (kind, mut relation, mut value, default) = expr.as_relation_aggregate()?;
+    let mut nth = None;
     if kind == math::RelationAggregateKind::NthValue {
-        let RelationExpr::RecordProjection { source, field } = relation else { return None; };
         let index = crate::format_expr_with_ctx(value?, ctx);
-        return Some(format!("(SELECT r.{field} FROM {source} AS r)[{index}]"));
+        match relation {
+            RelationExpr::RecordProjection { source, field } =>
+                return Some(format!("(SELECT r.{field} FROM {source} AS r)[{index}]")),
+            RelationExpr::Project { value: projection, input, alias } if alias == "value" => {
+                if r::order_components(input).is_none() { return None; }
+                relation = input;
+                value = Some(projection);
+                nth = Some(index);
+            }
+            _ => return None,
+        }
     }
     if kind == math::RelationAggregateKind::Count && value.is_none() {
         if let RelationExpr::ProjectedUnion(branches) = relation {
             let distinct = if branches.iter().len() == 1 { "DISTINCT " } else { "" };
-            let selection = branches.iter().map(|(table, column)|
-                format!("  SELECT {distinct}{column} FROM {table}")).collect::<Vec<_>>().join("\n  UNION\n");
+            let selection = branches.iter().map(|(table, column)| {
+                let from = table_reference(&table.name, table.snapshot, ctx)?;
+                Some(format!("  SELECT {distinct}{column} FROM {from}"))
+            }).collect::<Option<Vec<_>>>()?.join("\n  UNION\n");
             return Some(format!("SELECT COUNT(*) FROM (\n{selection}\n) AS accounts"));
         }
     }
@@ -44,13 +65,17 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     if kind == math::RelationAggregateKind::Sum {
         if value == &one {
             if let RelationExpr::Grouped(group) = relation {
-                let table = group.table();
+                let source = group.table();
+                let table = &source.name;
+                let from = table_reference(table, source.snapshot, ctx)?;
                 let keys = group.columns().map(|column| format!("{table}.{column}")).collect::<Vec<_>>().join(", ");
-                return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {table}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
+                return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {from}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
             }
         }
         if let RelationExpr::Join { left, right, on, filters } = relation {
             let ((left, left_alias), (right, right_alias)) = (left, right);
+            let left = relation_name(&left.name, left.snapshot, ctx)?.to_owned();
+            let right = relation_name(&right.name, right.snapshot, ctx)?.to_owned();
             let rank = |expr: &Expr| {
                 let mut left = false;
                 let mut right = false;
@@ -116,10 +141,10 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     let nested = matches!(input, RelationExpr::Base {name, ..} if ctx.nested_arrays.contains(name));
     let correlated = matches!(input, RelationExpr::Vector {value, ..} if value.as_row_value().is_some());
     let from = match input {
-        RelationExpr::Base { name, alias } if record_array || nested => format!("{name} AS {alias}"),
+        RelationExpr::Base { name, alias, snapshot: None } if record_array || nested => format!("{name} AS {alias}"),
         RelationExpr::Base { name, .. } if scalar_array.is_some() =>
             super::array_name(name, ctx).to_owned(),
-        RelationExpr::Base { name, .. } => name.clone(),
+        RelationExpr::Base { name, snapshot, .. } => table_reference(name, *snapshot, ctx)?,
         RelationExpr::Vector { value, alias } => {
             format!("{} AS {alias}", crate::format_expr_with_ctx(value, ctx))
         }
@@ -207,9 +232,18 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
                 .join(", ")
         ))
     }
+    if let Some(index) = nth {
+        return Some(format!("(SELECT {projection} {})[{index}]", inline_body(&clauses)));
+    }
     if scalar_array.is_some() && kind == math::RelationAggregateKind::Count {
         let prefix = if distinct { "DISTINCT " } else { "" };
         return Some(format!("COUNT({prefix}{projection} {})", clauses.join(" ")));
+    }
+    if kind == math::RelationAggregateKind::Count
+        && matches!(input, RelationExpr::Base { .. }) && !record_array && !nested && scalar_array.is_none()
+    {
+        let prefix = if distinct { "DISTINCT " } else { "" };
+        return Some(format!("SELECT COUNT({prefix}{projection}) {}", inline_body(&clauses)));
     }
     if kind == math::RelationAggregateKind::Exists {
         return Some(format!("EXISTS (SELECT {projection} {})", inline_body(&clauses)));

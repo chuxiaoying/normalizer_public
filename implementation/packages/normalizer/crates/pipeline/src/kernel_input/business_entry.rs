@@ -10,6 +10,7 @@ pub(super) struct BusinessObservations {
     pub(super) returned: Option<String>,
     pub(super) tables: BTreeMap<String, BTreeMap<String, String>>,
     pub(super) effects: Vec<serde_json::Value>,
+    pub(super) acquisitions: BTreeMap<String, serde_json::Value>,
     pub(super) throws: Vec<serde_json::Value>,
     pub(super) definitions: Vec<serde_json::Value>,
 }
@@ -473,7 +474,7 @@ impl EntryContext {
                     if kind == Sum {
                         if let crate::kernel_input::RelationExpr::Join { left, right, .. } = relation {
                             for (table, alias) in [left, right] {
-                                if let Some(columns) = result.source_tables.get(table) {
+                                if let Some(columns) = result.source_tables.get(&table.name) {
                                     record_rows.entry(alias.clone()).or_default().extend(columns.keys().cloned());
                                 }
                             }
@@ -598,6 +599,9 @@ impl EntryContext {
             doc["E"][table] = json!({"kind":"table", "source":table, "columns":columns});
         }
         if let Some(observations) = observations {
+            for (identity, acquisition) in &observations.acquisitions {
+                doc["E"][identity] = acquisition.clone();
+            }
             if !observations.effects.is_empty() { doc["S"] = json!(observations.effects); }
             if !observations.throws.is_empty() { doc["throws"] = json!(observations.throws); }
         }

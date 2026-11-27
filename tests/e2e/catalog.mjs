@@ -164,7 +164,7 @@ export function loadCases(root, seeds = loadSeeds(root)) {
         const language = group.split('/')[0];
         const extension = { javascript: 'js', typescript: 'ts' }[language];
         assert.match(entry, extension
-          ? new RegExp('^[\\w-]+\\.' + extension + '#[\\w$]+$')
+          ? new RegExp('^[\\w-]+\\.' + extension + '#[\\w$]+(?:\\.[\\w$]+)*$')
           : /^[\w$]+(?:[.#][\w$]+)*$/, 'Invalid seed entry');
         const primaryTopic = seedMetadata.get(seedId).topic;
         const directory = group === language + '/' + primaryTopic ? group + '/' + seedId : group;

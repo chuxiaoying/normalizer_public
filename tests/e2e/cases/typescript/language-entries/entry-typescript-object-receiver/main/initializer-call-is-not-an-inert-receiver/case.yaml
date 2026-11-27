@@ -1,0 +1,5 @@
+entry: src/main.ts#controller.read
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - "object receiver field must be a closed non-effectful scalar literal: base"

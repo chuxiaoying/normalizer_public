@@ -1,0 +1,5 @@
+entry: src/labels.ts#normalized
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - unsupported standalone scalar operation opaque

@@ -2,6 +2,7 @@
 //! A view binds projected row fields. Later clauses substitute those values
 //! into the shared relation algebra, preserving the original table source.
 use super::*;
+use math::domains::relation::TableSource;
 use normalizer_ir::local::{
     relation::{Clause, Op, Operation, Query, RowOperation, Scalar},
 };
@@ -19,6 +20,7 @@ pub(super) struct OrderedRows {
     fields: BTreeMap<String, Value>,
     first_key: Expr,
     remaining_keys: Vec<Expr>,
+    index: Option<i32>,
 }
 
 #[derive(Default)]
@@ -97,7 +99,7 @@ fn closed_count_table<'a>(
         predicates.push(predicate);
         base = input;
     }
-    let RelationExpr::Base { name, alias } = base else { return None; };
+    let RelationExpr::Base { name, alias, .. } = base else { return None; };
     let columns = tables.get(name).filter(|_| name == alias)?;
     Some((name.as_str(), columns, predicates))
 }
@@ -134,7 +136,7 @@ impl<'a> Engine<'a> {
         predicates.into_iter().all(|p| closed(p, name, columns, self))
     }
 
-    fn declared_relation_input(&self, name: &str, primitive_type: &str) -> bool {
+    pub(super) fn declared_relation_input(&self, name: &str, primitive_type: &str) -> bool {
         let mut path = name.split('.');
         let root = path.next().expect("split always yields a root");
         let Some((declared, _)) = self.selected_entry.syntax.params().iter().find(|(_, parameter)| parameter == root)
@@ -173,6 +175,29 @@ impl<'a> Engine<'a> {
             .collect()
     }
 
+    fn acquire_table_rows(&mut self, table: &str, path: &Expr) -> RelationExpr {
+        use super::realtime_state::{Acquisition, EffectOperation};
+        let guard = self.normal_path(path.clone());
+        let after: Vec<_> = self.realtime_effects.events().iter().filter_map(|event| {
+            let EffectOperation::Sql { statement, receipt } = &event.operation else { return None; };
+            if statement.table() != table { return None; }
+            let success = b::not(math::domains::completion::is_throw(
+                receipt.response().clone(), statement.exception()));
+            let when = math::normalize(b::and(event.guard.clone(), success));
+            if math::normalize(b::and(guard.clone(), when.clone())).as_bool() == Some(false) {
+                return None;
+            }
+            let relative = if b::path_implies(&guard, &when) { b::lit_bool(true) } else { when };
+            Some((receipt.binding_id(), relative))
+        }).collect();
+        if after.is_empty() || guard.as_bool() == Some(false) {
+            return RelationExpr::base(table, table);
+        }
+        let id = self.fresh_binding();
+        self.realtime_effects.acquire(guard, Acquisition::Sql { source: table.into(), after }, id);
+        RelationExpr::acquired_table(table, id)
+    }
+
     fn table_rows(
         &mut self,
         query: &Query,
@@ -180,6 +205,7 @@ impl<'a> Engine<'a> {
         types: BTreeMap<String, Ty>,
         fields: &[(String, Scalar)],
         env: &Env,
+        path: &Expr,
     ) -> Result<Rows> {
         let nullable_fields: std::collections::BTreeSet<_> = row.fields().iter()
             .filter(|field| crate::normalized::nullable_text_field(row, field))
@@ -243,8 +269,9 @@ impl<'a> Engine<'a> {
                 table, &query.source, name, business_type, super::business_sql::ColumnEvidence::Declaration,
             )?;
         }
+        let input = self.acquire_table_rows(&query.source, path);
         Ok(Rows {
-            input: RelationExpr::base(&query.source, &query.source),
+            input,
             fields: columns
                 .into_iter()
                 .map(|(n, t)| {
@@ -323,11 +350,11 @@ impl<'a> Engine<'a> {
     pub(super) fn projected_union_count(
         &self, binding: &str, first: &(String, String), remaining: &[(String, String)], env: &mut Env,
     ) -> Result<()> {
-        let projection = |(source, field): &(String, String)| -> Result<(String, String)> {
+        let projection = |(source, field): &(String, String)| -> Result<(TableSource, String)> {
             let Some(Value::Rows(rows)) = env.get(source) else {
                 return Err(fail("projected union needs a declared table row source"));
             };
-            let RelationExpr::Base {name, alias} = &rows.input else {
+            let RelationExpr::Base {name, alias, snapshot} = &rows.input else {
                 return Err(fail("projected union needs direct table rows without filters"));
             };
             need(rows.ordering.is_empty() && self.source_relations.tables.contains_key(name),
@@ -340,7 +367,7 @@ impl<'a> Engine<'a> {
                 .map(|(_, column)| column)
                 .filter(|column| self.source_relations.tables[name].get(*column).is_some_and(|ty| ty == "number"))
                 .ok_or_else(|| fail("projected union field must be a direct nonnullable table column"))?;
-            Ok((name.clone(), column.into()))
+            Ok((TableSource { name: name.clone(), snapshot: *snapshot }, column.into()))
         };
         let first = projection(first)?;
         let remaining = remaining.iter().map(projection).collect::<Result<Vec<_>>>()?;
@@ -444,12 +471,12 @@ impl<'a> Engine<'a> {
             }
             Operation::JoinCount { source: other, alias: rhs, on, filters } => {
                 let mut names = env.clone();
-                let mut bind = |source: &str, alias: &str| -> Result<(String, String)> {
+                let mut bind = |source: &str, alias: &str| -> Result<(TableSource, String)> {
                     need(!env.contains_key(alias), "join alias would shadow a local value")?;
                     let Some(Value::Rows(rows)) = env.get(source) else {
                         return Err(fail("join requires two typed table bindings"));
                     };
-                    let RelationExpr::Base { name, alias: bound } = &rows.input else {
+                    let RelationExpr::Base { name, alias: bound, snapshot } = &rows.input else {
                         return Err(fail("join count currently requires unfiltered table declarations"));
                     };
                     let columns = self.source_relations.tables.get(name).filter(|_| name == bound)
@@ -467,7 +494,7 @@ impl<'a> Engine<'a> {
                         names.insert(format!("{alias}.{field}"),
                             Value::Term(ty, b::row_value(format!("{alias}.{field}"))));
                     }
-                    Ok((name.clone(), alias.into()))
+                    Ok((TableSource { name: name.clone(), snapshot: *snapshot }, alias.into()))
                 };
                 let left = bind(&query.source, &query.alias)?;
                 let right = bind(other, rhs)?;
@@ -545,7 +572,7 @@ impl<'a> Engine<'a> {
                     decl.ok_or_else(|| fail("table query needs a row declaration"))?,
                 )?;
                 let types = self.query_row_types(row)?;
-                self.table_rows(query, row, types, fields, env)?
+                self.table_rows(query, row, types, fields, env, guard)?
             }
         };
         for clause in &query.clauses {
@@ -616,6 +643,18 @@ impl<'a> Engine<'a> {
                 };
                 Value::Term(Ty::Integer, math::normalize(sum))
             }
+            RowOperation::CountProjection { distinct, value } => {
+                let value = Self::query_value(value, &query.alias, &rows.fields, &locals)?;
+                need(matches!(value.ty(), Ty::Integer | Ty::Text | Ty::Bool),
+                    "projected count requires a declared scalar value")?;
+                let value = value.scalar()?;
+                let count = if *distinct {
+                    r::relation_count_distinct(rows.input, value)
+                } else {
+                    r::relation_count_nonnull(rows.input, value)
+                };
+                Value::Term(Ty::Integer, math::normalize(count))
+            }
             RowOperation::Count { distinct } if rows.fields.contains_key("") =>
             {
                 let row = rows.fields[""].scalar()?;
@@ -642,7 +681,7 @@ impl<'a> Engine<'a> {
             RowOperation::GroupCount { first, remaining } => {
                 // Each group is one distinct *tuple* of evaluated keys, not
                 // independent distinct counts and not the source row count.
-                let RelationExpr::Base { name, alias } = &rows.input else {
+                let RelationExpr::Base { name, alias, snapshot } = &rows.input else {
                     return Err(fail("group count currently requires an unfiltered table declaration"));
                 };
                 let columns = self.source_relations.tables.get(name).filter(|_| name == alias)
@@ -656,7 +695,7 @@ impl<'a> Engine<'a> {
                 };
                 let first = physical_column(first)?;
                 let remaining = remaining.iter().map(physical_column).collect::<Result<Vec<_>>>()?;
-                let grouped = RelationExpr::grouped(name.clone(), first, remaining);
+                let grouped = RelationExpr::grouped(TableSource { name: name.clone(), snapshot: *snapshot }, first, remaining);
                 Value::Term(Ty::Integer, r::relation_sum(grouped, b::lit_int(1)))
             }
             RowOperation::Fold { accumulator, initial, body } => {
@@ -685,7 +724,7 @@ impl<'a> Engine<'a> {
                         };
                         Value::Term(Ty::Integer, math::normalize(value))
                     }
-                    _ => self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard)?,
+                    _ => self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard, env)?,
                 }
             }
             RowOperation::FirstValue { value, fallback } => {
@@ -724,6 +763,7 @@ impl<'a> Engine<'a> {
                     fields: rows.fields,
                     first_key,
                     remaining_keys: keys.collect(),
+                    index: None,
                 });
                 env.insert(query.binding.clone(), Value::Term(Ty::Ref, b::heap_ref(id)));
                 return Ok(());
@@ -764,12 +804,37 @@ impl<'a> Engine<'a> {
         Some(b::case_when(vec![(present, test)], b::lit_bool(different)))
     }
 
+    pub(super) fn index_ordered_table_array(
+        &mut self, rows: Rows, index: i32, path: Expr,
+    ) -> Result<Value> {
+        let mut keys = rows.ordering.into_iter();
+        let first_key = keys.next().ok_or_else(|| fail("indexed table array requires declared order"))?;
+        let (name, alias) = relation_base(&rows.input).ok_or_else(|| fail("expected acquired table rows"))?;
+        need(name == alias && self.source_relations.tables.contains_key(name),
+            "indexed table array requires an acquired physical table")?;
+        let outside = if index < 0 {
+            b::lit_bool(true)
+        } else if index == 0 {
+            b::not(r::relation_exists(rows.input.clone()))
+        } else {
+            let length = r::relation_sum(rows.input.clone(), b::lit_int(1));
+            b::le(length, b::lit_int(i64::from(index)))
+        };
+        self.throw_source_on_path(b::and(path, outside), "java.lang.ArrayIndexOutOfBoundsException");
+        let id = self.heap.new_path_object().id();
+        self.source_relations.first_rows.insert(id, OrderedRows {
+            input: rows.input, fields: rows.fields, first_key,
+            remaining_keys: keys.collect(), index: Some(index.max(0)),
+        });
+        Ok(Value::Term(Ty::Ref, b::heap_ref(id)))
+    }
+
     pub(super) fn row_presence(&self, reference: &Expr) -> Option<Expr> {
         let row = self
             .source_relations
             .first_rows
             .get(&reference.as_heap_ref()?)?;
-        Some(r::relation_exists(row.input.clone()))
+        Some(if row.index.is_some() { b::lit_bool(true) } else { r::relation_exists(row.input.clone()) })
     }
     pub(super) fn read_selected_field(
         &self,
@@ -784,7 +849,9 @@ impl<'a> Engine<'a> {
             return Ok(None);
         };
         let exists = r::relation_exists(row.input.clone());
-        need(b::path_implies(path, &exists), "selected row may be absent")?;
+        if row.index.is_none() {
+            need(b::path_implies(path, &exists), "selected row may be absent")?;
+        }
         let field = row
             .fields
             .get(field)
@@ -803,7 +870,13 @@ impl<'a> Engine<'a> {
             row.first_key.clone(),
             row.remaining_keys.iter().cloned(),
         );
-        Ok(Some(Value::Term(ty, r::relation_first_value(ordered, select, b::lit_null()))))
+        let selected = match row.index {
+            None | Some(0) => r::relation_first_value(ordered, select, b::lit_null()),
+            Some(index) => r::relation_nth_value(
+                RelationExpr::project(select, "value", ordered), b::lit_int(i64::from(index)),
+            ),
+        };
+        Ok(Some(Value::Term(ty, selected)))
     }
 }
 
@@ -812,7 +885,7 @@ pub(super) fn is_scalar_array_relation(relation: &RelationExpr, arrays: &std::co
     loop {
         match base {
             RelationExpr::Distinct(inner) | RelationExpr::Select { input: inner, .. } => base = inner,
-            RelationExpr::Base { name, alias } => return alias == "value" && arrays.contains(name),
+            RelationExpr::Base { name, alias, snapshot: None } => return alias == "value" && arrays.contains(name),
             _ => return false,
         }
     }
@@ -821,7 +894,7 @@ pub(super) fn is_scalar_array_relation(relation: &RelationExpr, arrays: &std::co
 pub(super) fn relation_base(relation: &RelationExpr) -> Option<(&str, &str)> {
     let (mut input, _) = r::order_components(relation).unwrap_or((relation, &[]));
     while let RelationExpr::Select { input: child, .. } = input { input = child; }
-    if let RelationExpr::Base { name, alias } = input { Some((name, alias)) } else { None }
+    if let RelationExpr::Base { name, alias, .. } = input { Some((name, alias)) } else { None }
 }
 
 fn join_dependency(predicate: &Expr, left: &str, right: &str) -> u8 {
@@ -877,22 +950,27 @@ pub(super) fn is_table_expression(
             // The aggregate constructors require a projection for these kinds.
             Sum => table_source(relation)
                 || (value == Some(&b::lit_int(1)) &&
-                    matches!(relation, RelationExpr::Grouped(group) if tables.get(group.table())
+                    matches!(relation, RelationExpr::Grouped(group) if tables.get(&group.table().name)
                         .is_some_and(|columns| group.columns().all(|column| columns.contains_key(column)))))
                 || (value == Some(&b::lit_int(1)) &&
                     matches!(relation, RelationExpr::Join { left, right, .. }
-                        if tables.contains_key(&left.0) && tables.contains_key(&right.0)))
+                        if tables.contains_key(&left.0.name) && tables.contains_key(&right.0.name)))
                 || relation_base(relation).is_some_and(|(name, _)| nested_arrays.contains(name))
                 || correlated_array_relation(relation).is_some_and(|pair|
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),
             FirstValue => table_source(relation),
             Exists => table_source(relation),
-            Count => (value.is_none() && matches!(relation, RelationExpr::ProjectedUnion(branches) if
-                branches.iter().all(|(name, column)| tables.get(name)
+            Count => (value.is_some() && table_source(match relation {
+                    RelationExpr::Distinct(input) => input, other => other,
+                }))
+                || (value.is_none() && matches!(relation, RelationExpr::ProjectedUnion(branches) if
+                branches.iter().all(|(table, column)| tables.get(&table.name)
                     .and_then(|columns| columns.get(column)).is_some_and(|ty| ty == "number"))))
                 || is_scalar_array_relation(relation, arrays)
                 || matches!(relation, RelationExpr::Base { name, .. } if record_inputs.contains_key(name)),
-            NthValue => is_scalar_array_relation(relation, arrays)
+            NthValue => matches!(relation, RelationExpr::Project { input, alias, .. }
+                    if alias == "value" && table_source(input))
+                || is_scalar_array_relation(relation, arrays)
                 || matches!(relation, RelationExpr::RecordProjection { source, .. } if record_inputs.contains_key(source)),
         };
     }

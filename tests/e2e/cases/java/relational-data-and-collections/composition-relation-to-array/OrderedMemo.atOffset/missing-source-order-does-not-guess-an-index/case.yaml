@@ -1,0 +1,6 @@
+entry: src/OrderedMemo.java#OrderedMemo.atOffset
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - '[NORM-PROJECT]'
+    - indexed table array requires declared order

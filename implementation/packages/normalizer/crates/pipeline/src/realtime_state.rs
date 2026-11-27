@@ -80,6 +80,7 @@ impl TerminalAlternatives {
             let value = returns.into_iter().next().map_or(last.1, |(_, value)| value);
             return Some(canonicalize_realtime_case(value));
         }
+        Self::strip_suffix_acquired_tags(&mut returns, &last.0);
         let expression = math::normalize(b::normal_return_case_when(returns, last));
         Some(canonicalize_realtime_case(expression))
     }
@@ -95,8 +96,27 @@ impl TerminalAlternatives {
                 None
             }
         }).collect();
-        let (_, fallback) = returns.pop()?;
+        let (last_guard, fallback) = returns.pop()?;
+        Self::strip_suffix_acquired_tags(&mut returns, &last_guard);
         Some(canonicalize_realtime_case(math::normalize(b::case_when(returns, fallback))))
+    }
+
+    fn strip_suffix_acquired_tags(returns: &mut [(Expr, Expr)], last_guard: &Expr) {
+        // On R's normal domain, reaching a later CASE branch excludes all
+        // earlier normal outcomes and every throw. An occurrence tag shared
+        // by all remaining normal alternatives need not be checked again.
+        // Preserve it if even one remaining normal outcome does not prove it.
+        let normal_guards: Vec<_> = returns.iter().map(|(guard, _)| guard.clone())
+            .chain(std::iter::once(last_guard.clone())).collect();
+        for (i, (guard, _)) in returns.iter_mut().enumerate().skip(1) {
+            let mut terms = Vec::new();
+            guard.for_each_conjunct(|term| {
+                let redundant = math::domains::completion::throw_tag(term).is_some()
+                    && normal_guards[i..].iter().all(|alternative| b::path_implies(alternative, term));
+                if !redundant { terms.push(term.clone()); }
+            });
+            *guard = terms.into_iter().fold(b::lit_bool(true), b::and);
+        }
     }
 
 }
@@ -333,7 +353,14 @@ impl EffectReceipt {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Acquisition {
+    Clock,
+    Sql { source: String, after: Vec<(u64, Expr)> },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectOperation {
+    Acquire { acquisition: Acquisition, binding_id: u64 },
     Port {
         id: String,
         receipt: EffectReceipt,
@@ -359,18 +386,28 @@ impl EffectEvent {
         match &self.operation {
             EffectOperation::StateWrite { value, .. } | EffectOperation::ArrayWrite { value, .. } =>
                 std::slice::from_ref(value),
-            EffectOperation::Port { .. } | EffectOperation::Sql { .. } => &self.args,
+            EffectOperation::Port { .. } | EffectOperation::Sql { .. } | EffectOperation::Acquire { .. } => &self.args,
         }
     }
 }
 
-/// Ordered, guarded S events produced at their execution point.
+/// Ordered, guarded observations and S events at their execution point.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct EffectSequence {
     events: Vec<EffectEvent>,
 }
 
 impl EffectSequence {
+    pub(super) fn acquire(&mut self, guard: Expr, acquisition: Acquisition, binding_id: u64) {
+        let guard = math::normalize(guard);
+        if guard.as_bool() == Some(false) { return; }
+        self.events.push(EffectEvent {
+            sequence: self.events.len(), guard,
+            operation: EffectOperation::Acquire { acquisition, binding_id },
+            callsite: String::new(), args: vec![],
+        });
+    }
+
     pub(super) fn record_port(
         &mut self,
         guard: Expr,
@@ -582,13 +619,13 @@ fn factor_array_sum_delta(expression: &Expr) -> Option<Expr> {
     use math::{BinOpKind::{Add, Sub}, RelationAggregateKind::{FirstValue, NthValue, Sum}};
     let ([(guard, yes)], no) = expression.as_total_case_when()? else { return None; };
     for (adjusted, original, enabled) in [(yes, no, guard.clone()), (no, yes, b::not(guard.clone()))] {
-        let Some((Sum, RelationExpr::Base { name, alias }, Some(row), None)) = original.as_relation_aggregate() else { continue; };
+        let Some((Sum, RelationExpr::Base { name, alias, snapshot: None }, Some(row), None)) = original.as_relation_aggregate() else { continue; };
         if alias != "value" || row.as_row_value() != Some("value") { continue; }
         let Some((Add, left, right)) = adjusted.as_binop() else { continue; };
         for (remainder, replacement) in [(left, right), (right, left)] {
             let Some((Sub, total, slot)) = remainder.as_binop() else { continue; };
             if total != original { continue; }
-            let Some((FirstValue | NthValue, RelationExpr::Base { name: source, alias }, _, _)) =
+            let Some((FirstValue | NthValue, RelationExpr::Base { name: source, alias, snapshot: None }, _, _)) =
                 slot.as_relation_aggregate() else { continue; };
             if source != name || alias != "value" { continue; }
             let delta = b::case_when(vec![(enabled.clone(), b::sub(replacement.clone(), slot.clone()))], b::lit_int(0));

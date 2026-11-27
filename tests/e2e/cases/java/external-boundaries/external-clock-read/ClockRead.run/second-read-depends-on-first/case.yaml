@@ -1,0 +1,26 @@
+entry: src/ClockRead.java#ClockRead.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ClockRead.java#ClockRead.run
+    returns: bool
+  P:
+    parameters:
+      deadline:
+        position: 0
+        type: number
+  E:
+    $a_0:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+    $a_1:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+      when: deadline > $a_0
+  R: |-
+    CASE
+      WHEN deadline > $a_0 THEN deadline <= $a_1
+      ELSE false
+    END

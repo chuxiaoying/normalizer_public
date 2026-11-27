@@ -1,0 +1,10 @@
+entry: src/Dispatch.ts#dispatch
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/Dispatch.ts#dispatch, returns: void }
+  P:
+    parameters:
+      deliver: { position: 0, type: bool }
+  S:
+    - call: { external: src/Dispatch.ts#audit.registered, args: [], returns: void, result: $e_0 }
+  R: void

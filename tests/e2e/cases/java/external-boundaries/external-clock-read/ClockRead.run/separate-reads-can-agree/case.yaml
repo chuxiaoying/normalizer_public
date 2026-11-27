@@ -1,0 +1,18 @@
+entry: src/ClockRead.java#ClockRead.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ClockRead.java#ClockRead.run
+    returns: bool
+  P:
+    parameters: {}
+  E:
+    $a_0:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+    $a_1:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+  R: $a_0 == $a_1

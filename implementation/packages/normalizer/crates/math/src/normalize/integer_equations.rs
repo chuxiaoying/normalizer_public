@@ -22,9 +22,17 @@ pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr>
     }
     let (mut left, mut left_offset) = split_offset(left);
     let (mut right, mut right_offset) = split_offset(right);
-    let (left_name, right_name) = (direct_integer_input(left)?, direct_integer_input(right)?);
+    if !affine_subject(left) || !affine_subject(right) {
+        return None;
+    }
+    // Two row values may belong to different scopes. This rule admits a
+    // single acquired row against one exact entry input, not comparisons
+    // between rows; preserve the original scoped operand.
+    if integer_row(left).is_some() && integer_row(right).is_some() {
+        return None;
+    }
     if left_offset.is_zero() && right_offset.is_zero() { return None; }
-    if left_name == right_name {
+    if left == right {
         return Some(b::lit_bool((left_offset == right_offset) == (op == BinOpKind::Eq)));
     }
     if crate::canonical_order_compare(left, right, ctx).is_gt() {
@@ -42,6 +50,17 @@ pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr>
     };
     let result = b::binop_public(op, left.clone(), adjusted);
     (result != *expr).then_some(result)
+}
+
+fn integer_row(expr: &Expr) -> Option<&str> {
+    match expr.kind() {
+        crate::expr::ExprKind::RowValue { alias, acquired_integer: true } => Some(alias),
+        _ => None,
+    }
+}
+
+fn affine_subject(expr: &Expr) -> bool {
+    direct_integer_input(expr).is_some() || integer_row(expr).is_some()
 }
 
 fn direct_integer_input(expr: &Expr) -> Option<&str> {

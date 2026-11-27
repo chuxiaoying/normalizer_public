@@ -1,0 +1,42 @@
+entry: src/SnapshotEntry.java#Beans.ENTRY.run
+expected:
+  schema: normalizer.pers/1
+  types:
+    StateSnapshot:
+      fields:
+        leftBefore: number
+        leftAfter: number
+        rightBefore: number
+        rightAfter: number
+  entry:
+    function: src/SnapshotEntry.java#Beans.ENTRY.run
+    returns: StateSnapshot
+  P:
+    parameters:
+      next:
+        position: 0
+        type: number
+      later:
+        position: 1
+        type: number
+  E:
+    pair:
+      kind: state
+      source: src/SnapshotEntry.java#Beans.ENTRY.pair
+      fields:
+        left: number
+        right: number
+  S:
+  - write:
+      target: pair.left
+      value: next
+  - write:
+      target: pair.right
+      value: later
+  R: |-
+    {
+      leftBefore: pair.left,
+      leftAfter: next,
+      rightBefore: pair.right,
+      rightAfter: pair.right
+    }

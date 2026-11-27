@@ -1,0 +1,12 @@
+entry: src/CaseParity.java#CaseParity.evaluate
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/CaseParity.java#CaseParity.evaluate, returns: number }
+  P:
+    parameters:
+      enabled: { position: 0, type: bool }
+      a: { position: 1, type: number }
+      b: { position: 2, type: number }
+      shift: { position: 3, type: number }
+      include: { position: 4, type: bool }
+  R: CASE WHEN enabled THEN a * a ELSE b * b END

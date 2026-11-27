@@ -5,14 +5,18 @@ import { invokeKernel } from './invoke-kernel.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { lowerExpression, unwrapParens as unwrap } from './ir.mjs';
+import { closedReceiver } from './module-receiver.mjs';
+import { checkedProjectModules, hasProjectImports } from './module-links.mjs';
+import { definedModuleExport, parseSourceModule, lowerExpression, unwrapParens as unwrap } from './ir.mjs';
+import { eventContract } from './module-event-project.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { checkedTypeScript, failTypedModule, typedModuleAst } from './typed-module.mjs';
 import { entryLocator } from './entry-locator.mjs';
 import { projectSources } from './project-source.mjs';
+import {isOfficialNamespaceImport, standardCalls} from './standard-library.mjs';
 
-const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']]]);
+const domains = new Map([['number', ['int', 'number']], ['boolean', ['boolean', 'bool']], ['string', ['String', 'text']]]);
 const scalar = domain => domains.get(domain)?.[1];
 const readonlyVector = 'ReadonlyArray<number>';
 const readonlyMap = 'ReadonlyMap<string,string>';
@@ -21,7 +25,8 @@ const parameter = domain => scalar(domain) ?? (domain === readonlyVector ? 'numb
   : domain === nullableText ? 'text?' : null);
 const carrier = domain => domain === readonlyVector ? 'int[]'
   : domain === nullableText ? 'String' : domains.get(domain)[0];
-const valueType = domain => domain === readonlyVector ? 'vector<number>' : parameter(domain);
+const valueType = domain => domain === readonlyVector ? 'vector<number>'
+  : domain === 'string' ? 'text?' : parameter(domain);
 function declaredParameter(node, sf) {
   if (node && ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword &&
       ts.isArrayTypeNode(node.type) && node.type.elementType.kind === ts.SyntaxKind.NumberKeyword) {
@@ -132,11 +137,34 @@ const numericOperators = {
   '===': ['bool', 'eq'], '!==': ['bool', 'eq', false, true],
 };
 
-function compile(source, file, entry, physicalPath) {
+function compile(source, file, entry, physicalPath, linked) {
+  if (entry.includes('.')) {
+    const sf = linked?.ast ?? parseSourceModule(physicalPath, source, fail, ts.ScriptKind.TS);
+    const official = !linked && sf.statements.some(isOfficialNamespaceImport);
+    const {fn, fields} = closedReceiver(sf, entry, fail, {linked: Boolean(linked) || official});
+    const formals = namedParameters(fn.parameters);
+    if (formals.error) fail(formals.error);
+    const checker = !linked ? checkedTypeScript(physicalPath, sf, fail, {allowOfficial: official}) : undefined;
+    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, linked, officialChecker: official ? checker : undefined});
+  }
+  if (linked) {
+    const sf = linked.ast;
+    const fn = definedModuleExport(sf, entry, fail);
+    const formals = namedParameters(fn.parameters);
+    if (formals.error) fail(formals.error);
+    return compileScalar(sf, fn, file, entry, formals.names, {linked});
+  }
   const {sf, fn} = typedModuleAst(source, physicalPath, entry);
   const formals = namedParameters(fn.parameters);
   if (formals.error) fail(formals.error);
   const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
+  const isStateEvent = isListener && fn.body.statements.some(st => ts.isExpressionStatement(st)
+    && ts.isBinaryExpression(st.expression) && st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    && ts.isPropertyAccessExpression(st.expression.left));
+  if (isStateEvent) {
+    const project = eventContract(file, source, entry, physicalPath, {synchronous: true});
+    return {carrier: project.source_text, carrierFile: project.source, binding: project.entries[0], project, moduleFile: 'Prepared.ts'};
+  }
   const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
   if (isListener || isTuple) {
     const checker = checkedTypeScript(physicalPath, sf, fail);
@@ -149,16 +177,18 @@ function compile(source, file, entry, physicalPath) {
     const returns = isListener ? 'void' : 'number';
     return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
   }
-  const compiled = compileScalar(sf, fn, file, entry, formals.names);
-  checkedTypeScript(physicalPath, sf, fail);
+  const usesStandard = sf.statements.some(isOfficialNamespaceImport);
+  const checker = usesStandard ? checkedTypeScript(physicalPath, sf, fail, {allowOfficial: true}) : undefined;
+  const compiled = compileScalar(sf, fn, file, entry, formals.names, {officialChecker: checker});
+  if (!usesStandard) checkedTypeScript(physicalPath, sf, fail);
   return compiled;
 }
 
-function compileScalar(sf, fn, file, entry, formals) {
-  // Imports, executable top-level initialization and other module state
-  // cannot be ignored by a closed standalone scalar adapter.
-  if (sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
-      !ts.isTypeAliasDeclaration(node) && !ts.isInterfaceDeclaration(node))) {
+function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, officialChecker} = {}) {
+  // Nonstandard imports, top-level initialization and other module state
+  // require a separate certified linked graph or receiver assembly.
+  if (!receiverFields && !linked && sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
+      !ts.isTypeAliasDeclaration(node) && !ts.isInterfaceDeclaration(node) && !isOfficialNamespaceImport(node))) {
     fail('standalone scalar modules require closed function declarations');
   }
   if (fn.asteriskToken) fail('generator entry requires a closed completion contract: ' + entry);
@@ -166,47 +196,105 @@ function compileScalar(sf, fn, file, entry, formals) {
   if (call) {
     return { closure: { schema: 'normalizer.standalone-closure/1', file, entry, ...call } };
   }
-  if (fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
+  if (fn.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
   const declaredReturn = fn.type;
   const orderedMap = declaredOrderedMap(declaredReturn);
   const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf);
-  if (!orderedMap && (!parameter(returnDomain) || returnDomain === nullableText)) fail('expected declared business scalar or non-null readonly Vector return type');
+  if (!orderedMap && !parameter(returnDomain)) fail('expected declared business scalar or non-null readonly Vector return type');
   if (orderedMap && sf.statements.some(declaration => declaration.name?.text === 'Map')) {
     fail('readonly Map requires an unshadowed built-in Map');
   }
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
     const domain = declaredParameter(param.type, sf);
-    if (!parameter(domain) || (!orderedMap && domain === nullableText)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
+    if (!parameter(domain)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
     names.set(param.name.text, {name: binding, type: parameter(domain)});
     return {publicName: param.name.text, name: binding, domain, position};
   });
-  function expression(expr) {
+  const active = new Set([fn]);
+  let linkedCallBudget = 8_192;
+  const checker = officialChecker ?? (linked?.hasOfficial ? linked.checker : undefined);
+  const lowerOfficial = checker && standardCalls(checker, fail);
+  const lowerCall = (node, lower) => {
+    const official = lowerOfficial?.(node, lower);
+    if (official !== undefined) return official;
+    if (!linked || !ts.isCallExpression(node)) return;
+    const bound = !node.questionDotToken && !node.typeArguments?.length && linked.helper(unwrap(node.expression));
+    if (!bound) fail('linked call has no closed project function: ' + node.expression.getText());
+    return {op: 'linked-call', ...bound, args: node.arguments.map(lower)};
+  };
+  // Text literals are admitted for closed text expressions, not as vector slots.
+  const textExpressions = checker || returnDomain === 'string' || returnDomain === nullableText;
+  function expression(expr, lexical = names) {
+    const evaluate = child => expression(child, lexical);
+    if (expr.op === 'linked-call') {
+      const {declaration, origin} = expr;
+      const label = origin.name + '#' + declaration.name?.text;
+      if (active.has(declaration)) fail('recursive linked function is not a closed scalar helper: ' + label);
+      if (--linkedCallBudget < 0 || active.size >= 128) {
+        throw new Error('[NORM-ANALYSIS-INCOMPLETE] linked helper expansion budget exceeded at ' + label);
+      }
+      if (declaration.asteriskToken || declaration.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
+        fail('linked helper has no synchronous completion contract: ' + label);
+      }
+      const formals = namedParameters(declaration.parameters);
+      if (formals.error || declaration.parameters.length !== expr.args.length) fail('linked helper has wrong arity: ' + label);
+      const scope = new Map();
+      for (const [i, param] of declaration.parameters.entries()) {
+        const expected = parameter(declaredParameter(param.type, origin.ast));
+        const actual = evaluate(expr.args[i]);
+        if (!expected || actual.type !== expected) fail('linked helper argument is outside the declared value domain: ' + label);
+        scope.set(param.name.text, actual);
+      }
+      const [statement, ...rest] = declaration.body.statements;
+      if (rest.length || !statement || !ts.isReturnStatement(statement) || !statement.expression) {
+        fail('linked helper requires one closed pure return expression: ' + label);
+      }
+      active.add(declaration);
+      const result = expression(lowerExpression(statement.expression, origin.ast, lowerCall), scope);
+      active.delete(declaration);
+      const returned = parameter(declaredParameter(declaration.type, origin.ast));
+      if (!returned || result.type !== returned) fail('linked helper result is outside the declared value domain: ' + label);
+      return result;
+    }
     if (expr.op === 'var') {
-      const binding = names.get(expr.name);
+      const binding = lexical.get(expr.name);
       if (!binding) fail('unbound scalar value ' + expr.name);
-      return {type: binding.type, node: internal('var', {name: binding.name})};
+      return binding.node ? binding : {type: binding.type, node: internal('var', {name: binding.name})};
     }
     if (expr.op === 'literal' && (expr.type === 'boolean' || expr.type === 'number' && Number.isSafeInteger(expr.value))) {
       const type = scalar(expr.type);
       return {type, node: internal('const', {type, value: expr.value})};
     }
+    if (textExpressions && expr.op === 'literal' && expr.type === 'string')
+      return {type: 'text', node: internal('const', {type: 'text?', value: expr.value})};
+    if (textExpressions && expr.op === 'literal' && expr.type === 'null')
+      return {type: 'text?', node: internal('const', {type: 'unit', value: null})};
+    if (expr.op === 'official-text') {
+      const args = expr.args.map(evaluate);
+      if (expr.name === 'trim' && args.length === 1 && ['text', 'text?'].includes(args[0].type))
+        return {type: args[0].type, node: internal('value.text_trim', {value: args[0].node})};
+      if (expr.name === 'defaultIfBlank' && args.length === 2 && ['text', 'text?'].includes(args[0].type)
+          && args[1].type === 'text')
+        return {type: 'text', node: internal('value.text_default_if_blank', {value: args[0].node, fallback: args[1].node})};
+      fail('unsupported official @normalizer/stdlib text signature');
+    }
     if (expr.op === 'signed-number' && Number.isSafeInteger(expr.value)) {
       return {type: 'number', node: internal('const', {type: 'number', value: expr.value})};
     }
     if (expr.op === 'boolean-not') {
-      const operand = expression(expr.operand);
+      const operand = evaluate(expr.operand);
       if (operand.type !== 'bool') fail('logical negation in a standalone value requires a Boolean');
       return {type: 'bool', node: internal('not', {value: operand.node})};
     }
     if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
       const [type, operator, swap, negate] = numericOperators[expr.operator];
-      const left = expression(expr.left), right = expression(expr.right);
+      const left = evaluate(expr.left), right = evaluate(expr.right);
       // Negating an ordered comparison is valid on exact business numbers,
       // not on unrestricted JS values (which may include NaN or coercion).
       if (left.type !== 'number' || right.type !== 'number') fail('scalar arithmetic and comparison require two business numbers');
@@ -216,20 +304,25 @@ function compileScalar(sf, fn, file, entry, formals) {
     }
     if (expr.op === 'read') {
       const [name, field] = expr.target;
-      const binding = names.get(name);
+      if (name === 'this' && receiverFields && lexical === names) {
+        const value = expr.target.length === 2 && receiverFields.get(field);
+        if (!value) fail('entry receiver field is not a proved literal: ' + field);
+        return {type: value.type, node: internal('const', value)};
+      }
+      const binding = lexical.get(name);
       if (expr.target.length !== 2 || field !== 'length' || binding?.type !== 'number[]') {
         fail('length requires a direct declared non-null readonly Vector');
       }
-      return {type: 'number', node: internal('value.field', {value: internal('var', {name: binding.name}), name: 'length'})};
+      return {type: 'number', node: internal('value.field', {value: binding.node ?? internal('var', {name: binding.name}), name: 'length'})};
     }
     if (expr.op === 'array') {
       if (expr.items.some(item => item.op === 'opaque')) fail('readonly Vector literal requires a closed list of numbers');
-      const items = expr.items.map(expression);
+      const items = expr.items.map(evaluate);
       if (items.some(item => item.type !== 'number')) fail('readonly Vector literal requires a closed list of numbers');
       return {type: 'number[]', node: internal('value.number_vector', {items: items.map(item => item.node)})};
     }
     if (expr.op === 'select') {
-      const test = expression(expr.condition), yes = expression(expr.whenTrue), no = expression(expr.whenFalse);
+      const test = evaluate(expr.condition), yes = evaluate(expr.whenTrue), no = evaluate(expr.whenFalse);
       if (test.type !== 'bool' || yes.type !== no.type) fail('conditional requires a Boolean and two matching business value types');
       return {type: yes.type, node: internal('if', {cond: test.node, then: yes.node, else: no.node})};
     }
@@ -240,7 +333,22 @@ function compileScalar(sf, fn, file, entry, formals) {
   const returns = orderedMap ? 'map<text,text>' : parameter(returnDomain);
   const body = orderedMap
     ? internal('value.ordered_text_map', {entries: mapEntries(last.expression, names, fail)})
-    : expression(lowerExpression(last.expression, sf)).node;
+    : expression(lowerExpression(last.expression, sf, lowerCall)).node;
+  if (linked) {
+    // Substitution can reuse an expression at many call sites. Count
+    // occurrences, not object identities, before JSON expands the IR.
+    const outstanding = [body];
+    let remainingNodes = 65_536;
+    while (outstanding.length) {
+      const next = outstanding.pop();
+      if (--remainingNodes < 0) {
+        throw new Error('[NORM-ANALYSIS-INCOMPLETE] linked result size budget exceeded at ' + file + '#' + entry);
+      }
+      if (next !== null && typeof next === 'object') {
+        for (const value of Object.values(next)) outstanding.push(value);
+      }
+    }
+  }
   return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf));
 }
 
@@ -263,12 +371,13 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
       ...(typed.externalResults && {external_results: typed.externalResults}),
+      ...(typed.environment && {environment: typed.environment}),
       parameters: Object.fromEntries(params.map(param => [param.publicName, {position: param.position, type: parameter(param.domain)}])),
     }},
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
       params: params.map(param => ({name: param.name, type: valueType(param.domain)})),
-      returns: returns === 'void' ? 'unit' : resultTypes[returnCarrier] ?? returns, origin: {path: moduleFile, excerpt},
+      returns: returns === 'void' ? 'unit' : resultTypes[returnCarrier] ?? valueType(returnDomain), origin: {path: moduleFile, excerpt},
       body,
     }},
   }};
@@ -284,17 +393,20 @@ try {
   if (flag !== '--entry') fail('expected --entry path.ts#exportedFunction');
   const {file, name: entry} = entryLocator(locator, fail);
   if (!file.endsWith('.ts') || file.endsWith('.d.ts')) fail('standalone entry must be an executable .ts source file');
-  const { declared, name, path } = projectSources(rootArg)(file);
+  const resolveProjectSource = projectSources(rootArg);
+  const sourceEntry = resolveProjectSource(file);
+  const { declared, name, path } = sourceEntry;
   if (!path.endsWith('.ts') || path.endsWith('.d.ts')) fail('standalone .ts entry must resolve to an executable .ts source file');
   const source = readFileSync(path, 'utf8');
-  const {carrier, binding, project, closure, moduleFile} = compile(source, name, entry, declared);
+  const linked = hasProjectImports(source, declared) ? checkedProjectModules(sourceEntry, resolveProjectSource, fail, {rootReceiver: entry.includes('.')}) : undefined;
+  const {carrier, carrierFile = 'Carrier.java', binding, project, closure, moduleFile} = compile(source, name, entry, declared, linked);
   if (closure) {
     const result = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));
     publishKernelFailure(result);
   } else {
     const temp = mkdtempSync(join(tmpdir(), 'normalizer-ts-module-'));
     try {
-      writeFileSync(join(temp, 'Carrier.java'), carrier);
+      writeFileSync(join(temp, carrierFile), carrier);
       writeFileSync(join(temp, moduleFile), source);
       const projectPath = join(temp, 'Project.json');
       writeFileSync(projectPath, JSON.stringify(project));

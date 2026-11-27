@@ -30,6 +30,7 @@ export function unwrapParens(node) {
 
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
+  if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
   const property = ts.isPropertyAccessExpression(node) ? node.name
     : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)
       ? node.argumentExpression : undefined;
@@ -42,8 +43,11 @@ function pathOf(node) {
 
 // Callers require an expression. Array holes remain explicit
 // OmittedExpression nodes rather than fabricated value expressions.
-function expr(node, sf) {
+function expr(node, sf, specialized) {
+  const lower = child => expr(child, sf, specialized);
   node = unwrapParens(node);
+  const result = specialized?.(node, lower);
+  if (result !== undefined) return result;
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return { op: 'literal', type: 'string', value: node.text };
   if (ts.isNumericLiteral(node)) return { op: 'literal', type: 'number', value: Number(node.text) };
   if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)
@@ -52,7 +56,7 @@ function expr(node, sf) {
     return { op: 'signed-number', value: node.operator === ts.SyntaxKind.MinusToken ? -value : value };
   }
   if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
-    return { op: 'boolean-not', operand: expr(node.operand, sf) };
+    return { op: 'boolean-not', operand: lower(node.operand) };
   }
   if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) {
     return { op: 'literal', type: 'boolean', value: node.kind === ts.SyntaxKind.TrueKeyword };
@@ -65,10 +69,10 @@ function expr(node, sf) {
   }
   if (ts.isBinaryExpression(node)) {
     const operator = BINARY.get(node.operatorToken.kind);
-    if (operator) return { op: 'binary', operator, left: expr(node.left, sf), right: expr(node.right, sf) };
+    if (operator) return { op: 'binary', operator, left: lower(node.left), right: lower(node.right) };
   }
-  if (ts.isArrayLiteralExpression(node)) return { op: 'array', items: node.elements.map(item => expr(item, sf)) };
-  if (ts.isConditionalExpression(node)) return { op: 'select', condition: expr(node.condition, sf), whenTrue: expr(node.whenTrue, sf), whenFalse: expr(node.whenFalse, sf) };
+  if (ts.isArrayLiteralExpression(node)) return { op: 'array', items: node.elements.map(lower) };
+  if (ts.isConditionalExpression(node)) return { op: 'select', condition: lower(node.condition), whenTrue: lower(node.whenTrue), whenFalse: lower(node.whenFalse) };
   return { op: 'opaque', text: node.getText(sf) };
 }
 

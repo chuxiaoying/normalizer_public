@@ -80,6 +80,10 @@ groups:
     expr-unknown-condition-preservation:
     - Unknown.choose
   java/external-boundaries:
+    external-request-snapshot:
+    - Beans.ENTRY.send
+    external-clock-read:
+    - ClockRead.run
     java-external-declaration-types:
     - Beans.ENTRY.label
     external-callback-order:
@@ -166,6 +170,8 @@ groups:
     java-static-deep-calls:
     - Pricing.calculate
   java/relational-data:
+    relation-read-after-write:
+    - Snapshot.delta
     relation-batch-write:
     - PayableService.close
     - PayableAudit.closeWithAudit
@@ -239,6 +245,8 @@ groups:
     - StatePick.INSTANCE.choose
     - ReceiptPick.INSTANCE.choose
     - MixedTemporal.settle
+    canonical-ordinary-case-reuse:
+    - CaseParity.evaluate
     canonical-number-selection:
     - CanonicalQuota.smaller
     canonical-pure-fold-definitions:
@@ -255,6 +263,16 @@ groups:
     expr-associative-commutative-normal-form:
     - Order.total
   typescript/language-entries:
+    entry-frontend-refactor:
+    - QuotePanel.ts#refreshQuote
+    entry-event-handler:
+    - Click.ts#onClick
+    entry-typescript-standard-binding:
+    - labels.ts#normalized
+    entry-typescript-project-import:
+    - main.ts#run
+    entry-typescript-object-receiver:
+    - main.ts#controller.read
     entry-async-await:
     - total.ts#total
     entry-javascript-module:
@@ -265,6 +283,9 @@ groups:
   typescript/collections:
     typescript-tuple-slots:
     - receipt.ts#traceCount
+  typescript/external-boundaries-and-control-flow:
+    composition-callback-and-state:
+    - Dispatch.ts#dispatch
   typescript/external-boundaries:
     frontend-deferred-listener:
     - handler.ts#handle
@@ -279,6 +300,31 @@ groups:
       entries:
       - onLoad
   java/collections-and-expression-simplification:
+    composition-filter-boolean-equation:
+    - Filter.run
+    composition-reduce-case-let:
+    - Reduce.run
     composition-map-arithmetic:
     - RowArithmetic.sum
+  java/loops-and-collections:
+    composition-loop-early-selection:
+    - PrefixSelection.firstAbove
+    composition-loop-nested-collection:
+    - BucketImpact.score
+    composition-loop-filter-fold:
+    - QuotaFold.charge
+  java/relational-data-and-state:
+    composition-sql-write-and-inmemory-state:
+    - CleanupLog.INSTANCE.removeClosed
+  java/external-boundaries-and-control-flow:
+    composition-retry-and-exception-path:
+    - QuoteRetry.INSTANCE.quote
+  java/state-and-objects:
+    composition-state-object-projection:
+    - Beans.ENTRY.run
+  java/relational-data-and-collections:
+    composition-relation-to-array:
+    - OrderedMemo.atOffset
+    composition-relation-distinct-aggregate:
+    - DistinctMemo.count
 pending: []

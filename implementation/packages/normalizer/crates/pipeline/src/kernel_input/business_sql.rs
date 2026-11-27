@@ -115,6 +115,8 @@ impl Engine<'_> {
 }
 
 impl SqlEffect {
+    pub(super) fn table(&self) -> &str { &self.statement.table }
+
     pub(super) fn exception(&self) -> &str {
         &self.statement.exception
     }

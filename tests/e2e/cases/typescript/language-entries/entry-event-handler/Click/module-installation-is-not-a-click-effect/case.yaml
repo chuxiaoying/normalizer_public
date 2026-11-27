@@ -1,0 +1,5 @@
+entry: src/Click.ts#onClick
+reject:
+  fragments:
+  - "SCENARIO_MODULE_INPUT:"
+  - "synchronous event module must not contain host installation or other module startup"

@@ -186,6 +186,9 @@ impl Engine<'_> {
 
     pub(super) fn source_array_read(&mut self, array: Value, index: Value, path: Expr) -> Result<Value> {
         need(self.project.direct_source, "source array index requires direct source")?;
+        if let Value::Rows(rows) = array {
+            return self.index_ordered_table_array(*rows, exact_java_int(index)?, path);
+        }
         if let Value::EagerIntProjection { source, field } = array {
             let index = index_value(index)?;
             let base = RelationExpr::base(&source, "r");

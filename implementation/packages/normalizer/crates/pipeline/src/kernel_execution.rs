@@ -134,6 +134,21 @@ impl<'a> Engine<'a> {
                 let map = math::domains::composite::lifted_ordered_text_map(&acquired).map_err(fail)?;
                 Ok(Value::Term(Ty::OrderedTextMap, map))
             }
+            Node::TrimText { value } => {
+                let text = self.node(value, env, path)?;
+                need(text.ty() == Ty::Text || text.scalar().is_ok_and(|value| value.is_null()),
+                    "standard trim requires a nullable text operand")?;
+                Ok(Value::Term(Ty::Text, crate::normalized_text::trim(text.scalar()?)))
+            }
+            Node::DefaultTextIfBlank { value, fallback } => {
+                let text = self.node(value, env, path.clone())?;
+                let fallback = self.node(fallback, env, path)?;
+                need((text.ty() == Ty::Text || text.scalar().is_ok_and(|value| value.is_null()))
+                    && fallback.ty() == Ty::Text,
+                    "standard defaultIfBlank requires text operands")?;
+                Ok(Value::Term(Ty::Text,
+                    crate::normalized_text::default_if_blank(text.scalar()?, fallback.scalar()?)))
+            }
             Node::NumberVector { items } => {
                 let mut values = Vec::with_capacity(items.len());
                 for item in items {
@@ -239,6 +254,12 @@ impl<'a> Engine<'a> {
                 return Ok(JavaType::Class(owner.into()))
             }
             J::New { java_type, .. } => return Ok(java_type.clone()),
+            J::ArrayAccess { target, .. } => {
+                let JavaType::Array(item) = self.source_declared_type(target, id)? else {
+                    return Err(fail("indexed field receiver requires a declared array"));
+                };
+                return Ok(*item);
+            }
             J::MethodCall { target: Some(receiver), method, .. } => {
                 if let Some(field) = crate::normalized::source_ports::receiver(receiver) {
                     if let Some(port) = self.project.source_ports.get(&format!("{owner}.{field}.{method}")) {
@@ -704,6 +725,18 @@ impl<'a> Engine<'a> {
                 return Ok(Value::IntegerFloor { value, lower: left_floor + right_floor, domain });
             }
         }
+        // The same acquired count is a total exact integer on this path.
+        // Distinct SQL acquisition identities remain part of expression equality.
+        if op == JavaArithmetic::Sub
+            && matches!(left, Value::IntegerFloor { .. })
+            && matches!(right, Value::IntegerFloor { .. })
+            && left.scalar()? == right.scalar()?
+        {
+            let path = self.normal_path(path.clone());
+            if left.certified_integer_floor(&path).is_some() && right.certified_integer_floor(&path).is_some() {
+                return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+            }
+        }
         let (left, right) = (left.scalar()?, right.scalar()?);
         // Operand evaluation is already recorded in S. An identical
         // numeric receipt can cancel only on a path that acquired it.
@@ -1032,6 +1065,14 @@ impl<'a> Engine<'a> {
                         self.source_reference_assignment(expected, actual, id)?;
                     }
                 }
+                if self.project.direct_source && self.program.find_class(id.rsplit_once('.').unwrap().0)
+                    .is_some_and(|caller| crate::normalized_text::clock_intrinsic(self.program, caller, &callee, args.len()))
+                {
+                    let guard = self.normal_path(path);
+                    let binding = self.fresh_binding();
+                    self.realtime_effects.acquire(guard, realtime_state::Acquisition::Clock, binding);
+                    return Ok(Value::Term(Ty::Integer, b::sym_e(binding, ScalarSymbolType::Integer)));
+                }
                 use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
                 if let Some(intrinsic) = self.program.find_class(id.rsplit_once('.').unwrap().0)
                     .and_then(|caller| decimal_intrinsic(self.program, caller, &callee))
@@ -1075,12 +1116,10 @@ impl<'a> Engine<'a> {
                     use crate::normalized_text::SourceIntrinsic;
                     let expr = match intrinsic {
                         SourceIntrinsic::Trim => crate::normalized_text::trim(value),
-                        SourceIntrinsic::DefaultIfBlank => b::case_when(
-                            vec![(crate::normalized_text::is_blank(value.clone()), vs[1].scalar()?)],
-                            value,
-                        ),
+                        SourceIntrinsic::DefaultIfBlank =>
+                            crate::normalized_text::default_if_blank(value, vs[1].scalar()?),
                     };
-                    return Ok(Value::Term(Ty::Text, math::normalize(expr)));
+                    return Ok(Value::Term(Ty::Text, expr));
                 }
                 if target.is_none() && !self.methods[id].syntax.is_static() {
                     return self.java_call_with_receiver(&callee, vs, path, env.get("this").cloned(), true);
@@ -1392,6 +1431,12 @@ impl Engine<'_> {
 
         let path = self.normal_path(path.clone());
         self.realtime_effects.events().iter().any(|event| {
+            if let realtime_state::EffectOperation::Acquire {
+                acquisition: realtime_state::Acquisition::Clock, binding_id,
+            } = &event.operation {
+                return matches!(observation, Observation::Scalar(binding) if binding == *binding_id)
+                    && b::path_implies(&path, &event.guard);
+            }
             let realtime_state::EffectOperation::Port { receipt, completion: spec, .. } = &event.operation else { return false; };
             // A bare integer is only minted for a nonthrowing source port.
             // For fields, prove the declared integer and the exact response

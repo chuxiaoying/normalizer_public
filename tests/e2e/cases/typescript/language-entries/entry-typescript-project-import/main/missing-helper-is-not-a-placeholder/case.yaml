@@ -1,0 +1,5 @@
+entry: src/main.ts#run
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - "src/main.ts:1:1: relative source ./helper.js is missing"

@@ -104,6 +104,7 @@ pub(super) enum Action {
     WriteState {
         target: Vec<String>,
         value: Node,
+        condition: Option<Node>,
     },
     /// Access an immutable input bound for the selected invocation.
     ReadInput {
@@ -397,7 +398,13 @@ impl Engine<'_> {
                 Action::LocalIr { query } => {
                     self.execute_query(query, None, env, &self.action_path.clone())?;
                 }
-                Action::WriteState { target, value } => {
+                Action::WriteState { target, value, condition } => {
+                    if let Some(condition) = condition {
+                        let condition = self.action_value(condition, env)?;
+                        need(condition.ty() == Ty::Bool, "state write guard requires a Boolean")?;
+                        self.action_path = math::normalize(b::and(self.action_path.clone(), condition.scalar()?));
+                        if self.action_path.as_bool() == Some(false) { continue; }
+                    }
                     let (root, fields) = target
                         .split_first()
                         .ok_or_else(|| fail("empty state write path"))?;

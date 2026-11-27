@@ -19,7 +19,7 @@
 //! 规则无法完全 dedupe，必须 flatten 到扁平 conjuncts 列表后统一去重。
 
 use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
-use crate::builder;
+use crate::{builder, domains::completion::different_throw_tags};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, RelationAggregateKind, UnaryOpKind};
 use implication::*;
 
@@ -101,6 +101,7 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
             || (!profile_pair_can_skip_proof_check(c, expr)
                 && (relation_count_nonzero_implies_exists(c, expr)
                     || literal_equality_implies_literal_inequality(c, expr)
+                    || expr.as_not().is_some_and(|negated| different_throw_tags(c, negated))
                     || or_all_branches_imply(c, expr)))
     }) {
         return true;
@@ -126,7 +127,7 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
 fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     if context.iter().any(|c| {
         !profile_pair_can_skip_proof_check(c, expr)
-            && is_complement(c, expr)
+            && (is_complement(c, expr) || different_throw_tags(c, expr))
     }) {
         return true;
     }
@@ -279,6 +280,14 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         {
             return Some(builder::lit_bool(false));
         }
+
+        // A positive tag establishes the same receipt and excludes every
+        // other class. Drop only those negations; never treat distinct
+        // receipts as correlated or expand protected values into OR.
+        if item.as_not().is_some_and(|negated| out.iter().any(|fact| different_throw_tags(fact, negated))) {
+            continue;
+        }
+        out.retain(|fact| !fact.as_not().is_some_and(|negated| different_throw_tags(item, negated)));
 
         // A concrete literal and a positive allocation identity each form
         // their own closed equality class. Do not cross the domains.

@@ -24,6 +24,28 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         {
             return b::lit_int(0);
         }
+        if matches!(op, BinOpKind::Add | BinOpKind::Mul)
+            && left == right && left.size() <= 2048 && left.depth() <= 48
+            && acquired_integer(left)
+        {
+            if let Some(([(guard, then_value)], else_value)) = left.as_total_case_when() {
+                let nodes = left.size().saturating_mul(2).saturating_add(2);
+                if super::consume_candidate_budget(nodes, nodes) {
+                    let run = |value: &Expr| {
+                        let applied = b::binop_public(*op, value.clone(), value.clone());
+                        let folded = super::constant::fold(&applied);
+                        let reduced = super::arithmetic::simplify(&folded);
+                        super::integer_ac::simplify(&reduced, ctx)
+                    };
+                    let candidate = b::case_when(
+                        vec![(guard.clone(), run(then_value))], run(else_value),
+                    );
+                    if cost(&candidate) < cost(expr) {
+                        return candidate;
+                    }
+                }
+            }
+        }
         return expr.clone();
     }
 

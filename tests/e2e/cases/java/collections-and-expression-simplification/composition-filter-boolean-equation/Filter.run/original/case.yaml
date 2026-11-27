@@ -1,0 +1,10 @@
+entry: src/Filter.java#Filter.run
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/Filter.java#Filter.run, returns: number }
+  P:
+    parameters:
+      values: { position: 0, type: 'number[]' }
+      target: { position: 1, type: number }
+      enabled: { position: 2, type: bool }
+  R: COUNT(value FROM values WHERE value == target - 2   AND enabled)

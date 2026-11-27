@@ -218,6 +218,15 @@ impl Admission<'_> {
                 Some(*element)
             }
             E::MethodCall { target, method, args } => {
+                if let Some(E::Ident(receiver)) = target.as_deref() {
+                    if self.binding(receiver, scope).is_none()
+                        && crate::normalized_text::clock_intrinsic(
+                            self.program, self.class, &format!("{receiver}.{method}"), args.len(),
+                        )
+                    {
+                        return Some(JavaType::Primitive("long".into()));
+                    }
+                }
                 if let Some(target) = target.as_deref() {
                     if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
                         if let Some(ty) = self.program.find_class(&owner).and_then(|class|
@@ -289,6 +298,9 @@ impl Admission<'_> {
                     if !scope.contains_key(receiver) { self.check_receiver_use(receiver)?; }
                     if self.binding(receiver, scope).is_none() {
                         let callee = format!("{receiver}.{method}");
+                        if crate::normalized_text::clock_intrinsic(self.program, self.class, &callee, args.len()) {
+                            return Ok(Kind::Number);
+                        }
                         use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
                         if let Some(intrinsic) = decimal_intrinsic(self.program, self.class, &callee) {
                             let bad = || self.diagnostic("NORM-SOURCE-TYPE", &format!(

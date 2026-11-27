@@ -1,0 +1,6 @@
+entry: src/ClockRead.java#ClockRead.run
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - '[NORM-SOURCE-TYPE]'
+    - return cannot implicitly narrow a long expression

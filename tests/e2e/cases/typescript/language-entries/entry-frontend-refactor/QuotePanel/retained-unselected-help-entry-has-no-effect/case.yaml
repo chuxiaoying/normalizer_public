@@ -1,0 +1,17 @@
+entry: src/QuotePanel.ts#refreshQuote
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/QuotePanel.ts#refreshQuote, returns: void }
+  P:
+    parameters:
+      units: { position: 0, type: number }
+      expedited: { position: 1, type: bool }
+  E:
+    quote:
+      kind: state
+      source: src/QuotePanel.ts#quote
+      fields: { display: { amount: number, active: bool } }
+  S:
+    - write: { target: quote.display.amount, value: CASE WHEN expedited THEN units + 10 ELSE units END }
+    - write: { target: quote.display.active, value: units > 0 }
+  R: void

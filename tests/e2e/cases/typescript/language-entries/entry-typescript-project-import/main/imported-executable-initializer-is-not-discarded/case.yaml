@@ -1,0 +1,5 @@
+entry: src/main.ts#run
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - "src/helper.ts:1:1: linked modules require closed declarations without executable initialization"

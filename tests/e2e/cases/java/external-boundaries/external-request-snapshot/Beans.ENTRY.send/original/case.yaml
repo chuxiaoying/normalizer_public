@@ -1,0 +1,21 @@
+entry: src/Dispatch.java#Beans.ENTRY.send
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Dispatch.java#Beans.ENTRY.send, returns: number}
+  P:
+    parameters:
+      sku: {position: 0, type: number}
+      units: {position: 1, type: number}
+      revisedUnits: {position: 2, type: number}
+  S:
+    - call:
+        external: src/Dispatch.java#Beans.ENTRY.broker.send
+        args: [sku, 'units']
+        returns: void
+        result: $e_0
+    - call:
+        external: src/Dispatch.java#Beans.ENTRY.broker.send
+        args: [sku, revisedUnits]
+        returns: void
+        result: $e_1
+  R: revisedUnits

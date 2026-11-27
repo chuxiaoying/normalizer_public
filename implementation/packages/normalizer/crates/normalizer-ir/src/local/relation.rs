@@ -47,6 +47,7 @@ pub enum RowOperation {
     EagerPath { link: String, leaf: String },
     Sum(Scalar),
     Count { distinct: bool },
+    CountProjection { distinct: bool, value: Scalar },
     GroupCount { first: Scalar, remaining: Vec<Scalar> },
     FirstValue { value: Scalar, fallback: Scalar },
     FirstRow,
@@ -354,6 +355,8 @@ fn parse_query_tail(
             RowOperation::EagerPath { link, leaf }
         }
         (Kind::Sum, Yield::Value(value)) => RowOperation::Sum(value),
+        (Kind::Count | Kind::CountDistinct, Yield::Value(value)) =>
+            RowOperation::CountProjection { distinct: kind == Kind::CountDistinct, value },
         (Kind::First, Yield::FirstValue { value, fallback }) =>
             RowOperation::FirstValue { value, fallback },
         (Kind::First, Yield::Value(Scalar::Path(path)))

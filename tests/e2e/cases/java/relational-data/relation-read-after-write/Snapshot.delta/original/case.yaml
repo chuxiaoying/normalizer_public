@@ -1,0 +1,45 @@
+entry: src/Snapshot.java#Snapshot.delta
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Snapshot.java#Snapshot.delta
+    returns: number
+  P:
+    parameters:
+      accountId: { position: 0, type: number }
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns: { account_id: number }
+    $a_0:
+      kind: acquisition
+      source: bill
+      when: completion.is_return($e_0)
+      after:
+        - result: $e_0
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM bill
+        WHERE bill.account_id == accountId
+      ),
+      0
+    ) - COALESCE(
+      SUM(
+        SELECT 1
+        FROM $a_0 AS bill
+        WHERE bill.account_id == accountId
+      ),
+      0
+    )
+  S:
+    - sql: |-
+        DELETE FROM bill
+        WHERE bill.account_id = accountId
+      result: $e_0
+      returns: number
+  throws:
+    - type: DbFailure
+      when: completion.is_throw($e_0, DbFailure)

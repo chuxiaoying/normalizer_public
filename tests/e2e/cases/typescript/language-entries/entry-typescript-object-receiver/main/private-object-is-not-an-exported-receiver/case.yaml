@@ -1,0 +1,5 @@
+entry: src/main.ts#controller.read
+reject:
+  fragments:
+  - "[NORM-TS-MODULE]"
+  - "object entry requires closed literal module assembly"

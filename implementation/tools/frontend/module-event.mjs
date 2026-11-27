@@ -47,7 +47,7 @@ function rejectionNames(method, checker, sf) {
   return names;
 }
 
-export function readModuleEvent(modulePath, text, entryName, physicalPath = modulePath) {
+export function readModuleEvent(modulePath, text, entryName, physicalPath = modulePath, {synchronous = false} = {}) {
   const sf = parseSourceModule(physicalPath, text, fail, ts.ScriptKind.TS);
   const {checker, errors} = typeScriptProgram(physicalPath, sf, fail);
   const symbol = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
@@ -55,7 +55,12 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   const typedIRReads = new Set();
   const inputs = new Map(), ports = new Map(), stateDeclarations = new Map();
   const fn = definedModuleExport(sf, entryName, fail);
-  if (fn.asteriskToken || !fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
+  const async = fn.modifiers.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
+  if (synchronous) {
+    if (fn.asteriskToken || async || fn.type?.kind !== ts.SyntaxKind.VoidKeyword) {
+      fail('selected synchronous event requires an explicitly void exported function');
+    }
+  } else if (fn.asteriskToken || !async) {
     fail('entry needs an exported async function');
   }
   function promiseValue(type, allowed = undefined) {
@@ -67,7 +72,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
     }
     return type.typeArguments[0];
   }
-  promiseValue(fn.type, ts.SyntaxKind.VoidKeyword);
+  if (!synchronous) promiseValue(fn.type, ts.SyntaxKind.VoidKeyword);
   for (const [position, p] of closedFormals(fn.parameters, 'entry').entries()) {
     parameters[p.name] = {position, type: p.type};
     inputs.set(p.name, p.declaration);
@@ -83,7 +88,16 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       }
       types[st.name.text] = {fields};
     }
-    if (!marks.size) continue;
+    if (!marks.size) {
+      if (synchronous && ts.isVariableStatement(st)) {
+        fail('synchronous event module data requires a declared source role, such as @N entryState');
+      }
+      if (synchronous && !ts.isFunctionDeclaration(st) && !ts.isTypeAliasDeclaration(st)
+          && !ts.isInterfaceDeclaration(st)) {
+        fail('synchronous event module must not contain host installation or other module startup');
+      }
+      continue;
+    }
     if (!ts.isVariableStatement(st) || marks.size !== 1 || marks.has('componentProp')) {
       fail('event host marks must attach to one declaration');
     }
@@ -94,6 +108,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       states[root] = {kind: 'state', ...stateBinding(declaration, root, modulePath)};
       continue;
     }
+    if (synchronous) fail('synchronous state event does not admit a port without a closed synchronous contract');
     if (!st.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) || !declaration.type ||
         !ts.isTypeReferenceNode(declaration.type) || declaration.type.typeArguments?.length || declaration.initializer) {
       fail('@N external requires a declared receiver with a closed interface');
@@ -236,7 +251,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
         steps.push({ op: 'write_state', target, value });
         continue;
       }
-      if (ts.isTryStatement(st) && st.catchClause && !st.finallyBlock) {
+      if (!synchronous && ts.isTryStatement(st) && st.catchClause && !st.finallyBlock) {
         outstanding.clear();
         const body = sequence(st.tryBlock, undefined, undefined, scope);
         const classes = [...outstanding].sort();
@@ -273,10 +288,35 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   // failures, including those on unreachable source branches, still reject.
   assertTypeScript(sf, checker, errors.filter(d => d.code !== 2454 || d.file !== sf || !typedIRReads.has(d.start)), fail);
   steps.push({ op: 'return', value: { op: 'const', type: 'unit', value: null } });
+  let environment = states;
+  if (synchronous) {
+    environment = Object.create(null);
+    const retainWrites = actions => {
+      for (const step of actions) {
+        if (step.op === 'catch') {
+          retainWrites(step.body);
+          retainWrites(step.handler);
+        }
+        if (step.op !== 'write_state') continue;
+        const [root, ...path] = step.target;
+        const declared = states[root];
+        environment[root] ??= {kind: 'state', source: declared.source, fields: Object.create(null)};
+        let full = declared.fields;
+        let observed = environment[root].fields;
+        for (const name of path.slice(0, -1)) {
+          full = full[name];
+          observed = observed[name] ??= Object.create(null);
+        }
+        const last = path.at(-1);
+        observed[last] = full[last];
+      }
+    };
+    retainWrites(steps);
+  }
   return {
     function: modulePath + '#' + entryName,
     types,
-    environment: states,
+    environment,
     parameters,
     ports: [...ports.values()].map(({declaration: _d, method: _m, ...port}) => port),
     steps,

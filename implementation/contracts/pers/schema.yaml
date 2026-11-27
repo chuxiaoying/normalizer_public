@@ -18,7 +18,7 @@ description: >-
 x-enums:
   top-level-keys: [schema, types, entry, P, E, S, T, R, throws]
   entry-variants: [function]
-  source-kinds: [state, table]
+  source-kinds: [state, table, acquisition]
   operation-kinds: [write, call, sql]
   semantic-types: [number, money, date, bool, text]
   type-modifiers: ['?', '[]']
@@ -214,12 +214,47 @@ $defs:
     oneOf:
       - $ref: '#/$defs/state-source'
       - $ref: '#/$defs/table-source'
+  clock-acquisition:
+    type: object
+    additionalProperties: false
+    required: [kind, operation, type]
+    properties:
+      kind: { const: acquisition }
+      operation: { const: normalizer.intrinsics.N.currentTimeMillis }
+      type: { const: number }
+      afterS:
+        description: 文档有 S 时写出时钟读取之前已发布的 S 前缀长度；不代表条件动作一定发生。
+        type: integer
+        minimum: 0
+      when: { $ref: '#/$defs/expression' }
+  table-acquisition:
+    type: object
+    additionalProperties: false
+    required: [kind, source, after]
+    properties:
+      kind: { const: acquisition }
+      source: { $ref: '#/$defs/identifier' }
+      when: { $ref: '#/$defs/expression' }
+      after:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          additionalProperties: false
+          required: [result]
+          properties:
+            result: { $ref: '#/$defs/result-binding' }
+            when: { $ref: '#/$defs/expression' }
   e-sources:
     type: object
-    propertyNames:
-      $ref: '#/$defs/identifier'
-    additionalProperties:
-      $ref: '#/$defs/e-source'
+    patternProperties:
+      '^[A-Za-z_][A-Za-z0-9_]*$':
+        $ref: '#/$defs/e-source'
+      '^\$a_(0|[1-9][0-9]*)$':
+        oneOf:
+          - $ref: '#/$defs/clock-acquisition'
+          - $ref: '#/$defs/table-acquisition'
+    additionalProperties: false
   target:
     type: string
     description: 状态或可观察写回路径；目前数组下标用非负整数字面量。

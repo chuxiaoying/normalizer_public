@@ -1,0 +1,26 @@
+entry: src/ClockRead.java#Beans.ENTRY.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ClockRead.java#Beans.ENTRY.run
+    returns: number
+  P:
+    parameters:
+      next:
+        position: 0
+        type: number
+  E:
+    count:
+      kind: state
+      source: src/ClockRead.java#Beans.ENTRY.count
+      type: number
+    $a_0:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+      afterS: 1
+  R: $a_0
+  S:
+  - write:
+      target: count
+      value: next

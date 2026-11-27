@@ -713,7 +713,7 @@ impl ExprProfile {
         use crate::domains::relation::RelationExpr as R;
         match relation {
             R::Empty => Self::leaf(),
-            R::Base { name, alias } => {
+            R::Base { name, alias, .. } => {
                 let mut p = Self::leaf();
                 p.vars.insert(name.clone());
                 p.vars.insert(alias.clone());
@@ -733,7 +733,7 @@ impl ExprProfile {
             R::Join { left, right, on, filters } => {
                 let mut p = Self::from_children(std::iter::once(on).chain(filters).map(|term| term.1.as_ref()));
                 for (table, alias) in [left, right] {
-                    p.vars.insert(table.clone());
+                    p.vars.insert(table.name.clone());
                     p.vars.insert(alias.clone());
                 }
                 p
@@ -746,15 +746,15 @@ impl ExprProfile {
             }
             R::Grouped(group) => {
                 let mut p = Self::leaf();
-                p.vars.insert(group.table().into());
-                p.vars.extend(group.columns().map(|column| format!("{}.{column}", group.table())));
+                p.vars.insert(group.table().name.clone());
+                p.vars.extend(group.columns().map(|column| format!("{}.{column}", group.table().name)));
                 p
             }
             R::ProjectedUnion(columns) => {
                 let mut parent = Self::leaf();
                 for (table, column) in columns.iter() {
-                    parent.vars.insert(table.into());
-                    parent.vars.insert(format!("{table}.{column}"));
+                    parent.vars.insert(table.name.clone());
+                    parent.vars.insert(format!("{}.{column}", table.name));
                 }
                 parent
             }

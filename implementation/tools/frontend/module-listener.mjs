@@ -3,7 +3,7 @@
 import ts from 'typescript';
 import { unwrapParens } from './ir.mjs';
 import { failTypedModule, typedParameterNames } from './typed-module.mjs';
-import { normalizerMarkers, singleAnnotatedBinding } from './module-projection.mjs';
+import { normalizerMarkers, singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
 
 const fail = failTypedModule;
 const is = (node, kind) => node?.kind === kind;
@@ -20,14 +20,23 @@ function blockStatements(node) {
 
 export function compileTypedListener(checker, sf, fn, modulePath) {
   const params = typedParameterNames(fn);
-  const contracts = new Map(), ports = {}, externalResults = {};
+  const contracts = new Map(), states = new Map(), ports = {}, externalResults = {};
+  const environment = Object.create(null);
   for (const host of sf.statements) {
     if (host === fn) continue;
-    if (!ts.isVariableStatement(host) || !host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {
+    if (!ts.isVariableStatement(host)) fail('listener requires a closed top-level host declaration');
+    const markers = normalizerMarkers(host, fail);
+    const root = singleAnnotatedBinding(host, 'listener host must mark one named declaration', fail);
+    if (markers.size === 1 && markers.has('entryState') && root.initializer
+        && host.declarationList.flags & ts.NodeFlags.Const
+        && !host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {
+      const name = root.name.text;
+      states.set(name, {root, ...stateBinding(root, name, modulePath)});
+      continue;
+    }
+    if (!host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {
       fail('listener requires a closed top-level host declaration');
     }
-    const root = singleAnnotatedBinding(host, 'listener host must mark one named declaration', fail);
-    const markers = normalizerMarkers(host, fail);
     if (ts.getJSDocTags(host).some(tag => ['throws', 'exception'].includes(tag.tagName.text))) {
       fail('unsupported listener host contract tag');
     }
@@ -140,7 +149,42 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
     steps.push({op: 'call_sync', port: contract?.port ?? null, target: contract?.port ? contract.endpoint : target,
       site: 'sync_call_' + serial++, condition});
   }
-  const executeCallback = condition => { for (const st of callback) lowerExternal(st, condition); };
+  function lowerObserved(st, condition) {
+    const expr = statementExpression(st);
+    if (!expr || !ts.isBinaryExpression(expr) || !is(expr.operatorToken, ts.SyntaxKind.EqualsToken)
+        || !ts.isPropertyAccessExpression(expr.left)) return lowerExternal(st, condition);
+    let root = expr.left;
+    const path = [];
+    while (ts.isPropertyAccessExpression(root) && !root.questionDotToken) {
+      path.unshift(root.name.text);
+      root = unwrapParens(root.expression);
+    }
+    const state = ts.isIdentifier(root) && states.get(root.text);
+    if (!state || declarationOf(root) !== state.root) fail('listener state write has no bound @N entryState root');
+    let field = state.fields;
+    for (const segment of path) {
+      if (!field || typeof field !== 'object' || !Object.hasOwn(field, segment)) {
+        fail('listener state write requires a declared state field: ' + [root.text, ...path].join('.'));
+      }
+      field = field[segment];
+    }
+    const rhs = unwrapParens(expr.right);
+    let written;
+    if (field === 'number' && ts.isNumericLiteral(rhs) && Number.isSafeInteger(Number(rhs.text))) {
+      written = value('number', Number(rhs.text));
+    } else if (field === 'bool' && (is(rhs, ts.SyntaxKind.TrueKeyword) || is(rhs, ts.SyntaxKind.FalseKeyword))) {
+      written = value('bool', is(rhs, ts.SyntaxKind.TrueKeyword));
+    } else if (field === 'bool' && ts.isIdentifier(rhs) && fn.parameters.includes(declarationOf(rhs))) {
+      written = {op: 'var', name: rhs.text};
+    } else fail('listener state write requires a closed value of the declared field type');
+    if (condition?.op === 'const' && condition.value === false) return;
+    environment[root.text] ??= {kind: 'state', source: state.source, fields: Object.create(null)};
+    let observed = environment[root.text].fields;
+    for (const name of path.slice(0, -1)) observed = observed[name] ??= Object.create(null);
+    observed[path.at(-1)] = field;
+    steps.push({op: 'write_state', target: [root.text, ...path], value: written, condition});
+  }
+  const executeCallback = condition => { for (const st of callback) lowerObserved(st, condition); };
   let saved = false;
   for (const st of registrar.body.statements) {
     const expr = statementExpression(st);
@@ -159,9 +203,9 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
       if (!saved || !((a === parameter && b === pending) || (b === parameter && a === pending))) {
         fail('listener registration requires a proven local callback equality');
       }
-      for (const branch of blockStatements(st.thenStatement)) lowerExternal(branch, null);
+      for (const branch of blockStatements(st.thenStatement)) lowerObserved(branch, null);
     } else {
-      lowerExternal(st, null);
+      lowerObserved(st, null);
     }
   }
   function numericTruth(node) {
@@ -210,7 +254,7 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
       if (saved) executeCallback(condition);
       else steps.push({op: 'throw_uninitialized_callback', condition});
     } else {
-      lowerExternal(st, condition);
+      lowerObserved(st, condition);
     }
   }
   const invert = cond => cond.op === 'const' ? value('bool', !cond.value) : {op: 'not', value: cond};
@@ -224,6 +268,7 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
   }
   steps.push({op: 'return', value: value('unit', null)});
   return {params, excerpt: fn.getText(sf), ports, externalResults,
+    ...(Object.keys(environment).length && {environment}),
     exceptions: steps.some(step => step.op === 'throw_uninitialized_callback') ? {TypeError: 'unit'} : {},
     result: {op: 'settled', returns: 'unit', steps}};
 }

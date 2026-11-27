@@ -209,11 +209,12 @@ fn heap_subject_key(id: i64, ctx: &dyn SortContext) -> String {
 // Published receipt names are ordinal roots; the typed External path is
 // appended separately. A named input/state remains its ordinary public path.
 fn numbered_receipt_root(name: &str) -> String {
-    if let Some(slot) = name.strip_prefix("$e_").and_then(|root| root.parse::<u64>().ok()) {
-        format!("$e_{slot:020}")
-    } else {
-        name.to_string()
+    for prefix in ["$e_", "$a_"] {
+        if let Some(slot) = name.strip_prefix(prefix).and_then(|root| root.parse::<u64>().ok()) {
+            return format!("{prefix}{slot:020}");
+        }
     }
+    name.to_string()
 }
 
 fn literal_subject_key(lit: &Lit) -> String {
@@ -427,10 +428,20 @@ fn relation_structural_key(
     relation: &crate::domains::relation::RelationExpr,
     ctx: &dyn SortContext,
 ) -> String {
-    use crate::domains::relation::RelationExpr as R;
+    use crate::domains::relation::{RelationExpr as R, TableSource};
+    let snapshot_key = |id: u64| {
+        // Prefer published identities when a naming context is available.
+        ctx.external_names().and_then(|names| names.get(&id)).cloned().unwrap_or_else(|| format!("{id:020}"))
+    };
+    let physical = |table: &TableSource| match table.snapshot {
+        None => table.name.clone(),
+        Some(id) => key_node("snapshot", vec![table.name.clone(), snapshot_key(id)]),
+    };
     match relation {
         R::Empty => key_node("empty", vec![]),
-        R::Base { name, alias } => key_node("base", vec![name.clone(), alias.clone()]),
+        R::Base { name, alias, snapshot: None } => key_node("base", vec![name.clone(), alias.clone()]),
+        R::Base { name, alias, snapshot: Some(id) } =>
+            key_node("acquired-table", vec![name.clone(), alias.clone(), snapshot_key(*id)]),
         R::Vector { value, alias } => {
             key_node("vector", vec![structural_key(value, ctx), alias.clone()])
         }
@@ -455,17 +466,17 @@ fn relation_structural_key(
         ),
         R::Distinct(input) => key_node("distinct", vec![relation_structural_key(input, ctx)]),
         R::Join { left, right, on, filters } => key_node("join", vec![
-            key_node("left", vec![left.0.clone(), left.1.clone()]),
-            key_node("right", vec![right.0.clone(), right.1.clone()]),
+            key_node("left", vec![physical(&left.0), left.1.clone()]),
+            key_node("right", vec![physical(&right.0), right.1.clone()]),
             structural_key(on, ctx),
             key_node("where", filters.iter().map(|term| structural_key(term, ctx)).collect()),
         ]),
         R::RecordProjection { source, field } => key_node("record-projection", vec![source.clone(), field.clone()]),
         R::Grouped(group) => key_node("group", vec![
-            group.table().into(), key_node("columns", group.columns().map(str::to_owned).collect()),
+            physical(group.table()), key_node("columns", group.columns().map(str::to_owned).collect()),
         ]),
         R::ProjectedUnion(columns) => key_node("projected-union", columns.iter()
-            .map(|(table, column)| key_node("column", vec![table.into(), column.into()])).collect()),
+            .map(|(table, column)| key_node("column", vec![physical(table), column.into()])).collect()),
     }
 }
 

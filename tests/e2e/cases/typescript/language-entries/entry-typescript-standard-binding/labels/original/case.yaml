@@ -1,0 +1,15 @@
+entry: src/labels.ts#normalized
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/labels.ts#normalized
+    returns: text
+  P:
+    parameters:
+      raw: {position: 0, type: text?}
+      fallback: {position: 1, type: text}
+  R: |-
+    CASE
+      WHEN blank(TRIM(raw)) THEN fallback
+      ELSE TRIM(raw)
+    END

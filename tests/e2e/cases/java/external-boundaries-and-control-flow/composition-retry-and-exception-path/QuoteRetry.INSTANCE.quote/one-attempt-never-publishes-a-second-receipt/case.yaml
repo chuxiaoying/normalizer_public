@@ -1,0 +1,22 @@
+entry: src/QuoteRetry.java#QuoteRetry.INSTANCE.quote
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/QuoteRetry.java#QuoteRetry.INSTANCE.quote, returns: number}
+  P:
+    parameters:
+      accountId: {position: 0, type: number}
+      fallback: {position: 1, type: number}
+  S:
+    - call:
+        external: src/QuoteRetry.java#QuoteRetry.INSTANCE.port.quote
+        args: [accountId]
+        returns: number
+        result: $e_0
+  R: |-
+    CASE
+      WHEN completion.is_return($e_0) THEN $e_0
+      ELSE fallback
+    END
+  throws:
+    - type: TerminalQuote
+      when: completion.is_throw($e_0, TerminalQuote)

@@ -2,6 +2,7 @@
 import ts from 'typescript';
 import {definedModuleExport, parseSourceModule} from './ir.mjs';
 import {localDirectives} from './local-directives.mjs';
+import {isOfficialNamespaceImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
 export const failTypedModule = message => { throw new Error('[NORM-TS-MODULE] ' + message); };
 export const typedIdentifier = x => typeof x === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(x) && x !== 'undefined';
@@ -19,13 +20,21 @@ export function typedParameterNames(fn) {
   return fn.parameters.map(param => param.name.text);
 }
 
-export function typeScriptProgram(physicalPath, sf, fail = failTypedModule) {
+export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {allowOfficial = false} = {}) {
   if (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length) {
     fail('TypeScript checking directives cannot disable or suppress the strict preflight');
   }
-  let hasImport = false;
+  if (allowOfficial && (sf.referencedFiles.length || sf.typeReferenceDirectives.length
+      || sf.libReferenceDirectives.length || sf.hasNoDefaultLib)) {
+    fail('compiler reference directives are not scoped module imports');
+  }
+  let hasImport = false, hasOfficial = false;
   const inspect = node => {
     if (node.kind === ts.SyntaxKind.AnyKeyword) fail('explicit any is not an admitted analysis type');
+    if (allowOfficial && isOfficialNamespaceImport(node)) {
+      hasOfficial = true;
+      return;
+    }
     if (ts.isImportTypeNode(node) || node.kind === ts.SyntaxKind.ImportKeyword) hasImport = true;
     ts.forEachChild(node, inspect);
   };
@@ -34,8 +43,12 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule) {
   const options = {strict: true, noEmit: true, noResolve: true, types: [], target: ts.ScriptTarget.ES2022};
   const host = ts.createCompilerHost(options);
   const readSource = host.getSourceFile.bind(host);
-  host.getSourceFile = (name, ...args) => name === physicalPath ? sf : readSource(name, ...args);
-  const checked = ts.createProgram([physicalPath], options, host);
+  host.getSourceFile = (name, ...args) => name === physicalPath ? sf
+    : hasOfficial && name === officialModulePath ? officialDeclaration() : readSource(name, ...args);
+  if (hasOfficial) host.resolveModuleNames = names => names.map(name => name === '@normalizer/stdlib'
+    ? {resolvedFileName: officialModulePath, extension: ts.Extension.Dts, isExternalLibraryImport: true}
+    : undefined);
+  const checked = ts.createProgram(hasOfficial ? [physicalPath, officialModulePath] : [physicalPath], options, host);
   const errors = [...checked.getSyntacticDiagnostics(), ...checked.getSemanticDiagnostics()];
   return { checker: checked.getTypeChecker(), errors };
 }
@@ -76,8 +89,8 @@ function assertNoResolvedAny(sf, checker, fail) {
   inspect(sf);
 }
 
-export function checkedTypeScript(physicalPath, sf, fail = failTypedModule) {
-  const { checker, errors } = typeScriptProgram(physicalPath, sf, fail);
+export function checkedTypeScript(physicalPath, sf, fail = failTypedModule, options) {
+  const { checker, errors } = typeScriptProgram(physicalPath, sf, fail, options);
   assertTypeScript(sf, checker, errors, fail);
   return checker;
 }

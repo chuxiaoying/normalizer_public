@@ -1,0 +1,5 @@
+entry: src/Click.ts#onClick
+reject:
+  fragments:
+  - "SCENARIO_MODULE_INPUT:"
+  - "Property 'extra' does not exist on type"

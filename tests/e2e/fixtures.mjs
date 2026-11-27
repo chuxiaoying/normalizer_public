@@ -22,7 +22,7 @@ function readSources(root, directory, relative = 'src') {
   });
 }
 
-function loadFixture(root, directory, language, entry, scene, inputs) {
+function loadFixture(root, directory, language, entry, scene, inputs, caseId) {
   const file = directory + '/case.yaml';
   const children = readdirSync(join(root, directory), { withFileTypes: true });
   assert.ok(children.length === 2 && children.some(item => item.name === 'case.yaml' && item.isFile()) &&
@@ -42,7 +42,9 @@ function loadFixture(root, directory, language, entry, scene, inputs) {
   if (scene) {
     assert.ok(main.endsWith('.ts') && symbol === entry, file + ': invalid prepared frontend locator');
   } else if (language === 'typescript') {
-    assert.equal(locator, 'src/' + entry, file + ': standalone TypeScript locator must match the catalog');
+    assert.match(symbol, /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/, file + ': invalid TypeScript invocation');
+    assert.equal(main, 'src/' + entry.split('#')[0], file + ': standalone TypeScript source must match the catalog');
+    if (caseId === 'original') assert.equal(locator, 'src/' + entry, file + ': original TypeScript locator must match the catalog');
   } else {
     assert.ok(main.endsWith('.java'), file + ': Java case requires a Java input');
   }
@@ -72,7 +74,7 @@ export function* loadFixtureEntries(root, seeds) {
     assert.ok(files.every(file => file.isDirectory() && caseName.test(file.name)), caseDirectory + ': unexpected fixture item');
     const names = ['original', ...files.map(file => file.name).filter(name => name !== 'original').sort()];
     const cases = names.map(name => ({
-      name, ...loadFixture(root, caseDirectory + '/' + name, language, entry, scene, inputs),
+      name, ...loadFixture(root, caseDirectory + '/' + name, language, entry, scene, inputs, name),
     }));
     yield { ...registration, language, entry: language === 'typescript' ? entry.split('#')[1] : entry, cases };
   }

@@ -1,0 +1,10 @@
+entry: src/QuotaFold.java#QuotaFold.charge
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/QuotaFold.java#QuotaFold.charge, returns: number}
+  P:
+    parameters:
+      readings: {position: 0, type: 'number[]'}
+      cutoff: {position: 1, type: number}
+      deductible: {position: 2, type: number}
+  R: COALESCE(SUM(SELECT value - deductible FROM readings WHERE value >= cutoff), 0)

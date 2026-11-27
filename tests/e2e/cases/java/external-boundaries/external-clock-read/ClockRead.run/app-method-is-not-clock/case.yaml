@@ -1,0 +1,9 @@
+entry: src/ClockRead.java#ClockRead.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ClockRead.java#ClockRead.run
+    returns: number
+  P:
+    parameters: {}
+  R: '8'

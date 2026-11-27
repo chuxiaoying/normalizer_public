@@ -1,0 +1,15 @@
+entry: src/OrderedMemo.java#OrderedMemo.atOffset
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/OrderedMemo.java#OrderedMemo.atOffset, returns: 'text?' }
+  P:
+    parameters:
+      accountId: { position: 0, type: number }
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns: { account_id: number, id: number, priority: number, memo: 'text?' }
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: 'true'

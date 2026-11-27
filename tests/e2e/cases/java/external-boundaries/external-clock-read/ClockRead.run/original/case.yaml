@@ -1,0 +1,17 @@
+entry: src/ClockRead.java#ClockRead.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ClockRead.java#ClockRead.run
+    returns: number
+  P:
+    parameters:
+      start:
+        position: 0
+        type: number
+  E:
+    $a_0:
+      kind: acquisition
+      operation: normalizer.intrinsics.N.currentTimeMillis
+      type: number
+  R: $a_0 - start

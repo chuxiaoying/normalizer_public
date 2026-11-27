@@ -1,0 +1,13 @@
+entry: src/DistinctMemo.java#DistinctMemo.count
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/DistinctMemo.java#DistinctMemo.count, returns: number }
+  P:
+    parameters:
+      accountId: { position: 0, type: number }
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns: { account_id: number, memo: 'text?' }
+  R: SELECT COUNT(DISTINCT bill.memo) FROM bill WHERE bill.account_id == accountId

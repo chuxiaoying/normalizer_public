@@ -28,6 +28,7 @@
 - [分析副本怎样通过校验](secondary/分析副本怎样通过校验.md)
 - [标准操作与声明标记](secondary/标准操作与声明标记.md)
 - [关系指令的统一写法](secondary/关系指令的统一写法.md)
+- [关系读取的快照边界](secondary/关系读取的快照边界.md)
 - [回执与异常怎样进入 PERS](secondary/回执与异常怎样进入%20PERS.md)
 - [完整二分 CASE 怎么选方向](secondary/完整二分%20CASE%20怎么选方向.md)
 - [观察身份与稳定编号](secondary/观察身份与稳定编号.md)

@@ -282,6 +282,10 @@ fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::resul
 enum Node {
     #[serde(rename = "value.observe_tuple")]
     ObserveTuple(tuple_observation::Observation),
+    #[serde(rename = "value.text_trim")]
+    TrimText { value: Box<Node> },
+    #[serde(rename = "value.text_default_if_blank")]
+    DefaultTextIfBlank { value: Box<Node>, fallback: Box<Node> },
     #[serde(rename = "value.number_vector")]
     NumberVector { items: Vec<Node> },
     #[serde(rename = "value.ordered_text_map")]

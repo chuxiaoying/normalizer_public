@@ -44,7 +44,7 @@ fn bind_receipt<'a>(
     ctx: &mut crate::FormatCtx,
 ) -> Result<(&'a Expr, u64, String)> {
     let binding_id = receipt.binding_id();
-    let position = issued.len();
+    let position = ctx.receipt_count();
     need(issued.insert(binding_id), "duplicate operation receipt")?;
     ctx.bind_business_event(binding_id, position, guard.clone());
     Ok((receipt.response(), binding_id, format!("$e_{position}")))
@@ -69,7 +69,13 @@ pub(super) fn observations(
     let identities = entry.source_identity_names(result);
     let mut names = names;
     let alternatives = &result.terminal;
-    let returned = alternatives.value_on_normal_exit();
+    let projected_record = result.source_record_return.as_deref();
+    // The Java boundary already certified a total return of this one
+    // declared, noncyclic record. Validate and render its contents, not
+    // the internal reference token. Every other return keeps its checks.
+    let returned = projected_record.map(|fields| b::array_lit(
+        fields.iter().map(|(_, field)| field.clone()).collect()
+    )).or_else(|| alternatives.value_on_normal_exit());
     let mut add_declared_paths = |expression: &Expr| {
         expression.walk(&mut |part| {
             if let Some(SymVarOrigin::Parameter { name, .. }) = part.as_sym_var() {
@@ -95,6 +101,9 @@ pub(super) fn observations(
     ctx.declare_nullable_columns(&result.source_tables);
     let mut issued = BTreeSet::new();
     let mut effects = Vec::new();
+    let mut acquisitions = BTreeMap::new();
+    let has_effects = result.realtime_effects.events().iter()
+        .any(|event| !matches!(event.operation, EffectOperation::Acquire { .. }));
     let mut tables = result.source_tables.clone();
     let mut sql_exceptions = BTreeSet::new();
     let mut temporal_receipts = BTreeMap::new();
@@ -105,6 +114,11 @@ pub(super) fn observations(
         let mut closed = true;
         let mut heap_operands = BTreeMap::<i64, (usize, usize)>::new();
         expr.walk(&mut |node| {
+            if let Some(relation) = node.as_relation()
+                .or_else(|| node.as_relation_aggregate().map(|(_, relation, _, _)| relation))
+            {
+                relation.visit_acquisitions(&mut |id| { closed &= issued.contains(&id); });
+            }
             if let Some((source, _, field)) = math::domains::relation::positional::field_projection(node) {
                 closed &= entry.has_record_array_integer_field(source, field);
             }
@@ -151,6 +165,36 @@ pub(super) fn observations(
         let condition = (!matches!(&event.operation, EffectOperation::Sql { .. })
             && event.guard.as_bool() != Some(true)).then(|| condition_text(&event.guard, &mut ctx));
         let (label, mut item) = match &event.operation {
+            EffectOperation::Acquire { acquisition, binding_id } => {
+                use super::realtime_state::Acquisition;
+                let label = format!("$a_{}", acquisitions.len());
+                let mut item = match acquisition {
+                    Acquisition::Clock => {
+                        let mut read = json!({
+                            "kind": "acquisition", "operation": "normalizer.intrinsics.N.currentTimeMillis", "type": "number"
+                        });
+                        if has_effects { read["afterS"] = json!(effects.len()); }
+                        read
+                    }
+                    Acquisition::Sql { source, after } => {
+                        let after = after.iter().map(|(receipt, guard)| {
+                            let receipt = ctx.receipt_name(*receipt).ok_or_else(|| fail("SQL acquisition requires an earlier receipt"))?;
+                            validate_ids(guard, &issued, None)?;
+                            let mut dependency = json!({"result": receipt});
+                            if guard.as_bool() != Some(true) {
+                                dependency["when"] = json!(condition_text(guard, &mut ctx));
+                            }
+                            Ok(dependency)
+                        }).collect::<Result<Vec<_>>>()?;
+                        json!({"kind": "acquisition", "source": source, "after": after})
+                    }
+                };
+                if let Some(guard) = condition { item["when"] = json!(guard); }
+                need(issued.insert(*binding_id), "duplicate environment acquisition identity")?;
+                ctx.bind_acquisition(*binding_id, label.clone(), event.guard.clone());
+                acquisitions.insert(label, item);
+                continue;
+            }
             EffectOperation::Sql { statement: sql, receipt } => {
                 let (response, _, receipt) = bind_receipt(receipt, &event.guard, &mut issued, &mut ctx)?;
                 let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
@@ -287,7 +331,12 @@ pub(super) fn observations(
                 }
             }
             TerminalOutcome::Return(value) => {
-                validate_ids(value, &issued, Some(temporal_names))?;
+                if projected_record.is_some() {
+                    need(alternatives.total_return_value() == Some(value),
+                        "record projection requires its proven total return")?;
+                } else {
+                    validate_ids(value, &issued, Some(temporal_names))?;
+                }
             }
         }
     }
@@ -351,7 +400,7 @@ pub(super) fn observations(
                 if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
                     reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
                         && total_port_receipts.contains(binding_id);
-                    reads_renumbered_receipt |= issued.contains(binding_id)
+                    reads_renumbered_receipt |= ctx.receipt_name(*binding_id).is_some()
                         && u64::try_from(ctx.e_slot(*binding_id)).ok() != Some(*binding_id);
                 }
             });
@@ -370,7 +419,15 @@ pub(super) fn observations(
             normalized
         };
         ctx.set_temporal_names(publication.aliases);
-        Some(if entry.return_type() == "void" {
+        Some(if let Some(fields) = projected_record {
+            let values = returned.as_array_lit().filter(|values| values.len() == fields.len())
+                .ok_or_else(|| fail("projected record lost its declared fields"))?;
+            let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
+                let value = crate::formatting::sql::business_value::format_value(value, &mut ctx);
+                format!("  {name}: {}", value.replace('\n', "\n  "))
+            }).collect();
+            format!("{{\n{}\n}}", lines.join(",\n"))
+        } else if entry.return_type() == "void" {
             need(returned.is_null(), "non-void return in void event")?;
             "void".into()
         } else {
@@ -385,6 +442,7 @@ pub(super) fn observations(
         tables,
         returned,
         effects,
+        acquisitions,
         throws,
         definitions: publication.rows,
     })
