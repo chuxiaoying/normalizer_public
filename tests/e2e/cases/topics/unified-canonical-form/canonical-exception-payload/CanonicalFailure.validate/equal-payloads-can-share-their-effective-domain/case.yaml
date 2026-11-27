@@ -14,5 +14,5 @@ expected:
     - type: java.lang.RuntimeException
       when: code == 3
     - type: java.lang.RuntimeException
-      when: code <= 2 and code >= 1
+      when: code > 0 AND code < 3
       payload: '"alpha"'

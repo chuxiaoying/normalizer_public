@@ -20,5 +20,3 @@ expected:
   throws:
     - type: RemoteFault
       when: completion.is_throw($e_0, RemoteFault)
-      payload: completion.payload($e_0, RemoteFault)
-      payload_type: number

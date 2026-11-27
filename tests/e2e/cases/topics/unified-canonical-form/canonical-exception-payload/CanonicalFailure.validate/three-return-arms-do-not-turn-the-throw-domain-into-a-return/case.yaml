@@ -17,5 +17,5 @@ expected:
     END
   throws:
     - type: java.lang.RuntimeException
-      when: code <= 0 or code >= 4
+      when: code > 3 OR code < 1
       payload: '"invalid"'
