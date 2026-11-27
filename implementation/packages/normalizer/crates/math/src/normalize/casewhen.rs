@@ -20,22 +20,9 @@ pub(crate) fn simplify(
         return value;
     }
     let start = (branches.len() > 1 && crate::profile::enabled()).then(std::time::Instant::now);
-    let cost_gate = || branches.iter().fold(
-        (0usize, 0usize), |(size, depth), (condition, value)| {
-            (size.saturating_add(condition.size()).saturating_add(value.size()),
-             depth.max(value.depth()))
-        },
-    );
     let output = simplify_impl(expr, branches, ctx, parent);
     if let Some(start) = start {
-        let (flatten_size, flatten_depth) = cost_gate();
-        let skip_reason = if flatten_size > 32_768 || flatten_depth > 16 {
-            Some("flatten_cost_gate")
-        } else if output == *expr {
-            Some("no_rewrite")
-        } else {
-            None
-        };
+        let skip_reason = (output == *expr).then_some("no_rewrite");
         crate::profile::rule_event(
             "math.casewhen.group",
             expr.size(),
@@ -88,28 +75,9 @@ fn simplify_impl(
         return oriented;
     }
 
-    // -1. 嵌套 CaseWhen 展平（最优先）：
-    //    若 branch value 是 CaseWhen，按笛卡尔积展开为多个 branch：
-    //    (outer_cond, CaseWhen[(ic1, v1), ..., (true, vn)])
-    //    → (outer_cond && ic1, v1), ..., (outer_cond && true, vn) = (outer_cond, vn)
-    //
-    //    语义依据：CaseWhen 按序匹配；外层 cond 为真时进入内层再按序匹配，
-    //    等价于把外层 cond 与每个内层 cond AND 起来作为独立 branch。
-    //
-    //    展开后产生的重复 AND 项（如 `a && a`）由 boolean 多元 dedupe 吃掉；
-    //    冗余 path-guard 由 strip_redundant_path_guards 剥除；
-    //    不动点迭代保证下一轮继续化简。
-    // Flattening a value CASE duplicates its outer guard for every inner
-    // arm. Keep the nested form once the complete branch tree is large;
-    // this preserves first-match semantics and avoids exponential rebuilds
-    // during fold substitution. Small trees retain the canonical flat form.
-    // The cost gate must cover the proof-heavy CaseWhen rules below as
-    // well as nested-value flattening.  A large branch payload can make
-    // first-match domain construction and coverage proofs repeatedly
-    // rebuild tens of thousands of nodes even when no rewrite is found.
-    // Keeping the immutable CaseWhen is semantics-preserving and lets
-    // the caller's resource budget remain available for the surrounding
-    // expression.  Small cases retain the full canonicalization rules.
+    // A complete nested value CASE can remove one condition arm when
+    // flattened. Keep each inner guard behind the original outer guard so
+    // the flatten does not read values from an unselected branch.
     let (flattened_branches, flatten_changed) = flatten_nested_value_branches(branches);
     let branches_ref: &[(Expr, Expr)] = if flatten_changed {
         &flattened_branches
@@ -216,36 +184,11 @@ fn simplify_impl(
     }
 
 
-    // 3b. Two-value exhaustive CaseWhen canonicalization:
-    //
-    //   CASE
-    //     WHEN A THEN X
-    //     WHEN B THEN Y
-    //     WHEN C THEN X
-    //     WHEN D THEN Y
-    //   END
-    //
-    // If the first-match effective domains cover the whole space, and there
-    // are exactly two payloads, display the more common / explicit else
-    // payload as the default and keep only the other payload's domains:
-    //
-    //   CASE
-    //     WHEN B THEN Y
-    //     WHEN D THEN Y
-    //     WHEN true THEN X
-    //   END
-    //
-    // This is a semantic CaseWhen canonicalization, not a formatter shape
-    // patch: it operates on first-match effective domains and only fires
-    // after math proves exhaustive coverage.
-    if let Some(collapsed) = collapse_two_value_exhaustive_to_default(&filtered) {
+    // Try the two-value first-match form without splitting a disjunction
+    // into several copies of the same result arm.
+    if let Some(collapsed) = collapse_two_value_exhaustive_to_default(&filtered, ctx) {
         return collapsed;
     }
-
-    // 3b. 所有分支值结构相同 → 退化为该值（CaseWhen-MethodCall PR 衍生规则）
-    //
-    // 场景：MethodCall on CaseWhen receiver 分发后，每个 branch 调用同方法可能
-    // 产生相同结果，此时 CaseWhen 包裹无意义，归一化为该值。
 
     // 4. 如果 flatten / dedup / canonicalize / 过滤 / 截断 / 剥守卫 导致变化，返回新 CaseWhen
     if flatten_changed
@@ -309,9 +252,14 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
         .then(|| generic_value.clone())
 }
 
-fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option<Expr> {
+fn collapse_two_value_exhaustive_to_default(
+    branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
+) -> Option<Expr> {
+    if branches.len() < 3 { return None; }
     let (last_cond, default_value) = branches.last()?;
-    if last_cond.as_bool() != Some(true) {
+    if last_cond.as_bool() != Some(true)
+        || !branches.iter().all(|(guard, _)| super::boolean_casewhen::total_value(guard))
+    {
         return None;
     }
     let mut values = branches.iter().map(|(_, value)| value);
@@ -319,25 +267,15 @@ fn collapse_two_value_exhaustive_to_default(branches: &[(Expr, Expr)]) -> Option
     if values.any(|value| value != default_value && value != distinct) {
         return None;
     }
-    // The explicit TRUE arm certifies coverage. Effective domains are still
-    // needed to preserve first-match priority when earlier guards overlap.
-    let effective_domains = first_match_effective_domains(branches);
-    let default_value = default_value.clone();
-
-    let mut out: Vec<(Expr, Expr)> = Vec::new();
-    for ((_, value), domain) in branches.iter().zip(effective_domains.into_iter()) {
-        if value != &default_value {
-            let displayed_domain = crate::normalize(domain);
-            for disjunct in flatten_or(&displayed_domain) {
-                out.push((disjunct, value.clone()));
-            }
-        }
-    }
-    out.push((crate::builder::lit_bool(true), default_value));
-    if out == branches {
-        return None;
-    }
-    Some(Expr::new(ExprKind::CaseWhen { branches: out }))
+    // This CASE is complete. Union the effective domains for the non-default
+    // value; never use the raw guards across different earlier payloads.
+    let effective = first_match_effective_domains(branches);
+    let guard = branches.iter().zip(effective).filter_map(|((_, value), domain)|
+        (value == distinct).then_some(domain)).reduce(crate::builder::or)?;
+    let guard = crate::normalize_with(guard, ctx);
+    let candidate = crate::builder::case_when(vec![(guard, distinct.clone())], default_value.clone());
+    let original = Expr::new(ExprKind::CaseWhen { branches: branches.to_vec() });
+    crate::canonical_order_compare(&candidate, &original, ctx).is_lt().then_some(candidate)
 }
 
 fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
@@ -475,11 +413,8 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
 
     let effective_domains = first_match_effective_domains(branches);
 
-    // If a partial CaseWhen is an exhaustive two-value partition, leave the
-    // orientation decision to collapse_two_value_exhaustive_to_default.  That
-    // rule produces the canonical "positive domains + true default" shape;
-    // grouping both payloads here would steal that canonicalization and leave
-    // a default-less two-arm CaseWhen.
+    // Let the complete two-value partition rule own this case. The
+    // grouping pass does not insert a default into an implicit partition.
     let raw_conds: Vec<Expr> = branches.iter().map(|(cond, _)| cond.clone()).collect();
     let raw_covered = crate::builder::conditions_cover_all(&raw_conds);
     let effective_covered = crate::builder::conditions_cover_all(&effective_domains);
