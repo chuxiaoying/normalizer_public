@@ -115,3 +115,41 @@
   edits:
     - { from: 'bills = from bill as row yield', to: 'bills = from bill as row where row.account_id > 0 yield' }
   reject: ['[NORM-PROJECT]', 'join count currently requires unfiltered table declarations']
+- name: input-switch-filters-every-matching-pair-without-changing-the-join
+  edits:
+    - {from: 'openBillCount(int accountId)', to: 'openBillCount(int accountId, boolean enabled)'}
+    - {from: 'a.id == accountId and b.status == "OPEN"', to: 'a.id == accountId and b.status == "OPEN" and enabled'}
+  expect:
+    - {path: [P, parameters, enabled], add: {position: 1, type: bool}}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id == b.account_id
+            WHERE a.id == accountId
+              AND b.status == "OPEN"
+              AND enabled
+          ),
+          0
+        )
+- name: independent-input-filter-sort-is-invariant-to-clause-order
+  edits:
+    - {from: 'openBillCount(int accountId)', to: 'openBillCount(int accountId, boolean enabled)'}
+    - {from: 'a.id == accountId and b.status == "OPEN"', to: 'enabled and b.status == "OPEN" and a.id == accountId'}
+  expect:
+    - {path: [P, parameters, enabled], add: {position: 1, type: bool}}
+    - path: [R]
+      value: |-
+        COALESCE(
+          SUM(
+            SELECT 1
+            FROM account AS a
+            JOIN bill AS b ON a.id == b.account_id
+            WHERE a.id == accountId
+              AND b.status == "OPEN"
+              AND enabled
+          ),
+          0
+        )
