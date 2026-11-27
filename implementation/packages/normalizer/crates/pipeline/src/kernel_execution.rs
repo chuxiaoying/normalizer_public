@@ -1467,6 +1467,9 @@ impl<'a> Engine<'a> {
                             return Ok(Value::Term(Ty::Bool, test));
                         }
                     }
+                    if matches!(&v, Value::LocalIntArray(_)) {
+                        return Ok(Value::Term(Ty::Bool, b::lit_bool(op == BinOpKind::Ne)));
+                    }
                     let presence = match &v { Value::Term(Ty::Ref,r)=>self.row_presence(r),_=>None };
                     let null = if let Some(present)=presence { b::not(present) } else if matches!(&v, Value::Term(Ty::Ref, reference)
                         if self.source_objects.owns(reference) || self.source_objects.has_complete_identity_partition(reference))
@@ -1504,6 +1507,11 @@ impl<'a> Engine<'a> {
                     if let Some(value) = compare_integer_floor(op, &l, &r, &domain) {
                         return Ok(Value::Term(Ty::Bool, b::lit_bool(value)));
                     }
+                }
+                if let (Value::LocalIntArray(left), Value::LocalIntArray(right)) = (&l, &r) {
+                    let same = self.local_array_identity_eq(left, right)?;
+                    let value = if op == BinOpKind::Ne { self.normalize_execution_value(b::not(same)) } else { same };
+                    return Ok(Value::Term(Ty::Bool, value));
                 }
                 let a = l.scalar()?;
                 let z = r.scalar()?;

@@ -333,6 +333,30 @@ impl Engine<'_> {
         Ok(Value::Term(Ty::Integer, value))
     }
 
+    pub(super) fn local_array_identity_eq(&mut self, left: &LocalIntArray, right: &LocalIntArray) -> Result<Expr> {
+        self.budget()?;
+        if left == right { return Ok(b::lit_bool(true)); }
+        let result = match (left, right) {
+            (LocalIntArray::Selection { guard, yes, no }, _) => b::case_when(
+                vec![(guard.clone(), self.local_array_identity_eq(yes, right)?)],
+                self.local_array_identity_eq(no, right)?,
+            ),
+            (_, LocalIntArray::Selection { guard, yes, no }) => b::case_when(
+                vec![(guard.clone(), self.local_array_identity_eq(left, yes)?)],
+                self.local_array_identity_eq(left, no)?,
+            ),
+            _ => {
+                let reference = |array: &LocalIntArray| array.reference()
+                    .ok_or_else(|| fail("array comparison requires an acquired local identity"));
+                // These references come from actual simulated allocations.
+                // Their contents and the order of allocation do not decide
+                // equality, and no internal address is published.
+                b::lit_bool(reference(left)? == reference(right)?)
+            }
+        };
+        Ok(self.normalize_execution_value(result))
+    }
+
     fn read_local_array_slot(&self, array: &LocalIntArray, reference: &Expr, slot: i64, domain: &Expr) -> Result<Expr> {
         let initial = array.get(slot).ok_or_else(|| fail("local array slot outside the selected domain"))?;
         self.realtime_store.read_with_initial(reference, &slot.to_string(), domain, Some(initial))
