@@ -19,8 +19,8 @@ expected:
   S:
     - sql: |-
         DELETE FROM bill
-        WHERE bill.account_id = accountId + 1
-          AND bill.status = 'CLOSED'
+        WHERE bill.status = 'CLOSED'
+          AND bill.account_id = accountId + 1
       returns: number
       result: $e_0
   R: $e_0

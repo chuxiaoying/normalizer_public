@@ -15,4 +15,4 @@ expected:
       limit:
         position: 2
         type: number
-  R: target + value == 10
+  R: 10 == target + value
