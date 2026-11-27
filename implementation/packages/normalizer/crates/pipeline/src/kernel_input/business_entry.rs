@@ -419,10 +419,10 @@ impl EntryContext {
         Ok(format!("{}.{}",self.qualified("E",root),fields.join(".")))
     }
 
-    pub(super) fn has_record_array_integer_field(&self, name: &str, field: &str) -> bool {
+    pub(super) fn has_record_array_field(&self, name: &str, field: &str, ty: &str) -> bool {
         self.parameter_type(name).and_then(|domain| domain.strip_suffix("[]"))
             .and_then(|record| self.declared_field_type(record, field.split('.')))
-            .is_some_and(|domain| domain == "number")
+            .is_some_and(|domain| domain == ty)
     }
 
     pub(super) fn record_array_symbols(&self) -> std::collections::BTreeSet<String> {

@@ -37,12 +37,18 @@ impl Engine<'_> {
         };
         let (opens, opened_owner) = root_of(opens)?;
         let (closes, closed_owner) = root_of(closes)?;
-        let declared = self.program.find_class(opened_owner)
-            .ok_or_else(|| fail("local stack has no record element declaration"))?;
-        need(opened_owner == closed_owner && declared.fields().iter().any(|f|
-            f.name() == field && crate::normalized::integral(f.java_type())),
-            "local stack requires one declared integer field in the same input record type")?;
-        let (empty, failed) = math::domains::relation::positional::reverse_stack_completion(&opens, &closes, field);
+        let match_type = |owner| -> Option<math::Primitive> {
+            let declared = self.program.find_class(owner)?;
+            let field = declared.fields().iter().find(|candidate| candidate.name() == field && !candidate.is_static())?;
+            match field.java_type() {
+                ty if crate::normalized::integral(ty) => Some(math::Primitive::Number),
+                JavaType::Primitive(name) if name == "boolean" => Some(math::Primitive::Boolean),
+                _ => None,
+            }
+        };
+        let ty = match_type(opened_owner).filter(|opened| Some(*opened) == match_type(closed_owner))
+            .ok_or_else(|| fail("local stack requires the same declared integer or Boolean field contract in both record types"))?;
+        let (empty, failed) = math::domains::relation::positional::reverse_stack_completion(&opens, &closes, field, ty);
         self.throw_source_on_path(b::and(path, failed), &exception);
         env.insert(binding.clone(), Value::Term(Ty::Bool, math::normalize(empty)));
         Ok(4)

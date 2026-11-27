@@ -590,7 +590,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
                 return format_expr_with_ctx(value, ctx);
             }
         }
-        if let Some((root, position, field)) = math::domains::relation::positional::field_projection(expr) {
+        if let Some((root, position, field, _)) = math::domains::relation::positional::field_projection(expr) {
             let position = format_expr_with_ctx(position, ctx);
             return format!("{}[{position}].{field}", array_name(root, ctx));
         }

@@ -99,13 +99,14 @@ pub(super) fn observations(
             {
                 relation.visit_acquisitions(&mut |id| { closed &= issued.contains(&id); });
             }
-            if let Some((source, _, field)) = math::domains::relation::positional::field_projection(node) {
-                closed &= entry.has_record_array_integer_field(source, field);
+            if let Some((source, _, field, ty)) = math::domains::relation::positional::field_projection(node) {
+                let domain = if ty == math::Primitive::Boolean { "bool" } else { "number" };
+                closed &= entry.has_record_array_field(source, field, domain);
             }
             if let Some((math::RelationAggregateKind::NthValue, super::RelationExpr::RecordProjection { source, field }, _, _)) =
                 node.as_relation_aggregate()
             {
-                closed &= entry.has_record_array_integer_field(source, field);
+                closed &= entry.has_record_array_field(source, field, "number");
             }
             if let Some(id) = node.as_heap_ref() {
                 closed &= identities.contains_key(&id);
