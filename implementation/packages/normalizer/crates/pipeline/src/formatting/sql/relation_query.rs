@@ -191,7 +191,7 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     }
     if scalar_array.is_some() && kind == math::RelationAggregateKind::Count {
         let prefix = if distinct { "DISTINCT " } else { "" };
-        return Some(format!("COUNT({prefix}{projection} {})", clauses.join(" ")));
+        return Some(format!("COUNT({prefix}{projection} {})", inline_body(&clauses)));
     }
     if kind == math::RelationAggregateKind::Count
         && matches!(input, RelationExpr::Base { .. }) && !record_array && !nested && scalar_array.is_none()

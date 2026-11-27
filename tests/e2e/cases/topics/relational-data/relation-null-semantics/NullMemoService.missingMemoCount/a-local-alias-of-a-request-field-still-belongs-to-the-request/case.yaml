@@ -21,8 +21,8 @@ expected:
       SUM(
         SELECT 1
         FROM bill
-        WHERE bill.account_id == request.accountId
-          AND bill.memo IS NULL
+        WHERE bill.memo IS NULL
+          AND bill.account_id == request.accountId
       ),
       0
     )
