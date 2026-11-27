@@ -171,17 +171,27 @@ function compile(source, file, entry, physicalPath, linked) {
   if (fn.parameters.some(param => checker.getTypeAtLocation(param.name).flags & ts.TypeFlags.Unknown)) {
     const [statement] = fn.body.statements;
     const [parameter] = fn.parameters;
-    if (fn.parameters.length === 1 && fn.body.statements.length === 1 && ts.isThrowStatement(statement)
-        && ts.isIdentifier(unwrap(statement.expression)) && fn.type?.kind === ts.SyntaxKind.VoidKeyword
-        && !fn.asteriskToken && !fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)
-        && checker.getSymbolAtLocation(unwrap(statement.expression)) === checker.getSymbolAtLocation(parameter.name)
-        && sf.statements.every(declaration => declaration === fn
-          || ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)
-          || isLocalExportList(declaration))) {
+    const simple = fn.parameters.length === 1 && fn.body.statements.length === 1
+      && (ts.isThrowStatement(statement) || ts.isReturnStatement(statement))
+      && statement.expression && ts.isIdentifier(unwrap(statement.expression))
+      && !fn.asteriskToken && !fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)
+      && checker.getSymbolAtLocation(unwrap(statement.expression)) === checker.getSymbolAtLocation(parameter.name)
+      && sf.statements.every(declaration => declaration === fn
+        || ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)
+        || isLocalExportList(declaration));
+    if (simple) {
       const name = parameter.name.text;
       const params = [{publicName: name, name, position: 0, domain: 'unknown'}];
-      return projectInput(file, entry, params, 'void', false, 'void',
-        {op: 'source.throw_unknown_input', name}, fn.getText(sf));
+      if (ts.isThrowStatement(statement) && fn.type?.kind === ts.SyntaxKind.VoidKeyword) {
+        return projectInput(file, entry, params, 'void', false, 'void',
+          {op: 'source.throw_unknown_input', name}, fn.getText(sf));
+      }
+      const signature = checker.getSignatureFromDeclaration(fn);
+      if (ts.isReturnStatement(statement) && signature
+          && checker.getReturnTypeOfSignature(signature).flags & ts.TypeFlags.Unknown) {
+        return projectInput(file, entry, params, 'unknown', false, 'unknown',
+          {op: 'var', name}, fn.getText(sf));
+      }
     }
     const proof = guardedUnknownText(sf, fn, checker, fail);
     const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
@@ -378,6 +388,7 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
   const javaParams = params.map(param => carrier(param.domain));
   const declarations = javaParams.map((type, index) => type + ' ' + params[index].name);
   const resultTypes = returnDomain === readonlyVector ? {ReadonlyNumbers: 'vector<number>'}
+    : returnDomain === 'unknown' ? {OpenSourceValue: 'ts_unknown_input'}
     : orderedMap ? {ReadonlyLabels: returns} : {};
   const returnCarrier = returnDomain === 'void' ? 'void' : Object.keys(resultTypes)[0] ?? carrier(returnDomain);
   const javaSource = Object.keys(resultTypes).map(name => 'class ' + name + ' {}\n').join('') +

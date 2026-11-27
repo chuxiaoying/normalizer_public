@@ -667,8 +667,8 @@ impl Loaded {
                 if let Some(ty) = adapter_alias(&c.full_name())? {
                     need(!matches!(c.full_name().as_str(), "Object" | "String")
                         && identifier(&c.full_name()) && c.methods().is_empty()
-                        && matches!(ty, Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap),
-                        "result value alias requires a declared empty carrier class and composite state type")?;
+                        && matches!(ty, Ty::Vector(_) | Ty::Record(_) | Ty::OrderedTextMap | Ty::UnknownInput),
+                        "result value alias requires a declared empty carrier class and approved value type")?;
                 }
             }
             if self.project.direct_source && crate::normalized::generic_product::prove(c).is_some() {
@@ -754,11 +754,18 @@ impl Loaded {
                                     context.return_type() == "text" && self.project.exceptions.get("TypeError")
                                         .is_some_and(|domain| domain == "text"),
                                 Node::ThrowUnknownInput { name } if name == &p.name => context.return_type() == "void",
+                                Node::Var { name } if name == &p.name =>
+                                    context.return_type() == "unknown" && declared.returns == Ty::UnknownInput,
                                 _ => false,
                             }),
                         "unknown slot requires a checked native type guard or the original thrown input")?;
                 }
                 parameters.push(ty);
+            }
+            if declared.returns == Ty::UnknownInput {
+                need(parameters.as_slice() == [Ty::UnknownInput]
+                    && matches!(&f.body, Node::Var { name } if name == &f.params[0].name),
+                    "unknown result must preserve the exact original source value")?;
             }
             need(
                 declared.binding.replace(Rc::new(CheckedBinding { name, function: f, parameters })).is_none(),
