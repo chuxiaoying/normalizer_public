@@ -556,7 +556,13 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
     let mut best: Option<Expr> = None;
     for i in 0..out.len() {
         for j in (i + 1)..out.len() {
-            if let Some(diagonal) = diagonal_boolean_pair(&out[i], &out[j]) {
+            let factored = diagonal_boolean_pair(&out[i], &out[j]).or_else(|| {
+                (super::boolean_domains::is_closed_boolean(&out[i])
+                    && super::boolean_domains::is_closed_boolean(&out[j]))
+                    .then(|| factor_common_and_conjuncts_under_or(&[out[i].clone(), out[j].clone()]))
+                    .flatten()
+            });
+            if let Some(diagonal) = factored {
                 let mut candidate: Vec<_> = out.iter().enumerate()
                     .filter_map(|(index, term)| (i != index && j != index).then(|| term.clone())).collect();
                 candidate.push(diagonal);

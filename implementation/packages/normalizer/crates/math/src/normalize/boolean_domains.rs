@@ -151,11 +151,17 @@ fn least_chain(
 }
 
 pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext, parent: Option<&Expr>) -> Option<Expr> {
-    let (arms, fallback) = expr.as_total_case_when()?;
-    if !arms.iter().all(|(_, value)| closed_result(value)) || !closed_result(fallback) { return None; }
-    fn inspectable(value: &Expr) -> Option<(&[(Expr, Expr)], &Expr)> {
-        value.as_total_case_when().filter(|(arms, _)| arms.iter().all(|(guard, _)| is_closed_boolean(guard)))
+    fn inspectable(value: &Expr) -> Option<(&[(Expr, Expr)], Option<&Expr>)> {
+        let (arms, fallback) = match value.as_total_case_when() {
+            Some((arms, fallback)) => (arms, Some(fallback)),
+            None => (value.as_case_when()?, None),
+        };
+        arms.iter().all(|(guard, _)| is_closed_boolean(guard)).then_some((arms, fallback))
     }
+    let (arms, fallback) = inspectable(expr)?;
+    if !arms.iter().all(|(_, value)| closed_result(value))
+        || fallback.is_some_and(|value| !closed_result(value))
+    { return None; }
     fn collect_names(value: &Expr, names: &mut BTreeSet<String>) {
         let Some((arms, fallback)) = inspectable(value) else { return; };
         for (guard, result) in arms {
@@ -163,7 +169,7 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext, parent: Option<&Expr>
                 .expect("closed Boolean guard");
             collect_names(result, names);
         }
-        collect_names(fallback, names);
+        if let Some(fallback) = fallback { collect_names(fallback, names); }
     }
     inspectable(expr)?;
     let mut names = BTreeSet::new();
@@ -205,7 +211,13 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext, parent: Option<&Expr>
                 collect_domains(result, &remaining & &truth, all, vars, groups)?;
                 remaining &= all ^ truth;
             }
-            collect_domains(fallback, remaining, all, vars, groups)?;
+            if let Some(fallback) = fallback {
+                collect_domains(fallback, remaining, all, vars, groups)?;
+            } else if !remaining.is_zero() {
+                // A missing ELSE is admissible only if earlier first-match
+                // domains exhaust the actual parent, never as a guessed value.
+                return None;
+            }
         } else if let Some((mask, _)) = groups.iter_mut().find(|(_, old)| old == value) {
             *mask |= active;
         } else {
