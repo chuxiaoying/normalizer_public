@@ -511,7 +511,7 @@ impl<'a> Engine<'a> {
                     let value = if crate::normalized::native_decimal_type(self.methods[id].syntax.return_type()) {
                         Self::promote_native_decimal(value)
                     } else { value };
-                    let realtime_value = value.scalar()?;
+                    let realtime_value = self.normalize_execution_value(value.scalar()?);
                     self.realtime_completion = self
                         .realtime_completion
                         .replace_continue(realtime_state::Completion::Return(realtime_value));

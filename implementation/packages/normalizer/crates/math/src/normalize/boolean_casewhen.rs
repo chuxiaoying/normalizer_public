@@ -6,15 +6,22 @@ use super::logical_chain::{rebuild_and, rebuild_or};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, UnaryOpKind};
 
 pub(super) fn total_value(expr: &Expr) -> bool {
+    total_value_with_context(expr, &crate::DefaultSortContext)
+}
+
+fn total_value_with_context(expr: &Expr, ctx: &dyn crate::SortContext) -> bool {
     match expr.kind() {
         ExprKind::Lit(_) => true,
         ExprKind::SymVar { origin: crate::SymVarOrigin::Parameter { name, primitive_type } } =>
             !name.starts_with('$') && !name.contains(['.', '[', ']'])
                 && matches!(primitive_type.as_str(), "boolean" | "integer" | "text" | "text?"),
-        ExprKind::UnaryOp { operand, .. } => total_value(operand),
-        ExprKind::BinOp { left, right, .. } => total_value(left) && total_value(right),
+        ExprKind::HeapRef(id) => ctx.heap_binding_identity(*id).is_some(),
+        ExprKind::UnaryOp { operand, .. } => total_value_with_context(operand, ctx),
+        ExprKind::BinOp { left, right, .. } =>
+            total_value_with_context(left, ctx) && total_value_with_context(right, ctx),
         ExprKind::CaseWhen { .. } => expr.as_total_case_when().is_some_and(|(arms, fallback)| {
-            total_value(fallback) && arms.iter().all(|(guard, value)| total_value(guard) && total_value(value))
+            total_value_with_context(fallback, ctx) && arms.iter().all(|(guard, value)|
+                total_value_with_context(guard, ctx) && total_value_with_context(value, ctx))
         }),
         // An acquisition, a lookup, or a pure-but-partial call must stay
         // within the source-selected arm unless the caller proves otherwise.
@@ -28,7 +35,7 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::SortContext) -> Expr {
     let Some((arms, fallback)) = expr.as_total_case_when() else {
         return expr.clone();
     };
-    if !total_value(expr) || !arms.iter().all(|(_, value)| is_boolean_expr(value))
+    if !total_value_with_context(expr, ctx) || !arms.iter().all(|(_, value)| is_boolean_expr(value))
         || !is_boolean_expr(fallback)
     {
         return expr.clone();
