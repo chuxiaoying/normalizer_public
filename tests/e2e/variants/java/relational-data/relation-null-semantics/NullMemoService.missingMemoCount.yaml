@@ -241,3 +241,23 @@
           ),
           0
         ) == 0
+
+- name: count-filtered-by-an-acquired-request-field-is-still-nonnegative
+  edits:
+    - from: 'class NullMemoService {'
+      to: |-
+        class MemoFilter { int accountId; }
+        class NullMemoService {
+    - from: 'static int missingMemoCount(int accountId) {'
+      to: |-
+        static int missingMemoCount(MemoFilter request) {
+                int accountId = request.accountId;
+    - {from: 'return count;', to: 'return count < 0 ? 11 : 7;'}
+  expect:
+    - path: [types]
+      add:
+        MemoFilter: {fields: {accountId: number}}
+    - path: [P, parameters]
+      value:
+        request: {position: 0, type: MemoFilter}
+    - {path: [R], value: '7'}

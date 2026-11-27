@@ -207,13 +207,14 @@ mod physical_column_contract {
 
 impl<'a> Engine<'a> {
     /// Only declared base tables filtered by closed, typed expressions in the
-    /// current source frame are admitted. In particular, raw E/T values or
-    /// composite observations cannot acquire this proof through their name.
+    /// current source frame are admitted. An already acquired input field
+    /// must resolve through its declared path; raw E/T values stay outside
+    /// this proof.
     fn closed_count_source(&self, relation: &RelationExpr) -> bool {
         let Some((name, columns, predicates)) = closed_count_table(relation, &self.source_relations.tables) else {
             return false;
         };
-        fn closed(expr: &Expr, table: &str, columns: &BTreeMap<String, String>, entry: &simulator_parser::JavaMethod) -> bool {
+        fn closed(expr: &Expr, table: &str, columns: &TableColumns, entry: &Engine<'_>) -> bool {
             if let Some(literal) = expr.as_lit() {
                 return matches!(literal, math::Lit::Int(_) | math::Lit::BigInt(_) | math::Lit::Bool(_) | math::Lit::Str(_) | math::Lit::Null);
             }
@@ -222,11 +223,7 @@ impl<'a> Engine<'a> {
                     owned_column_domain(columns, table, qualified)).is_some();
             }
             if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
-                return entry.params().iter().any(|(ty, parameter)| parameter == name && match primitive_type.as_str() {
-                    "integer" => crate::normalized::integral(ty),
-                    "boolean" => matches!(ty, JavaType::Primitive(name) if name == "boolean"),
-                    _ => false,
-                });
+                return entry.closed_count_parameter(name, primitive_type);
             }
             if let Some((op, left, right)) = expr.as_binop() {
                 return matches!(op, BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne
@@ -236,7 +233,23 @@ impl<'a> Engine<'a> {
             }
             false
         }
-        predicates.into_iter().all(|p| closed(p, name, columns, self.selected_entry.syntax))
+        predicates.into_iter().all(|p| closed(p, name, columns, self))
+    }
+
+    fn closed_count_parameter(&self, name: &str, primitive_type: &str) -> bool {
+        let mut path = name.split('.');
+        let root = path.next().expect("split always yields a root");
+        let Some((declared, _)) = self.selected_entry.syntax.params().iter().find(|(_, parameter)| parameter == root)
+            else { return false };
+        let leaf = path.try_fold(declared, |owner, member| {
+            self.project.source_owner(owner).and_then(|owner| self.program.find_class(owner))?
+                .fields().iter().find(|field| !field.is_static() && field.name() == member).map(|field| field.java_type())
+        });
+        leaf.is_some_and(|ty| match primitive_type {
+            "integer" => crate::normalized::integral(ty),
+            "boolean" => matches!(ty, JavaType::Primitive(name) if name == "boolean"),
+            _ => false,
+        })
     }
 
     fn query_row_declaration(&self, decl: &JavaType) -> Result<&'a simulator_parser::JavaClass> {
