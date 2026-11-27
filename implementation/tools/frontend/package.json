@@ -1,5 +1,5 @@
 {
-  "name": "normalizer-frontend-preprocess-tools",
+  "name": "normalizer-frontend-adapter",
   "private": true,
   "type": "module",
   "dependencies": {
