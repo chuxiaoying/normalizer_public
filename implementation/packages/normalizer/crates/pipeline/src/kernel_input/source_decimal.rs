@@ -12,7 +12,9 @@ fn decimal(expr: &Decimal, env: &Env) -> Result<Expr> {
         }
         Decimal::Literal { coefficient, scale } => Ok(number::literal(coefficient.clone(), *scale)),
         Decimal::Product(factors) => {
-            need(factors.len() <= 32, "decimal product exceeds 32 factors")?;
+            if factors.len() > 32 {
+                return Err("[NORM-ANALYSIS-INCOMPLETE] decimal product exceeds its factor budget".into());
+            }
             let mut factors = factors.iter().map(|value| decimal(value, env));
             let initial = factors.next().ok_or_else(|| fail("decimal product requires at least one factor"))??;
             factors.try_fold(initial, |product, value| Ok(number::multiply(product, value?)))
