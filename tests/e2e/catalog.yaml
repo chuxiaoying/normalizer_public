@@ -68,6 +68,7 @@ groups:
     expr-case-when-let-extraction:
     - CaseReuse.cap
     - CaseReuse.square
+    - CaseReuse.difference
     expr-constant-folding:
     - Constant.normalize
     expr-equation-inequality-normal-form:

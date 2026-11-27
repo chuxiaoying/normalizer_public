@@ -2,9 +2,9 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 117
+  total: 125
   seeded: 103
-  planned: 14
+  planned: 22
 topics:
   expression-simplification:
     title: 表达式化简
@@ -114,6 +114,10 @@ topics:
         surface: java
         focus: 纯有序递推依赖、局部词法绑定和稳定公开编号
         test_status: covered
+      - id: canonical-ordinary-case-reuse
+        status: planned
+        surface: java
+        focus: 同域标量 CASE 重复，先核对化简是否改变 LET 资格，与单次使用、受保护值对照
   collections:
     title: 集合
     scope: 数组、Collection、Tuple 的元素、顺序、重复、空值和集合操作
@@ -178,6 +182,10 @@ topics:
         test_status: covered
         surface: java/javascript/typescript
         focus: 集合别名、原地修改和读取时点
+      - id: collection-eager-map-fallback
+        status: planned
+        surface: java
+        focus: 键存在但值为空仍返回空值，同时保留已求值后备实参的效果和异常
   control-flow:
     title: 控制流
     scope: 路径分裂、短路、分支、提前退出、异常和路径合并
@@ -398,6 +406,14 @@ topics:
         test_status: covered
         surface: java/javascript/typescript
         focus: 回调注册、触发和调用顺序
+      - id: external-clock-read
+        status: planned
+        surface: java/typescript
+        focus: 一次、两次及受保护的时钟读取分别取得 E；身份不同不等于值不同，不虚构 S
+      - id: external-request-snapshot
+        status: planned
+        surface: java
+        focus: 请求对象在实际序列化时的字段快照；调用后突变和延迟读取不能互相替代
   relational-data:
     title: 关系数据
     scope: 表、列、查询、投影、去重、聚合和关系写入
@@ -442,6 +458,10 @@ topics:
         test_status: covered
         surface: sql/java
         focus: 批量插入、更新和部分失败
+      - id: relation-read-after-write
+        status: planned
+        surface: java/sql
+        focus: 区分同表写前写后两次取得、复用旧行、读其他表及写入失败路径
   number-domain:
     title: 数值域
     scope: 业务 number、语言位宽、金额、精度、舍入和边界
@@ -503,7 +523,7 @@ topics:
       - id: entry-typescript-function
         status: planned
         surface: typescript
-        focus: TypeScript 类型与函数入口
+        focus: TypeScript 函数保留 unknown 输入的检查、有效类型收窄及原异常
       - id: entry-async-await
         status: seeded
         test_status: covered
@@ -517,6 +537,18 @@ topics:
         status: planned
         surface: vue/javascript/typescript
         focus: 前端复杂页面重构为明确入口
+      - id: entry-typescript-project-import
+        status: planned
+        surface: typescript
+        focus: 严格多文件依赖的绑定；与缺失依赖、同名绑定及绕过类型检查区分
+      - id: entry-typescript-object-receiver
+        status: planned
+        surface: typescript
+        focus: 从导出对象定位方法并保留接收者；与未导出、脱离接收者或错误对象对照
+      - id: entry-typescript-standard-binding
+        status: planned
+        surface: typescript
+        focus: 官方标准库 N 才获得标准语义；应用同名对象及遮蔽不冒充官方绑定
   basic-contracts:
     title: 基础合同
     scope: 普通入口、非空默认、可空声明、返回形状和基本合法性

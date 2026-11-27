@@ -1,0 +1,14 @@
+class CaseReuse {
+    static int difference(int[] aaa, int[] zzz, boolean enabled, int extra) {
+        int offset = enabled ? extra : 0;
+        int first;
+        /* @normalizer-ir
+           first = sum from aaa as value yield value + offset
+        */
+        int second;
+        /* @normalizer-ir
+           second = sum from zzz as value yield value + offset
+        */
+        return first * first - second * second;
+    }
+}

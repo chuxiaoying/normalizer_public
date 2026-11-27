@@ -13,6 +13,23 @@
 
 目录由语义主张组织，不按语言或案例加入批次组织。一个种子只保留一个主主题。它依赖的其他能力写进元数据。只有组合本身成为测试重点时，才建立联合主题。
 
+## 从设计主张补齐种子
+
+覆盖单位是**会改变验收结论的区别**，不看种子篇数。先从八章和相关二级专题列出规则的前提、观察和唯一结果，再查同一规则的等价写法、边界反例和关键交互。已有种子表达同一条规则时补变体；新增独立语义才在[种子分母计划](seed-plan.yaml)立项。
+
+| 主张入口 | 补种子时必须能区分什么 | 首查现有种子 |
+| --- | --- | --- |
+| 第一章 · 执行即归约 | 逐语句和调用执行；完成以后不运行后续语句 | [控制流](topics/control-flow/README.md)、[循环与终止](topics/loops-and-termination/README.md) |
+| 第二章 · 多重宇宙 | 可合并的结果和不可搬动的状态、动作和完成路径；未发生不等于取得空值 | [控制流](topics/control-flow/README.md)、[状态与别名](topics/state-and-aliasing/README.md) |
+| 第三章 · 数学化简 | 法则成立与前提失效；子式变化能否解锁父式，不能靠恰巧相等的常量 | [表达式化简](topics/expression-simplification/README.md)、[数值域](topics/number-domain/README.md) |
+| 第四章 · AI 救赎 | 原件与分析副本的同一观察；合法强类型入口与真正未闭合的类型、依赖或绑定 | [语言入口](topics/language-entries/README.md)、[外部边界](topics/external-boundaries/README.md) |
+| 第五章 · 关系代数 | 空、NULL、重复、顺序和读写边界；同一快照等价查询与写后重新取得 | [关系数据](topics/relational-data/README.md)、[集合](topics/collections/README.md) |
+| 第六章 · 业务至上 | 可忽略的宿主机制与有业务影响的同名操作；精确数值与显式舍入 | [数值域](topics/number-domain/README.md)、[外部边界](topics/external-boundaries/README.md) |
+| 第七章 · PERS | 参数、环境、正常与异常完成、有序动作；特别区分不同取得与同一取得的复用 | [状态与别名](topics/state-and-aliasing/README.md)、[外部边界](topics/external-boundaries/README.md) |
+| 第八章 · 统一定形 | 等价输入得到唯一完整 PERS；守卫、排序键、LET 安全域和依赖确实变了仍可区分 | [统一定形](topics/unified-canonical-form/README.md)、[表达式化简](topics/expression-simplification/README.md) |
+
+有设计主张但没有唯一输出形态时，先在分母保留场景；由一级或二级设计裁决后才完成种子。不把当前拒绝、当前输出或暂时可用的拼写写成理想预期。
+
 ## 覆盖模型
 
 [种子分母计划](seed-plan.yaml)的 `seeded` 表示已有种子，`planned` 只表示待补位置。已有种子的 `test_status` 为 `pending` 或 `covered`，只表示 CLI 验收状态。收集器校验清单和分母计划一致；计划条目不计为测试通过，也不生成预期。

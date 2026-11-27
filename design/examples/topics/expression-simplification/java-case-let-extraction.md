@@ -108,3 +108,75 @@ R: |-
 若两次引用只出现在外层返回 guard 的某一臂，不能为提取 LET 把计算移到 guard 之外。
 
 即使同一个聚合已有两处直接引用，只要第三处在 CASE 的条件域内，全局替换仍会跨越这个域。共享绑定只能替换同一安全域里的引用。本例没有定义分支内的局部绑定表示，三个引用都必须保留内联。
+
+## 两个独立候选按来源排序，不改减法方向
+
+两个数组分别求和，返回 `zzz` 的总和平方式减去 `aaa` 的总和平方式。两次聚合的行运算相同，但数组来源不同，不能合并成一次。
+
+```java
+class CaseReuse {
+    static int difference(int[] aaa, int[] zzz, boolean enabled, int extra) {
+        int offset = enabled ? extra : 0;
+        int first = 0;
+        for (int value : aaa) {
+            first += value + offset;
+        }
+        int second = 0;
+        for (int value : zzz) {
+            second += value + offset;
+        }
+        return second * second - first * first;
+    }
+}
+```
+
+预处理只把两段累加各自写成等价的关系指令，保留结果相减的方向。
+
+```diff
+--- a/src/CaseReuse.java
++++ b/src/CaseReuse.java
+@@ -1,14 +1,14 @@
+ class CaseReuse {
+     static int difference(int[] aaa, int[] zzz, boolean enabled, int extra) {
+         int offset = enabled ? extra : 0;
+-        int first = 0;
+-        for (int value : aaa) {
+-            first += value + offset;
+-        }
+-        int second = 0;
+-        for (int value : zzz) {
+-            second += value + offset;
+-        }
++        int first;
++        /* @normalizer-ir
++           first = sum from aaa as value yield value + offset
++        */
++        int second;
++        /* @normalizer-ir
++           second = sum from zzz as value yield value + offset
++        */
+         return second * second - first * first;
+     }
+ }
+```
+
+两份聚合各自出现两次，内部都含 CASE；它们都只依赖已经取得的入口值。两个 CASE 都在各自的行表达式里，不能把行内选择当成减法或乘法的直接参数向外提取。数学化简没有把两份不同来源的值消成一个，因此两份都要提取。
+
+两份定义互不依赖，运算、类型和结构相同，最后按公开数组名排序：`aaa` 在 `zzz` 前，分别命名为 `$l_0` 和 `$l_1`。虽然返回表达式先用 `zzz`，定义顺序不跟着变；减法仍是 `zzz` 一侧减去 `aaa` 一侧。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/CaseReuse.java#CaseReuse.difference, returns: number }
+P:
+  parameters:
+    aaa: { position: 0, type: 'number[]' }
+    zzz: { position: 1, type: 'number[]' }
+    enabled: { position: 2, type: bool }
+    extra: { position: 3, type: number }
+R: |-
+  LET $l_0 = COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM aaa), 0)
+  LET $l_1 = COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM zzz), 0)
+  IN $l_1 * $l_1 - $l_0 * $l_0
+```
+
+对照：调换两个独立求和声明的源码次序，不改变这份 PERS；调换减法左右两边时，两项定义仍按同一顺序编号，但 R 的减数和被减数必须对调。

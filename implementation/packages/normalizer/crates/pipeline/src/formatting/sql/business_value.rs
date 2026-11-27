@@ -61,11 +61,15 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
             }
         });
     }
+    // Certified sums depend only on acquired inputs and their own row binder.
+    // They do not depend on each other, so numbering uses the shared order
+    // rather than the traversal order of the surrounding value.
+    let mut independent: Vec<_> = queries.into_iter().zip(total_counts)
+        .filter_map(|(repetition, total)| (repetition.eager == total).then_some(repetition.query))
+        .collect();
+    independent.sort_by_cached_key(|query| math::canonical_order_key(query, &math::DefaultSortContext));
     let mut definitions = Vec::new();
-    for (Repetition { query, eager }, total) in queries.into_iter().zip(total_counts) {
-        if eager != total {
-            continue;
-        }
+    for query in independent {
         let name = format!("$l_{}", definitions.len());
         definitions.push(format!(
             "LET {name} = {}",

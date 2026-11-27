@@ -1,0 +1,14 @@
+entry: src/CaseReuse.java#CaseReuse.difference
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/CaseReuse.java#CaseReuse.difference, returns: number }
+  P:
+    parameters:
+      aaa: { position: 0, type: 'number[]' }
+      zzz: { position: 1, type: 'number[]' }
+      enabled: { position: 2, type: bool }
+      extra: { position: 3, type: number }
+  R: |-
+    LET $l_0 = COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM aaa), 0)
+    LET $l_1 = COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM zzz), 0)
+    IN $l_0 * $l_0 - $l_1 * $l_1
