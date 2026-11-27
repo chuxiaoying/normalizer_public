@@ -17,4 +17,4 @@ expected:
         account_id: number
         id: number
         memo: text?
-  R: EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.memo IS NULL)
+  R: 0 < COALESCE(SUM(SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.memo IS NULL), 0)

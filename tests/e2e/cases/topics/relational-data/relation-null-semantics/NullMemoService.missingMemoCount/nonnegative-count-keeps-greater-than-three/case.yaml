@@ -17,7 +17,7 @@ expected:
         account_id: number
         memo: text?
   R: |-
-    COALESCE(
+    3 < COALESCE(
       SUM(
         SELECT 1
         FROM bill
@@ -25,4 +25,4 @@ expected:
           AND bill.memo IS NULL
       ),
       0
-    ) > 3
+    )

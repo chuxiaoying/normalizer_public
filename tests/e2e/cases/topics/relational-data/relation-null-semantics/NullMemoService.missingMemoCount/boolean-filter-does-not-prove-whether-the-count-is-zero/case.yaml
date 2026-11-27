@@ -20,13 +20,13 @@ expected:
         account_id: number
         memo: text?
   R: |-
-    COALESCE(
+    0 == COALESCE(
       SUM(
         SELECT 1
         FROM bill
-        WHERE bill.account_id == accountId
-          AND enabled
+        WHERE enabled
+          AND bill.account_id == accountId
           AND bill.memo IS NULL
       ),
       0
-    ) == 0
+    )

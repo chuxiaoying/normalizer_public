@@ -19,6 +19,6 @@ expected:
         memo: text?
   R: |-
     CASE
-      WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) != null
+      WHEN 0 < COALESCE(SUM(SELECT 1 FROM bill WHERE bill.account_id == accountId), 0) THEN null != FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id)
       ELSE true
     END
