@@ -268,6 +268,14 @@ impl TryFrom<WireConstant> for AdmittedConstant {
             (Ty::Bool, serde_json::Value::Bool(value)) => b::lit_bool(value),
             (Ty::Integer, serde_json::Value::Number(value)) =>
                 b::lit_int(value.as_i64().ok_or("integer range")?),
+            (Ty::Integer, serde_json::Value::String(value)) => {
+                // The source adapter uses a canonical decimal string so the
+                // JSON transport cannot round an admitted integer.
+                let digits = value.strip_prefix('-').unwrap_or(&value);
+                need(!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+                    && (!digits.starts_with('0') || value == "0"), "invalid exact integer constant")?;
+                b::lit_integer(value.parse::<math::Integer>().map_err(|_| "invalid exact integer constant")?)
+            },
             (Ty::Text, serde_json::Value::String(value)) => b::lit_str(value),
             _ => return Err("invalid constant".into()),
         };

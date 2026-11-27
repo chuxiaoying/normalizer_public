@@ -47,6 +47,42 @@ export function unwrapParens(node) {
   return node;
 }
 
+// The parser value of a NumericLiteral is already converted to IEEE-754.
+// Read the token spelling instead; a decimal fraction cannot masquerade
+// as an integer after host rounding.
+export function exactIntegerLiteral(node, sf) {
+  node = unwrapParens(node);
+  let negative = false;
+  if (ts.isPrefixUnaryExpression(node)
+      && [ts.SyntaxKind.MinusToken, ts.SyntaxKind.PlusToken].includes(node.operator)) {
+    negative = node.operator === ts.SyntaxKind.MinusToken;
+    node = unwrapParens(node.operand);
+  }
+  if (!ts.isNumericLiteral(node)) return undefined;
+  const text = node.getText(sf).replaceAll('_', '');
+  let value;
+  if (/^0(?:[xX][\da-fA-F]+|[oO][0-7]+|[bB][01]+)$/.test(text)) {
+    value = BigInt(text);
+  } else {
+    const parts = /^(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(text);
+    if (!parts) return undefined;
+    const [, whole, fraction = '', exponent = '0'] = parts;
+    const digits = (whole + fraction).replace(/^0+/, '');
+    if (!digits) return '0';
+    const radix = BigInt(exponent) - BigInt(fraction.length);
+    if (radix < 0n) {
+      const trailingZeroes = digits.length - digits.replace(/0+$/, '').length;
+      const trimmed = -radix;
+      if (trimmed > BigInt(trailingZeroes)) return undefined;
+      value = BigInt(digits.slice(0, digits.length - Number(trimmed)));
+    } else {
+      if (radix > 1_000_000n) throw new Error('[NORM-ANALYSIS-INCOMPLETE] exact integer expansion budget exceeded');
+      value = BigInt(digits + '0'.repeat(Number(radix)));
+    }
+  }
+  return (negative ? -value : value).toString();
+}
+
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
   if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
@@ -69,12 +105,8 @@ function expr(node, sf, specialized) {
   const result = specialized?.(node, lower);
   if (result !== undefined) return result;
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return { op: 'literal', type: 'string', value: node.text };
-  if (ts.isNumericLiteral(node)) return { op: 'literal', type: 'number', value: Number(node.text) };
-  if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)
-      && (node.operator === ts.SyntaxKind.MinusToken || node.operator === ts.SyntaxKind.PlusToken)) {
-    const value = Number(node.operand.text);
-    return { op: 'signed-number', value: node.operator === ts.SyntaxKind.MinusToken ? -value : value };
-  }
+  const number = exactIntegerLiteral(node, sf);
+  if (number !== undefined) return { op: 'literal', type: 'number', value: number };
   if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
     return { op: 'boolean-not', operand: lower(node.operand) };
   }

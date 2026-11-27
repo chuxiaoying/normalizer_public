@@ -297,7 +297,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
       if (!binding) fail('unbound scalar value ' + expr.name);
       return binding.node ? binding : {type: binding.type, node: internal('var', {name: binding.name})};
     }
-    if (expr.op === 'literal' && (expr.type === 'boolean' || expr.type === 'number' && Number.isSafeInteger(expr.value))) {
+    if (expr.op === 'literal' && (expr.type === 'boolean' || expr.type === 'number')) {
       const type = scalar(expr.type);
       return {type, node: internal('const', {type, value: expr.value})};
     }
@@ -313,9 +313,6 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
           && args[1].type === 'text')
         return {type: 'text', node: internal('value.text_default_if_blank', {value: args[0].node, fallback: args[1].node})};
       fail('unsupported official @normalizer/stdlib text signature');
-    }
-    if (expr.op === 'signed-number' && Number.isSafeInteger(expr.value)) {
-      return {type: 'number', node: internal('const', {type: 'number', value: expr.value})};
     }
     if (expr.op === 'boolean-not') {
       const operand = evaluate(expr.operand);

@@ -1,7 +1,7 @@
 // Closed lowering for a local listener slot and typed synchronous calls.
 // A registration writes the lexical callback; dispatch evaluates its body.
 import ts from 'typescript';
-import { unwrapParens } from './ir.mjs';
+import { exactIntegerLiteral, unwrapParens } from './ir.mjs';
 import { failTypedModule, typedParameterNames } from './typed-module.mjs';
 import { normalizerMarkers, singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
 
@@ -170,8 +170,9 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
     }
     const rhs = unwrapParens(expr.right);
     let written;
-    if (field === 'number' && ts.isNumericLiteral(rhs) && Number.isSafeInteger(Number(rhs.text))) {
-      written = value('number', Number(rhs.text));
+    const number = field === 'number' ? exactIntegerLiteral(rhs, sf) : undefined;
+    if (number !== undefined) {
+      written = value('number', number);
     } else if (field === 'bool' && (is(rhs, ts.SyntaxKind.TrueKeyword) || is(rhs, ts.SyntaxKind.FalseKeyword))) {
       written = value('bool', is(rhs, ts.SyntaxKind.TrueKeyword));
     } else if (field === 'bool' && ts.isIdentifier(rhs) && fn.parameters.includes(declarationOf(rhs))) {

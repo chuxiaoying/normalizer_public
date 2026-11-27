@@ -2,7 +2,7 @@
 // Preserve which literal provided `this`; never detach the method or infer
 // the receiver from a matching property name on a different declaration.
 import ts from 'typescript';
-import { unwrapParens } from './ir.mjs';
+import { exactIntegerLiteral, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 function objectLiteral(declaration) {
@@ -41,8 +41,8 @@ export function closedReceiver(sf, entry, fail, {linked = false} = {}) {
         methods.set(name, property);
       } else if (ts.isPropertyAssignment(property)) {
         const value = unwrapParens(property.initializer);
-        const number = ts.isNumericLiteral(value) && Number(value.text);
-        if (typeof number === 'number' && Number.isSafeInteger(number)) fields.set(name, {type: 'number', value: number});
+        const number = exactIntegerLiteral(value, sf);
+        if (number !== undefined) fields.set(name, {type: 'number', value: number});
         else if (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword) {
           fields.set(name, {type: 'bool', value: value.kind === ts.SyntaxKind.TrueKeyword});
         } else fail('object receiver field must be a closed non-effectful scalar literal: ' + name);

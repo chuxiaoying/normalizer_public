@@ -1,7 +1,7 @@
 // Shared module front end for a typed, nonescaping tuple and its observations.
 // The emitted plan keeps source branches and literal slots; the kernel executes it.
 import ts from 'typescript';
-import { unwrapParens as unwrap } from './ir.mjs';
+import { exactIntegerLiteral, unwrapParens as unwrap } from './ir.mjs';
 import {failTypedModule, typedParameterNames, typedIdentifier} from './typed-module.mjs';
 
 const n = (op, fields) => ({op, ...fields});
@@ -175,7 +175,8 @@ export function compileTypedTuple(checker, sf, fn) {
   function numeric(expr) {
     expr = unwrap(expr);
     if (ts.isConditionalExpression(expr)) return choose(truth(expr.condition), numeric(expr.whenTrue), numeric(expr.whenFalse));
-    if (ts.isNumericLiteral(expr) && Number.isSafeInteger(Number(expr.text))) return literal('number', Number(expr.text));
+    const number = exactIntegerLiteral(expr, sf);
+    if (number !== undefined) return literal('number', number);
     if (ts.isPropertyAccessExpression(expr) && !expr.questionDotToken && expr.name.text === 'length') {
       const item = position(expr.expression);
       if (item?.rest) return observe('rest_length', {from: item.index});

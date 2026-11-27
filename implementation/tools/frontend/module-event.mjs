@@ -2,7 +2,7 @@
 // completion of the request it waits for. Inputs bind to actual formals.
 import ts from 'typescript';
 import { normalizerMarkers, singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
-import { definedModuleExport, isLocalExportList, parseSourceModule, unwrapParens } from './ir.mjs';
+import { definedModuleExport, exactIntegerLiteral, isLocalExportList, parseSourceModule, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 import { assertTypeScript, typeScriptProgram } from './typed-module.mjs';
 import { isOfficialNamespaceImport } from './standard-library.mjs';
@@ -161,8 +161,8 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       if (slot.assignedByDirective) typedIRReads.add(n.getStart(sf));
       return variable(n.text);
     }
-    if (ts.isNumericLiteral(n) && Number.isSafeInteger(Number(n.text)))
-      return { op: 'const', type: 'number', value: Number(n.text) };
+    const number = exactIntegerLiteral(n, sf);
+    if (number !== undefined) return { op: 'const', type: 'number', value: number };
     if (n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.TrueKeyword)
       return { op: 'const', type: 'bool', value: n.kind === ts.SyntaxKind.TrueKeyword };
     if (ts.isPropertyAccessExpression(n)) {

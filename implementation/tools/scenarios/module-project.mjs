@@ -53,7 +53,7 @@ function compileProjection(projection) {
     }
     if (expr.op === 'literal') {
       const type = { number: 'number', boolean: 'bool', string: 'text' }[expr.type];
-      if (type && (type !== 'number' || Number.isSafeInteger(expr.value))) {
+      if (type) {
         return { type, body: { op: 'const', type: carriers[type][1], value: expr.value } };
       }
     }
