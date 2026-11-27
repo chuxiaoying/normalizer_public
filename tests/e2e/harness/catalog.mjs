@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
-import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
-import { frontendScenario } from '../../implementation/tools/scenarios/registry.mjs';
+import YAML from '../../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
+import { frontendScenario } from '../../../implementation/tools/scenarios/registry.mjs';
 
 function record(value, name) {
   assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Expected a mapping: ' + name);
@@ -34,7 +34,7 @@ export function loadSeeds(root) {
     assert.match(id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid seed ID');
     register(documents, relative, 'design document');
   }
-  const published = inventory(root, examples, file => file.endsWith('.md') && !/(^|\/)(README|coverage)\.md$/.test(file));
+  const published = inventory(root, examples, file => file.endsWith('.md') && !/(^|\/)README\.md$/.test(file));
   assert.deepEqual([...documents].sort(), published, 'Design seed catalog must cover all example documents');
 
   return seeds;
@@ -87,7 +87,7 @@ export function loadSeedManifest(root, seeds = loadSeeds(root)) {
   return metadata;
 }
 
-export function loadSeedPlan(root, seeds = loadSeeds(root), seedMetadata = loadSeedManifest(root, seeds)) {
+function loadSeedPlan(root, seeds = loadSeeds(root), seedMetadata = loadSeedManifest(root, seeds)) {
   const plan = readYaml(root, examples + '/seed-plan.yaml');
   assert.equal(plan.version, 1, 'Unsupported seed plan version');
   assert.ok(plan.model && Number.isInteger(plan.model.total), 'Seed plan needs a total');
@@ -141,7 +141,7 @@ export function loadCases(root, seeds = loadSeeds(root)) {
   assert.deepEqual(Object.keys(catalog).sort(), ['pending', 'seeds', 'version'], 'Unknown or missing test catalog section');
   assert.equal(catalog.version, 2, 'Unsupported test catalog version');
   const assigned = new Set();
-  const series = new Set();
+  const entryDirectories = new Set();
   const cases = [];
   for (const [seedId, binding] of record(catalog.seeds, 'test seeds')) {
     assert.ok(seeds.has(seedId), 'Unknown design seed: ' + seedId);
@@ -163,7 +163,7 @@ export function loadCases(root, seeds = loadSeeds(root)) {
         const label = entry.replaceAll('#', '--');
         const entryDirectory = scene ? scene + '--' + label : label;
         const relative = posix.join(posix.dirname(seedPath), seedId, entryDirectory);
-        register(series, relative, 'case directory');
+        register(entryDirectories, relative, 'entry directory');
         cases.push({
           seedId, document, entry, language, scene, caseDirectory: fixtures + '/' + relative,
           ...seedMetadata.get(seedId), planStatus: seedPlan.get(seedId).status,
@@ -185,9 +185,33 @@ export function loadCases(root, seeds = loadSeeds(root)) {
     assert.equal(plan.testStatus, expected, 'Seed plan test status disagrees with the CLI catalog: ' + id);
   }
   assert.deepEqual([...assigned].sort(), [...seeds.keys()].sort(), 'Every seed needs a test binding or an explicit pending status');
-  const directories = [...new Set(inventory(root, fixtures, file => file.endsWith('/case.yaml'))
-    .map(file => posix.dirname(posix.dirname(file))))].sort();
-  assert.deepEqual([...series].sort(), directories,
-    'Registered entries and fixture directories must correspond one to one');
+  validateFixtureTree(root, fixtures, entryDirectories);
   return cases;
+}
+
+// Before the entry level, the only allowed nodes are directories derived
+// from registered seeds. The fixture loader checks everything below each entry.
+function validateFixtureTree(root, fixtures, entryDirectories) {
+  const branches = new Map();
+  for (const directory of entryDirectories) {
+    let parent = '';
+    for (const part of directory.split('/')) {
+      if (!branches.has(parent)) branches.set(parent, new Set());
+      branches.get(parent).add(part);
+      parent = posix.join(parent, part);
+    }
+  }
+
+  for (const [parent, expected] of branches) {
+    const directory = posix.join(fixtures, parent);
+    const entries = readdirSync(join(root, directory), { withFileTypes: true });
+    for (const entry of entries) {
+      assert.ok(entry.isDirectory() && expected.has(entry.name),
+        'Unexpected fixture path: ' + posix.join(directory, entry.name));
+    }
+    const present = new Set(entries.map(entry => entry.name));
+    for (const part of expected) {
+      assert.ok(present.has(part), 'Missing fixture directory: ' + posix.join(directory, part));
+    }
+  }
 }

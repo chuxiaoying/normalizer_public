@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
-import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
+import YAML from '../../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
 import { loadCases } from './catalog.mjs';
 import { diagnosticCode } from './rejection.mjs';
 

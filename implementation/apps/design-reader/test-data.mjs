@@ -1,5 +1,5 @@
-import { loadSeedManifest, loadSeeds } from '../../../tests/e2e/catalog.mjs';
-import { loadFixtureEntries } from '../../../tests/e2e/fixtures.mjs';
+import { loadSeedManifest, loadSeeds } from '../../../tests/e2e/harness/catalog.mjs';
+import { loadFixtureEntries } from '../../../tests/e2e/harness/fixtures.mjs';
 
 export function loadSeedTests(root) {
   const seeds = loadSeeds(root);
@@ -9,7 +9,7 @@ export function loadSeedTests(root) {
     documents.set('design/examples/' + relative, { seedId, ...metadata.get(seedId), entries: [] });
   }
   for (const { document, entry, cases } of loadFixtureEntries(root, seeds)) {
-    documents.get(document).entries.push({ entry, seriesFile: cases[0].file, tests: cases });
+    documents.get(document).entries.push({ entry, entryPageFile: cases[0].file, tests: cases });
   }
   return documents;
 }

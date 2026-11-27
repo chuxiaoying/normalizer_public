@@ -21,9 +21,11 @@ node --test --test-name-pattern='^control-early-return / Early\.choose / origina
 
 ## 登记及文件布局
 
+`e2e/` 顶层只有正式[测试入口](e2e/business_examples.test.mjs)、[登记清单](e2e/catalog.yaml)、用例树 `cases/`和测试支撑代码 `harness/`。支撑代码负责把种子登记对应到工程目录、加载用例，以及校验成功和拒绝输出，不另开测试入口。用例树不放说明页、日志或未登记的材料；发现额外路径会报错。
+
 先按[种子目录](../design/examples/README.md)登记稳定 ID。测试沿用种子文件的主题路径：将 `design/examples/` 换为 `tests/e2e/cases/`，将种子文件名换为种子 ID。种子所在主题只由[种子清单](../design/examples/seeds.yaml)决定；[CLI 清单](e2e/catalog.yaml)只按 ID 登记运行方式和入口。同一种子可以登记不同语言或场景，无需复制主题目录。
 
-种子下依次是入口、原例和变体。入口目录由[登记加载器](e2e/catalog.mjs)推导：Java 使用调用名，独立 TypeScript 将定位符里的 `#` 写作 `--`，前端场景用「场景名--入口名」区分。同一入口有一个 `original/`，其余以变体名称组织。参见[早返回原例](e2e/cases/topics/control-flow/control-early-return/Early.choose/original/case.yaml)和[取负变体](e2e/cases/topics/control-flow/control-early-return/Early.choose/select-negative-fallback/case.yaml)。
+种子下依次是入口、原例和变体。入口目录由[登记加载器](e2e/harness/catalog.mjs)推导：Java 使用调用名，独立 TypeScript 将定位符里的 `#` 写作 `--`，前端场景用「场景名--入口名」区分。同一入口有一个 `original/`，其余以变体名称组织。参见[早返回原例](e2e/cases/topics/control-flow/control-early-return/Early.choose/original/case.yaml)和[取负变体](e2e/cases/topics/control-flow/control-early-return/Early.choose/select-negative-fallback/case.yaml)。
 
 | 字段 | 内容 |
 |---|---|
@@ -39,7 +41,6 @@ node --test --test-name-pattern='^control-early-return / Early\.choose / origina
 ## 如何写预期
 
 从[一级与二级设计](../design/README.md)、源码和真实观察范围独立推导。《统一定形》与 [LET 专题](../design/secondary/什么时候可以引入%20LET.md)裁决唯一表达形式。等价变体仍须写出同一份完整预期；不从 actual 反填、不规范化实际值后再验收、不省略真实异常或效果。测试区只管理可复验的种子派生用例，不存单次审核和运行记录。
-
 
 ## 从种子补齐测试
 

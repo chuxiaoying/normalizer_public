@@ -23,7 +23,7 @@ function addSeedLinks(seed, metadata, entries) {
   const total = countTests(entries);
   const summary = entries.length ? link(seed.path, '关联测试 · ' + entries.length + ' 个入口 · ' + total + ' 个用例', 'seed-tests')
     : '关联测试 · 待派生';
-  const shortcuts = entries.map(({entry, seriesFile}) => link(seriesFile, entry)).join(' ');
+  const shortcuts = entries.map(({entry, entryPageFile}) => link(entryPageFile, entry)).join(' ');
   const meta = '<p class="seed-test-meta">主主题 <code>' + escape(metadata.topic) + '</code> · 类型 <code>' +
     escape(metadata.kind) + '</code>' + (metadata.related.length ? ' · 关联 <code>' + escape(metadata.related.join(', ')) + '</code>' : '') + '</p>';
   const nav = '<nav class="seed-test-jump" aria-label="关联测试">' + summary + (shortcuts ? ' ' + shortcuts : '') + '</nav>';
@@ -36,9 +36,9 @@ function addSeedLinks(seed, metadata, entries) {
   if (!entries.length) return;
 
   seed.headings.push({ id: 'seed-tests', text: '关联测试用例', level: 2 });
-  const groups = entries.map(({entry, seriesFile, tests}) => {
-    const links = tests.map(({name}) => '<li>' + link(seriesFile, caseTitle(name), 'case-' + name) + '</li>');
-    return '<h3>' + link(seriesFile, entry) + '</h3><ul class="case-links">' + links.join('') + '</ul>';
+  const groups = entries.map(({entry, entryPageFile, tests}) => {
+    const links = tests.map(({name}) => '<li>' + link(entryPageFile, caseTitle(name), 'case-' + name) + '</li>');
+    return '<h3>' + link(entryPageFile, entry) + '</h3><ul class="case-links">' + links.join('') + '</ul>';
   });
   seed.html += '<section class="seed-test-index"><h2 id="seed-tests">关联测试用例</h2>' + groups.join('') + '</section>';
 }
@@ -59,7 +59,7 @@ function renderOutcome(test, codeBlock) {
   return '<h3>完整预期 PERS</h3>' + codeBlock(yaml(test.expected), 'yaml');
 }
 
-function testPage(seed, {entry, seriesFile, tests}, codeBlock) {
+function testPage(seed, {entry, entryPageFile, tests}, codeBlock) {
   const sections = tests.map(test => {
     const input = Object.entries(test.input).map(([file, source]) => {
       const language = {java:'java', ts:'typescript'}[file.split('.').at(-1)];
@@ -71,7 +71,7 @@ function testPage(seed, {entry, seriesFile, tests}, codeBlock) {
   });
   const back = '<p class="test-backlink">' + link(seed.path, '← ' + seed.title, 'seed-tests') + '</p>';
   return {
-    path: seriesFile,
+    path: entryPageFile,
     title: entry,
     group: '测试用例',
     html: back + '<h1>' + escape(entry) + '</h1>' + sections.join(''),

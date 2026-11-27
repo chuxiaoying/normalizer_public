@@ -137,7 +137,7 @@ export async function loadContent(repoRoot) {
     // Design drafts stay readable while the test catalog is being edited.
     catalogError = String(error.message).split('\n', 1)[0];
   }
-  const seriesFiles = new Set(Array.from(seedTests?.values() ?? []).flatMap(seed => seed.entries.map(entry => entry.seriesFile)));
+  const entryPageFiles = new Set(Array.from(seedTests?.values() ?? []).flatMap(seed => seed.entries.map(entry => entry.entryPageFile)));
   const pages = new Map();
   const aliases = new Map();
   const refs = new Set();
@@ -159,7 +159,7 @@ export async function loadContent(repoRoot) {
     }
   }
   for (const path of refs) {
-    if (seriesFiles.has(path)) continue;
+    if (entryPageFiles.has(path)) continue;
     const file = join(root, path);
     const physicalPath = await realpath(file).catch(() => null);
     if (physicalPath && relative(root, physicalPath) === path && (await stat(file)).isFile()) {
@@ -167,7 +167,7 @@ export async function loadContent(repoRoot) {
     }
   }
   const order = [...new Set(['design/README.md', ...aliases.keys(), ...pages.keys()])];
-  const routes = new Set([...pages.keys(), ...seriesFiles]);
+  const routes = new Set([...pages.keys(), ...entryPageFiles]);
   const documents = order.filter(path => pages.has(path)).map(path => {
     const doc = pages.get(path);
     for (const block of doc.tokens) {
