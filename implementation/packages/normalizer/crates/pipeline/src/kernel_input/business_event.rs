@@ -145,7 +145,8 @@ pub(super) fn observations(
                     SymVarOrigin::External { binding_id, path, .. } => issued.contains(binding_id)
                         || result.source_state_bindings.get(binding_id)
                             .is_some_and(|root| entry.source_state_path(root, path)),
-                    SymVarOrigin::Temporal { binding_id, primitive_type } => primitive_type == "integer"
+                    SymVarOrigin::Temporal { binding_id, primitive_type } =>
+                        matches!(primitive_type.as_str(), "integer" | b::RECORD_TEMPORAL_TAG)
                         && temporals.is_some_and(|names| names.contains_key(binding_id)),
                 };
             }
@@ -353,20 +354,19 @@ pub(super) fn observations(
     for (_, _, guard) in &mut exceptions {
         *guard = math::normalize::canonical_terminal_guard(guard.clone());
     }
-    if exceptions.iter().any(|(_, payload, _)| payload.is_some()) {
-        for (i, (_, left, left_guard)) in exceptions.iter().enumerate() {
-            for (_, right, right_guard) in &exceptions[i + 1..] {
-                if left.is_some() || right.is_some() {
-                    let tagged_disjoint = receipt_throw_partitions.iter().any(|tags|
-                        tags.iter().any(|left| requires_completion_tag(left_guard, left)
-                            && tags.iter().any(|right| left != right
-                                && requires_completion_tag(right_guard, right))));
-                    need(tagged_disjoint
-                        || math::normalize(b::and(left_guard.clone(), right_guard.clone())).as_bool() == Some(false),
-                        "typed exception alternatives lack a disjoint terminal guard proof")?;
-                }
-            }
-        }
+    // PERS-05 applies equally to typed payloads and to type-only exits.
+    // A proof about two tags concerns the same acquired receipt only.
+    let reorderable = exceptions.iter().enumerate().all(|(i, (_, _, left_guard))| {
+        exceptions[i + 1..].iter().all(|(_, _, right_guard)| {
+            let tagged_disjoint = receipt_throw_partitions.iter().any(|tags|
+                tags.iter().any(|left| requires_completion_tag(left_guard, left)
+                    && tags.iter().any(|right| left != right
+                        && requires_completion_tag(right_guard, right))));
+            tagged_disjoint
+                || math::normalize(b::and(left_guard.clone(), right_guard.clone())).as_bool() == Some(false)
+        })
+    });
+    if reorderable {
         let public_names = ctx.published_external_names();
         let public = crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
@@ -378,8 +378,6 @@ pub(super) fn observations(
             payload.as_ref().map(|value| math::canonical_order_key(value, &public)),
             math::canonical_order_key(cond, &public),
         ));
-    } else {
-        exceptions.sort_by(|a, b| a.0.cmp(&b.0));
     }
     let throws = exceptions
         .into_iter()
@@ -410,8 +408,8 @@ pub(super) fn observations(
                 if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
                     reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
                         && total_port_receipts.contains(binding_id);
-                    reads_renumbered_receipt |= ctx.receipt_name(*binding_id).is_some()
-                        && u64::try_from(ctx.e_slot(*binding_id)).ok() != Some(*binding_id);
+                    reads_renumbered_receipt |= ctx.e_slot(*binding_id)
+                        .is_some_and(|slot| slot as u64 != *binding_id);
                 }
             });
         }

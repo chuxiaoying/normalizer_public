@@ -181,8 +181,8 @@ impl FormatCtx {
     }
 
     /// Resolve an external binding for display; closed business expressions are validated before rendering.
-    pub(crate) fn e_slot(&self, raw: u64) -> usize {
-        self.e_renumber.get(&raw).copied().unwrap_or(raw as usize)
+    pub(crate) fn e_slot(&self, raw: u64) -> Option<usize> {
+        self.e_renumber.get(&raw).copied()
     }
 
 
@@ -522,7 +522,11 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
             if let Some(root) = ctx.business_states.get(binding_id).or_else(|| ctx.business_acquisitions.get(binding_id)) {
                 return std::iter::once(root.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join(".");
             }
-            let n = ctx.e_slot(*binding_id);
+            let n = if ctx.business_inputs.is_some() {
+                ctx.e_slot(*binding_id).expect("PERS invariant: unbound receipt or acquisition") as u64
+            } else {
+                *binding_id
+            };
             if path.is_empty() {
                 format!("$e_{}", n)
             } else {
