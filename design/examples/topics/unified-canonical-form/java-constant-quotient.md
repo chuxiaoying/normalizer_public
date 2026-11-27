@@ -81,3 +81,17 @@ R: '11'
 ```
 
 本例检验两端都是已知整数时的常量折叠，不把这一条件当准入限制。`input / 5` 中的商若不能折叠，仍按源程序的整数除法语义表达，不猜一个常量。商的向零截断、余数符号和零除数异常见 [JLS §15.17.2–3](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.17.2)；普通业务整数不套用其中的宿主溢出例外。
+
+
+## 符号被除数仍交付向零截断的整数商
+
+`static long signed(int input) { return input / 5; }` 先作整数除法再拓宽；除数固定非零，没有异常路径。
+
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/CanonicalQuotient.java#CanonicalQuotient.signed, returns: number }
+P: { parameters: { input: { position: 0, type: number } } }
+R: QUOTIENT(input, 5)
+```
+
+例如 `-6 → -1`，`-4 → 0`。这里没有环境读取或写入。

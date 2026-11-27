@@ -22,4 +22,4 @@ expected:
       chooseB:
         position: 3
         type: bool
-  R: chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)
+  R: chooseA == chooseB OR left == right

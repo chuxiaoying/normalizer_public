@@ -1,5 +1,6 @@
 entry: src/CanonicalQuotient.java#CanonicalQuotient.signed
-reject:
-  fragments:
-    - "[NORM-EXPRESSION]"
-    - division and remainder require concrete integers
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/CanonicalQuotient.java#CanonicalQuotient.signed, returns: number }
+  P: { parameters: { input: { position: 0, type: number } } }
+  R: QUOTIENT(input, 5)
