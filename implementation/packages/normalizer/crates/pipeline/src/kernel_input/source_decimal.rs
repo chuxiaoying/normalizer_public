@@ -29,11 +29,10 @@ impl Engine<'_> {
         let value = decimal(&op.value, env)?;
         let value = match op.round {
             None => value,
-            Some((scale, Some(source))) => {
+            Some((scale, source)) => {
                 let mode = match source { Mode::HalfUp => number::Mode::HalfUp, Mode::HalfEven => number::Mode::HalfEven };
                 number::round(value, scale, mode)
             }
-            Some((_, None)) => return Err(fail("decimal rounding requires an explicit midpoint mode")),
         };
         env.insert(op.binding.clone(), Value::Term(Ty::Decimal, value));
         Ok(())

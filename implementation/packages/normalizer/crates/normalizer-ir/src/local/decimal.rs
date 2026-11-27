@@ -6,7 +6,7 @@ use num_bigint::BigInt;
 pub struct Assignment {
     pub binding: String,
     pub value: Decimal,
-    pub round: Option<(u32, Option<Mode>)>,
+    pub round: Option<(u32, Mode)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,11 +35,11 @@ fn decimal(t: &mut Tokens<'_>) -> Result<Decimal, String> {
     if fraction == Some(0) { return Err("decimal requires digits after the point".into()); }
     let scale = fraction.unwrap_or(0);
     let end = whole_end + fraction.map_or(0, |n| n+1);
-    if end > 4096 { return Err("decimal literal exceeds 4096 characters".into()); }
+    let scale = u32::try_from(scale).map_err(|_| "[NORM-ANALYSIS-INCOMPLETE] exact decimal scale exceeds its representation")?;
     let digits = input[..end].replace('.', "");
     let coefficient = digits.parse().map_err(|_| "invalid decimal literal")?;
     t.source = &input[end..];
-    Ok(Decimal::Literal { coefficient, scale: scale as u32 })
+    Ok(Decimal::Literal { coefficient, scale })
 }
 
 pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignment>, String> {
@@ -51,21 +51,25 @@ pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignme
         let value = if factors.len() == 1 { factors.pop().unwrap() } else { Decimal::Product(factors) };
         t.expect(",")?;
         let ScalarOperand::Integer(scale) = t.value()? else { return Err("round scale must be an integer literal".into()); };
-        let scale: u32 = scale.try_into().map_err(|_| "round scale must be nonnegative")?;
-        if scale > 4096 { return Err("round scale exceeds 4096".into()); }
-        let mode = if t.take(",") {
-            Some(match t.name()?.as_str() {
-                "HALF_UP" => Mode::HalfUp,
-                "HALF_EVEN" => Mode::HalfEven,
-                _ => return Err("unknown decimal rounding mode".into()),
-            })
-        } else { None };
+        if scale.sign() == num_bigint::Sign::Minus { return Err("round scale must be nonnegative".into()); }
+        let scale: u32 = scale.try_into()
+            .map_err(|_| "[NORM-ANALYSIS-INCOMPLETE] round scale exceeds its representation")?;
+        if !t.take(",") { return Err("decimal rounding requires an explicit midpoint mode".into()); }
+        let mode = match t.name()?.as_str() {
+            "HALF_UP" => Mode::HalfUp,
+            "HALF_EVEN" => Mode::HalfEven,
+            _ => return Err("unknown decimal rounding mode".into()),
+        };
         t.expect(")")?;
         t.end("trailing decimal round input")?;
         return Ok(Some(Assignment { binding: binding.into(), value, round: Some((scale, mode)) }));
     }
     let mut value = Tokens { source: t.source };
-    let Ok(parsed) = decimal(&mut value) else { return Ok(None) };
+    let parsed = match decimal(&mut value) {
+        Ok(parsed) => parsed,
+        Err(error) if error.starts_with("[NORM-ANALYSIS-INCOMPLETE]") => return Err(error),
+        Err(_) => return Ok(None),
+    };
     if !value.rest().is_empty() { return Ok(None); }
     *t = value;
     Ok(Some(Assignment { binding: binding.into(), value: parsed, round: None }))
