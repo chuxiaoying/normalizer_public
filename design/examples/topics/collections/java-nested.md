@@ -46,4 +46,4 @@ R: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value FROM grp AS value), 0) FROM gro
 
 两个乘积作为初值的两个加数时也一样：`base * 2 + offset * 3` 各算一次，再与聚合相加。即使一个加数不符合纯加法树中原子的化简条件，也不能跳过或重复另一个加数。
 
-初值也可以读取已经取得的入口对象字段。若初值为 `request.offset + 7`，应把入口字段、整个相关求和和固定偏移各计一次，写成 `request.offset + 相关求和 + 7`。外层空时结果仍为 `request.offset + 7`；不把该字段变成 E，也不因点号把它错认成不透明符号。
+初值也可以读取已经取得的入口对象字段。若初值为 `request.offset + 7`，入口字段、整个相关求和和固定偏移各计一次。按复杂度，字面量在字段读取前，字段读取在相关聚合前，因此写成 `7 + request.offset + 相关求和`。外层空时结果定形为 `7 + request.offset`；不把该字段变成 E，也不因点号把它错认成不透明符号。
