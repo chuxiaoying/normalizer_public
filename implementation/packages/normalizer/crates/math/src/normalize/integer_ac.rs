@@ -60,6 +60,19 @@ fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
             left,
             right,
         } => exact_business_integer(left, ctx) && exact_business_integer(right, ctx),
+        ExprKind::RowValue { acquired_integer: true, .. } => true,
+        // Strict addition/multiplication require both operands on the
+        // same live path regardless of their display order. This type
+        // evidence does not authorize dropping an operand or its guard.
+        ExprKind::CaseWhen { .. } => value.as_total_case_when().is_some_and(|(arms, fallback)| {
+            exact_business_integer(fallback, ctx)
+                && arms.iter().all(|(_, result)| exact_business_integer(result, ctx))
+        }),
+        ExprKind::RelationAggregate { kind: crate::RelationAggregateKind::Count, .. } => true,
+        ExprKind::RelationAggregate { kind: crate::RelationAggregateKind::Sum | crate::RelationAggregateKind::FirstValue,
+            select_expr: Some(selected), default_expr, .. } =>
+            exact_business_integer(selected, ctx) && default_expr.as_ref().is_none_or(|value|
+                value.as_lit() == Some(&Lit::Null) || exact_business_integer(value, ctx)),
         _ => false,
     }
 }

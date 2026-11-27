@@ -452,7 +452,9 @@ impl<'a> Engine<'a> {
                 let index = b::lit_integer(offset.clone());
                 let length = r::relation_count(relation.clone());
                 let none = if offset.bits() == 0 { b::eq(length, index.clone()) } else { b::le(length, index.clone()) };
-                let nth = r::relation_nth_value(relation, index);
+                let nth = if offset.bits() == 0 {
+                    r::relation_first_value(relation, b::acquired_integer_row("value"), b::lit_null())
+                } else { r::relation_nth_value(relation, index) };
                 let value = math::normalize(b::case_when(vec![(none, default.scalar()?)], nth));
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, value));
                 return Ok(());

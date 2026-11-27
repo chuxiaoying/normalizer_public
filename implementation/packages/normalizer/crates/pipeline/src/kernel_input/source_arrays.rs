@@ -104,7 +104,12 @@ fn bounds_failure(root: &str, index: i64) -> Expr {
 }
 
 fn original_slot(root: &str, index: i64) -> Expr {
-    math::normalize(r::relation_nth_value(initial_array(root), b::lit_int(index)))
+    let relation = initial_array(root);
+    if index == 0 {
+        r::relation_first_value(relation, b::acquired_integer_row("value"), b::lit_null())
+    } else {
+        math::normalize(r::relation_nth_value(relation, b::lit_int(index)))
+    }
 }
 
 fn slot_delta(value: Expr, original: &Expr, path: &Expr) -> Expr {
@@ -486,7 +491,7 @@ impl Engine<'_> {
         let (root, null) = array_root(array)?;
         let path = self.source_nonnull_array_path(path, null);
         if path.as_bool() == Some(false) { return Ok(Value::Term(Ty::Integer, b::lit_null())); }
-        let each = b::row_value("value");
+        let each = b::acquired_integer_row("value");
         let each = if offset == 0 { each } else { b::add(each, b::lit_int(offset)) };
         let mut total = b::add(start, r::relation_sum(initial_array(&root), each));
         let indices: BTreeSet<_> = self.source_array_writes.values().flatten().copied().collect();
