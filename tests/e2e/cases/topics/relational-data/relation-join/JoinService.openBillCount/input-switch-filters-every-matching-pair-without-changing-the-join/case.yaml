@@ -30,9 +30,9 @@ expected:
         SELECT 1
         FROM account AS a
         JOIN bill AS b ON a.id == b.account_id
-        WHERE a.id == accountId
+        WHERE enabled
+          AND a.id == accountId
           AND b.status == "OPEN"
-          AND enabled
       ),
       0
     )
