@@ -142,7 +142,7 @@ fn rebuild_relation_with_children_simplified(
         RelationExpr::Distinct(input) => RelationExpr::Distinct(Box::new(
             rebuild_relation_with_children_simplified(input, recurse),
         )),
-        RelationExpr::ProjectedUnion(_) => relation.clone(),
+        RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_) => relation.clone(),
     }
 }
 

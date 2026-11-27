@@ -45,8 +45,9 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
     };
     if kind == math::RelationAggregateKind::Sum {
         if value == &one {
-            if let Some((table, keys)) = crate::kernel_input::business_relation::grouped_table(relation) {
-                let keys = keys.iter().map(|k| crate::format_expr_with_ctx(k, ctx)).collect::<Vec<_>>().join(", ");
+            if let RelationExpr::Grouped(group) = relation {
+                let table = group.table();
+                let keys = group.columns().map(|column| format!("{table}.{column}")).collect::<Vec<_>>().join(", ");
                 return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {table}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
             }
         }

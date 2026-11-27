@@ -178,20 +178,7 @@ mod physical_column_contract {
         assert!(inner_join_count(&accounts, &independent_inner).is_none());
     }
 
-    #[test]
-    fn grouping_requires_its_own_row_shape() {
-        let table = RelationExpr::base("bill", "bill");
-        let status = b::row_value("bill.status");
-        let keys = b::array_lit(vec![status.clone()]);
-        let grouped = |input, name| RelationExpr::distinct(RelationExpr::project(keys.clone(), name, input));
-        assert_eq!(grouped_table(&grouped(table.clone(), "groups")).map(|(name, _)| name), Some("bill"));
-        assert!(grouped_table(&RelationExpr::distinct(table.clone())).is_none());
-        assert!(grouped_table(&grouped(table.clone(), "values")).is_none());
-        assert!(grouped_table(&grouped(RelationExpr::base("bill", "row"), "groups")).is_none());
-        let filtered = RelationExpr::select(b::ne(status.clone(), b::lit_str("closed")), table.clone());
-        assert!(grouped_table(&grouped(filtered.clone(), "groups")).is_none());
 
-    }
 }
 
 impl<'a> Engine<'a> {
@@ -731,7 +718,7 @@ impl<'a> Engine<'a> {
                     Value::Term(Ty::Integer, value)
                 }
             }
-            RowOperation::GroupCount(keys) => {
+            RowOperation::GroupCount { first, remaining } => {
                 // Each group is one distinct *tuple* of evaluated keys, not
                 // independent distinct counts and not the source row count.
                 let RelationExpr::Base { name, alias } = &rows.input else {
@@ -739,16 +726,17 @@ impl<'a> Engine<'a> {
                 };
                 let columns = self.source_relations.tables.get(name).filter(|_| name == alias)
                     .ok_or_else(|| fail("group count requires a declared table"))?;
-                let keys = keys.iter().map(|key| {
-                    let value = Self::query_value(key, &query.alias, &rows.fields, &locals)?;
-                    let value = value.scalar()?;
-                    need(value.as_row_value().and_then(|path| path.split_once('.'))
-                        .and_then(|qualified| owned_column_domain(columns, name, qualified)).is_some(),
-                        "group key requires a declared table column")?;
-                    Ok(value)
-                }).collect::<Result<Vec<_>>>()?;
-                let distinct = RelationExpr::distinct(RelationExpr::project(b::array_lit(keys), "groups", rows.input));
-                Value::Term(Ty::Integer, r::relation_sum(distinct, b::lit_int(1)))
+                let physical_column = |key| {
+                    let value = Self::query_value(key, &query.alias, &rows.fields, &locals)?.scalar()?;
+                    let (_, column) = value.as_row_value().and_then(|path| path.split_once('.'))
+                        .filter(|qualified| owned_column_domain(columns, name, *qualified).is_some())
+                        .ok_or_else(|| fail("group key requires a declared table column"))?;
+                    Ok(column.to_owned())
+                };
+                let first = physical_column(first)?;
+                let remaining = remaining.iter().map(physical_column).collect::<Result<Vec<_>>>()?;
+                let grouped = RelationExpr::grouped(name.clone(), first, remaining);
+                Value::Term(Ty::Integer, r::relation_sum(grouped, b::lit_int(1)))
             }
             RowOperation::Fold { accumulator, initial, body } => {
                 // The direct row-element recurrence has a bag-sum form.
@@ -961,14 +949,6 @@ pub(crate) fn inner_join_count<'a>(outer: &'a RelationExpr, projection: &'a Expr
     Some(InnerJoinCount { left: (left_name, left), right: (right_name, right), on: on?, filters })
 }
 
-pub(crate) fn grouped_table(relation: &RelationExpr) -> Option<(&str, &[Expr])> {
-    let RelationExpr::Distinct(projection) = relation else { return None };
-    let RelationExpr::Project { value, alias, input } = projection.as_ref() else { return None };
-    let RelationExpr::Base { name, alias: table_alias } = input.as_ref() else { return None };
-    let keys = value.as_array_lit()?;
-    (alias == "groups" && name == table_alias && !keys.is_empty()).then_some((name, keys))
-}
-
 pub(super) fn correlated_array_relation(relation: &RelationExpr) -> Option<(&str, &str)> {
     let mut base = relation;
     while let RelationExpr::Select { input, .. } = base { base = input; }
@@ -1013,7 +993,8 @@ pub(super) fn is_table_expression(
             // The aggregate constructors require a projection for these kinds.
             Sum => table_source(relation)
                 || (value == Some(&b::lit_int(1)) &&
-                    grouped_table(relation).is_some_and(|(name, _)| tables.contains_key(name)))
+                    matches!(relation, RelationExpr::Grouped(group) if tables.get(group.table())
+                        .is_some_and(|columns| group.columns().all(|column| columns.contains_key(column)))))
                 || relation_base(relation).is_some_and(|(name, _)| nested_arrays.contains(name))
                 || correlated_array_relation(relation).is_some_and(|pair|
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),

@@ -48,3 +48,8 @@
     - {from: 'String status;', to: 'String category;'}
     - {from: 'status: row.status', to: 'category: row.status'}
     - {from: 'by b.status', to: 'by b.category'}
+
+- name: a-literal-is-not-a-grouping-column-or-column-position
+  edits:
+    - {from: 'by b.status', to: 'by 1'}
+  reject: ['[NORM-PROJECT]', 'kind=PREPROCESS_REQUIRED', 'group key requires a declared table column']

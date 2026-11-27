@@ -454,6 +454,9 @@ fn relation_structural_key(
             ],
         ),
         R::Distinct(input) => key_node("distinct", vec![relation_structural_key(input, ctx)]),
+        R::Grouped(group) => key_node("group", vec![
+            group.table().into(), key_node("columns", group.columns().map(str::to_owned).collect()),
+        ]),
         R::ProjectedUnion(columns) => key_node("projected-union", columns.iter()
             .map(|(table, column)| key_node("column", vec![table.into(), column.into()])).collect()),
     }

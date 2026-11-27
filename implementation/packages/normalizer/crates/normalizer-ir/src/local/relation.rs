@@ -47,7 +47,7 @@ pub enum RowOperation {
     EagerPath { link: String, leaf: String },
     Sum(Scalar),
     Count { distinct: bool },
-    GroupCount(Vec<Scalar>),
+    GroupCount { first: Scalar, remaining: Vec<Scalar> },
     FirstValue { value: Scalar, fallback: Scalar },
     FirstRow,
     Fold { accumulator: String, initial: Scalar, body: Scalar },
@@ -230,13 +230,14 @@ fn parse_query_tail(
     let alias = t.name()?;
     if kind == Kind::GroupCount {
         t.expect("by")?;
-        let mut keys = vec![scalar(t)?];
+        let first = scalar(t)?;
+        let mut remaining = Vec::new();
         while t.take(",") {
-            keys.push(scalar(t)?);
+            remaining.push(scalar(t)?);
         }
         t.end("trailing group key clauses")?;
         return Ok(Query { binding, accumulate, source, alias, clauses: vec![],
-            operation: Operation::OnRows(RowOperation::GroupCount(keys)) });
+            operation: Operation::OnRows(RowOperation::GroupCount { first, remaining }) });
     }
     if kind == Kind::Count && t.take("join") {
         let right = t.name()?;

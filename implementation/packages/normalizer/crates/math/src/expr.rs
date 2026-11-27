@@ -625,7 +625,7 @@ impl Expr {
 fn walk_relation_expr<F: FnMut(&Expr)>(rel: &crate::domains::relation::RelationExpr, f: &mut F) {
     use crate::domains::relation::RelationExpr;
     match rel {
-        RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) => {}
+        RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_) => {}
         RelationExpr::Vector { value, .. } => value.walk(f),
         RelationExpr::Select { predicate, input } => {
             predicate.walk(f);
@@ -725,6 +725,12 @@ impl ExprProfile {
                 parent
             }
             R::Distinct(input) => Self::relation(input).wrapped(),
+            R::Grouped(group) => {
+                let mut p = Self::leaf();
+                p.vars.insert(group.table().into());
+                p.vars.extend(group.columns().map(|column| format!("{}.{column}", group.table())));
+                p
+            }
             R::ProjectedUnion(columns) => {
                 let mut parent = Self::leaf();
                 for (table, column) in columns.iter() {

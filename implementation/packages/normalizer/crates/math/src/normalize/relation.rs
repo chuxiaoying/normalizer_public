@@ -123,6 +123,7 @@ fn relation_profile_size(relation: &RelationExpr) -> usize {
         | RelationExpr::Project { value, input, .. } => 1 + value.size() + relation_profile_size(input),
         RelationExpr::Distinct(input) => 1 + relation_profile_size(input),
         RelationExpr::ProjectedUnion(columns) => 1 + columns.iter().len(),
+        RelationExpr::Grouped(group) => 1 + group.columns().count(),
     }
 }
 

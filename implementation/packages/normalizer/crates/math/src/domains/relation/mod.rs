@@ -33,6 +33,22 @@ impl ProjectedColumns {
     }
 }
 
+/// An ordered, nonempty tuple of columns bound to one physical table.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct GroupedColumns {
+    table: String,
+    first: String,
+    remaining: Vec<String>,
+}
+
+impl GroupedColumns {
+    pub fn table(&self) -> &str { &self.table }
+
+    pub fn columns(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.first.as_str()).chain(self.remaining.iter().map(String::as_str))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RelationExpr {
     Empty,
@@ -61,6 +77,7 @@ pub enum RelationExpr {
     },
     Distinct(Box<RelationExpr>),
     ProjectedUnion(ProjectedColumns),
+    Grouped(GroupedColumns),
 }
 
 impl RelationExpr {
@@ -103,6 +120,10 @@ impl RelationExpr {
         let mut columns = BTreeSet::from([first]);
         columns.extend(remaining);
         Self::ProjectedUnion(ProjectedColumns(columns))
+    }
+
+    pub fn grouped(table: String, first: String, remaining: Vec<String>) -> Self {
+        Self::Grouped(GroupedColumns { table, first, remaining })
     }
 
     pub fn distinct(input: RelationExpr) -> Self {
@@ -175,7 +196,7 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
             value: crate::normalize(value),
             alias,
         },
-        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_)) => leaf,
+        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_)) => leaf,
     }
 }
 

@@ -466,7 +466,6 @@ impl EntryContext {
             let mut scalar_element = false;
             let mut record_rows = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
             let mut correlated = std::collections::BTreeSet::new();
-            let mut group_tuples = Vec::new();
             let mut join_tables = std::collections::BTreeSet::new();
             expression.walk(&mut |node| {
                 if let Some((kind, relation, select, _)) = node.as_relation_aggregate() {
@@ -479,11 +478,6 @@ impl EntryContext {
                                     join_tables.insert((table.into(), alias.into()));
                                     record_rows.entry(alias.into()).or_default().extend(columns.keys().cloned());
                                 }
-                            }
-                        }
-                        if let Some((table, keys)) = super::business_relation::grouped_table(relation) {
-                            if select == Some(&math::builder::lit_int(1)) && result.source_tables.contains_key(table) {
-                                group_tuples.push(keys.to_vec());
                             }
                         }
                         if let (Some((source, group)), Some((Sum, inner, _, _))) =
@@ -521,7 +515,7 @@ impl EntryContext {
                     Some(SymVarOrigin::Temporal { .. }) => super::temporal_definition_id(node)
                         .is_some_and(|id| definition_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &join_tables, &record_inputs, &record_rows)
-                        || node.as_array_lit().is_some_and(|items| certified_composite_return || group_tuples.iter().any(|keys| keys == items))
+                        || (certified_composite_return && node.as_array_lit().is_some())
                         || (certified_composite_return && self.returns == "map<text,text>"
                             && math::domains::composite::ordered_text_map_entries(node).is_some())
                         || super::record_choice_projection(node).is_some()
