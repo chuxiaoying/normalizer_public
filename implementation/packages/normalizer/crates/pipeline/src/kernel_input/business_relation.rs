@@ -398,7 +398,9 @@ impl<'a> Engine<'a> {
         env: &mut Env,
         guard: &Expr,
     ) -> Result<()> {
-        if let Some(Value::Sequence { name, .. }) = env.get(&query.source) {
+        if let Some(Value::Sequence { name, null, .. }) = env.get(&query.source) {
+            need(b::path_implies(guard, &b::not(null.clone())),
+                "local relation needs an acquired non-null source array")?;
             need(!self.source_array_may_have_writes(name),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }

@@ -389,7 +389,7 @@ pub(crate) fn source_nullable_parameter(
 ) -> Result<bool, String> {
     match method.param_annotations(name) {
         [] => Ok(false),
-        annotations @ [_] if matches!(ty, JavaType::Class(_))
+        annotations @ [_] if (matches!(ty, JavaType::Class(_)) || numeric_array(ty))
             && official_marker(class, annotations, NULLABLE) => Ok(true),
         [annotation] => Err(format!("unsupported source parameter annotation {}", annotation.name())),
         _ => Err("multiple source parameter annotations cannot define nullability".into()),

@@ -985,10 +985,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
             item: *item.clone(),
             java_component: declared.and_then(primitive_array_component).map(str::to_owned),
             name: name.into(),
-            null: b::eq(
-                b::heap_ref(heap.new_path_object().id()),
-                b::lit_null(),
-            ),
+            null: b::lit_bool(false),
         },
         Ty::Ref => Value::Term(
             Ty::Ref,

@@ -73,11 +73,11 @@ fn exact_java_int(value: Value) -> Result<i32> {
     i32::try_from(value).map_err(|_| fail("local array operand exceeds Java int range"))
 }
 
-fn array_root(value: Value) -> Result<String> {
-    let Value::Sequence { item: Ty::Integer, name, .. } = value else {
+fn array_root(value: Value) -> Result<(String, Expr)> {
+    let Value::Sequence { item: Ty::Integer, name, null, .. } = value else {
         return Err(fail("operation requires a directly bound exact integer array"));
     };
-    Ok(name)
+    Ok((name, null))
 }
 
 fn index_value(index: Value) -> Result<i64> {
@@ -175,6 +175,18 @@ impl Engine<'_> {
         self.acquire_source_state_root(format!("array:{root}"))
     }
 
+    pub(super) fn nullable_source_array_root(&mut self, root: &str) -> Result<Expr> {
+        let reference = self.source_array_reference(root);
+        let id = reference.as_heap_ref().ok_or_else(|| fail("array input has no identity"))?;
+        self.source_objects.compared_parameters.insert(id, root.into());
+        Ok(b::eq(reference, b::lit_null()))
+    }
+
+    pub(super) fn source_nonnull_array_path(&mut self, path: Expr, null: Expr) -> Expr {
+        self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
+        self.normal_path(path)
+    }
+
     fn array_roots_may_alias(&self, left: &str, right: &str) -> bool {
         if left == right { return true; }
         let ty = |name: &str| self.selected_entry.syntax.params().iter()
@@ -241,7 +253,9 @@ impl Engine<'_> {
             }
             return Ok(());
         }
-        let root = array_root(array)?;
+        let (root, null) = array_root(array)?;
+        let path = self.source_nonnull_array_path(path, null);
+        if path.as_bool() == Some(false) { return Ok(()); }
         let entry = self.selected_entry;
         let (owner, _) = entry.id.rsplit_once('.').ok_or_else(|| fail("missing source owner"))?;
         let parameters = entry.syntax.params().iter().filter(|(ty, _)| crate::normalized::numeric_array(ty)).count();
@@ -293,7 +307,9 @@ impl Engine<'_> {
             need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
             return self.source_local_array_read(&local, index.scalar()?, path);
         }
-        let root = array_root(array)?;
+        let (root, null) = array_root(array)?;
+        let path = self.source_nonnull_array_path(path, null);
+        if path.as_bool() == Some(false) { return Ok(Value::Term(Ty::Integer, b::lit_null())); }
         need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
         let expression = math::normalize(index.scalar()?);
         let path = self.normal_path(path);
@@ -465,7 +481,9 @@ impl Engine<'_> {
             }
             return Ok(Value::Term(Ty::Integer, self.normalize_execution_value(total)));
         }
-        let root = array_root(array)?;
+        let (root, null) = array_root(array)?;
+        let path = self.source_nonnull_array_path(path, null);
+        if path.as_bool() == Some(false) { return Ok(Value::Term(Ty::Integer, b::lit_null())); }
         let each = b::row_value("value");
         let each = if offset == 0 { each } else { b::add(each, b::lit_int(offset)) };
         let mut total = b::add(start, r::relation_sum(initial_array(&root), each));

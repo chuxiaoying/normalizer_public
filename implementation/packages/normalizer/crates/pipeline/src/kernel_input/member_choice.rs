@@ -75,7 +75,9 @@ impl Engine<'_> {
                     }
                 }
             },
-            Some(Value::Sequence {item: Ty::Integer, name, ..}) => {
+            Some(Value::Sequence {item: Ty::Integer, name, null, ..}) => {
+                need(b::path_implies(&path, &b::not(null.clone())),
+                    "member choice needs an acquired non-null source array")?;
                 need(self.methods[method].syntax.params().iter().any(|(ty, param)|
                     param == name && crate::normalized::numeric_array(ty)),
                     "member choice requires an acquired entry array")?;

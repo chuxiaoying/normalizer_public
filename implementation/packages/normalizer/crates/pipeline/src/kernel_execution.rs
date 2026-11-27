@@ -919,7 +919,7 @@ impl<'a> Engine<'a> {
                     self.budget()?;
                     return Ok(Some(self.normalize_execution_value(array.length_expr())));
                 }
-                if let Some(Value::Sequence { item: Ty::Integer, name: root, .. }) = env.get(name) {
+                if let Some(Value::Sequence { item: Ty::Integer, name: root, null, .. }) = env.get(name) {
                     // This Java expression path has no adapter-signature
                     // body. Length does not read or convert any element.
                     // Keep the actual P or E root of a local alias.
@@ -929,6 +929,9 @@ impl<'a> Engine<'a> {
                         .any(|(_, parameter)| parameter == root);
                     if admitted {
                         self.budget()?;
+                        if self.source_nonnull_array_path(path, null.clone()).as_bool() == Some(false) {
+                            return Ok(Some(b::lit_null()));
+                        }
                         return Ok(Some(super::source_arrays::borrowed_array_length(root)));
                     }
                 }
@@ -1484,6 +1487,10 @@ impl<'a> Engine<'a> {
                     }
                     if matches!(&v, Value::LocalIntArray(_)) {
                         return Ok(Value::Term(Ty::Bool, b::lit_bool(op == BinOpKind::Ne)));
+                    }
+                    if let Value::Sequence { null, .. } = &v {
+                        let predicate = if op == BinOpKind::Ne { b::not(null.clone()) } else { null.clone() };
+                        return Ok(Value::Term(Ty::Bool, self.normalize_execution_value(predicate)));
                     }
                     let presence = match &v { Value::Term(Ty::Ref,r)=>self.row_presence(r),_=>None };
                     let null = if let Some(present)=presence { b::not(present) } else if matches!(&v, Value::Term(Ty::Ref, reference)

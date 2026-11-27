@@ -122,7 +122,13 @@ impl Engine<'_> {
         } else if nullable && *ty == Ty::Text {
             Ok(Value::Term(Ty::Text, b::param(name, ScalarSymbolType::NullableText)))
         } else {
-            symbolic(name, ty, &mut self.heap, Some(declared))
+            let mut value = symbolic(name, ty, &mut self.heap, Some(declared))?;
+            if nullable {
+                if let Value::Sequence { null, .. } = &mut value {
+                    *null = self.nullable_source_array_root(name)?;
+                }
+            }
+            Ok(value)
         }
     }
 

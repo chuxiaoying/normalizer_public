@@ -417,7 +417,7 @@ impl EntryContext {
     }
 
     pub(super) fn scalar_array_symbols(&self) -> std::collections::BTreeSet<String> {
-        let mut arrays = self.parameters.iter().filter(|(_, p)| p.ty == "number[]")
+        let mut arrays = self.parameters.iter().filter(|(_, p)| matches!(p.ty.as_str(), "number[]" | "number[]?"))
             .map(|(name, _)| name.clone()).collect::<std::collections::BTreeSet<_>>();
         arrays.extend(self.environment.iter().filter(|(_, state)| state.ty.as_deref() == Some("number[]"))
             .map(|(name, _)| super::source_state_symbol(name)));
