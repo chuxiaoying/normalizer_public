@@ -97,14 +97,16 @@ impl Engine<'_> {
             receipt,
         );
 
-        self.realtime_throws.push(failure_guard);
+        self.realtime_throws.push(failure_guard.clone());
         self.realtime_completion = self.realtime_completion.replace_continue_with_throw(
-            failed,
+            failure_guard,
             &write.exception,
             None,
         );
-        // A single-row atomic INSERT with no conflict clause affects one row
-        // on normal completion. UPDATE preserves the actual matched row count.
+        // The admitted single-row INSERT directive carries the seed's
+        // contract of exactly one committed row on success. Preprocessing
+        // must establish that contract, not merely recognize the SQL token.
+        // UPDATE and DELETE expose their actual affected-row receipts.
         let affected = match write.operation {
             SqlOperation::Insert => b::lit_int(1),
             SqlOperation::Update { .. } | SqlOperation::Delete { .. } => response,
