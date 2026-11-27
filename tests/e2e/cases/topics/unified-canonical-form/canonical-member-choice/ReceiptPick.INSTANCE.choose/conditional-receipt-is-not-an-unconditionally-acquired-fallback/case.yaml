@@ -23,7 +23,11 @@ expected:
     - call:
         external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
         args:
-          - CASE WHEN code > 0 THEN $e_0 ELSE code END
+          - |-
+            CASE
+              WHEN code > 0 THEN $e_0
+              ELSE code
+            END
         returns: number
         result: $e_1
   R: CHOOSE(values DEFAULT $e_1 AS member0 YIELD member0)

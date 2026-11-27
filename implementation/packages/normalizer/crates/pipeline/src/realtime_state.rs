@@ -68,6 +68,14 @@ impl TerminalAlternatives {
         }
     }
 
+    pub(super) fn normalize_pure_return_choices(&mut self, definitions: &mut Vec<super::temporal_graph::Definition>) {
+        if let Some(value) = self.total_return_value()
+            .and_then(|value| super::temporal_graph::same_support_choice(value, definitions))
+        {
+            self.0[0].outcome = TerminalOutcome::Return(value);
+        }
+    }
+
     /// Project the normal-return part of a terminal completion. Throwing
     /// alternatives leave their domain absent from the CASE expression, which
     /// matches the PERS convention that `R` is defined only on normal return.

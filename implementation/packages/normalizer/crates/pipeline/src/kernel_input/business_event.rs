@@ -298,8 +298,8 @@ pub(super) fn observations(
     let publication = if result.temporal_definitions.is_empty() {
         super::temporal_graph::Publication::default()
     } else {
-        need(temporal_receipts.len() == effects.len(),
-            "temporal definitions with effects require unconditional nonthrowing integer receipts")?;
+        // Validate the receipts this choice/fold actually reads. An
+        // unrelated guarded action cannot make an acquired fallback partial.
         entry.publish_temporals(result, returned.as_ref(), &names, |id, path| {
             entry.acquired_state_path(result, id, path)
                 .or_else(|| if path.is_empty() { temporal_receipts.get(&id).cloned() } else { None })

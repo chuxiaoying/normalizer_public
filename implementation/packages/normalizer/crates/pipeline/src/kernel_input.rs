@@ -875,8 +875,11 @@ impl Loaded {
         let realtime_completion = e.realtime_completion.replace_continue(
             realtime_state::Completion::Return(value.scalar()?),
         );
-        let terminal = realtime_completion.terminal_alternatives()
+        let mut terminal = realtime_completion.terminal_alternatives()
             .ok_or_else(|| fail("entry has incomplete control flow"))?;
+        if e.realtime_effects.events().is_empty() {
+            terminal.normalize_pure_return_choices(&mut e.temporal_definitions);
+        }
         e.emit_profile_metrics("completed");
         Ok(ExecutionResult {
             temporal_definitions: e.temporal_definitions,

@@ -64,7 +64,11 @@ pub(super) fn publish(
     let mut inspect: Vec<_> = pending.iter().copied().collect();
     while let Some(id) = inspect.pop() {
         let node = nodes.get(id as usize).ok_or_else(|| fail("undefined temporal definition"))?;
-        if let Some(dep) = node.operand().and_then(integer_definition_id) {
+        let mut dependencies: Vec<_> = node.operand().and_then(integer_definition_id).into_iter().collect();
+        if let Definition::Choice(choice) = node {
+            choice.guard.walk(&mut |part| dependencies.extend(integer_definition_id(part)));
+        }
+        for dep in dependencies {
             need(dep < id, "temporal dependency must already be defined")?;
             if pending.insert(dep) { inspect.push(dep); }
         }
@@ -124,9 +128,11 @@ pub(super) fn publish(
                 choice.guard.walk(&mut |node| {
                     entry_guard &= node.as_lit().is_some() || node.as_binop().is_some() || node.as_unary_op().is_some()
                         || matches!(node.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
-                            if matches!(primitive_type.as_str(), "integer" | "boolean") && names.contains_key(name));
+                            if matches!(primitive_type.as_str(), "integer" | "boolean") && names.contains_key(name))
+                        || integer_definition_id(node).is_some_and(|dep|
+                            dep < id && nodes.get(dep as usize).is_some_and(Definition::is_total));
                 });
-                need(entry_guard, "member choice guard requires acquired entry scalars")?;
+                need(entry_guard, "member choice guard requires acquired scalars or an earlier total lexical value")?;
                 let members = match &choice.members {
                     Candidates::Input(name) => match &choice.empty {
                         Fallback::Integer(_) => array_name(name)?.clone(),
@@ -156,6 +162,51 @@ pub(super) fn publish(
         published.slots.push(row);
     }
     Ok(published)
+}
+
+/// Join mutually exclusive, unobserved choices with exactly the same
+/// support and empty value on their respective domains. This is not reuse
+/// of two choices that could both occur.
+pub(super) fn same_support_choice(
+    value: &Expr, definitions: &mut Vec<Definition>,
+) -> Option<Expr> {
+    let ([(condition, selected)], otherwise) = value.as_total_case_when()? else { return None; };
+    let left = integer_definition_id(selected)?;
+    let right = integer_definition_id(otherwise)?;
+    if left == right { return None; }
+    let (Definition::Choice(left), Definition::Choice(right)) =
+        (definitions.get(left as usize)?, definitions.get(right as usize)?)
+    else { return None; };
+    if left.members != right.members { return None; }
+    let (Fallback::Integer(left_empty), Fallback::Integer(right_empty)) = (&left.empty, &right.empty)
+    else { return None; };
+    // The guard and both alternative fallbacks must use entry values only,
+    // never an observation or another choice in a different scope.
+    fn closed(value: &Expr) -> bool {
+        let mut proved = true;
+        value.walk(&mut |node| {
+            proved &= node.as_lit().is_some() || node.as_binop().is_some() || node.as_unary_op().is_some()
+                || matches!(node.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
+                    if matches!(primitive_type.as_str(), "integer" | "boolean")
+                        && !name.starts_with('$') && !name.contains(['.', '[', ']']));
+        });
+        proved
+    }
+    if !closed(condition) || !closed(left_empty) || !closed(right_empty) { return None; }
+    let complement = math::normalize(b::not(condition.clone()));
+    if !b::path_implies(condition, &left.guard) || !b::path_implies(&left.guard, condition)
+        || !b::path_implies(&complement, &right.guard) || !b::path_implies(&right.guard, &complement)
+    { return None; }
+    let same_value = b::eq(left_empty.clone(), right_empty.clone());
+    let empty = if b::path_implies(condition, &same_value) { right_empty.clone() }
+        else if b::path_implies(&complement, &same_value) { left_empty.clone() }
+        else { return None; };
+    let members = left.members.clone();
+    let id = definitions.len();
+    definitions.push(Definition::Choice(Occurrence {
+        members, empty: Fallback::Integer(empty), guard: b::lit_bool(true),
+    }));
+    Some(b::integer_temporal_result(id as u64))
 }
 
 /// Prove every partial reference is reached only after its occurrence.
