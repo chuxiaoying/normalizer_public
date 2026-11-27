@@ -126,6 +126,9 @@ impl Engine<'_> {
                 let value = self.node(cond, &mut env.clone(), path.clone())?;
                 need(value.ty() == Ty::Bool, "tuple branch requires Boolean")?;
                 let condition = self.condition_under_path(value.scalar()?, &path);
+                if let Some(taken) = condition.as_bool() {
+                    return self.observe_tuple(if taken { yes } else { no }, body, env, path);
+                }
                 let a = self.observe_tuple(yes, body, env, b::and(path.clone(), condition.clone()))?;
                 let z = self.observe_tuple(no, body, env, b::and(path, b::not(condition.clone())))?;
                 self.choose(condition, a, z)
