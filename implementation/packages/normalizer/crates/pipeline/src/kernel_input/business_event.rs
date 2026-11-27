@@ -271,10 +271,13 @@ pub(super) fn observations(
                         crate::formatting::sql::business_value::format_value(value, ctx)
                     })),
                 };
-                (
-                    "write",
-                    json!({"target":entry.state_name(target)?,"value":value}),
-                )
+                use super::realtime_state::FieldWriteTarget;
+                let target = match target {
+                    FieldWriteTarget::EntryState(path) => entry.state_name(path)?,
+                    FieldWriteTarget::Parameter(path) => entry.source_parameter_path(path)
+                        .ok_or_else(|| fail("field write needs a declared parameter path"))?,
+                };
+                ("write", json!({"target":target,"value":value}))
             }
             EffectOperation::ArrayWrite { root, index, value } => {
                 need(arrays.contains(root), "array write needs a declared P or E root")?;

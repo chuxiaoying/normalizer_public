@@ -358,6 +358,12 @@ pub(crate) enum Acquisition {
     Sql { source: String, after: Vec<(u64, Expr)> },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum FieldWriteTarget {
+    EntryState(Vec<String>),
+    Parameter(String),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectOperation {
     Acquire { acquisition: Acquisition, binding_id: u64 },
@@ -368,7 +374,7 @@ pub(crate) enum EffectOperation {
         source_identity: Option<String>,
     },
     Sql { statement: super::business_sql::SqlEffect, receipt: EffectReceipt },
-    StateWrite { target: Vec<String>, value: Expr },
+    StateWrite { target: FieldWriteTarget, value: Expr },
     ArrayWrite { root: String, index: i64, value: Expr },
 }
 
@@ -451,9 +457,17 @@ impl EffectSequence {
     }
 
     pub(super) fn write_state(&mut self, guard: Expr, target: &[String], value: Expr) {
+        self.write_field(guard, FieldWriteTarget::EntryState(target.to_vec()), value);
+    }
+
+    pub(super) fn write_parameter_field(&mut self, guard: Expr, target: String, value: Expr) {
+        self.write_field(guard, FieldWriteTarget::Parameter(target), value);
+    }
+
+    fn write_field(&mut self, guard: Expr, target: FieldWriteTarget, value: Expr) {
         self.events.push(EffectEvent {
             sequence: self.events.len(),
-            operation: EffectOperation::StateWrite { target: target.to_vec(), value },
+            operation: EffectOperation::StateWrite { target, value },
             guard,
             args: Vec::new(),
             callsite: String::new(),
@@ -474,7 +488,7 @@ impl EffectSequence {
     /// events remain an immutable prefix shared by other live paths.
     pub(super) fn merge_writes_since(&mut self, start: usize) {
         if !self.events[start..].iter().any(|event| matches!(event.operation, EffectOperation::StateWrite { .. })) { return; }
-        let mut previous_writes = std::collections::BTreeMap::<Vec<String>,usize>::new();
+        let mut previous_writes = std::collections::BTreeMap::<FieldWriteTarget,usize>::new();
         let suffix = self.events.split_off(start);
         for mut event in suffix {
             if let EffectOperation::StateWrite { target, .. } = &event.operation {

@@ -331,9 +331,11 @@ impl Engine<'_> {
         let mut identities = BTreeMap::new();
         let candidates = self.realtime_store.entries().iter()
             .filter(|entry| entry.field == field && entry.reference != *reference)
+            .filter(|entry| !b::path_implies(&path, &b::not(entry.guard.clone())))
             .filter_map(|entry| entry.reference.as_heap_ref())
             .filter(|other| self.source_objects.objects.get(other).is_some_and(|(owner, origin)| {
-                owner == &self.source_objects.objects[&id].0 && matches!(origin, Origin::State { .. })
+                owner == &self.source_objects.objects[&id].0
+                    && matches!(origin, Origin::State { .. } | Origin::Parameter { .. })
             }))
             .collect::<BTreeSet<_>>();
         for other in candidates {
@@ -399,27 +401,42 @@ impl Engine<'_> {
         if matches!(origin, Origin::EntryReceiver) {
             return self.write_entry_state(&owner.clone(), field, value, path);
         }
-        let state = match origin {
+        use super::realtime_state::FieldWriteTarget;
+        let target = match origin {
             Origin::Allocation => None,
             Origin::State { binding, path } if path.is_empty() => {
-                Some(self.source_objects.state_bindings[binding].clone())
+                Some(FieldWriteTarget::EntryState(vec![self.source_objects.state_bindings[binding].clone(), field.into()]))
             }
-            _ => return Err(fail("observable mutation of an input object requires a state write")),
+            Origin::Parameter { path, .. } if !path.contains('.') => {
+                Some(FieldWriteTarget::Parameter(format!("{path}.{field}")))
+            }
+            _ => return Err(fail("observable mutation requires a supported borrowed root")),
         };
         let declaration = self
             .program
             .find_class(owner)
-            .and_then(|c| c.fields().iter().find(|f| f.name() == field))
-            .ok_or_else(|| fail("unknown assigned field"))?;
-        need(
-            value.ty() == self.project.parameter_type(declaration.java_type())?,
-            "field assignment type mismatch",
-        )?;
+            .and_then(|c| c.fields().iter().find(|f| f.name() == field && !f.is_static()))
+            .ok_or_else(|| fail("unknown assigned instance field"))?;
+        let ty = self.project.parameter_type(declaration.java_type())?;
+        need(value.ty() == ty, "field assignment type mismatch")?;
+        if target.is_some() {
+            scalar_origin_type(&ty)?;
+        }
+
+        // Java evaluates receiver and right-hand side before putfield checks
+        // the receiver. A failed check records a throw, never a write.
         let path = self.normal_path(path);
+        let null = self.source_object_null(reference);
+        self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
+        let path = self.normal_path(path);
+        if path.as_bool() == Some(false) { return Ok(()); }
         let value = value.scalar()?;
-        if let Some(state) = state {
-            scalar_origin_type(&self.project.parameter_type(declaration.java_type())?)?;
-            self.realtime_effects.write_state(path.clone(), &[state, field.into()], value.clone());
+        match target {
+            Some(FieldWriteTarget::EntryState(fields)) =>
+                self.realtime_effects.write_state(path.clone(), &fields, value.clone()),
+            Some(FieldWriteTarget::Parameter(name)) =>
+                self.realtime_effects.write_parameter_field(path.clone(), name, value.clone()),
+            None => {}
         }
         self.realtime_store.store_guarded(path, reference.clone(), field, value);
         Ok(())
@@ -542,7 +559,7 @@ impl Engine<'_> {
     }
 
     pub(super) fn source_record(
-        &self,
+        &mut self,
         declared: &JavaType,
         value: &Value,
     ) -> Result<Option<Vec<(String, Expr)>>> {
@@ -567,7 +584,7 @@ impl Engine<'_> {
             .fields()
             .iter()
             .map(|f| {
-                let field = self.read_source_field(&reference, f.name())?;
+                let field = self.read_guarded_source_scalar(&reference, f.name(), &b::lit_bool(true))?;
                 let scalar = field.scalar()?;
                 if field.ty() == Ty::Text && !crate::normalized::nullable_text_field(class, f) {
                     need(!scalar.is_null(), "nonnullable record text field was not initialized")?;
