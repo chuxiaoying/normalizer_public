@@ -414,10 +414,15 @@ pub(crate) struct EffectSequence {
 }
 
 impl EffectSequence {
+    fn push_live(&mut self, mut event: EffectEvent) {
+        event.guard = math::normalize(event.guard);
+        if event.guard.as_bool() != Some(false) {
+            self.events.push(event);
+        }
+    }
+
     pub(super) fn acquire(&mut self, guard: Expr, acquisition: Acquisition, binding_id: u64) {
-        let guard = math::normalize(guard);
-        if guard.as_bool() == Some(false) { return; }
-        self.events.push(EffectEvent {
+        self.push_live(EffectEvent {
             sequence: self.events.len(), guard,
             operation: EffectOperation::Acquire { acquisition, binding_id },
             callsite: String::new(), args: vec![],
@@ -447,8 +452,8 @@ impl EffectSequence {
         &mut self, guard: Expr, id: String, callsite: String, args: Vec<Expr>,
         receipt: EffectReceipt, completion: Arc<PortSpec>, source_identity: Option<String>,
     ) {
-        self.events.push(EffectEvent {
-            guard: math::normalize(guard),
+        self.push_live(EffectEvent {
+            guard,
             sequence: self.events.len(),
             operation: EffectOperation::Port { id, receipt, completion, source_identity },
             callsite,
@@ -457,9 +462,9 @@ impl EffectSequence {
     }
 
     pub(super) fn record_sql(&mut self, guard: Expr, statement: super::business_sql::SqlEffect, args: Vec<Expr>, receipt: EffectReceipt) {
-        self.events.push(EffectEvent {
+        self.push_live(EffectEvent {
             sequence: self.events.len(),
-            guard: math::normalize(guard),
+            guard,
             operation: EffectOperation::Sql { statement, receipt },
             callsite: String::new(),
             args,
@@ -475,7 +480,7 @@ impl EffectSequence {
     }
 
     fn write_field(&mut self, guard: Expr, target: FieldWriteTarget, value: Expr) {
-        self.events.push(EffectEvent {
+        self.push_live(EffectEvent {
             sequence: self.events.len(),
             operation: EffectOperation::StateWrite { target, value },
             guard,
@@ -485,7 +490,7 @@ impl EffectSequence {
     }
 
     pub(super) fn write_array(&mut self, guard: Expr, root: String, index: i64, value: Expr) {
-        self.events.push(EffectEvent {
+        self.push_live(EffectEvent {
             sequence: self.events.len(),
             operation: EffectOperation::ArrayWrite { root, index, value },
             guard,

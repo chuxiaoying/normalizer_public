@@ -87,7 +87,12 @@ impl Engine<'_> {
         args: Vec<Value>,
         path: Expr,
     ) -> Result<Value> {
+        let guard = self.normal_path(path);
         let contract = &self.checked_ports[id];
+        if guard.as_bool() == Some(false) {
+            // No call occurs, so this carrier cannot denote a receipt.
+            return Ok(Value::Term(contract.completion.returns.clone(), b::lit_null()));
+        }
         need(
             args.len() == contract.parameters.len(),
             "source port argument count mismatch",
@@ -100,7 +105,6 @@ impl Engine<'_> {
             )?;
             values.push(arg.scalar()?);
         }
-        let guard = self.normal_path(path);
         let bind = self.fresh_binding();
         let spec = &self.checked_ports[id].completion;
         let receipt = realtime_state::EffectReceipt::tagged(bind);

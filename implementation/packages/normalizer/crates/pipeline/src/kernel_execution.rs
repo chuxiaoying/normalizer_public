@@ -660,7 +660,10 @@ impl<'a> Engine<'a> {
                         continue;
                     }
                     let reference = self.java_expr(target, id, env, path.clone())?;
-                    // Java evaluates RHS before the target putfield null check.
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
+                    // Java evaluates RHS before the target putfield null check,
+                    // but only if evaluating the receiver itself completed.
                     let value = self.java_expr(value, id, env, path.clone())?;
                     self.write_source_field(&reference.scalar()?, field, value, path)?;
                 }
