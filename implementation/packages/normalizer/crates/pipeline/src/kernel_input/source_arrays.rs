@@ -56,7 +56,7 @@ fn index_value(index: Value) -> Result<i64> {
     need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
     let value = literal_integer(&index.scalar()?)
         .ok_or_else(|| fail("array subscript must be a constant"))?;
-    need((0..i64::from(i32::MAX)).contains(&value), "array subscript outside supported nonnegative Java index range")?;
+    need(i32::try_from(value).is_ok(), "array subscript outside Java int range")?;
     Ok(value)
 }
 
@@ -69,6 +69,7 @@ pub(super) fn borrowed_array_length(root: &str) -> Expr {
 }
 
 fn bounds_failure(root: &str, index: i64) -> Expr {
+    if index < 0 { return b::lit_bool(true); }
     let length = borrowed_array_length(root);
     if index == 0 { b::eq(length, b::lit_int(0)) }
     else { b::le(length, b::lit_int(index)) }
@@ -191,6 +192,10 @@ impl Engine<'_> {
         }
         if let Value::EagerIntProjection { source, field } = array {
             let index = index_value(index)?;
+            if index < 0 {
+                self.throw_source_on_path(path, OUT_OF_BOUNDS);
+                return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+            }
             let base = RelationExpr::base(&source, "r");
             // Projection has already evaluated, including null failures on any
             // input row. Only its normal path may reach this bounds check.
@@ -218,6 +223,9 @@ impl Engine<'_> {
         let index = index_value(index)?;
         let path = self.normal_path(path);
         let guard = self.check_source_bounds(&root, index, &path);
+        if guard.as_bool() == Some(false) {
+            return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+        }
         let sources = self.array_slot_sources(&root, index);
         let slot = self.realtime_store.read_matching_with_initial(&index.to_string(), &guard, Some(original_slot(&root, index)),
             |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
