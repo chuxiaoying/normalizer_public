@@ -806,6 +806,19 @@ fn intersect_intervals(left: Interval, right: Interval) -> Interval {
 
 fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
     if let (Some(lower), Some(upper)) = (interval.lower, interval.upper) {
+        // Over exact integers, open endpoints can also delimit a
+        // singleton (9 < x + y < 11). Only use the shifted endpoints
+        // to prove emptiness or a point; keep the original representatives
+        // for a wider interval so the endpoint rules cannot oscillate.
+        if super::integer_ac::total_integer(subject) {
+            let first = crate::Integer::from(lower.value) + i32::from(!lower.inclusive);
+            let last = crate::Integer::from(upper.value) - i32::from(!upper.inclusive);
+            match first.cmp(&last) {
+                std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
+                std::cmp::Ordering::Equal => return vec![builder::eq(subject.clone(), builder::lit_integer(first))],
+                std::cmp::Ordering::Less => (),
+            }
+        }
         match lower.value.cmp(&upper.value) {
             std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
             std::cmp::Ordering::Equal => return vec![if lower.inclusive && upper.inclusive {
