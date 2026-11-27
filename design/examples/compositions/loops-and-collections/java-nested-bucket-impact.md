@@ -26,34 +26,7 @@ class BucketImpact {
 
 ## AI 预处理结果
 
-业务表写死为两桶、每桶两项。证明两个边界和对应下标后，分析副本用各自的一维数组保留桶，分别把动态下标交付为对应的固定位置选择。仍由两个原生循环执行，先算每个桶的净额，再平方；不把结果预算成常量，不对任意大小或不规则二维数组推广此改写。数组是不会逃逸、没有写入的局部值，换成两个声明不会改变可观察身份或效果。
-
-```diff
---- a/src/BucketImpact.java
-+++ b/src/BucketImpact.java
-@@ -1,15 +1,16 @@
- class BucketImpact {
-     static int score(int weight) {
--        int[][] buckets = {{-4, 2}, {5, 1}};
-+        int[] debit = {-4, 2};
-+        int[] credit = {5, 1};
-         int result = 0;
--        for (int group = 0; group < buckets.length; group++) {
--            int[] row = buckets[group];
-+        for (int group = 0; group < 2; group++) {
-+            int[] row = group == 0 ? debit : credit;
-             int subtotal = 0;
--            for (int member = 0; member < row.length; member++) {
--                subtotal += row[member];
-+            for (int member = 0; member < 2; member++) {
-+                subtotal += member == 0 ? row[0] : row[1];
-             }
-             result += subtotal * subtotal;
-         }
-         return result * weight;
-     }
- }
-```
+**原样通过。** 两层数组和下标访问是原生 Java。外层只访问两个已声明的桶，内层只访问当前桶的有效下标；边界可证明，交给符号执行按原顺序推进。AI 不拆数组、不用三元式代替下标，也不预先计算净额或平方。
 
 ## 归一化最终结果
 
@@ -68,4 +41,4 @@ R: weight * 40
 
 独立推导：第一桶净额为 -2，影响为 4；第二桶净额为 6，影响为 36，总影响为 40。精确整数权重在两层循环之后乘一次，例如权重为 3 时结果为 120。没有越界、外部读取或状态写入。
 
-把条目改为两桶 [-4, 5]、[2, 1]，原始条目多重集和全表之和不变，但桶净额变成 1、3，总影响为 10。每桶只访问第一项时，净额变成 -4、5，总影响为 41。空内层的局部净额仍为零，每个外层迭代贡献零，最后结果为零；不访问未发生的下标，也不能删除入口参数声明。
+把条目改为两桶 [-4, 5]、[2, 1]，原始条目多重集和全表之和不变，但桶净额变成 1、3，总影响为 10。每桶只访问第一项时，净额变成 -4、5，总影响为 41。空桶只让自己贡献 0，不影响其余桶。例如 `[[], [5, 1]]` 的总影响仍为 36，只有所有桶的净额都为零时总影响才为零。不访问空桶的下标，也不删除入口参数声明。
