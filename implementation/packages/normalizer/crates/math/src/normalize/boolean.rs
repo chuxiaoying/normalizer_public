@@ -35,13 +35,9 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
             if let Some(value) = boolean_literal_equality(*op, left, right) {
                 return value;
             }
-            // Input reference identities may alias. Canonicalize only the
-            // symmetric pair, never infer inequality from different IDs.
-            if let (Some(a), Some(z)) = (left.as_heap_ref(), right.as_heap_ref()) {
-                if a > z {
-                    return builder::binop_public(*op, right.clone(), left.clone());
-                }
-            }
+            // Binary orientation already used the shared structural key.
+            // A second ordering by heap allocation ID would undo that
+            // decision for named entry references.
             expr.clone()
         }
         ExprKind::UnaryOp {
