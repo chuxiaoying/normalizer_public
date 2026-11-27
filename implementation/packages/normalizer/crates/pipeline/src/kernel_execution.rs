@@ -400,15 +400,19 @@ impl<'a> Engine<'a> {
         if matches!(expected, JavaType::Generic(..)) {
             need(interface, "unsupported generic reference without specialized interface proof")?;
         }
-        if interface {
-            if let J::Ternary { then_expr, else_expr, .. } = expression {
+        // A null literal is assignment-compatible with a nominal reference,
+        // but does not supply an owner or an object identity. Each arm of a
+        // reference conditional must independently fit the declared target.
+        match expression {
+            J::Lit(JavaLit::Null) => return Ok(()),
+            J::Ternary { then_expr, else_expr, .. } => {
                 self.source_reference_assignment(expected, then_expr, id)?;
                 return self.source_reference_assignment(expected, else_expr, id);
             }
+            _ => {}
         }
-        // Narrowing Object to a source class is never inferred from a Heap
-        // identity or a coincidental field name. This bounded entrance accepts
-        // declared local/parameter identities of the same owner only.
+        // Narrowing Object to a source class is never inferred from a heap
+        // identity or a coincidental field name.
         let actual = self.source_declared_type(expression, id)?;
         need(
             (actual == *expected || (!interface && self.project.source_owner(&actual) == Some(owner)))
@@ -670,6 +674,8 @@ impl<'a> Engine<'a> {
                     // Java evaluates RHS before the target putfield null check,
                     // but only if evaluating the receiver itself completed.
                     let value = self.java_expr(value, id, env, path.clone())?;
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
                     self.write_source_field(&reference.scalar()?, field, value, path)?;
                 }
                 S::If {
@@ -1039,6 +1045,13 @@ impl<'a> Engine<'a> {
                     return self.read_entry_state(id.rsplit_once('.').unwrap().0, field, &path);
                 }
                 let reference = self.java_expr(target, id, env, path.clone())?;
+                let path = self.normal_path(path);
+                if path.as_bool() == Some(false) {
+                    // No field value is acquired after evaluating a receiver
+                    // that threw. This carrier cannot escape that path.
+                    let field_type = self.project.parameter_type(&self.source_declared_type(j, id)?)?;
+                    return Ok(Value::Term(field_type, b::lit_null()));
+                }
                 if matches!(reference.ty(), Ty::Record(_)) {
                     return values::field(reference, field);
                 }
