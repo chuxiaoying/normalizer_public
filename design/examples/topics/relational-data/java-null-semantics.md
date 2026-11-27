@@ -128,7 +128,7 @@ E:
     columns: { account_id: number, id: number, memo: 'text?' }
 R: |-
   CASE
-    WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) == null
+    WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN null == FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id)
     ELSE false
   END
 ```
@@ -179,7 +179,7 @@ E:
     columns: { account_id: number, id: number, memo: 'text?' }
 R: |-
   CASE
-    WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id) == null
+    WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId) THEN null == FIRST(bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.id)
     ELSE false
   END
 ```

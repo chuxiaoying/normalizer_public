@@ -101,14 +101,14 @@ R: (SELECT bill.memo FROM bill WHERE bill.account_id == accountId ORDER BY bill.
 throws:
   - type: java.lang.ArrayIndexOutOfBoundsException
     when: |-
-      COALESCE(
+      2 > COALESCE(
         SUM(
           SELECT 1
           FROM bill
           WHERE bill.account_id == accountId
         ),
         0
-      ) <= 1
+      )
 ```
 
 非零下标保留在整个有序投影之后。下标 0 的正常值按有序序列规范写为 FIRST，并仍单列空集越界；负下标是业务越界，不是假缺省；未交付来源次序的准备稿不应猜测哪一行位于指定下标。
