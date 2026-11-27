@@ -110,9 +110,24 @@ fn simplify_impl(
     if let Some((ranged, fallback)) = super::integer_ranges::case_ranges(branches_ref) {
         // Normalize guards before comparison to avoid commuting AND terms
         // forever between this rule and the normal boolean ordering.
+        let mut remaining = parent.cloned();
         let arms: Vec<_> = ranged
             .into_iter()
-            .map(|(c, v)| (crate::normalize_with(c, ctx), v))
+            .map(|(guard, value)| {
+                let guard = crate::normalize_with(guard, ctx);
+                let representative = super::integer_ranges::canonical_guard(&guard, remaining.as_ref(), ctx)
+                    .map(|candidate| crate::normalize_with(candidate, ctx))
+                    .unwrap_or_else(|| guard.clone());
+                if representative.as_bool() != Some(false) {
+                    let next = crate::builder::not(guard);
+                    remaining = Some(match remaining.take() {
+                        Some(previous) => crate::builder::and(previous, next),
+                        None => next,
+                    });
+                }
+                (representative, value)
+            })
+            .filter(|(guard, _)| guard.as_bool() != Some(false))
             .collect();
         // The range calculation proves each effective domain, but an
         // ordered CASE only needs to state what prior failures do not
