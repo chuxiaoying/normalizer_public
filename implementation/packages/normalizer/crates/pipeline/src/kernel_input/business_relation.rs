@@ -255,6 +255,7 @@ impl<'a> Engine<'a> {
                 for (subject, evidence) in [(&**a, &**b), (&**b, &**a)] {
                     let ty = match evidence {
                         Scalar::Text(_) => Some(Ty::Text),
+                        Scalar::Integer(_) => Some(Ty::Integer),
                         Scalar::Path(path) if path.len() == 1 => env.get(&path[0]).map(Value::ty),
                         _ => None,
                     };
@@ -988,9 +989,13 @@ pub(super) fn is_table_expression(
             Count => (value.is_some() && table_source(match relation {
                     RelationExpr::Distinct(input) => input, other => other,
                 }))
-                || (value.is_none() && matches!(relation, RelationExpr::ProjectedUnion(branches) if
-                branches.iter().all(|(table, column)| tables.get(&table.name)
-                    .and_then(|columns| columns.get(column)).is_some_and(|ty| ty == "number"))))
+                || (value.is_none() && matches!(relation, RelationExpr::ProjectedUnion(branches) if {
+                    let mut domains = branches.iter().map(|(table, column)| {
+                        tables.get(&table.name).and_then(|columns| columns.get(column)).map(String::as_str)
+                    });
+                    domains.next().flatten().is_some_and(|first|
+                        matches!(first, "number" | "text") && domains.all(|domain| domain == Some(first)))
+                }))
                 || is_scalar_array_relation(relation, arrays)
                 || matches!(relation, RelationExpr::Base { name, .. } if record_inputs.contains_key(name)),
             NthValue => matches!(relation, RelationExpr::Project { input, alias, .. }
