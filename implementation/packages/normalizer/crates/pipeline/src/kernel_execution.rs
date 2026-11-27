@@ -1255,14 +1255,16 @@ impl<'a> Engine<'a> {
                 if left == right {
                     return Ok(Value::Term(Ty::Integer, b::lit_int(if *op == B::Div { 1 } else { 0 })));
                 }
+                if *op == B::Div {
+                    return Ok(Value::Term(Ty::Integer, math::domains::integer_quotient::on_nonzero_path(left, right)));
+                }
                 let concrete = |v: Expr| v.as_lit().and_then(math::Lit::as_integer)
                     .ok_or_else(|| crate::preprocess::required(
-                        "NORM-EXPRESSION", id, "division and remainder require concrete integers",
-                        "保留原操作数和异常行为；当前入口不接纳符号化商或余数。",
+                        "NORM-EXPRESSION", id, "remainder requires concrete integers",
+                        "保留原操作数和异常行为；当前入口不接纳符号化余数。",
                     ));
                 let (left, right) = (concrete(left)?, concrete(right)?);
-                let result = if *op == B::Div { left / right } else { left % right };
-                Ok(Value::Term(Ty::Integer, b::lit_integer(result)))
+                Ok(Value::Term(Ty::Integer, b::lit_integer(left % right)))
             }
             J::BinOp { op, left, right } if matches!(op, B::And | B::Or) => {
                 let left = self.java_expr(left, id, env, path.clone())?;

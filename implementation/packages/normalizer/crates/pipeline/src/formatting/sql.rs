@@ -479,6 +479,10 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             .expect("[NORM-BUSINESS-EXPRESSION] relation has no canonical PERS renderer");
     };
     let registered_name = math::func_name(key);
+    if math::domains::integer_quotient::is_quotient(expr) {
+        return format!("{}({}, {})", math::domains::integer_quotient::OUTPUT_NAME,
+            format_expr_with_ctx(&args[0], ctx), format_expr_with_ctx(&args[1], ctx));
+    }
     if ctx.business_inputs.is_some() {
         if let [value] = args {
             if registered_name == math::domains::source_type_guard::TYPEOF {

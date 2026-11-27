@@ -535,6 +535,7 @@ impl EntryContext {
                         || node.as_heap_ref().is_some_and(|id| identities.contains_key(&id))
                         || node.as_lit().is_some() || node.as_binop().is_some() || node.as_unary_op().is_some()
                         || node.as_case_when().is_some() || math::domains::decimal::is_decimal(node)
+                        || math::domains::integer_quotient::is_quotient(node)
                         || math::domains::composite::vector_length_input(node)
                             .and_then(math::domains::composite::input_name).is_some_and(|name| arrays.contains(name))
                         || math::domains::composite::input_name(node).is_some_and(|name| arrays.contains(name))
