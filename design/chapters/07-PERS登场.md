@@ -300,6 +300,6 @@ PERS 把这些差异写到了结果里。看归一化结果时，不只问「最
 
 ### PERS-07 完成的互补只在已取得域内成立
 
-**规则：** 已取得的回执，其正常完成及合同列全的失败类型构成互斥分区。只有某项是剩余域里唯一的另一项时，才以它表示补集。未调用不算任何一种完成。
+**规则：** 已取得的回执按实际完成结果划分互斥域；类型声明或 catch 匹配条件本身不证明互斥。只有候选判定恰好覆盖剩余域中的全部补集时，才用它表示补集。未调用不算任何一种完成。
 
-**示例：** 某次调用已发生，合同只有正常返回或抛出 `RiskUnavailable`；入口捕获该异常并返回 0。此时 `completion.is_return($e_0)` 与 `completion.is_throw($e_0, RiskUnavailable)` 互补。两者都是一个标量谓词，回执是子表达式，失败类型是声明标签而不是额外求值。以现有标识 `completion.is_return`、`completion.is_throw` 登记后，[统一定形](08-统一定形.md#cf-02-共享结构与顺序)在同成本时选标识较小的前者，得到 `CASE WHEN completion.is_return($e_0) THEN $e_0 ELSE 0 END`。如果调用还有其他合法失败，或在某条路径未发起，则不能把“不成功”直接写成这一个异常。
+**示例：** 某次调用已发生，合同只有正常返回或抛出 `RiskUnavailable`；入口捕获该异常并返回 0。此时 `completion.is_return($e_0)` 与 `completion.is_throw($e_0, RiskUnavailable)` 互补。两者都是一个标量谓词，回执是子表达式，失败类型是声明标签而不是额外求值。以现有标识 `completion.is_return`、`completion.is_throw` 登记后，[统一定形](08-统一定形.md#cf-02-共享结构与顺序)在同成本时选标识较小的前者，得到 `CASE WHEN completion.is_return($e_0) THEN $e_0 ELSE 0 END`。如果调用还可能抛 `NetworkError`，不成功便包含两类失败，不能只写 `RiskUnavailable`。如果 `RiskUnavailable` 继承 `RuntimeException`，按 catch 规则「匹配 RuntimeException」和「匹配 RiskUnavailable」可以命中同一次失败；要先算各处理器真正命中的域，不能拿未扣除优先级的匹配范围当互斥分区。未发起调用的路径不读它的完成状态。
