@@ -340,13 +340,13 @@ impl<'a> Engine<'a> {
         })
     }
 
+    // Scalar relation expressions read already-bound values. The enclosing
+    // operation owns acquisition paths, exceptions, and effects.
     fn query_value(
-        &self,
         scalar: &Scalar,
         alias: &str,
         fields: &BTreeMap<String, Value>,
         locals: &Env,
-        guard: &Expr,
     ) -> Result<Value> {
         match scalar {
             Scalar::Bool(value) => Ok(Value::Term(Ty::Bool, b::lit_bool(*value))),
@@ -386,8 +386,8 @@ impl<'a> Engine<'a> {
                 Ok(Value::Term(Ty::Bool, op(value, b::lit_null())))
             }
             Scalar::Binary(op, left, right) => {
-                let left = self.query_value(left, alias, fields, locals, guard)?;
-                let right = self.query_value(right, alias, fields, locals, guard)?;
+                let left = Self::query_value(left, alias, fields, locals)?;
+                let right = Self::query_value(right, alias, fields, locals)?;
                 need(left.ty() == right.ty(), "incompatible query operands")?;
                 let binary = scalar_binary(*op);
                 need(
@@ -474,7 +474,7 @@ impl<'a> Engine<'a> {
                 let Some(Value::Sequence { item: Ty::Integer, name, .. }) =
                     env.get(&query.source) else { return Err(fail("scalar first needs a bound numeric array")); };
                 let relation = RelationExpr::base(name, "value");
-                let default = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
+                let default = Self::query_value(fallback, "", &BTreeMap::new(), env)?;
                 need(default.ty() == Ty::Integer, "scalar first requires a numeric fallback")?;
                 need(decl.is_none_or(crate::normalized::integral), "scalar first requires a numeric local")?;
                 let index = b::lit_integer(offset.clone());
@@ -508,12 +508,12 @@ impl<'a> Engine<'a> {
                 let mut inner_locals = env.clone();
                 inner_locals.remove(&query.alias);
                 for filter in filters {
-                    let predicate = self.query_value(filter, alias, &row, &inner_locals, guard)?;
+                    let predicate = Self::query_value(filter, alias, &row, &inner_locals)?;
                     need(predicate.ty() == Ty::Bool, "inner where requires bool")?;
                     inner_relation = RelationExpr::select(predicate.scalar()?, inner_relation);
                 }
                 need(query.clauses.is_empty(), "nested sum outer clauses require a group-valued operation")?;
-                let element = self.query_value(value, alias, &row, &inner_locals, guard)?;
+                let element = Self::query_value(value, alias, &row, &inner_locals)?;
                 need(element.ty() == Ty::Integer, "sum requires exact integers")?;
                 need(decl.is_none_or(crate::normalized::integral), "nested sum requires a numeric local")?;
                 let summed = r::relation_sum(outer, r::relation_sum(inner_relation, element.scalar()?));
@@ -555,7 +555,7 @@ impl<'a> Engine<'a> {
                 let outer = bind(&query.source, &query.alias)?;
                 let mut inner = bind(other, rhs)?;
                 let predicate = |expr| {
-                    let value = self.query_value(expr, "", &BTreeMap::new(), &names, guard)?;
+                    let value = Self::query_value(expr, "", &BTreeMap::new(), &names)?;
                     need(value.ty() == Ty::Bool, "join predicate must be bool")?;
                     value.scalar()
                 };
@@ -635,7 +635,7 @@ impl<'a> Engine<'a> {
         for clause in &query.clauses {
             match clause {
                 Clause::Where(expr) => {
-                    let val = self.query_value(expr, &query.alias, &rows.fields, &locals, guard)?;
+                    let val = Self::query_value(expr, &query.alias, &rows.fields, &locals)?;
                     need(val.ty() == Ty::Bool, "where requires bool")?;
                     rows.input = RelationExpr::select(val.scalar()?, rows.input);
                 }
@@ -646,7 +646,7 @@ impl<'a> Engine<'a> {
                     )?;
                     locals.insert(
                         name.clone(),
-                        self.query_value(expr, &query.alias, &rows.fields, &locals, guard)?,
+                        Self::query_value(expr, &query.alias, &rows.fields, &locals)?,
                     );
                 }
                 Clause::Order(keys) => {
@@ -655,7 +655,7 @@ impl<'a> Engine<'a> {
                         .iter()
                         .map(|key| {
                             let value =
-                                self.query_value(key, &query.alias, &rows.fields, &locals, guard)?;
+                                Self::query_value(key, &query.alias, &rows.fields, &locals)?;
                             need(
                                 value.ty() == Ty::Integer,
                                 "ordered query requires numeric sort keys",
@@ -673,7 +673,7 @@ impl<'a> Engine<'a> {
                     .map(|(k, e)| {
                         Ok((
                             k.clone(),
-                            self.query_value(e, &query.alias, &rows.fields, &locals, guard)?,
+                            Self::query_value(e, &query.alias, &rows.fields, &locals)?,
                         ))
                     })
                     .collect::<Result<_>>()?;
@@ -686,7 +686,7 @@ impl<'a> Engine<'a> {
                 return Ok(());
             }
             RowOperation::Sum(expr) => {
-                let value = self.query_value(expr, &query.alias, &rows.fields, &locals, guard)?;
+                let value = Self::query_value(expr, &query.alias, &rows.fields, &locals)?;
                 need(value.ty() == Ty::Integer, "sum requires business numbers")?;
                 let sum = r::relation_sum(rows.input, value.scalar()?);
                 let sum = if query.accumulate {
@@ -732,7 +732,7 @@ impl<'a> Engine<'a> {
                 let columns = self.source_relations.tables.get(name).filter(|_| name == alias)
                     .ok_or_else(|| fail("group count requires a declared table"))?;
                 let keys = keys.iter().map(|key| {
-                    let value = self.query_value(key, &query.alias, &rows.fields, &locals, guard)?;
+                    let value = Self::query_value(key, &query.alias, &rows.fields, &locals)?;
                     let value = value.scalar()?;
                     need(value.as_row_value().and_then(|path| path.split_once('.'))
                         .and_then(|qualified| owned_column_domain(columns, name, qualified)).is_some(),
@@ -750,7 +750,7 @@ impl<'a> Engine<'a> {
                 let Some(Value::Sequence { item: Ty::Integer, name, .. }) = env.get(&query.source) else {
                     return Err(fail("reduce requires a bound numeric array"));
                 };
-                let start = self.query_value(initial, "", &BTreeMap::new(), env, guard)?;
+                let start = Self::query_value(initial, "", &BTreeMap::new(), env)?;
                 need(start.ty() == Ty::Integer, "reduce needs an exact integer initial value")?;
                 match body {
                     Scalar::Binary(op @ (Op::Add | Op::Sub), left, term)
@@ -774,8 +774,8 @@ impl<'a> Engine<'a> {
             RowOperation::FirstValue { value, fallback } => {
                 let mut keys = rows.ordering.into_iter();
                 let first_key = keys.next().ok_or_else(|| fail("first requires an ordered input"))?;
-                let value = self.query_value(value, &query.alias, &rows.fields, &locals, guard)?;
-                let fallback = self.query_value(fallback, "", &BTreeMap::new(), env, guard)?;
+                let value = Self::query_value(value, &query.alias, &rows.fields, &locals)?;
+                let fallback = Self::query_value(fallback, "", &BTreeMap::new(), env)?;
                 // The declared non-null integer projection makes fallback
                 // equivalent to an empty-result default, not a NULL coercion.
                 need(value.ty() == Ty::Integer && fallback.ty() == Ty::Integer,
