@@ -12,4 +12,4 @@ expected:
   R: values[1]
   throws:
     - type: java.lang.ArrayIndexOutOfBoundsException
-      when: LENGTH(values) <= 1
+      when: 2 > LENGTH(values)

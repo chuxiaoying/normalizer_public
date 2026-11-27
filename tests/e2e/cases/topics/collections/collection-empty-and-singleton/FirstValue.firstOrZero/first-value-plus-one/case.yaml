@@ -9,4 +9,4 @@ expected:
       values:
         position: 0
         type: number[]
-  R: CASE WHEN LENGTH(values) == 0 THEN 1 ELSE values[0] END
+  R: CASE WHEN 0 == LENGTH(values) THEN 1 ELSE FIRST(value FROM values) END

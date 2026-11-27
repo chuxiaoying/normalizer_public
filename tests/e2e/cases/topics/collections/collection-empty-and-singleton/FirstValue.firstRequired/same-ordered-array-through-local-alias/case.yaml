@@ -12,4 +12,4 @@ expected:
   R: FIRST(value FROM values)
   throws:
     - type: java.lang.ArrayIndexOutOfBoundsException
-      when: LENGTH(values) == 0
+      when: 0 == LENGTH(values)

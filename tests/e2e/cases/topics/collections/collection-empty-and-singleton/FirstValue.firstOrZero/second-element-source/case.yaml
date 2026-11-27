@@ -9,4 +9,4 @@ expected:
       values:
         position: 0
         type: number[]
-  R: CASE WHEN LENGTH(values) > 1 THEN values[1] ELSE 0 END
+  R: CASE WHEN 2 > LENGTH(values) THEN 0 ELSE values[1] END

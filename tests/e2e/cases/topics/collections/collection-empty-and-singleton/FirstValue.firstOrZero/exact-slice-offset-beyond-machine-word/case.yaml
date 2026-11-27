@@ -9,4 +9,4 @@ expected:
       values:
         position: 0
         type: number[]
-  R: CASE WHEN LENGTH(values) > 18446744073709551616 THEN values[18446744073709551616] ELSE 0 END
+  R: CASE WHEN 18446744073709551617 > LENGTH(values) THEN 0 ELSE values[18446744073709551616] END
