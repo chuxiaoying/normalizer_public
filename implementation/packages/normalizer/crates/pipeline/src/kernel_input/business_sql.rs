@@ -138,15 +138,40 @@ impl SqlEffect {
             Some(Lit::Str(text)) => format!("'{}'", text.replace('\'', "''")),
             _ => crate::format_expr_with_ctx(operand, ctx),
         }).collect::<Vec<_>>();
+        let predicate_order = match &self.statement.operation {
+            SqlOperation::Insert => vec![],
+            SqlOperation::Update { predicates } | SqlOperation::Delete { predicates } => {
+                let compare = ctx.bound_order();
+                let offset = self.statement.assignments.len();
+                let mut keys = predicates.iter().enumerate().map(|(index, (column, _))| {
+                    let kind = match table[column].as_str() {
+                        "number" => "number",
+                        "text" => "text",
+                        "text?" => "text?",
+                        _ => unreachable!("SQL assignment checked scalar column type"),
+                    };
+                    let slot = b::sql_column(&self.statement.table, math::domains::relation::TableSource {
+                        name: self.statement.table.clone(), snapshot: None,
+                    }, 0, column, kind);
+                    let value = args[offset + index].clone();
+                    let expression = if math::canonical_order_ordered_comparison(
+                        math::BinOpKind::Eq, &slot, &value, &compare,
+                    ).is_some() { b::eq(value, slot) } else { b::eq(slot, value) };
+                    (math::canonical_order_key(&expression, &compare), index)
+                }).collect::<Vec<_>>();
+                keys.sort_by(|a, z| a.0.cmp(&z.0));
+                keys.into_iter().map(|(_, index)| index).collect()
+            }
+        };
         Ok(json!({
-            "sql": render_statement(&self.statement, &operands)?,
+            "sql": render_statement(&self.statement, &operands, &predicate_order)?,
             "returns": "number",
             "result": receipt
         }))
     }
 }
 
-fn render_statement(write: &SqlWrite, args: &[String]) -> Result<String> {
+fn render_statement(write: &SqlWrite, args: &[String], predicate_order: &[usize]) -> Result<String> {
     need(
         write.operands().count() == args.len(),
         "SQL operand count mismatch",
@@ -177,10 +202,13 @@ fn render_statement(write: &SqlWrite, args: &[String]) -> Result<String> {
                 format!("UPDATE {table}\nSET {assignments}")
             };
             if !conditions.is_empty() {
-                let clause = predicates
+                let clause = predicate_order
                     .iter()
-                    .zip(conditions)
-                    .map(|((column, _), value)| format!("{table}.{column} = {value}"))
+                    .map(|&index| {
+                        let (column, _) = &predicates[index];
+                        let value = &conditions[index];
+                        format!("{table}.{column} = {value}")
+                    })
                     .collect::<Vec<_>>()
                     .join("\n  AND ");
                 sql.push_str(&format!("\nWHERE {clause}"));

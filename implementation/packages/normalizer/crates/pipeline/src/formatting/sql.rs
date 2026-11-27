@@ -114,6 +114,16 @@ impl FormatCtx {
         &self.observation_identities
     }
 
+    pub(crate) fn bound_order(&self) -> CanonicalNames<'_> {
+        let external = self.observation_identities();
+        CanonicalNames {
+            heap: &self.heap_bindings, completion_classes: None,
+            external: (!external.is_empty()).then_some(external),
+            total_temporals: None, reductions: Some(&self.reductions),
+            temporals: (!self.temporal_names.is_empty()).then_some(&self.temporal_names),
+        }
+    }
+
     pub(crate) fn set_temporal_names(&mut self, names: std::collections::BTreeMap<u64, usize>) {
         self.temporal_names = names;
     }
