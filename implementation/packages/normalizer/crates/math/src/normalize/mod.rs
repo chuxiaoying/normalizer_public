@@ -518,10 +518,13 @@ fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent
     let e = boolean::simplify(&e, ctx);
     let e = integer_ranges::canonical_guard(&e, parent, ctx).unwrap_or(e);
     let e = binop_casewhen::simplify(&e, ctx);
+    // A total Boolean value can have a cheaper scalar expression with
+    // no conditional arms. Try this simplification before choosing among
+    // CASE layouts; guarded or partial values remain in their CASE domain.
+    let e = boolean_casewhen::simplify(&e, ctx);
     if let Some(canonical) = boolean_domains::simplify(&e, ctx, parent) {
         return canonical;
     }
-    let e = boolean_casewhen::simplify(&e, ctx);
     let e = relation::simplify(&e);
     let e = casewhen::simplify(&e, ctx, parent);
     e
