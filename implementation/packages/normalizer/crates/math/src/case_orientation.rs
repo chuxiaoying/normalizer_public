@@ -119,9 +119,9 @@ pub(crate) fn canonicalize_terminal_completion(expression: &Expr, context: &dyn 
     let (arms, fallback) = expression.as_total_case_when()?;
     let ((condition, result), earlier) = arms.split_last()?;
     if earlier.is_empty() { return None; }
-    let (receipt, class) = crate::domains::completion::throw_tag(condition.as_not().unwrap_or(condition))?;
+    let (receipt, classes) = crate::domains::completion::failure_partition(condition.as_not().unwrap_or(condition))?;
     let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() else { return None; };
-    if context.total_single_failure_class(*binding_id) != Some(class) { return None; }
+    if context.total_failure_classes(*binding_id).as_deref() != Some(classes.as_slice()) { return None; }
     let suffix = crate::builder::case_when(vec![(condition.clone(), result.clone())], fallback.clone());
     let selected = canonicalize_binary_case(&suffix, context, None)?;
     let ([(condition, result)], fallback) = selected.as_total_case_when()? else { return None; };
@@ -168,16 +168,15 @@ pub(crate) fn canonicalize_binary_case(
         return None;
     };
     use crate::domains::completion;
-    // The issued receipt is total and has exactly one declared failure.
-    // Both positive predicates cost one operation; compare the whole CASE
-    // with the acquired success predicate, not the rendered spelling of NOT.
+    // Compare both polarities of an acquired receipt only if the observed
+    // tag set is its entire closed failure partition, not a catch subset.
     let failed = condition.as_not().unwrap_or(condition);
-    if let Some((receipt, class)) = completion::throw_tag(failed) {
+    if let Some((receipt, classes)) = completion::failure_partition(failed) {
         if let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() {
-            if context.total_single_failure_class(*binding_id) == Some(class) {
+            if context.total_failure_classes(*binding_id).as_deref() == Some(classes.as_slice()) {
                 let (success, failure) = if condition.as_not().is_some() { (yes, no) } else { (no, yes) };
                 let candidate = crate::builder::case_when(
-                    vec![(completion::singleton_return(receipt.clone(), class), success.clone())],
+                    vec![(completion::closed_return(receipt.clone(), &classes), success.clone())],
                     failure.clone(),
                 );
                 if crate::canonical_order_compare(&candidate, expression, context).is_lt() {

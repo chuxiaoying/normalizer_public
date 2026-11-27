@@ -158,6 +158,38 @@ fn lazy_operands<'a>(
     None
 }
 
+/// Decompose a positive failure conjunction in acquisition order. Each
+/// proposed early exit is the exact complement of an acquired singleton
+/// failure, not a catch predicate or the negation of an unissued receipt.
+fn protected_failure_prefix(test: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> Option<Vec<Expr>> {
+    if let Some((BinOpKind::And, left, right)) = test.as_binop() {
+        let (test, rest, selected) = lazy_operands(ShortCircuit::And, left, right, domain, ctx)?;
+        let mut prefix = protected_failure_prefix(test, domain, ctx)?;
+        prefix.extend(protected_failure_prefix(rest, Some(&selected), ctx)?);
+        return Some(prefix);
+    }
+    if let Some((arms, tail)) = test.as_total_case_when() {
+        let mut remaining = domain.cloned().unwrap_or_else(|| b::lit_bool(true));
+        let mut prefix = Vec::new();
+        for (test, stopped) in arms {
+            if stopped.as_bool() != Some(false) || test.may_observe_sql_unknown()
+                || !receipts_available(test, Some(&remaining), ctx)
+            { return None; }
+            remaining = b::first_match_domains(remaining, test).1;
+            prefix.push(test.clone());
+        }
+        prefix.extend(protected_failure_prefix(tail, Some(&remaining), ctx)?);
+        return Some(prefix);
+    }
+    let (receipt, _) = math::domains::completion::throw_tag(test)?;
+    let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() else {
+        return None;
+    };
+    let normal = ctx.business_normal_completions.get(binding_id)?;
+    (math::normalize(b::not(test.clone())) == *normal
+        && receipts_available(test, domain, ctx)).then(|| vec![normal.clone()])
+}
+
 /// The shared math tree has no operation ledger: a Boolean expression can
 /// have been flattened into AND/OR without knowledge of receipt existence.
 /// Restore lazy evaluation wherever a named receipt depends on that guard.
@@ -184,6 +216,17 @@ pub(crate) fn format_guarded_boolean(
         ShortCircuit::Or => (b::lit_bool(true), value.clone()),
     };
     let lazy = b::case_when(vec![(guard.clone(), yes)], no);
+    if matches!(op, ShortCircuit::And) {
+        if !receipts_available(guard, domain, ctx) || guard.as_case_when().is_some() {
+            if let Some(tests) = protected_failure_prefix(guard, domain, ctx).filter(|tests| tests.len() > 1) {
+                // The legal nested form repeats an ELSE across protected
+                // CASEs. The first-match list uses fewer arms, with exactly
+                // the same next acquisition on each continuing path.
+                let flat = b::case_when(tests.into_iter().map(|test| (test, b::lit_bool(false))).collect(), value.clone());
+                return Some(super::format_expr_with_ctx(&flat, ctx));
+            }
+        }
+    }
     let ready = {
         // The guard proof above determines the lazy region. Let the same
         // CASE selector used by the kernel choose its representation, not a
@@ -192,7 +235,7 @@ pub(crate) fn format_guarded_boolean(
             if ctx.business_receipt_guards.contains_key(&id) { return None; }
             let (math::UnaryOpKind::Not, failure) = normal.as_unary_op()? else { return None; };
             let (_, class) = math::domains::completion::throw_tag(failure)?;
-            Some((id, class))
+            Some((id, vec![class]))
         }).collect();
         let mut order = ctx.bound_order();
         order.completion_classes = Some(&completions);

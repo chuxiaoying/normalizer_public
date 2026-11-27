@@ -46,9 +46,9 @@ pub trait SortContext {
         None
     }
 
-    /// Declared sole failure of a completion acquired on every path.
+    /// Sorted exact failure tags of a closed completion acquired on every path.
     /// The caller may not infer this from a catch type or from a label.
-    fn total_single_failure_class(&self, _receipt: u64) -> Option<&str> { None }
+    fn total_failure_classes(&self, _receipt: u64) -> Option<Vec<&str>> { None }
 
     /// A successful value of a nonthrowing occurrence reached on every
     /// path, not merely the name that would be rendered for its receipt.

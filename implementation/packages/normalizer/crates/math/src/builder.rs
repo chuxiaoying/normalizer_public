@@ -737,6 +737,14 @@ pub fn first_match_domains(remaining: Expr, test: &Expr) -> (Expr, Expr) {
     if test.as_bool() == Some(true) {
         return (remaining, lit_bool(false));
     }
+    // Keep the compact predicate in the CASE. For proofs inside its
+    // arms, use the same closed tag partition as the acquisition ledger.
+    if let Some(failures) = crate::domains::completion::failure_domain_of_typed_return(test) {
+        return (
+            crate::normalize(and(remaining.clone(), not(failures.clone()))),
+            crate::normalize(and(remaining, failures)),
+        );
+    }
     (
         crate::normalize(and(remaining.clone(), test.clone())),
         crate::normalize(and(remaining, not(test.clone()))),

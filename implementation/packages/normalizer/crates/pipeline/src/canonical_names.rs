@@ -6,7 +6,7 @@ pub(crate) struct CanonicalNames<'a> {
     pub(crate) heap: &'a BTreeMap<i64, math::HeapBindingIdentity>,
     pub(crate) captured: Option<&'a BTreeMap<String, String>>,
     pub(crate) external: Option<&'a BTreeMap<u64, math::ObservationIdentity>>,
-    pub(crate) completion_classes: Option<&'a BTreeMap<u64, &'a str>>,
+    pub(crate) completion_classes: Option<&'a BTreeMap<u64, Vec<&'a str>>>,
     pub(crate) total_temporals: Option<&'a BTreeSet<u64>>,
     pub(crate) reductions: Option<&'a BTreeMap<u64, math::ReduceShape>>,
     pub(crate) temporals: Option<&'a BTreeMap<u64, usize>>,
@@ -20,8 +20,8 @@ impl math::SortContext for CanonicalNames<'_> {
 
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> { self.external }
 
-    fn total_single_failure_class(&self, receipt: u64) -> Option<&str> {
-        self.completion_classes?.get(&receipt).copied()
+    fn total_failure_classes(&self, receipt: u64) -> Option<Vec<&str>> {
+        self.completion_classes?.get(&receipt).cloned()
     }
 
     fn temporal_is_total(&self, id: u64) -> bool {
@@ -48,7 +48,7 @@ impl math::SortContext for ScopedValueKeys<'_> {
     fn heap_binding_identity(&self, id: i64) -> Option<&math::HeapBindingIdentity> { self.base.heap_binding_identity(id) }
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> { self.base.observation_identities() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
-    fn total_single_failure_class(&self, receipt: u64) -> Option<&str> { self.base.total_single_failure_class(receipt) }
+    fn total_failure_classes(&self, receipt: u64) -> Option<Vec<&str>> { self.base.total_failure_classes(receipt) }
     fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> { self.base.reduce_shape(id) }
     fn has_reduce_shapes(&self) -> bool { self.base.has_reduce_shapes() }
     fn case_arm_keys(&self, expression: &math::Expr) -> Option<&math::CaseArmKeys> { self.cases.get(expression) }

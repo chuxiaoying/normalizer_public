@@ -93,6 +93,46 @@ pub fn is_throw(value: Expr, class: &str) -> Expr {
     );
     crate::normalize(b::call(key, vec![value, b::lit_str(class)]))
 }
+/// All positive thrown-class terms in a guard must belong to one receipt.
+pub(crate) fn failure_partition(test: &Expr) -> Option<(&Expr, Vec<&str>)> {
+    fn visit<'a>(test: &'a Expr, receipt: &mut Option<&'a Expr>, classes: &mut Vec<&'a str>) -> Option<()> {
+        if let Some((crate::BinOpKind::Or, left, right)) = test.as_binop() {
+            visit(left, receipt, classes)?;
+            return visit(right, receipt, classes);
+        }
+        let (value, class) = throw_tag(test)?;
+        if receipt.is_some_and(|earlier| earlier != value) { return None; }
+        *receipt = Some(value);
+        classes.push(class);
+        Some(())
+    }
+    let mut receipt = None;
+    let mut classes = Vec::new();
+    visit(test, &mut receipt, &mut classes)?;
+    classes.sort_unstable();
+    classes.dedup();
+    Some((receipt?, classes))
+}
+
+pub(crate) fn closed_return(receipt: Expr, classes: &[&str]) -> Expr {
+    if let [class] = classes { return singleton_return(receipt, class); }
+    let key = crate::register_func(
+        "completion.is_return", vec![Primitive::Composite, Primitive::Composite],
+        Some(Primitive::Boolean), FuncSemantics::pure_function(),
+    );
+    b::call(key, vec![receipt, b::array_lit(classes.iter().map(|class| b::lit_str(*class)).collect())])
+}
+
+pub fn multi_failure_return<'a>(name: &str, args: &'a [Expr]) -> Option<(&'a Expr, Vec<&'a str>)> {
+    if name != "completion.is_return" { return None; }
+    let [receipt, classes] = args else { return None; };
+    let classes = classes.as_array_lit()?.iter().map(|class| match class.as_lit()? {
+        crate::Lit::Str(name) => Some(name.as_str()),
+        _ => None,
+    }).collect::<Option<Vec<_>>>()?;
+    Some((receipt, classes))
+}
+
 /// Caller must have proved a total acquired completion with exactly this
 /// one failure class. The second slot carries that declaration, not a value read.
 pub(crate) fn singleton_return(receipt: Expr, exception: &str) -> Expr {
@@ -117,9 +157,14 @@ pub(crate) fn single_failure_complement(a: &Expr, b: &Expr) -> bool {
             .is_some_and(|(a, b)| a == b))
 }
 
-pub(crate) fn negative_singleton_return(expr: &Expr) -> Option<Expr> {
-    let (receipt, class) = singleton_return_tag(expr)?;
-    Some(is_throw(receipt.clone(), class))
+pub(crate) fn failure_domain_of_typed_return(expr: &Expr) -> Option<Expr> {
+    if let Some((receipt, class)) = singleton_return_tag(expr) {
+        return Some(is_throw(receipt.clone(), class));
+    }
+    let (key, args) = expr.as_call()?;
+    let (receipt, classes) = multi_failure_return(&crate::func_name(key), args)?;
+    Some(classes.into_iter().fold(b::lit_bool(false), |guard, class|
+        b::or(guard, is_throw(receipt.clone(), class))))
 }
 
 pub fn value(completion: Expr, ty: Primitive) -> Expr {

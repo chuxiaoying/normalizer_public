@@ -518,6 +518,19 @@ fn boolean_parameter(expr: &Expr) -> bool {
         if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
 }
 
+/// After separating the result from the path predicates used to discover
+/// it, prefer a smaller closed Boolean value over its expanded proof form.
+pub fn compact_total_input_boolean_value(expr: Expr, ctx: &dyn crate::SortContext) -> Expr {
+    let Some((op @ (BinOpKind::And | BinOpKind::Or), ..)) = expr.as_binop() else { return expr; };
+    let terms = if op == BinOpKind::And { flatten_and(&expr) } else { flatten_or(&expr) };
+    let Some(terms) = terms.iter().map(|term| term.as_not().filter(|base| boolean_parameter(base)).cloned())
+        .collect::<Option<Vec<_>>>()
+    else { return expr; };
+    let opposite = if op == BinOpKind::And { rebuild_or(&terms) } else { rebuild_and(&terms) };
+    let candidate = builder::not(crate::normalize_with(opposite, ctx));
+    if crate::canonical_order_compare(&candidate, &expr, ctx).is_lt() { candidate } else { expr }
+}
+
 /// Two complementary selector arms with complementary Boolean results
 /// select equality (or inequality) of the selectors. A shared consequence
 /// stays outside that equality: p ? (q OR c) : (!q OR c) == (p == q) OR c.
@@ -706,7 +719,7 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
     {
         return Some(inner.clone());
     }
-    if let Some(outcome) = crate::domains::completion::negative_singleton_return(operand) {
+    if let Some(outcome) = crate::domains::completion::failure_domain_of_typed_return(operand) {
         return Some(outcome);
     }
     if let Some(inverse) = operand.comparison_complement_operator() {

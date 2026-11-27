@@ -317,6 +317,11 @@ impl Keys<'_> {
                 }
                 let ty = result.map(|result| result.algebra_name().into()).into_iter().collect();
                 let signature = parameters.iter().map(|p| value_type_tag(p.algebra_name().into())).collect();
+                if let Some((receipt, exceptions)) = crate::domains::completion::multi_failure_return(&name, args) {
+                    return node(Class::Scalar, named("completion.is_return"), ty, signature,
+                        exceptions.into_iter().map(|exception| Payload::Text(exception.into())).collect(),
+                        vec![Some(self.expr(receipt))], None, 0, 1);
+                }
                 if matches!(crate::domains::completion::output_name(&name), "completion.is_throw" | "completion.is_return" | "completion.payload") {
                     let (operation, receipt, exception) = crate::domains::completion::class_observation(&name, args)
                         .expect("completion class must be a resolved declaration label");

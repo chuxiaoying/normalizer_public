@@ -14,6 +14,7 @@
 mod arithmetic;
 mod binop_casewhen;
 mod boolean;
+pub use boolean::compact_total_input_boolean_value;
 mod boolean_casewhen;
 mod boolean_domains;
 mod casewhen;

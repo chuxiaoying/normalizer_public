@@ -556,20 +556,20 @@ impl EffectSequence {
         })
     }
 
-    pub(crate) fn total_single_failure_classes(&self) -> impl Iterator<Item = (u64, &str)> + '_ {
+    pub(crate) fn total_failure_contracts(&self) -> impl Iterator<Item = (u64, Vec<&str>)> + '_ {
         self.events.iter().filter_map(|event| {
             if event.guard.as_bool() != Some(true) { return None; }
             match &event.operation {
-                EffectOperation::Port { receipt, completion, .. } if completion.exceptions.len() == 1 =>
-                    Some((receipt.binding_id(), completion.exceptions.keys().next().expect("one declared failure").as_str())),
-                EffectOperation::Sql { statement, receipt } => Some((receipt.binding_id(), statement.exception())),
+                EffectOperation::Port { receipt, completion, .. } if !completion.exceptions.is_empty() =>
+                    Some((receipt.binding_id(), completion.exceptions.keys().map(String::as_str).collect())),
+                EffectOperation::Sql { statement, receipt } => Some((receipt.binding_id(), vec![statement.exception()])),
                 _ => None,
             }
         })
     }
 
-    pub(crate) fn total_single_failure_class(&self, binding: u64) -> Option<&str> {
-        self.total_single_failure_classes().find_map(|(id, class)| (id == binding).then_some(class))
+    pub(crate) fn total_failure_classes(&self, binding: u64) -> Option<Vec<&str>> {
+        self.total_failure_contracts().find_map(|(id, class)| (id == binding).then_some(class))
     }
 
     pub(crate) fn events(&self) -> &[EffectEvent] {

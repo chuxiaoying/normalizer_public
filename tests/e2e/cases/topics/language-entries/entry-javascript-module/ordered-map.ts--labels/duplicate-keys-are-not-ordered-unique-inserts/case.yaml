@@ -11,7 +11,10 @@ expected:
       c: { position: 2, type: 'text?' }
   R: |-
     CASE
-      WHEN a == null AND b == null THEN MAP([])
-      WHEN b == null THEN MAP([["a", a]])
-      ELSE MAP([["a", b]])
+      WHEN a == null AND b == null AND c == null THEN MAP([])
+      WHEN b == null AND c == null THEN MAP([["a", a]])
+      WHEN c == null THEN MAP([["a", b]])
+      WHEN a == null AND b == null THEN MAP([["c", c]])
+      WHEN b == null THEN MAP([["a", a], ["c", c]])
+      ELSE MAP([["a", b], ["c", c]])
     END

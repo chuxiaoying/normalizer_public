@@ -594,6 +594,9 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             let position = format_expr_with_ctx(position, ctx);
             return format!("{}[{position}].{field}", array_name(root, ctx));
         }
+        if let Some((response, _)) = math::domains::completion::multi_failure_return(&registered_name, args) {
+            return format!("completion.is_return({})", format_expr_with_ctx(response, ctx));
+        }
         if let Some((operation, response, class)) = math::domains::completion::class_observation(&registered_name, args) {
             let response = format_expr_with_ctx(response, ctx);
             return if operation == "completion.is_return" {

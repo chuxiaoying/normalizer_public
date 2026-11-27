@@ -125,8 +125,8 @@ impl math::SortContext for ExecutionOrder<'_> {
         (!self.observations.is_empty()).then_some(&self.observations)
     }
 
-    fn total_single_failure_class(&self, receipt: u64) -> Option<&str> {
-        self.effects.total_single_failure_class(receipt)
+    fn total_failure_classes(&self, receipt: u64) -> Option<Vec<&str>> {
+        self.effects.total_failure_classes(receipt)
     }
 
     fn is_total_receipt_value(&self, binding: u64) -> bool {

@@ -365,7 +365,7 @@ pub(super) fn observations(
             }
         }
     }
-    let completion_classes = result.realtime_effects.total_single_failure_classes().collect::<BTreeMap<_, _>>();
+    let completion_classes = result.realtime_effects.total_failure_contracts().collect::<BTreeMap<_, _>>();
     let public_guards = crate::canonical_names::CanonicalNames {
         heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: Some(&completion_classes),
         external: Some(ctx.observation_identities()),
@@ -456,6 +456,9 @@ pub(super) fn observations(
             super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
             normalized
         };
+        let returned = if entry.return_type() == "bool" {
+            math::normalize::compact_total_input_boolean_value(returned, &math::DefaultSortContext)
+        } else { returned };
         ctx.set_temporal_names(publication.aliases);
         ctx.set_relation_slots(publication.slots);
         ctx.set_reductions(publication.reductions, publication.total);

@@ -97,7 +97,6 @@ function mapEntries(node, names, fail) {
   if (!argument || !ts.isArrayLiteralExpression(argument)) {
     fail('readonly Map requires one built-in Map construction with literal entry assembly');
   }
-  const seen = new Set();
   return argument.elements.map(row => {
     const candidate = ts.isSpreadElement(row) && unwrap(row.expression);
     const conditional = candidate && ts.isConditionalExpression(candidate);
@@ -125,8 +124,6 @@ function mapEntries(node, names, fail) {
     const input = ts.isIdentifier(value) ? names.get(value.text) : undefined;
     if (!subject || !ts.isIdentifier(subject) || !input || value.text !== subject.text || input.type !== 'text?')
       fail('readonly Map requires each null guard to protect the inserted value');
-    if (seen.has(key.text)) fail('readonly Map requires unique literal keys');
-    seen.add(key.text);
     return {key: key.text, input: input.name};
   });
 }

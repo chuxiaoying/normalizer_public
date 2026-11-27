@@ -605,6 +605,9 @@ impl EntryContext {
             } else {
                 expression.clone()
             };
+            let expression = if record_fields.is_none() && self.returns == "bool" {
+                math::normalize::compact_total_input_boolean_value(expression, &math::DefaultSortContext)
+            } else { expression };
             if !result.temporal_definitions.is_empty() {
                 super::temporal_graph::validate_reads(&expression, &result.temporal_definitions)?;
             }
