@@ -2,4 +2,4 @@ entry: src/vector-case.ts#choose
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - unsupported standalone scalar operation opaque
+    - "Property 'length' does not exist on type"

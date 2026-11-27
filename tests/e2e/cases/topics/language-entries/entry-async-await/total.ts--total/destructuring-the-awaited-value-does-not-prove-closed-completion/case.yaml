@@ -2,4 +2,4 @@ entry: src/total.ts#total
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - async entry requires a closed completion contract
+    - "Property 'value' does not exist on type"

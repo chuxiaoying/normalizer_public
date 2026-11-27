@@ -1,5 +1,5 @@
 entry: src/main.ts#run
 reject:
   fragments:
-  - "[NORM-TS-MODULE]"
-  - "src/main.ts:1:1: linked modules require explicitly named imports"
+    - "[NORM-TS-MODULE]"
+    - "has no default export"
