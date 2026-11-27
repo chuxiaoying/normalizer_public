@@ -243,6 +243,22 @@ struct OrderedMapEntry {
     input: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+enum WireText {
+    Plain(String),
+    Units(Vec<u16>),
+}
+
+impl WireText {
+    fn to_expression(&self) -> Expr {
+        match self {
+            Self::Plain(text) => b::lit_str(text),
+            Self::Units(units) => b::lit(math::Lit::from_text_units(units.clone())),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WireConstant {
@@ -276,7 +292,8 @@ impl TryFrom<WireConstant> for AdmittedConstant {
                     && (!digits.starts_with('0') || value == "0"), "invalid exact integer constant")?;
                 b::lit_integer(value.parse::<math::Integer>().map_err(|_| "invalid exact integer constant")?)
             },
-            (Ty::Text, serde_json::Value::String(value)) => b::lit_str(value),
+            (Ty::Text, value) => serde_json::from_value::<WireText>(value)
+                .map_err(|_| "invalid text constant")?.to_expression(),
             _ => return Err("invalid constant".into()),
         };
         Ok(Self { ty, value })
@@ -293,7 +310,7 @@ enum Node {
     /// One checked TypeScript unknown input, with native type-test and
     /// non-coercing projection only on the admitted normal completion.
     #[serde(rename = "source.guard_unknown_text")]
-    GuardUnknownText { name: String, message: String },
+    GuardUnknownText { name: String, message: WireText },
     #[serde(rename = "source.throw_unknown_input")]
     ThrowUnknownInput { name: String },
     #[serde(rename = "value.observe_tuple")]

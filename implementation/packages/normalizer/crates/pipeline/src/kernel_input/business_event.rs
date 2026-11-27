@@ -327,7 +327,7 @@ pub(super) fn observations(
                                     let input = b::param(name, math::ScalarSymbolType::UntrustedSourceValue);
                                     let failure = math::normalize(b::not(math::domains::source_type_guard::is_native_text(input)));
                                     project.entry_contexts.get(id).is_some_and(|context| std::ptr::eq(context, entry))
-                                        && value.as_lit().is_some_and(|value| matches!(value, math::Lit::Str(text) if text == message))
+                                        && *value == message.to_expression()
                                         && b::path_implies(&alternative.guard, &failure)
                                 }))
                             || external_payloads.iter().any(|(declared, observed, domain)|

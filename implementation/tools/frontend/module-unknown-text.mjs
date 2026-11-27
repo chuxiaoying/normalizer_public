@@ -1,7 +1,7 @@
 // A narrow, checked native TypeScript type-test boundary. No assertion,
 // coercion, shadowed constructor or unsupported type use is lowered.
 import ts from 'typescript';
-import {isLocalExportList, unwrapParens} from './ir.mjs';
+import {isLocalExportList, textWireValue, unwrapParens} from './ir.mjs';
 
 function oneStatement(node) {
   return node && ts.isBlock(node) ? (node.statements.length === 1 ? node.statements[0] : undefined) : node;
@@ -58,5 +58,5 @@ export function guardedUnknownText(sf, fn, checker, fail) {
   if (!ts.isStringLiteral(message) && !ts.isNoSubstitutionTemplateLiteral(message)) {
     fail('unknown guard TypeError message must be literal text');
   }
-  return {name, message: message.text};
+  return {name, message: textWireValue(message.text)};
 }

@@ -83,6 +83,22 @@ export function exactIntegerLiteral(node, sf) {
   return (negative ? -value : value).toString();
 }
 
+// JSON text consumed by the Rust bridge must be Unicode scalar text.
+// Carry ill-formed source strings as their exact UTF-16 code units instead.
+export function textWireValue(text) {
+  for (let index = 0; index < text.length; index++) {
+    const unit = text.charCodeAt(index);
+    if (unit < 0xD800 || unit > 0xDFFF) continue;
+    const next = text.charCodeAt(index + 1);
+    if (unit < 0xDC00 && next >= 0xDC00 && next <= 0xDFFF) {
+      index++;
+      continue;
+    }
+    return Array.from({length: text.length}, (_, offset) => text.charCodeAt(offset));
+  }
+  return text;
+}
+
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
   if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
@@ -104,7 +120,7 @@ function expr(node, sf, specialized) {
   node = unwrapParens(node);
   const result = specialized?.(node, lower);
   if (result !== undefined) return result;
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return { op: 'literal', type: 'string', value: node.text };
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return { op: 'literal', type: 'string', value: textWireValue(node.text) };
   const number = exactIntegerLiteral(node, sf);
   if (number !== undefined) return { op: 'literal', type: 'number', value: number };
   if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {

@@ -225,7 +225,7 @@ impl<'a> Engine<'a> {
                 let text = math::domains::source_type_guard::certified_text(value);
                 self.realtime_completion = realtime_state::join_completion(
                     guard, realtime_state::Completion::Return(text.clone()),
-                    realtime_state::Completion::Throw { class: "TypeError".into(), payload: Some(b::lit_str(message)) },
+                    realtime_state::Completion::Throw { class: "TypeError".into(), payload: Some(message.to_expression()) },
                 ).ok_or_else(|| fail("unsupported native type-guard completion"))?;
                 Ok(Value::Term(Ty::Text, text))
             }
