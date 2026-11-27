@@ -478,6 +478,42 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
 // 多元 OR 化简
 // =============================================================================
 
+/// Two complementary selector arms with complementary Boolean results
+/// select equality (or inequality) of the selectors. A shared consequence
+/// stays outside that equality: p ? (q OR c) : (!q OR c) == (p == q) OR c.
+fn diagonal_boolean_pair(left: &Expr, right: &Expr) -> Option<Expr> {
+    fn sign(expr: &Expr) -> (&Expr, bool) {
+        expr.as_not().map_or((expr, true), |base| (base, false))
+    }
+    fn boolean_parameter(expr: &Expr) -> bool {
+        matches!(expr.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
+            if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
+    }
+    let (BinOpKind::And, a, b) = left.as_binop()? else { return None; };
+    let (BinOpKind::And, c, d) = right.as_binop()? else { return None; };
+    for (selector, arm) in [(a, b), (b, a)] {
+        for (opposite, alternate) in [(c, d), (d, c)] {
+            let (p, positive) = sign(selector);
+            let (other_p, opposite_positive) = sign(opposite);
+            if p != other_p || positive == opposite_positive || !boolean_parameter(p) { continue; }
+            let left_terms = flatten_or(arm);
+            let right_terms = flatten_or(alternate);
+            let shared: Vec<_> = left_terms.iter().filter(|x| right_terms.contains(x)).cloned().collect();
+            let left_only: Vec<_> = left_terms.iter().filter(|x| !shared.contains(x)).collect();
+            let right_only: Vec<_> = right_terms.iter().filter(|x| !shared.contains(x)).collect();
+            let ([l], [r]) = (left_only.as_slice(), right_only.as_slice()) else { continue; };
+            let (q, q_positive) = sign(l);
+            let (other_q, other_q_positive) = sign(r);
+            if q != other_q || q_positive == other_q_positive || !boolean_parameter(q) { continue; }
+            let guard = if positive == q_positive { builder::eq } else { builder::ne };
+            let mut values = shared;
+            values.push(guard(p.clone(), q.clone()));
+            return Some(rebuild_or(&values));
+        }
+    }
+    None
+}
+
 fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Option<Expr> {
     let flat = flatten_or(expr);
     let mut out: Vec<Expr> = Vec::with_capacity(flat.len());
@@ -512,6 +548,24 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         return Some(rebuild_or(&out));
     }
 
+    // All operands of this IR OR are acquired values. Protected reads
+    // still reside in CASE rather than here; SQL UNKNOWN was excluded at
+    // the public entry to simplify.
+    let mut best: Option<Expr> = None;
+    for i in 0..out.len() {
+        for j in (i + 1)..out.len() {
+            if let Some(diagonal) = diagonal_boolean_pair(&out[i], &out[j]) {
+                let mut candidate: Vec<_> = out.iter().enumerate()
+                    .filter_map(|(index, term)| (i != index && j != index).then(|| term.clone())).collect();
+                candidate.push(diagonal);
+                let candidate = rebuild_or(&candidate);
+                if crate::canonical_order_compare(&candidate, best.as_ref().unwrap_or(expr), ctx).is_lt() {
+                    best = Some(candidate);
+                }
+            }
+        }
+    }
+    if best.is_some() { return best; }
     if let Some(factored) = factor_common_and_conjuncts_under_or(&out) {
         return Some(factored);
     }
