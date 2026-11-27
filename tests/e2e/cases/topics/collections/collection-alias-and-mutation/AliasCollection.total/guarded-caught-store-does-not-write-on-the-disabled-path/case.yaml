@@ -19,9 +19,9 @@ expected:
     - write:
         target: values[1]
         value: next
-        when: enabled and LENGTH(values) >= 2
+        when: enabled AND 1 < LENGTH(values)
   R: |-
     COALESCE(SUM(SELECT value FROM values), 0) + CASE
-      WHEN enabled AND LENGTH(values) > 1 THEN next - values[1]
+      WHEN enabled AND 1 < LENGTH(values) THEN next - values[1]
       ELSE 0
     END

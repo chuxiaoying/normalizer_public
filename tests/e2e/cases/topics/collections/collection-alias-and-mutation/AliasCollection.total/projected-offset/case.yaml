@@ -16,8 +16,8 @@ expected:
     - write:
         target: values[0]
         value: next
-        when: LENGTH(values) > 0
-  R: COALESCE(SUM(SELECT value + 1 FROM values), 0) - FIRST(value FROM values) + next
+        when: 0 < LENGTH(values)
+  R: next + (COALESCE(SUM(SELECT value + 1 FROM values), 0) - FIRST(value FROM values))
   throws:
     - type: java.lang.ArrayIndexOutOfBoundsException
-      when: LENGTH(values) == 0
+      when: 0 == LENGTH(values)

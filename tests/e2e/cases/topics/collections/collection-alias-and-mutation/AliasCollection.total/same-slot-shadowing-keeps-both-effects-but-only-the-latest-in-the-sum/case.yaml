@@ -16,13 +16,13 @@ expected:
     - write:
         target: values[0]
         value: next
-        when: LENGTH(values) > 0
+        when: 0 < LENGTH(values)
     - write:
         target: values[0]
         value: next + 1
-        when: LENGTH(values) > 0
+        when: 0 < LENGTH(values)
   R: |-
     COALESCE(SUM(SELECT value FROM values), 0) + CASE
-      WHEN LENGTH(values) > 0 THEN next + 1 - FIRST(value FROM values)
-      ELSE 0
+      WHEN 0 == LENGTH(values) THEN 0
+      ELSE next + 1 - FIRST(value FROM values)
     END
