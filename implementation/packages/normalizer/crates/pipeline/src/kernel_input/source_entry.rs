@@ -30,8 +30,7 @@ impl SourceReceiver {
     /// Establish the identity of a pre-existing receiver, not a fresh Java
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
     /// assembly is admitted by this route.
-    fn certify(program: &JavaProgram, target: &str, args: &[JavaExpr]) -> Result<()> {
-        let class = program.find_class(target).ok_or("missing receiver assembly type")?;
+    fn certify(program: &JavaProgram, class: &JavaClass, args: &[JavaExpr]) -> Result<()> {
         let mut constructors = class.methods().iter().filter(|m| m.is_constructor());
         let constructor = constructors.next();
         if constructors.next().is_some() || class.is_interface() || class.supertype().is_some() || !class.static_initializers().is_empty() {
@@ -141,7 +140,7 @@ pub(crate) fn inert_singleton(program: &JavaProgram, owner: &JavaClass, field: &
     inert_singleton_target(program, owner, field).is_some()
 }
 
-fn inert_singleton_target<'a>(program: &JavaProgram, owner: &JavaClass, field: &'a JavaField) -> Option<&'a str> {
+fn inert_singleton_target<'a>(program: &'a JavaProgram, owner: &JavaClass, field: &JavaField) -> Option<&'a JavaClass> {
     if !field.is_static() || !field.is_final() || !field.annotations().is_empty()
         || owner.is_interface() || owner.supertype().is_some() || !owner.static_initializers().is_empty()
     {
@@ -150,8 +149,9 @@ fn inert_singleton_target<'a>(program: &JavaProgram, owner: &JavaClass, field: &
     let JavaType::Class(target) = field.java_type() else { return None; };
     let Some(JavaExpr::New { java_type, args }) = field.initializer() else { return None; };
     if java_type != field.java_type() { return None; }
-    SourceReceiver::certify(program, target, args).ok()?;
-    Some(target)
+    let class = program.find_class(target)?;
+    SourceReceiver::certify(program, class, args).ok()?;
+    Some(class)
 }
 
 /// Find a statically assembled receiver invoked inside ordinary Java code.
@@ -159,8 +159,7 @@ pub(crate) fn inert_instance_method<'a>(
     program: &'a JavaProgram, owner: &JavaClass, field: &str, name: &str, arity: usize,
 ) -> Option<(&'a JavaClass, &'a simulator_parser::JavaMethod, String)> {
     let field = owner.fields().iter().find(|decl| decl.name() == field)?;
-    let target = inert_singleton_target(program, owner, field)?;
-    let class = program.find_class(target)?;
+    let class = inert_singleton_target(program, owner, field)?;
     // A distinct static receiver may use its certified external bindings.
     // A mutable E snapshot needs a separate rooted identity and is not
     // interchangeable with the selected entry receiver's existing state.
@@ -231,11 +230,12 @@ impl SourceEntry {
         let method_owner = program.find_class(qualified_owner);
         let receiver_root = qualified_owner.rsplit_once('.').and_then(|(owner, name)| {
             let class = program.find_class(owner)?;
-            class.fields().iter().any(|field| field.name() == name).then_some((class, name))
+            let field = class.fields().iter().find(|field| field.name() == name)?;
+            Some((class, field))
         });
-        let (class, receiver_name) = match (method_owner, receiver_root) {
+        let (class, receiver_field) = match (method_owner, receiver_root) {
             (Some(class), None) => (class, None),
-            (None, Some((class, name))) => (class, Some(name)),
+            (None, Some((class, field))) => (class, Some(field)),
             (Some(_), Some(_)) => return Err(fail("ambiguous class or static receiver binding")),
             (None, None) => return Err(fail("undeclared invocation root class or receiver")),
         };
@@ -244,9 +244,7 @@ impl SourceEntry {
         if Path::new(declaration_file).strip_prefix(root).ok() != Some(Path::new(file)) {
             return Err(fail("file does not declare the invocation root class"));
         }
-        let (target, receiver) = if let Some(name) = receiver_name {
-            let field = class.fields().iter().find(|field| field.name() == name)
-                .ok_or_else(|| fail("undeclared receiver field"))?;
+        let (target_class, receiver) = if let Some(field) = receiver_field {
             let JavaType::Class(target) = field.java_type() else {
                 return Err(fail("receiver field must have a named class type"));
             };
@@ -255,19 +253,19 @@ impl SourceEntry {
                     if field.is_static() && field.is_final() && java_type == field.java_type() => args,
                 _ => return Err(fail("receiver field must be static final with a matching explicit constructor")),
             };
-            let mut receiver = SourceReceiver { owner: root_name.clone(), field: name.into(), assembly_fields: BTreeSet::new() };
-            if let Some(declaration) = program.find_class(target) {
-                for port in declaration.fields().iter().filter(|field| crate::normalized::source_ports::marked(declaration, field)) {
-                    crate::normalized::source_ports::endpoint_declaration(program, port)?;
-                }
+            let declaration = program.find_class(target).ok_or_else(|| fail("missing receiver assembly type"))?;
+            for port in declaration.fields().iter().filter(|field| crate::normalized::source_ports::marked(declaration, field)) {
+                crate::normalized::source_ports::endpoint_declaration(program, port)?;
             }
-            SourceReceiver::certify(program, target, args).map_err(|detail| fail(&detail))?;
+            let mut receiver = SourceReceiver {
+                owner: root_name.clone(), field: field.name().into(), assembly_fields: BTreeSet::new(),
+            };
+            SourceReceiver::certify(program, declaration, args).map_err(|detail| fail(&detail))?;
             receiver.certify_static_assembly(program, class).map_err(|detail| fail(&detail))?;
-            (target.as_str(), Some(receiver))
+            (declaration, Some(receiver))
         } else {
-            (root_name.as_str(), None)
+            (class, None)
         };
-        let target_class = program.find_class(target).ok_or_else(|| fail("undeclared receiver class"))?;
         let mut candidates = target_class.methods().iter().enumerate().filter(|(_, method)|
             !method.is_constructor() && method.name() == method_name
                 && signature.as_ref().is_none_or(|types| method.params().iter()
