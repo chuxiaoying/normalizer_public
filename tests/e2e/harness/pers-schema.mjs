@@ -41,9 +41,16 @@ function hasGuaranteedThrows(document) {
     // Relative to a single constant boundary, a non-null business number
     // lies in exactly one of less/equal/greater. Do not use this for native
     // machine floats, nullables, or receipt fields with a protected domain.
-    const comparison = /^(?:(LENGTH)\(((?:[PE]\.)?[\w$]+)\)|((?:[PE]\.)?[\w$]+(?:\.[\w$]+)*))\s*(<=|>=|==|!=|<|>)\s*(-?(?:0|[1-9]\d*)(?:\.\d+)?)$/.exec(condition);
-    if (!comparison) continue;
-    const [, length, lengthRoot, numberRoot, operator, boundary] = comparison;
+    const subject = String.raw`(?:(LENGTH)\(((?:[PE]\.)?[\w$]+)\)|((?:[PE]\.)?[\w$]+(?:\.[\w$]+)*))`;
+    const literalToken = String.raw`(-?(?:0|[1-9]\d*)(?:\.\d+)?)`;
+    const opToken = '(<=|>=|==|!=|<|>)';
+    const toRight = new RegExp(`^${subject}\\s*${opToken}\\s*${literalToken}$`).exec(condition);
+    const toLeft = toRight ? null
+      : new RegExp(`^${literalToken}\\s*${opToken}\\s*${subject}$`).exec(condition);
+    if (!toRight && !toLeft) continue;
+    const reverse = {'<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!='};
+    const [length, lengthRoot, numberRoot, operator, boundary] = toRight
+      ? toRight.slice(1) : [toLeft[3], toLeft[4], toLeft[5], reverse[toLeft[2]], toLeft[1]];
     const type = totalType(lengthRoot ?? numberRoot);
     // LENGTH is total only for a known non-null array root. A nullable
     // element type (number?[]) does not make the array itself nullable.
