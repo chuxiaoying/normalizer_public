@@ -352,22 +352,22 @@ fn flatten_nested_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)
     let mut changed = false;
 
     for (outer_cond, value) in branches.iter() {
-        if let ExprKind::CaseWhen {
-            branches: inner_branches,
-        } = value.kind()
-        {
-            changed = true;
-            for (inner_cond, inner_val) in inner_branches {
-                let merged_cond = if inner_cond.as_bool() == Some(true) {
-                    outer_cond.clone()
-                } else {
-                    crate::builder::and(outer_cond.clone(), inner_cond.clone())
-                };
-                out.push((merged_cond, inner_val.clone()));
-            }
-        } else {
+        // If the inner CASE has no ELSE, exhausting its guards ends
+        // in an undefined inner value; it does not resume the outer CASE.
+        // Flatten only the explicit total form where no such fallthrough
+        // can enter an outer sibling.
+        let Some((inner_branches, fallback)) = value.as_total_case_when() else {
             out.push((outer_cond.clone(), value.clone()));
+            continue;
+        };
+        changed = true;
+        for (inner_cond, inner_val) in inner_branches.iter() {
+            out.push((
+                crate::builder::and(outer_cond.clone(), inner_cond.clone()),
+                inner_val.clone(),
+            ));
         }
+        out.push((outer_cond.clone(), fallback.clone()));
     }
 
     (out, changed)
