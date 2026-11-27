@@ -764,9 +764,17 @@ impl Admission<'_> {
                 }
                 S::Return(Some(value)) => {
                     let return_type = self.method.return_type();
+                    if matches!(return_type, JavaType::Void) {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE", "void completion cannot return a value"));
+                    }
                     let actual = self.expression_in_context(value, scope, self.root_object_target(return_type))?;
                     self.check_assignment_narrowing(Some(return_type), value, scope, "return")?;
                     self.compatible(Kind::declared(return_type), actual, "return")?;
+                }
+                S::Return(None) => {
+                    if !matches!(self.method.return_type(), JavaType::Void) {
+                        return Err(self.diagnostic("NORM-SOURCE-TYPE", "a value-returning method cannot use bare return"));
+                    }
                 }
                 S::If { cond, then_block, else_block } => {
                     self.condition(self.expression(cond, scope)?, "if condition")?;
@@ -782,10 +790,16 @@ impl Admission<'_> {
                     for (label, body) in cases {
                         let target = self.declared_type(selector, scope);
                         self.check_assignment_narrowing(target.as_ref(), label, scope, "switch label")?;
-                        if matches!(target, Some(JavaType::Primitive(name)) if name == "char")
-                            && !Self::signed_int_literal(label).is_some_and(|c| u16::try_from(c).is_ok())
-                        {
-                            return Err(self.diagnostic("NORM-SOURCE-TYPE", "switch label is outside the Java char range"));
+                        if let Some(JavaType::Primitive(name)) = target {
+                            let representable = Self::signed_int_literal(label).is_some_and(|value| match name.as_str() {
+                                "byte" => i8::try_from(value).is_ok(),
+                                "short" => i16::try_from(value).is_ok(),
+                                "char" => u16::try_from(value).is_ok(),
+                                _ => true,
+                            });
+                            if !representable {
+                                return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("switch label is outside the Java {name} range")));
+                            }
                         }
                         self.block(body, &mut scope.clone())?;
                     }
@@ -851,7 +865,7 @@ impl Admission<'_> {
                     return Err(self.diagnostic("NORM-ENTRY-STATE",
                         "cannot prove plain receiver fields are unused by local semantic directives")),
                 S::LoopBreak | S::LoopContinue => {}
-                S::While { .. } | S::For { .. } | S::LocalIr(_) | S::Return(None) => {}
+                S::While { .. } | S::For { .. } | S::LocalIr(_) => {}
             }
         }
         Ok(())

@@ -246,12 +246,17 @@ impl<'a> Parser<'a> {
                 let key = match &expression {
                     JavaExpr::Lit(JavaLit::Int(value)) => *value,
                     JavaExpr::Lit(JavaLit::Char(value)) => i32::from(*value),
+                    JavaExpr::UnaryOp { op: JavaUnaryOp::Neg, operand } => match operand.as_ref() {
+                        JavaExpr::Lit(JavaLit::Int(value)) => value.checked_neg()
+                            .ok_or_else(|| self.err("[JAVA-SWITCH] case requires an int literal"))?,
+                        _ => return Err(self.err("[JAVA-SWITCH] case requires a signed int literal")),
+                    },
                     _ => return Err(self.err("[JAVA-SWITCH] case requires a closed int or char literal")),
                 };
                 if !seen.insert(key) {
                     return Err(self.err("[JAVA-SWITCH] duplicate case label"));
                 }
-                Some(expression)
+                Some(JavaExpr::Lit(JavaLit::Int(key)))
             } else if self.eat_keyword("default") {
                 if default.is_some() {
                     return Err(self.err("[JAVA-SWITCH] duplicate default label"));
@@ -407,6 +412,7 @@ impl<'a> Parser<'a> {
 
     fn parse_return(&mut self) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
+        if self.eat_char(b';') { return Ok(JavaStatement::Return(None)); }
         let expr = self.parse_expression()?;
         self.skip_ws();
         self.require_semicolon("return value")?;

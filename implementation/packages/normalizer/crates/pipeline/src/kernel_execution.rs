@@ -501,6 +501,11 @@ impl<'a> Engine<'a> {
                         .replace_continue(realtime_state::Completion::Return(realtime_value));
                     return Ok(());
                 }
+                S::Return(None) => {
+                    self.realtime_completion = self.realtime_completion
+                        .replace_continue(realtime_state::Completion::Return(b::lit_null()));
+                    return Ok(());
+                }
                 S::Throw(J::Lit(JavaLit::Null)) => {
                     // The Java throw itself raises NullPointerException;
                     // a null value is not an exception payload in this case.

@@ -1066,6 +1066,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 calls.push((SourceCall::Constructor(owner.into()), args.len()));
             }
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
+            S::Return(None) => (),
             S::Block(b) => statements(b, at, calls, catch_admission, inside_finally)?,
             S::If {
                 cond,
