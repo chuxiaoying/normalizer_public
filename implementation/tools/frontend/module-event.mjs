@@ -119,7 +119,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
     const root = declaration.name.text;
     if (marks.has('entryState')) {
       stateDeclarations.set(root, declaration);
-      states[root] = {kind: 'state', ...stateBinding(declaration, root, modulePath)};
+      states[root] = {kind: 'state', ...stateBinding(declaration, root, modulePath, checker)};
       continue;
     }
     if (synchronous) fail('synchronous state event does not admit a port without a closed synchronous contract');

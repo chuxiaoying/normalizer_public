@@ -10,31 +10,49 @@ function fail(detail) {
   throw new Error(`SCENARIO_MODULE_INPUT: ${detail}`);
 }
 
-const stateScalarTypes = new Map([
-  [ts.SyntaxKind.NumericLiteral, 'number'], [ts.SyntaxKind.StringLiteral, 'text'],
-  [ts.SyntaxKind.TrueKeyword, 'bool'], [ts.SyntaxKind.FalseKeyword, 'bool'],
-]);
-
 export function singleAnnotatedBinding(statement, message, reject = fail) {
   const declarations = statement.declarationList.declarations;
   if (declarations.length !== 1 || !ts.isIdentifier(declarations[0].name)) reject(message);
   return declarations[0];
 }
 
-export function stateBinding(decl, name, originPath, page) {
-  return { source: `${originPath}#${page ? page + "." : ""}${name}`, fields: literalShape(decl.initializer) };
+export function stateBinding(decl, name, originPath, checker) {
+  const type = checker.getTypeAtLocation(decl.name);
+  const fields = literalShape(decl.initializer, type, checker);
+  if (typeof fields !== 'object') fail('@entryState requires a plain data record');
+  return {source: `${originPath}#${name}`, fields};
 }
 
-function literalShape(node) {
+function literalShape(node, type, checker) {
   if (node && ts.isObjectLiteralExpression(node)) {
-    return Object.fromEntries(node.properties.map(property => {
-      if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) {
-        fail('@entryState requires a plain data record with named properties');
+    if (type.isUnion() || checker.getIndexInfosOfType(type).length) {
+      fail('@entryState requires a closed record type without alternate shapes or index signatures');
+    }
+    const properties = new Map(type.getProperties().map(property => [property.getName(), property]));
+    const fields = Object.create(null);
+    for (const property of node.properties) {
+      if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)
+          || property.name.text === '__proto__' || Object.hasOwn(fields, property.name.text)) {
+        fail('@entryState requires a plain data record with distinct named properties');
       }
-      return [property.name.text, literalShape(property.initializer)];
-    }));
+      const field = properties.get(property.name.text);
+      if (!field || field.flags & ts.SymbolFlags.Optional) fail('@entryState requires a declared, present state field');
+      fields[property.name.text] = literalShape(property.initializer,
+        checker.getTypeOfSymbolAtLocation(field, property.name), checker);
+    }
+    if (properties.size !== Object.keys(fields).length) fail('@entryState record does not match its declared fields');
+    return fields;
   }
-  return stateScalarTypes.get(node?.kind) ?? fail('state field requires a plain scalar or record initializer');
+  const kind = node?.kind;
+  if (kind === ts.SyntaxKind.NumericLiteral && type.flags & ts.TypeFlags.Number) return 'number';
+  if ((kind === ts.SyntaxKind.TrueKeyword || kind === ts.SyntaxKind.FalseKeyword)
+      && type.flags & ts.TypeFlags.Boolean) return 'bool';
+  if (kind === ts.SyntaxKind.StringLiteral && type.flags & ts.TypeFlags.String) return 'text';
+  if ((kind === ts.SyntaxKind.StringLiteral || kind === ts.SyntaxKind.NullKeyword)
+      && type.isUnion() && type.types.length === 2
+      && type.types.some(member => member.flags & ts.TypeFlags.Null)
+      && type.types.some(member => member.flags & ts.TypeFlags.String)) return 'text?';
+  fail('state field requires a plain initializer with a supported declared value type');
 }
 
 export function normalizerMarkers(node, reject = fail) {
@@ -57,6 +75,7 @@ export function readModuleProjection(modulePath, source, entryName) {
   const states = new Map();
   const fn = definedModuleExport(sf, entryName, fail);
   const usesStandard = sf.statements.some(isOfficialNamespaceImport);
+  const checker = checkedTypeScript(modulePath, sf, fail, {allowOfficial: usesStandard});
   for (const statement of sf.statements) {
     const markers = normalizerMarkers(statement);
     if (!markers.has('entryState')) {
@@ -75,7 +94,7 @@ export function readModuleProjection(modulePath, source, entryName) {
     if (!ts.isVariableStatement(statement) || markers.size !== 1) fail('@N entryState only marks one state declaration');
     const decl = singleAnnotatedBinding(statement, '@N entryState must mark one named binding');
     const name = decl.name.text;
-    states.set(name, { source: `${modulePath}#${name}`, fields: literalShape(decl.initializer) });
+    states.set(name, stateBinding(decl, name, modulePath, checker));
   }
   const statements = fn.body.statements;
   const returned = statements.at(-1);
@@ -87,7 +106,6 @@ export function readModuleProjection(modulePath, source, entryName) {
   const prop = normalizerMarkers(fn).get('componentProp');
   if (typeof prop !== 'string' || !/^[\w.-]+#[\w.-]+\.[\w-]+$/.test(prop)) fail(`missing or invalid @N componentProp on ${entryName}`);
   localDirectives(sf, sf).requireConsumed();
-  checkedTypeScript(modulePath, sf, fail, {allowOfficial: usesStandard});
   const locals = [];
   for (const st of statements.slice(0, -1)) {
     if (!ts.isVariableStatement(st) || !(st.declarationList.flags & ts.NodeFlags.Const)) {

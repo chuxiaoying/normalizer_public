@@ -31,7 +31,7 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
         && host.declarationList.flags & ts.NodeFlags.Const
         && !host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {
       const name = root.name.text;
-      states.set(name, {root, ...stateBinding(root, name, modulePath)});
+      states.set(name, {root, ...stateBinding(root, name, modulePath, checker)});
       continue;
     }
     if (!host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {

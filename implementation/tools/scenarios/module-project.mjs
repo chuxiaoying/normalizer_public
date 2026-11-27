@@ -8,7 +8,7 @@ import { projectSources } from '../frontend/project-source.mjs';
 import { frontendScenario } from './registry.mjs';
 
 const carriers = {
-  bool: ['boolean', 'bool'], text: ['String', 'text?'],
+  bool: ['boolean', 'bool'], text: ['String', 'text?'], 'text?': ['String', 'text?'],
   number: ['int', 'number'], void: ['void', 'unit'],
 };
 
