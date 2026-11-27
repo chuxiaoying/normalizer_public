@@ -179,7 +179,9 @@ impl Engine<'_> {
             self.state_roots.insert(format!("{owner}.{name}"), reference.id());
             b::heap_ref(reference.id())
         } else {
-            let primitive = scalar_origin_type(&ty)?;
+            let primitive = if crate::normalized::nullable_text_field(class, field) {
+                ScalarSymbolType::NullableText
+            } else { scalar_origin_type(&ty)? };
             // This is the declared entry snapshot, not an additional P
             // binding disguised under an internal string prefix.
             b::sym_e(bind, primitive)
@@ -205,8 +207,13 @@ impl Engine<'_> {
         &mut self, owner: &str, name: &str, value: Value, path: Expr,
     ) -> Result<()> {
         let initial = self.initial_entry_state(owner, name)?;
-        need(initial.ty() != Ty::Ref && value.ty() == initial.ty(), "entry scalar state assignment type mismatch")?;
-        let value = value.scalar()?;
+        let scalar = value.scalar()?;
+        let nullable_text = matches!(initial.scalar()?.as_sym_var(),
+            Some(SymVarOrigin::External { primitive_type, .. }) if primitive_type == "text?");
+        need(initial.ty() != Ty::Ref && (value.ty() == initial.ty() || (nullable_text && scalar.is_null())),
+            "entry scalar state assignment type mismatch")?;
+        need(!scalar.is_null() || nullable_text, "nonnullable entry state cannot store a null value")?;
+        let value = scalar;
         let guard = self.normal_path(path);
         let root = self.scalar_state_reference(owner, name);
         self.realtime_store.store_guarded(guard.clone(), root, name, value.clone());

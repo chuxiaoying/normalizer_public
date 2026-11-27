@@ -364,11 +364,25 @@ fn official_marker(class: &simulator_parser::JavaClass, annotations: &[Annotatio
     bare_annotation(annotations).is_some_and(|name| official_marker_name(class, name, qualified))
 }
 
+fn nullable_state_text_markers(
+    class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
+) -> bool {
+    if !matches!(field.java_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String") {
+        return false;
+    }
+    let [a, b] = field.annotations() else { return false; };
+    let matches = |annotation: &AnnotationRef, marker| !annotation.has_arguments()
+        && official_marker_name(class, annotation.name(), marker);
+    (matches(a, ENTRY_STATE) && matches(b, NULLABLE))
+        || (matches(a, NULLABLE) && matches(b, ENTRY_STATE))
+}
+
 pub(crate) fn entry_state(
     class: &simulator_parser::JavaClass,
     field: &simulator_parser::JavaField,
 ) -> bool {
     official_marker(class, field.annotations(), ENTRY_STATE)
+        || nullable_state_text_markers(class, field)
 }
 pub(crate) fn source_nullable_parameter(
     class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod, name: &str, ty: &JavaType,
@@ -386,7 +400,7 @@ pub(crate) fn source_nullable_field(
     class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
 ) -> bool {
     matches!(field.java_type(), JavaType::Class(_))
-        && official_marker(class, field.annotations(), NULLABLE)
+        && (official_marker(class, field.annotations(), NULLABLE) || nullable_state_text_markers(class, field))
 }
 
 pub(crate) fn nullable_text_field(

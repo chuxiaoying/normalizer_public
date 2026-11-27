@@ -138,7 +138,8 @@ impl Loaded {
         for name in result.source_state_bindings.values() {
             let field = class.fields().iter().find(|f| f.name() == name && crate::normalized::entry_state(class, f))
                 .ok_or("unresolved source state declaration")?;
-            let ty = source_type(field.java_type())?.to_owned();
+            let mut ty = source_type(field.java_type())?.to_owned();
+            if crate::normalized::source_nullable_field(class, field) { ty.push('?'); }
             pending.push(field.java_type());
             let identity = selected.and_then(|source| source.receiver.as_ref().map(|receiver| {
                 let file = source.locator.split_once('#').expect("validated entry locator").0;
