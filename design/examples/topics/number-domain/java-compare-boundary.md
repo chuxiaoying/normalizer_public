@@ -35,7 +35,7 @@ P:
       position: 0
       type: number
 
-R: value >= 0
+R: value > -1
 ```
 
 **预处理要点**：预处理只补充原生源码没有表达清楚的合同，不把业务 number 改写成 Java 位宽算法。

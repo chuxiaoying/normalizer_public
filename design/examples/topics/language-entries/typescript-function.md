@@ -28,7 +28,7 @@ P:
 R: value
 throws:
   - type: TypeError
-    when: 'typeof(value) != "string"'
+    when: '"string" != typeof(value)'
     payload: '"Expected text"'
     payload_type: text
 ```

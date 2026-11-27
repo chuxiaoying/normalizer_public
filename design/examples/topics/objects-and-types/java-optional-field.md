@@ -57,7 +57,7 @@ P:
 
 R: |-
   CASE
-    WHEN profile.label == null THEN 0
+    WHEN null == profile.label THEN 0
     ELSE 1
   END
 ```

@@ -41,7 +41,7 @@ P:
       position: 1
       type: bool
 
-R: score >= 60
+R: score > 59
 ```
 
 `(active && preferred) || (active && !preferred)` 中，`preferred || !preferred` 恒为真，结果只保留 `active`。`preferred` 仍然是完整入口参数，因此保留在 P 中。
