@@ -1,5 +1,12 @@
 entry: src/handler.ts#handle
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - listener registration requires a proven local callback equality
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/handler.ts#handle
+    returns: void
+  P:
+    parameters:
+      deliver: { position: 0, type: bool }
+  S:
+    - call: { external: src/handler.ts#notices.notify, args: [], returns: void, result: $e_0, when: deliver }
+  R: void
