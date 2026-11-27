@@ -661,19 +661,10 @@ fn canonicalize_realtime_case(expression: Expr) -> Expr {
     let Some((last, earlier)) = expression.as_case_when().and_then(|arms| arms.split_last()) else {
         return expression;
     };
-    let mut last = (*last).clone();
-    let mut earlier = earlier.to_vec();
-    if last.0.as_bool() == Some(true) {
-        if let Some((condition, yes)) = earlier.last_mut() {
-            if let Some(complement) = math::case_orientation::preferred_complement(
-                condition, yes, &last.1, &math::DefaultSortContext,
-            ) {
-                *condition = complement;
-                std::mem::swap(yes, &mut last.1);
-            }
-        }
-    }
-    let expression = math::normalize(b::normal_return_case_when(earlier, last));
+    // Finish the whole CASE under the shared rules. The last two arms of
+    // a multi-arm chain are not a free-standing binary decision: the
+    // earlier arms delimit their remaining domain and priority.
+    let expression = math::normalize(b::normal_return_case_when(earlier.to_vec(), last.clone()));
     factor_array_sum_delta(&expression).unwrap_or(expression)
 }
 
