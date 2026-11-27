@@ -182,7 +182,7 @@ pub(super) fn observations(
                 continue;
             }
             EffectOperation::Sql { statement: sql, receipt } => {
-                let (response, _, receipt) = bind_receipt(receipt, &event.guard, &event_identities, &mut issued, &mut ctx)?;
+                let (response, binding_id, receipt) = bind_receipt(receipt, &event.guard, &event_identities, &mut issued, &mut ctx)?;
                 let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                     sql.project(event.arguments(), &receipt, &mut tables, ctx)
                 })?;
@@ -192,7 +192,10 @@ pub(super) fn observations(
                 // Atomic SQL writes have one declared failure type, so its
                 // complement names this exact receipt's normal completion.
                 let failed = math::domains::completion::is_throw(response.clone(), sql.exception());
-                ctx.display_business_observation(math::normalize(b::not(failed)), format!("completion.is_return({receipt})"));
+                let normal = math::normalize(b::not(failed));
+                ctx.bind_normal_completion(binding_id, normal.clone());
+                ctx.display_business_observation(normal, format!("completion.is_return({receipt})"));
+                ctx.display_business_observation(math::domains::completion::value(response.clone(), math::Primitive::Number), receipt.clone());
                 sql_exceptions.insert(sql.exception());
                 effects.push(item);
                 continue;
@@ -361,8 +364,9 @@ pub(super) fn observations(
             }
         }
     }
+    let completion_classes = result.realtime_effects.total_single_failure_classes().collect::<BTreeMap<_, _>>();
     let public_guards = crate::canonical_names::CanonicalNames {
-        heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: None,
+        heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: Some(&completion_classes),
         external: Some(ctx.observation_identities()),
         total_temporals: None, reductions: None, temporals: None,
     };
@@ -436,7 +440,6 @@ pub(super) fn observations(
                 }
             });
         }
-        let completion_classes = result.realtime_effects.total_single_failure_classes().collect::<BTreeMap<_, _>>();
         let returned = if completion_classes.is_empty() && temporal_names.is_empty() && !reads_total_integer_field {
             returned
         } else {

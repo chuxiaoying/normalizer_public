@@ -83,7 +83,7 @@ impl Engine<'_> {
             args.push(value);
         }
         let guard = self.normal_path(path);
-        let receipt = super::realtime_state::EffectReceipt::sql_count(self.fresh_binding());
+        let receipt = super::realtime_state::EffectReceipt::tagged(self.fresh_binding());
         let response = receipt.response().clone();
         let failed = completion::is_throw(response.clone(), &write.exception);
         let failure_guard = math::normalize(b::and(guard.clone(), failed.clone()));
@@ -109,7 +109,7 @@ impl Engine<'_> {
         // UPDATE and DELETE expose their actual affected-row receipts.
         let affected = match write.operation {
             SqlOperation::Insert => b::lit_int(1),
-            SqlOperation::Update { .. } | SqlOperation::Delete { .. } => response,
+            SqlOperation::Update { .. } | SqlOperation::Delete { .. } => completion::value(response, math::Primitive::Number),
         };
         env.insert(write.binding.clone(), Value::Term(Ty::Integer, affected));
         Ok(())

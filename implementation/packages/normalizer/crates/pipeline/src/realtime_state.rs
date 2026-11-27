@@ -5,7 +5,7 @@
 //! It is used by both source execution and normalized action execution so the
 //! earliest branch join has one implementation and one simplification boundary.
 
-use math::{builder as b, Expr, ScalarSymbolType};
+use math::{builder as b, Expr};
 use super::port_completion::PortSpec;
 use std::sync::Arc;
 
@@ -363,10 +363,6 @@ impl EffectReceipt {
         Self { binding_id, response: b::external_completion(binding_id) }
     }
 
-    pub(super) fn sql_count(binding_id: u64) -> Self {
-        Self { binding_id, response: b::sym_e(binding_id, ScalarSymbolType::Integer) }
-    }
-
     pub(super) fn binding_id(&self) -> u64 { self.binding_id }
     pub(super) fn response(&self) -> &Expr { &self.response }
 }
@@ -555,9 +551,12 @@ impl EffectSequence {
     pub(crate) fn total_single_failure_classes(&self) -> impl Iterator<Item = (u64, &str)> + '_ {
         self.events.iter().filter_map(|event| {
             if event.guard.as_bool() != Some(true) { return None; }
-            let EffectOperation::Port { receipt, completion, .. } = &event.operation else { return None; };
-            (completion.exceptions.len() == 1).then(||
-                (receipt.binding_id(), completion.exceptions.keys().next().expect("one declared failure").as_str()))
+            match &event.operation {
+                EffectOperation::Port { receipt, completion, .. } if completion.exceptions.len() == 1 =>
+                    Some((receipt.binding_id(), completion.exceptions.keys().next().expect("one declared failure").as_str())),
+                EffectOperation::Sql { statement, receipt } => Some((receipt.binding_id(), statement.exception())),
+                _ => None,
+            }
         })
     }
 
