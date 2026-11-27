@@ -138,7 +138,7 @@ P:
 E:
   quota: { kind: state, source: src/StoreRoute.java#Beans.ENTRY.quota, fields: { units: number } }
 S:
-  - write: { target: quota.units, value: units, when: replace and units > 0 }
+  - write: { target: quota.units, value: units, when: replace AND units > 0 }
   - write: { target: quota.units, value: '2', when: NOT (replace) }
 R: |-
   CASE
