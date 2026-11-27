@@ -1285,7 +1285,7 @@ impl<'a> Engine<'a> {
                 {
                     return Ok(self.observe_clock(path));
                 }
-                use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
+                use crate::normalized_decimal::{decimal_intrinsic, round_mode, DecimalIntrinsic};
                 if let Some(intrinsic) = self.program.find_class(id.rsplit_once('.').unwrap().0)
                     .and_then(|caller| decimal_intrinsic(self.program, caller, &callee))
                 {
@@ -1301,13 +1301,14 @@ impl<'a> Engine<'a> {
                             };
                             decimal::multiply(operand(&values[0])?, operand(&values[1])?)
                         }
-                        (DecimalIntrinsic::Round, [value, scale, mode]) => {
-                            let (scale, mode) = round_rule(scale, mode)
-                                .ok_or_else(|| fail("N.round requires a scale and explicit mode"))?;
-                            let Some((values, _)) = self.source_arguments(std::slice::from_ref(value), id, env, path)? else {
+                        (DecimalIntrinsic::Round, [_, _, mode]) => {
+                            let mode = round_mode(mode)
+                                .ok_or_else(|| fail("N.round requires an explicit midpoint mode"))?;
+                            let Some((values, _)) = self.source_arguments(&args[..2], id, env, path)? else {
                                 return Ok(Value::Term(Ty::Decimal, b::lit_null()));
                             };
-                            decimal::round(operand(&values[0])?, scale, mode)
+                            need(values[1].ty() == Ty::Integer, "N.round requires an exact integer scale")?;
+                            decimal::round_at(operand(&values[0])?, values[1].scalar()?, mode)
                         }
                         _ => return Err(fail("invalid standard decimal operation")),
                     };

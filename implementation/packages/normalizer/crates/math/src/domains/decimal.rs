@@ -36,7 +36,7 @@ impl Mode {
 pub enum View<'a> {
     Literal(BigInt, u32),
     Multiply(&'a Expr, &'a Expr),
-    Round(&'a Expr, u32, Mode),
+    Round(&'a Expr, &'a Expr, Mode),
 }
 
 pub fn view(expr: &Expr) -> Option<View<'_>> {
@@ -47,7 +47,7 @@ pub fn view(expr: &Expr) -> Option<View<'_>> {
         (PRODUCT, [a, b]) => Some(View::Multiply(a, b)),
         (ROUND, [value, scale, mode]) => {
             let crate::Lit::Str(mode) = mode.as_lit()? else { return None };
-            Some(View::Round(value, natural(scale)?, match mode.as_str() {
+            Some(View::Round(value, scale, match mode.as_str() {
                 "HALF_UP" => Mode::HalfUp,
                 "HALF_EVEN" => Mode::HalfEven,
                 _ => return None,
@@ -177,12 +177,28 @@ pub fn multiply(a: Expr, b: Expr) -> Expr {
 }
 
 pub fn round(value: Expr, scale: u32, mode: Mode) -> Expr {
-    if let Some((coefficient, digits)) = coefficient(&value) {
-        if scale >= digits {
+    round_at(value, b::lit_int(i64::from(scale)), mode)
+}
+
+/// Round a declared exact decimal with an already evaluated integer scale.
+/// Negative scales round to tens, hundreds, and so on.
+pub fn round_at(value: Expr, scale: Expr, mode: Mode) -> Expr {
+    if let (Some((coefficient, digits)), Some(scale)) = (
+        coefficient(&value), scale.as_lit().and_then(crate::Lit::as_integer),
+    ) {
+        let digits_value = BigInt::from(digits);
+        if scale >= digits_value || coefficient.sign() == Sign::NoSign {
             return literal(coefficient, digits);
         }
-        check_expansion(digits - scale);
-        let divisor = BigInt::from(10).pow(digits - scale);
+        let removed = digits_value - &scale;
+        let coefficient_digits = BigInt::from(coefficient.magnitude().to_str_radix(10).len());
+        if removed > coefficient_digits {
+            return b::lit_int(0);
+        }
+        let removed: u32 = removed.try_into()
+            .expect("[NORM-ANALYSIS-INCOMPLETE] exact decimal rounding exceeds the digit budget");
+        check_expansion(removed);
+        let divisor = BigInt::from(10).pow(removed);
         let negative = coefficient.sign() == Sign::Minus;
         let absolute = if negative { -coefficient } else { coefficient };
         let (mut quotient, remainder) = (&absolute / &divisor, &absolute % &divisor);
@@ -192,9 +208,15 @@ pub fn round(value: Expr, scale: u32, mode: Mode) -> Expr {
         {
             quotient += 1;
         }
-        return literal(if negative { -quotient } else { quotient }, scale);
+        if negative { quotient = -quotient; }
+        if scale.sign() == Sign::Minus {
+            let zeros = removed - digits;
+            return b::lit_integer(quotient * BigInt::from(10).pow(zeros));
+        }
+        let scale: u32 = scale.try_into().expect("scale is nonnegative and smaller than the literal precision");
+        return literal(quotient, scale);
     }
-    apply(ROUND, vec![value, b::lit_int(i64::from(scale)), b::lit_str(mode.name())],
+    apply(ROUND, vec![value, scale, b::lit_str(mode.name())],
         vec![Primitive::Composite, Primitive::Number, Primitive::String])
 }
 

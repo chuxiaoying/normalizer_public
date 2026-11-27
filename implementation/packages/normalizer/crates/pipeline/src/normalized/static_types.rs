@@ -299,14 +299,14 @@ impl Admission<'_> {
                         if crate::normalized_text::clock_intrinsic(self.program, self.class, &callee, args.len()) {
                             return Ok(Kind::Number);
                         }
-                        use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
+                        use crate::normalized_decimal::{decimal_intrinsic, round_mode, DecimalIntrinsic};
                         if let Some(intrinsic) = decimal_intrinsic(self.program, self.class, &callee) {
                             let bad = || self.diagnostic("NORM-SOURCE-TYPE", &format!(
-                                "{callee} requires exact decimal operands; N.round also requires a nonnegative integer literal scale and an explicit N midpoint mode"));
+                                "{callee} requires exact decimal operands; N.round also requires an integer scale and an explicit N midpoint mode"));
                             let operands = match (intrinsic, args.as_slice()) {
                                 (DecimalIntrinsic::Multiply, [_, _]) => &args[..],
                                 (DecimalIntrinsic::Round, [_, scale, mode])
-                                    if round_rule(scale, mode).is_some() => &args[..1],
+                                    if round_mode(mode).is_some() && self.expression(scale, scope)? == Kind::Number => &args[..1],
                                 _ => return Err(bad()),
                             };
                             for operand in operands {

@@ -389,7 +389,8 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
                     format!("{} * {}", format_operand(a, ctx), format_operand(b, ctx))
                 }
                 View::Round(value, scale, mode) =>
-                    format!("N.round({}, {scale}, N.{})", format_expr_with_ctx(value, ctx), mode.name()),
+                    format!("N.round({}, {}, N.{})", format_expr_with_ctx(value, ctx),
+                        format_expr_with_ctx(scale, ctx), mode.name()),
             };
         }
     }
