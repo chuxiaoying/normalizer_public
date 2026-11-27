@@ -72,14 +72,14 @@ P:
 
 R: |-
   {
-    raised: request.value + 1,
+    raised: 1 + request.value,
     selected: CASE
-      WHEN request.limit < request.value + 1 THEN request.value + 1
+      WHEN request.limit < 1 + request.value THEN 1 + request.value
       ELSE request.fallback
     END,
     delta: CASE
-      WHEN request.limit < request.value + 1 THEN 0
-      ELSE request.fallback - (request.value + 1)
+      WHEN request.limit < 1 + request.value THEN 0
+      ELSE request.fallback - (1 + request.value)
     END
   }
 ```
