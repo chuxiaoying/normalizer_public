@@ -134,17 +134,21 @@ pub(crate) fn source_record_accessor<'a>(
     (returned == field.name()).then(|| field.java_type())
 }
 
-fn source_record_local(program: &JavaProgram, method: &JavaMethod, local: &str, member: &str, arity: usize) -> bool {
+fn source_local_class<'a>(program: &'a JavaProgram, method: &JavaMethod, local: &str) -> Option<&'a JavaClass> {
     let declared = method.params().iter().find(|(_, name)| name == local).map(|(ty, _)| ty)
         .or_else(|| method.body()?.iter().find_map(|statement| match statement {
             S::VarDecl { java_type, name, .. } if name == local => Some(java_type),
             _ => None,
         }));
-    let Some(JavaType::Class(owner)) = declared else { return false; };
+    let Some(JavaType::Class(owner)) = declared else { return None; };
+    program.find_class(owner)
+}
+
+fn source_record_local(program: &JavaProgram, method: &JavaMethod, local: &str, member: &str, arity: usize) -> bool {
+    let Some(class) = source_local_class(program, method, local) else { return false; };
     let selected = method.body().is_some_and(|body| body.iter().any(|statement|
         matches!(statement, S::LocalIr(normalizer_ir::local::LocalIr::MemberChoice { binding, .. }) if binding == local)));
-    program.find_class(owner).is_some_and(|class|
-        source_record_accessor(class, member, arity, selected).is_some())
+    source_record_accessor(class, member, arity, selected).is_some()
 }
 
 fn unambiguous_interface_defaults(program: &JavaProgram, class: &JavaClass) -> bool {
@@ -799,6 +803,13 @@ pub(crate) fn validate_with_receiver(
                 // Dynamic edges are not the set of all implementations
                 // present in this source. Runtime checks the selected
                 // allocation, and the active stack still rejects cycles.
+                continue;
+            }
+            if let Some((key, _)) = source_local_class(program, m, local)
+                .and_then(|class| named_method_for_arity(class, member.as_ref(), arity))
+                .filter(|(_, method)| !method.is_static() && method.body().is_some())
+            {
+                targets.push(key);
                 continue;
             }
             if !m.params().iter().any(|(_, parameter)| parameter == &target_owner) {

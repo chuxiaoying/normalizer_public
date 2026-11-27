@@ -677,13 +677,22 @@ impl<'a> Engine<'a> {
                         value.check_java_array_component(java_component.as_deref())?;
                         need(value.ty() == ty,"local assignment type mismatch")?;
                         env.insert(name.clone(),value);
-                    } else if !self.methods[id].syntax.is_static() && !env.contains_key("this")
-                        && self.is_entry_state(id.rsplit_once('.').unwrap().0, name)
-                    {
-                        let value = self.java_expr(value,id,env,path.clone())?;
-                        self.write_entry_state(id.rsplit_once('.').unwrap().0, name, value, path)?;
                     } else {
-                        return Err(fail(format!("unbound Java assignment target {name}")));
+                        let owner = id.rsplit_once('.').unwrap().0;
+                        if let Some(receiver) = env.get("this").cloned().filter(|_| {
+                            self.program.find_class(owner).is_some_and(|class| class.fields().iter()
+                                .any(|field| !field.is_static() && field.name() == name))
+                        }) {
+                            let Some((value, path)) = self.source_operand(value, id, env, path)? else { continue; };
+                            self.write_source_field(&receiver.scalar()?, name, value, path)?;
+                        } else if !self.methods[id].syntax.is_static() && !env.contains_key("this")
+                            && self.is_entry_state(owner, name)
+                        {
+                            let Some((value, path)) = self.source_operand(value, id, env, path)? else { continue; };
+                            self.write_entry_state(owner, name, value, path)?;
+                        } else {
+                            return Err(fail(format!("unbound Java assignment target {name}")));
+                        }
                     }
                 }
                 S::Assign {
@@ -693,7 +702,7 @@ impl<'a> Engine<'a> {
                 } => {
                     self.source_field(target, field, id)?;
                     if matches!(target.as_ref(), J::Ident(name) if name == "this") && !env.contains_key("this") {
-                        let value = self.java_expr(value, id, env, path.clone())?;
+                        let Some((value, path)) = self.source_operand(value, id, env, path)? else { continue; };
                         self.write_entry_state(id.rsplit_once('.').unwrap().0, field, value, path)?;
                         continue;
                     }
@@ -1196,6 +1205,26 @@ impl<'a> Engine<'a> {
                                 return self.java_expr(&J::FieldAccess {
                                     target: Box::new(J::Ident(local.clone())), field: method.clone(),
                                 }, id, env, path);
+                            }
+                            // A fresh source allocation has an exact receiver.
+                            // Execute its visible instance method on that same
+                            // heap object, retaining the original this binding.
+                            if let Some((member, declaration)) = self.program.find_class(&interface)
+                                .and_then(|class| crate::normalized::named_method_for_arity(class, method, args.len()))
+                                .filter(|(_, declaration)| !declaration.is_static() && declaration.body().is_some())
+                            {
+                                if let Ok(reference) = receiver.scalar() {
+                                    if self.source_objects.allocation_owner(&reference) == Some(interface.as_str()) {
+                                        let receiver = receiver.clone();
+                                        for ((expected, _), actual) in declaration.params().iter().zip(args) {
+                                            self.source_reference_assignment(expected, actual, id)?;
+                                        }
+                                        let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                                            return Ok(Value::Term(self.methods[&member].returns.clone(), b::lit_null()));
+                                        };
+                                        return self.java_call_on(&member, values, path, Some(receiver));
+                                    }
+                                }
                             }
                             // An ordinary input that shadows a marked receiver
                             // does not inherit the field's external contract.
