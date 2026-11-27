@@ -2,4 +2,5 @@ entry: src/ordered-map.ts#labels
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - readonly Map requires an unshadowed built-in Map
+    - "construct signature"
+    - "any"

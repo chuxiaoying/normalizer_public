@@ -2,4 +2,6 @@ entry: src/total.ts#total
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - scalar arithmetic and comparison require two business numbers
+    - "Operator '+'"
+    - "boolean"
+    - "number"

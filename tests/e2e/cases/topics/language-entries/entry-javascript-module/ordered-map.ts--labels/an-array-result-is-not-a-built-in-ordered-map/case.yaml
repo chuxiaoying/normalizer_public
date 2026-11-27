@@ -2,4 +2,5 @@ entry: src/ordered-map.ts#labels
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - readonly Map requires one built-in Map construction with literal entry assembly
+    - "ReadonlyMap<string, string>"
+    - "get, has, size"

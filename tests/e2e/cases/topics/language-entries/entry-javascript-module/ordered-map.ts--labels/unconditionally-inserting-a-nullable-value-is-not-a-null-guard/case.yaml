@@ -2,4 +2,5 @@ entry: src/ordered-map.ts#labels
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - readonly Map requires explicitly null-guarded literal text entries
+    - "Map<string, string>"
+    - "string | null"
