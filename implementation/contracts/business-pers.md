@@ -19,3 +19,7 @@
 - 运行中取得的环境值用 `$a_i` 表示，动作的完成绑定用 `$e_i` 表示。动态 E 用 `kind: acquisition`，有条件取得时以 `when` 表示该条件。
 - 时钟取得用 `operation: normalizer.intrinsics.N.currentTimeMillis` 与 `type: number`。文档同时有 S 时，`afterS` 给出读取之前的已发布 S 前缀长度；前缀里的条件动作不因此变成无条件。没有 S 则不发布该字段。
 - 写后重读的表取得以 `source` 引用表声明，`after` 记录同表成功写入的完成绑定及各自适用条件。关系公式用 `FROM $a_i AS 表名` 引用新快照。语义依据见[关系读取的快照边界](../../design/secondary/关系读取的快照边界.md)。
+
+## 首项观察的机器表示
+
+对直接取得的有序标量序列 `values`，当前公式把统一后的首项观察序列化为 `FIRST(value FROM values)`。有投影时使用实际的行值表达式，不把已取得的投影改写成底层值。这是取值公式的拼写，不能代替 `throws`、空集缺省或 `S` 中实际发生的动作；适用合同由[第五章](../../design/chapters/第五章%20·%20关系代数：让%20SQL%20和集合运算一起化简.md#第零项何时就是首项)决定。
