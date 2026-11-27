@@ -490,7 +490,8 @@ impl<'a> Engine<'a> {
                 }
                 S::Return(Some(expr)) => {
                     self.source_reference_assignment(self.methods[id].syntax.return_type(), expr, id)?;
-                    let value = self.java_expr(expr, id, env, path)?;
+                    let value = self.java_expr(expr, id, env, path.clone())?;
+                    if self.normal_path(path).as_bool() == Some(false) { return Ok(()); }
                     let value = if crate::normalized::native_decimal_type(self.methods[id].syntax.return_type()) {
                         Self::promote_native_decimal(value)
                     } else { value };
@@ -614,6 +615,7 @@ impl<'a> Engine<'a> {
                     }
                     self.source_reference_assignment(java_type, expr, id)?;
                     let v = self.java_expr(expr, id, env, path.clone())?;
+                    if self.normal_path(path).as_bool() == Some(false) { continue; }
                     let v = if crate::normalized::native_decimal_type(java_type) {
                         Self::promote_native_decimal(v)
                     } else { v };
@@ -648,7 +650,8 @@ impl<'a> Engine<'a> {
                         let ty = local.ty();
                         need(ty != Ty::LocalTextMap, "local map binding cannot be reassigned as a Java alias")?;
                         let java_component = local.java_array_component().map(str::to_owned);
-                        let value = self.java_expr(value,id,env,path)?;
+                        let value = self.java_expr(value,id,env,path.clone())?;
+                        if self.normal_path(path).as_bool() == Some(false) { continue; }
                         let value = if ty == Ty::Decimal { Self::promote_native_decimal(value) } else { value };
                         value.check_java_array_component(java_component.as_deref())?;
                         need(value.ty() == ty,"local assignment type mismatch")?;
@@ -689,11 +692,15 @@ impl<'a> Engine<'a> {
                     else_block,
                 } => {
                     let test=self.java_expr(cond,id,env,path.clone())?;
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
                     let condition=self.condition_under_path(test.scalar()?,&path);
                     self.source_if(condition,then_block,else_block.as_deref().unwrap_or_default(),id,env,path)?;
                 }
                 S::Switch { selector, cases, default } => {
                     let selector = self.java_expr(selector, id, env, path.clone())?;
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
                     need(selector.ty() == Ty::Integer, "switch requires an exact integral selector")?;
                     self.source_switch(selector.scalar()?, cases, default, id, env, path)?;
                 }
@@ -747,6 +754,8 @@ impl<'a> Engine<'a> {
                     let (total, offset) = crate::normalized::array_sum(var_name, body)
                         .ok_or_else(|| fail("for-each requires an exact source array sum"))?;
                     let array = self.java_expr(iterable, id, env, path.clone())?;
+                    let path = self.normal_path(path);
+                    if path.as_bool() == Some(false) { continue; }
                     let prior = env.get(total).ok_or_else(|| fail("array sum needs an initialized accumulator"))?;
                     need(prior.ty() == Ty::Integer, "array sum needs a numeric accumulator")?;
                     let sum = self.source_array_sum(array, prior.scalar()?, offset, path)?;
@@ -772,9 +781,11 @@ impl<'a> Engine<'a> {
         env: &mut Env,
         path: Expr,
     ) -> Result<Value> {
-        let (left, right) = operands;
-        let left = self.java_expr(left, id, env, path.clone())?;
-        let right = self.java_expr(right, id, env, path.clone())?;
+        let Some((left, right, path)) = self.source_binary_operands(operands, id, env, path)? else {
+            // All operand paths completed exceptionally. Enclosing evaluation
+            // must consult that completion before inspecting this carrier.
+            return Ok(Value::Term(Ty::Integer, b::lit_null()));
+        };
         if op == JavaArithmetic::Add && (left.ty() == Ty::Text || right.ty() == Ty::Text) {
             let (left, right) = (left.scalar()?, right.scalar()?);
             let text = |value: Expr| match value.as_lit() {
@@ -932,11 +943,29 @@ impl<'a> Engine<'a> {
         if path.as_bool() == Some(false) { return Ok(None); }
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.java_expr(arg, id, env, path.clone())?);
-            path = self.normal_path(path);
-            if path.as_bool() == Some(false) { return Ok(None); }
+            let Some((value, live)) = self.source_operand(arg, id, env, path)? else { return Ok(None); };
+            values.push(value);
+            path = live;
         }
         Ok(Some((values, path)))
+    }
+
+    fn source_operand(
+        &mut self, operand: &J, id: &str, env: &mut Env, path: Expr,
+    ) -> Result<Option<(Value, Expr)>> {
+        let path = self.normal_path(path);
+        if path.as_bool() == Some(false) { return Ok(None); }
+        let value = self.java_expr(operand, id, env, path.clone())?;
+        let path = self.normal_path(path);
+        Ok((path.as_bool() != Some(false)).then_some((value, path)))
+    }
+
+    fn source_binary_operands(
+        &mut self, (left, right): (&J, &J), id: &str, env: &mut Env, path: Expr,
+    ) -> Result<Option<(Value, Value, Expr)>> {
+        let Some((left, path)) = self.source_operand(left, id, env, path)? else { return Ok(None); };
+        let Some((right, path)) = self.source_operand(right, id, env, path)? else { return Ok(None); };
+        Ok(Some((left, right, path)))
     }
 
     pub(super) fn java_expr(
@@ -1262,13 +1291,19 @@ impl<'a> Engine<'a> {
                 op: U::Not,
                 operand,
             } => {
-                let v = self.java_expr(operand, id, env, path)?;
+                let v = self.java_expr(operand, id, env, path.clone())?;
+                if self.normal_path(path).as_bool() == Some(false) {
+                    return Ok(Value::Term(Ty::Bool, b::lit_null()));
+                }
                 need(v.ty() == Ty::Bool, "not requires bool")?;
                 Ok(Value::Term(Ty::Bool, b::not(v.scalar()?)))
             }
             // Source admission only accepts the integral widening cast.
             J::Cast { operand, .. } => {
-                let operand = self.java_expr(operand, id, env, path)?;
+                let operand = self.java_expr(operand, id, env, path.clone())?;
+                if self.normal_path(path).as_bool() == Some(false) {
+                    return Ok(Value::Term(Ty::Integer, b::lit_null()));
+                }
                 need(
                     operand.ty() == Ty::Integer,
                     "widening cast requires an integer",
@@ -1279,7 +1314,10 @@ impl<'a> Engine<'a> {
                 op: U::Neg,
                 operand,
             } => {
-                let value = self.java_expr(operand, id, env, path)?;
+                let value = self.java_expr(operand, id, env, path.clone())?;
+                if self.normal_path(path).as_bool() == Some(false) {
+                    return Ok(value);
+                }
                 if value.ty() == Ty::Decimal {
                     return Ok(Value::Term(Ty::Decimal, math::domains::decimal::negate(value.scalar()?)));
                 }
@@ -1296,17 +1334,10 @@ impl<'a> Engine<'a> {
             J::BinOp { op: B::Mul, left, right } =>
                 self.java_arithmetic(JavaArithmetic::Mul, (left, right), id, env, path),
             J::BinOp { op: op @ (B::Div | B::Mod), left, right } => {
-                let left = self.java_expr(left, id, env, path.clone())?;
-                let normal = self.normal_path(path.clone());
                 let no_value = || Value::Term(Ty::Integer, b::lit_null());
-                if normal.as_bool() == Some(false) {
+                let Some((left, right, normal)) = self.source_binary_operands((left, right), id, env, path)? else {
                     return Ok(no_value());
-                }
-                let right = self.java_expr(right, id, env, normal)?;
-                let normal = self.normal_path(path);
-                if normal.as_bool() == Some(false) {
-                    return Ok(no_value());
-                }
+                };
                 need(left.ty() == Ty::Integer && right.ty() == Ty::Integer,
                     "division and remainder require integer operands")?;
                 let (left, right) = (math::normalize(left.scalar()?), math::normalize(right.scalar()?));
@@ -1333,6 +1364,10 @@ impl<'a> Engine<'a> {
             }
             J::BinOp { op, left, right } if matches!(op, B::And | B::Or) => {
                 let left = self.java_expr(left, id, env, path.clone())?;
+                let path = self.normal_path(path);
+                if path.as_bool() == Some(false) {
+                    return Ok(Value::Term(Ty::Bool, b::lit_null()));
+                }
                 need(
                     left.ty() == Ty::Bool,
                     "Java short-circuit left operand must be boolean",
@@ -1343,10 +1378,11 @@ impl<'a> Engine<'a> {
                 } else {
                     b::not(condition.clone())
                 };
-                if math::normalize(b::and(path.clone(), on_right.clone())).as_bool() == Some(false) {
-                    return Ok(Value::Term(Ty::Bool, b::lit_bool(*op == B::Or)));
-                }
-                let right = self.java_expr(right, id, env, b::and(path, on_right))?;
+                let right_path = self.normal_path(b::and(path.clone(), on_right));
+                let short_value = || Value::Term(Ty::Bool, b::lit_bool(*op == B::Or));
+                if right_path.as_bool() == Some(false) { return Ok(short_value()); }
+                let right = self.java_expr(right, id, env, right_path.clone())?;
+                if self.normal_path(right_path).as_bool() == Some(false) { return Ok(short_value()); }
                 need(
                     right.ty() == Ty::Bool,
                     "Java short-circuit right operand must be boolean",
@@ -1371,14 +1407,23 @@ impl<'a> Engine<'a> {
                 else_expr,
             } => {
                 let condition = self.java_expr(cond, id, env, path.clone())?;
+                let path = self.normal_path(path);
+                if path.as_bool() == Some(false) {
+                    return Ok(Value::Term(Ty::Unit, b::lit_null()));
+                }
                 let condition = self.condition_under_path(condition.scalar()?, &path);
                 if let Some(taken) = condition.as_bool() {
                     return self.java_expr(if taken { then_expr } else { else_expr }, id, env, path);
                 }
-                let yes =
-                    self.java_expr(then_expr, id, env, b::and(path.clone(), condition.clone()))?;
-                let no =
-                    self.java_expr(else_expr, id, env, b::and(path, b::not(condition.clone())))?;
+                let yes_path = self.normal_path(b::and(path.clone(), condition.clone()));
+                let no_path = self.normal_path(b::and(path, b::not(condition.clone())));
+                let yes = self.source_operand(then_expr, id, env, yes_path)?;
+                let no = self.source_operand(else_expr, id, env, no_path)?;
+                let (yes, no) = match (yes, no) {
+                    (Some((yes, _)), Some((no, _))) => (yes, no),
+                    (Some((value, _)), None) | (None, Some((value, _))) => return Ok(value),
+                    (None, None) => return Ok(Value::Term(Ty::Unit, b::lit_null())),
+                };
                 let (yes, no) = if matches!((yes.ty(), no.ty()), (Ty::Integer, Ty::Decimal) | (Ty::Decimal, Ty::Integer)) {
                     (Self::promote_native_decimal(yes), Self::promote_native_decimal(no))
                 } else { (yes, no) };
@@ -1402,7 +1447,10 @@ impl<'a> Engine<'a> {
                     _ => None,
                 };
                 if let Some(operand) = nullable {
-                    let v = self.java_expr(operand, id, env, path)?;
+                    let v = self.java_expr(operand, id, env, path.clone())?;
+                    if self.normal_path(path).as_bool() == Some(false) {
+                        return Ok(Value::Term(Ty::Bool, b::lit_null()));
+                    }
                     if let Value::Term(Ty::Text, expression) = &v {
                         if let Some(test) = self.compare_first_text_to_null(expression, op == BinOpKind::Ne) {
                             return Ok(Value::Term(Ty::Bool, test));
@@ -1424,12 +1472,13 @@ impl<'a> Engine<'a> {
                         if op == BinOpKind::Ne { b::not(null) } else { null },
                     ));
                 }
-                let l = self.java_expr(left, id, env, path.clone())?;
+                let Some((l, r, path)) = self.source_binary_operands((left, right), id, env, path)? else {
+                    return Ok(Value::Term(Ty::Bool, b::lit_null()));
+                };
                 need(
                     l.ty() != Ty::Text,
                     "Java text identity comparison requires explicit identity representation",
                 )?;
-                let r = self.java_expr(right, id, env, path.clone())?;
                 if matches!((l.ty(), r.ty()), (Ty::Decimal, Ty::Decimal) | (Ty::Decimal, Ty::Integer) | (Ty::Integer, Ty::Decimal)) {
                     return Ok(Value::Term(Ty::Bool, math::domains::decimal::binary(comparison, l.scalar()?, r.scalar()?)));
                 }
