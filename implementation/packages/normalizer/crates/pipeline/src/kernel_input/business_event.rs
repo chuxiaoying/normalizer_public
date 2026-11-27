@@ -311,7 +311,7 @@ pub(super) fn observations(
     };
     let temporal_names = &publication.aliases;
 
-    let mut exceptions: Vec<(String, Option<Expr>, Expr)> = Vec::new();
+    let mut exceptions: Vec<(Option<String>, Option<Expr>, Expr)> = Vec::new();
     for alternative in alternatives.as_slice() {
         validate_ids(&alternative.guard, &issued, None)?;
         match &alternative.outcome {
@@ -340,11 +340,23 @@ pub(super) fn observations(
                     need(project.type_only_exception(class), "undeclared type-only exception")?;
                 }
                 if let Some((_, _, guard)) = exceptions.iter_mut()
-                    .find(|(name, existing, _)| *name == *class && *existing == *payload)
+                    .find(|(name, existing, _)| name.as_deref() == Some(class) && *existing == *payload)
                 {
                     *guard = math::normalize(b::or(guard.clone(), alternative.guard.clone()));
                 } else {
-                    exceptions.push((class.clone(), payload.clone(), alternative.guard.clone()));
+                    exceptions.push((Some(class.clone()), payload.clone(), alternative.guard.clone()));
+                }
+            }
+            TerminalOutcome::ThrowValue(value) => {
+                validate_ids(value, &issued, None)?;
+                need(matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { name, .. })
+                    if entry.parameter_type(name) == Some("unknown")), "classless throw has no approved input origin")?;
+                if let Some((_, _, guard)) = exceptions.iter_mut()
+                    .find(|(class, payload, _)| class.is_none() && payload.as_ref() == Some(value))
+                {
+                    *guard = math::normalize(b::or(guard.clone(), alternative.guard.clone()));
+                } else {
+                    exceptions.push((None, Some(value.clone()), alternative.guard.clone()));
                 }
             }
             TerminalOutcome::Return(value) => {
@@ -388,16 +400,21 @@ pub(super) fn observations(
     let throws = exceptions
         .into_iter()
         .map(|(name, payload, cond)| {
-            let guard = if sql_exceptions.contains(name.as_str()) {
+            let guard = if name.as_ref().is_some_and(|name| sql_exceptions.contains(&name.as_str())) {
                 crate::format_expr_with_ctx(&cond, &mut ctx)
             } else {
                 condition_text(&cond, &mut ctx)
             };
-            let mut record = json!({"type":name,"when":guard});
+            let mut record = json!({"when":guard});
+            if let Some(name) = &name {
+                record["type"] = json!(name);
+            }
             if let Some(value) = payload {
                 record["payload"] = json!(crate::format_expr_with_ctx(&value, &mut ctx));
-                if let Some(ty) = project.exceptions.get(&name).filter(|ty| ty.as_str() != "unit") {
+                if let Some(ty) = name.as_ref().and_then(|name| project.exceptions.get(name)).filter(|ty| ty.as_str() != "unit") {
                     record["payload_type"] = json!(ty);
+                } else if name.is_none() {
+                    record["payload_type"] = json!("unknown");
                 }
             }
             record

@@ -501,7 +501,7 @@ impl Engine<'_> {
 
                     self.realtime_throws.truncate(prior_realtime_throws);
                     for alt in &exits {
-                        if matches!(alt.outcome, realtime_state::CompletionOutcome::Throw { .. }) {
+                        if matches!(alt.outcome, realtime_state::CompletionOutcome::Throw { .. } | realtime_state::CompletionOutcome::ThrowValue(_)) {
                             let escaped = math::normalize(b::and(path.clone(), alt.guard.clone()));
 
                             self.realtime_throws.push(escaped);

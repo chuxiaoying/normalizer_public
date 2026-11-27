@@ -286,6 +286,8 @@ enum Node {
     /// non-coercing projection only on the admitted normal completion.
     #[serde(rename = "source.guard_unknown_text")]
     GuardUnknownText { name: String, message: String },
+    #[serde(rename = "source.throw_unknown_input")]
+    ThrowUnknownInput { name: String },
     #[serde(rename = "value.observe_tuple")]
     ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.text_trim")]
@@ -746,11 +748,15 @@ impl Loaded {
                 if ty == Ty::UnknownInput {
                     let entry_context = self.project.entry_contexts.get(id);
                     need(*fallback == Ty::Ref && parameters.is_empty() && f.params.len() == 1
-                        && matches!(&f.body, Node::GuardUnknownText { name, .. } if name == &p.name)
                         && entry_context.is_some_and(|context| context.parameter_type(&p.name) == Some("unknown")
-                            && context.return_type() == "text")
-                        && self.project.exceptions.get("TypeError").is_some_and(|domain| domain == "text"),
-                        "unknown slot requires the checked native text guard and completion contract")?;
+                            && match &f.body {
+                                Node::GuardUnknownText { name, .. } if name == &p.name =>
+                                    context.return_type() == "text" && self.project.exceptions.get("TypeError")
+                                        .is_some_and(|domain| domain == "text"),
+                                Node::ThrowUnknownInput { name } if name == &p.name => context.return_type() == "void",
+                                _ => false,
+                            }),
+                        "unknown slot requires a checked native type guard or the original thrown input")?;
                 }
                 parameters.push(ty);
             }

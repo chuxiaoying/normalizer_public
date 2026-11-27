@@ -205,6 +205,13 @@ impl<'a> Engine<'a> {
                 Ok(Value::Term(Ty::Text,
                     crate::normalized_text::default_if_blank(text.scalar()?, fallback.scalar()?)))
             }
+            Node::ThrowUnknownInput { name } => {
+                need(path.as_bool() == Some(true), "unconditional throw must own the entry domain")?;
+                let value = env.get(name).filter(|value| value.ty() == Ty::UnknownInput)
+                    .ok_or_else(|| fail("native throw requires the exact unknown input"))?.scalar()?;
+                self.realtime_completion = realtime_state::Completion::ThrowValue(value);
+                Ok(Value::Term(Ty::Unit, b::lit_null()))
+            }
             Node::GuardUnknownText { name, message } => {
                 need(path.as_bool() == Some(true), "unknown type guard must own the complete entry domain")?;
                 let value = env.get(name).filter(|value| value.ty() == Ty::UnknownInput)

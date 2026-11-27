@@ -414,7 +414,7 @@ impl Engine<'_> {
             // source slice must prove close itself cannot throw.
             self.java_call_on(&close, Vec::new(), close_path.clone(), Some(resource))?;
             if self.realtime_completion.clone().alternatives().iter().any(|alternative|
-                matches!(alternative.outcome, CompletionOutcome::Throw { .. })
+                matches!(alternative.outcome, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_))
                     && math::normalize(b::and(close_path.clone(), alternative.guard.clone())).as_bool() != Some(false))
             {
                 return Err(fail("close with a possible failure requires suppressed-exception semantics"));
@@ -487,14 +487,14 @@ impl Engine<'_> {
             let finished = self.realtime_completion.replace_continue(saved);
             self.realtime_throws.truncate(prior_realtime_throws);
             self.realtime_throws.extend(finished.clone().alternatives().into_iter().filter_map(|alt| {
-                matches!(alt.outcome, CompletionOutcome::Throw { .. })
+                matches!(alt.outcome, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_))
                     .then(|| math::normalize(b::and(path.clone(), alt.guard)))
             }));
             self.realtime_completion = parent.replace_continue(finished);
             return Ok(());
         }
         for CompletionAlternative { guard, outcome } in &pending {
-            if matches!(outcome, CompletionOutcome::Throw { .. }) {
+            if matches!(outcome, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_)) {
                 let escaped = math::normalize(b::and(path.clone(), guard.clone()));
 
                 self.realtime_throws.push(escaped);

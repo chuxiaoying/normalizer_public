@@ -169,6 +169,20 @@ function compile(source, file, entry, physicalPath, linked) {
   const usesStandard = sf.statements.some(isOfficialNamespaceImport);
   const checker = checkedTypeScript(physicalPath, sf, fail, {allowOfficial: usesStandard});
   if (fn.parameters.some(param => checker.getTypeAtLocation(param.name).flags & ts.TypeFlags.Unknown)) {
+    const [statement] = fn.body.statements;
+    const [parameter] = fn.parameters;
+    if (fn.parameters.length === 1 && fn.body.statements.length === 1 && ts.isThrowStatement(statement)
+        && ts.isIdentifier(unwrap(statement.expression)) && fn.type?.kind === ts.SyntaxKind.VoidKeyword
+        && !fn.asteriskToken && !fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)
+        && checker.getSymbolAtLocation(unwrap(statement.expression)) === checker.getSymbolAtLocation(parameter.name)
+        && sf.statements.every(declaration => declaration === fn
+          || ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)
+          || isLocalExportList(declaration))) {
+      const name = parameter.name.text;
+      const params = [{publicName: name, name, position: 0, domain: 'unknown'}];
+      return projectInput(file, entry, params, 'void', false, 'void',
+        {op: 'source.throw_unknown_input', name}, fn.getText(sf));
+    }
     const proof = guardedUnknownText(sf, fn, checker, fail);
     const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
     return projectInput(file, entry, params, 'string', false, 'text',

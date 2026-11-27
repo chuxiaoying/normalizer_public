@@ -21,6 +21,7 @@ pub(crate) enum Completion {
     Continue,
     Return(Expr),
     Throw { class: String, payload: Option<Expr> },
+    ThrowValue(Expr),
     Guarded(Vec<CompletionAlternative>),
 }
 
@@ -35,6 +36,7 @@ pub(crate) enum CompletionOutcome {
     Continue,
     Return(Expr),
     Throw { class: String, payload: Option<Expr> },
+    ThrowValue(Expr),
 }
 
 pub(crate) struct TerminalAlternative {
@@ -45,6 +47,7 @@ pub(crate) struct TerminalAlternative {
 pub(crate) enum TerminalOutcome {
     Return(Expr),
     Throw { class: String, payload: Option<Expr> },
+    ThrowValue(Expr),
 }
 
 pub(crate) struct TerminalAlternatives(Vec<TerminalAlternative>);
@@ -52,7 +55,7 @@ pub(crate) struct TerminalAlternatives(Vec<TerminalAlternative>);
 impl TerminalAlternatives {
     pub(crate) fn is_always_throwing(&self) -> bool {
         // The completion proof already rejects an empty domain.
-        self.0.iter().all(|a| matches!(a.outcome, TerminalOutcome::Throw { .. }))
+        self.0.iter().all(|a| matches!(a.outcome, TerminalOutcome::Throw { .. } | TerminalOutcome::ThrowValue(_)))
     }
 
     pub(crate) fn as_slice(&self) -> &[TerminalAlternative] { &self.0 }
@@ -72,7 +75,7 @@ impl TerminalAlternatives {
         let mut returns = self.0.iter()
             .filter_map(|alternative| match &alternative.outcome {
                 TerminalOutcome::Return(value) => Some((alternative.guard.clone(), value.clone())),
-                TerminalOutcome::Throw { .. } => None,
+                TerminalOutcome::Throw { .. } | TerminalOutcome::ThrowValue(_) => None,
             })
             .collect::<Vec<_>>();
         let last = returns.pop()?;
@@ -126,7 +129,7 @@ impl Completion {
     pub(crate) fn continuing_guard(&self) -> Expr {
         match self {
             Self::Continue => b::lit_bool(true),
-            Self::Throw { .. } | Self::Return(_) => b::lit_bool(false),
+            Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => b::lit_bool(false),
             Self::Guarded(alternatives) => math::normalize(alternatives.iter()
                 .filter(|a| a.outcome == CompletionOutcome::Continue)
                 .fold(b::lit_bool(false), |guard, a| b::or(guard, a.guard.clone()))),
@@ -142,6 +145,7 @@ impl Completion {
                 CompletionOutcome::Continue => return None,
                 CompletionOutcome::Return(value) => TerminalOutcome::Return(value),
                 CompletionOutcome::Throw { class, payload } => TerminalOutcome::Throw { class, payload },
+                CompletionOutcome::ThrowValue(value) => TerminalOutcome::ThrowValue(value),
             };
             Some(TerminalAlternative { guard: alternative.guard, outcome })
         }).collect::<Option<Vec<_>>>()?;
@@ -170,6 +174,10 @@ impl Completion {
             Self::Throw { class, payload } => vec![CompletionAlternative {
                 guard: b::lit_bool(true),
                 outcome: CompletionOutcome::Throw { class, payload },
+            }],
+            Self::ThrowValue(value) => vec![CompletionAlternative {
+                guard: b::lit_bool(true),
+                outcome: CompletionOutcome::ThrowValue(value),
             }],
             Self::Guarded(alternatives) => alternatives,
         }
@@ -283,6 +291,7 @@ fn normalize_outcome(outcome: CompletionOutcome) -> CompletionOutcome {
     match outcome {
         CompletionOutcome::Continue => CompletionOutcome::Continue,
         CompletionOutcome::Return(value) => CompletionOutcome::Return(math::normalize(value)),
+        CompletionOutcome::ThrowValue(value) => CompletionOutcome::ThrowValue(value),
         CompletionOutcome::Throw { class, payload } => CompletionOutcome::Throw {
             class,
             payload: payload.map(math::normalize),
@@ -294,6 +303,7 @@ fn outcome_to_completion(outcome: CompletionOutcome) -> Completion {
     match outcome {
         CompletionOutcome::Continue => Completion::Continue,
         CompletionOutcome::Return(value) => Completion::Return(value),
+        CompletionOutcome::ThrowValue(value) => Completion::ThrowValue(value),
         CompletionOutcome::Throw { class, payload } => Completion::Throw { class, payload },
     }
 }
