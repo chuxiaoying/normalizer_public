@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { closedReceiver } from './module-receiver.mjs';
 import { checkedProjectModules, hasProjectImports } from './module-links.mjs';
-import { definedModuleExport, parseSourceModule, lowerExpression, unwrapParens as unwrap } from './ir.mjs';
+import { definedModuleExport, isLocalExportList, parseSourceModule, lowerExpression, unwrapParens as unwrap } from './ir.mjs';
 import { eventContract } from './module-event-project.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
@@ -193,7 +193,8 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
   // Nonstandard imports, top-level initialization and other module state
   // require a separate certified linked graph or receiver assembly.
   if (!receiverFields && !linked && sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
-      !ts.isTypeAliasDeclaration(node) && !ts.isInterfaceDeclaration(node) && !isOfficialNamespaceImport(node))) {
+      !ts.isTypeAliasDeclaration(node) && !ts.isInterfaceDeclaration(node) && !isOfficialNamespaceImport(node)
+      && !isLocalExportList(node))) {
     fail('standalone scalar modules require closed function declarations');
   }
   if (fn.asteriskToken) fail('generator entry requires a closed completion contract: ' + entry);

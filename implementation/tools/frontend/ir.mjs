@@ -9,11 +9,30 @@ export function parseSourceModule(file, text, fail, kind = ts.ScriptKind.JS) {
   return sf;
 }
 
+export const isLocalExportList = node => ts.isExportDeclaration(node) && !node.moduleSpecifier
+  && !node.attributes && node.exportClause && ts.isNamedExports(node.exportClause);
+
 export function definedModuleExport(sf, entry, fail) {
-  const declarations = sf.statements.filter(node => ts.isFunctionDeclaration(node)
-    && node.name?.text === entry && node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  if (declarations.length !== 1 || !declarations[0].body) fail('expected one defined exported function: ' + entry);
-  return declarations[0];
+  const declarations = new Set();
+  const functions = sf.statements.filter(ts.isFunctionDeclaration);
+  for (const node of functions) {
+    const modifiers = node.modifiers ?? [];
+    if (!modifiers.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    const exportedName = modifiers.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword)
+      ? 'default' : node.name?.text;
+    if (exportedName === entry) declarations.add(node);
+  }
+  for (const statement of sf.statements) {
+    if (!isLocalExportList(statement) || statement.isTypeOnly) continue;
+    for (const specifier of statement.exportClause.elements) {
+      if (specifier.isTypeOnly || specifier.name.text !== entry) continue;
+      const local = (specifier.propertyName ?? specifier.name).text;
+      for (const node of functions) if (node.name?.text === local) declarations.add(node);
+    }
+  }
+  const [fn] = declarations;
+  if (declarations.size !== 1 || !fn.body) fail('expected one defined exported function: ' + entry);
+  return fn;
 }
 
 const BINARY = new Map([

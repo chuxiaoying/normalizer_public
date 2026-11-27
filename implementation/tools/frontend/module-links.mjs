@@ -4,16 +4,14 @@
 import { readFileSync } from 'node:fs';
 import { dirname, posix } from 'node:path';
 import ts from 'typescript';
-import { parseSourceModule } from './ir.mjs';
+import { isLocalExportList, parseSourceModule } from './ir.mjs';
 import { assertTypeScript, isCompilerLibrary } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
 import {isOfficialNamespaceImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
 const relative = specifier => specifier.startsWith('./') || specifier.startsWith('../');
-const localExport = node => ts.isExportDeclaration(node) && !node.moduleSpecifier
-  && !node.attributes && node.exportClause && ts.isNamedExports(node.exportClause);
 const ordinaryDeclaration = node => ts.isImportDeclaration(node) || ts.isFunctionDeclaration(node)
-  || ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || localExport(node);
+  || ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || isLocalExportList(node);
 
 export function hasProjectImports(source, file) {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
