@@ -1087,9 +1087,9 @@ fn constant_array_address(target: &E, index: &E) -> bool {
         && matches!(index, E::Lit(JavaLit::Int(i)) if *i >= 0)
 }
 
-// Read from a bound local or local construction with a signed int literal.
-fn source_array_read(target: &E, index: &E) -> bool {
-    (matches!(target, E::Ident(_)) || inline_int_array_initializer(target)) && signed_literal_index(index)
+// Index eligibility is checked by the static type pass, not its syntax.
+fn source_array_read(target: &E) -> bool {
+    matches!(target, E::Ident(_)) || inline_int_array_initializer(target)
 }
 
 // Match one full accumulator update and reject every other loop shape at
@@ -1135,12 +1135,6 @@ fn inline_int_array_initializer(e: &E) -> bool {
     matches!(e, E::ArrayInitializer { element_type, .. } if java_int(element_type))
 }
 
-fn signed_literal_index(e: &E) -> bool {
-    matches!(e, E::Lit(JavaLit::Int(_)))
-        || matches!(e, E::UnaryOp { op: U::Neg, operand }
-            if matches!(operand.as_ref(), E::Lit(JavaLit::Int(_))))
-}
-
 fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
     match e {
         E::Ident(_) | E::Lit(JavaLit::Bool(_) | JavaLit::Str(_) | JavaLit::Null) => (),
@@ -1182,7 +1176,7 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
             expr(length, at, calls)?;
         }
         E::FieldAccess { target, .. } => expr(target, at, calls)?,
-        E::ArrayAccess { target, index } if source_array_read(target, index) => {
+        E::ArrayAccess { target, index } if source_array_read(target) => {
             expr(target, at, calls)?;
             expr(index, at, calls)?;
         }

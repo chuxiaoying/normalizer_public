@@ -512,8 +512,14 @@ impl Admission<'_> {
                 declared()
             }
             E::ArrayAccess { target, index } => {
-                self.expression(target, scope)?;
-                self.expression(index, scope)?;
+                if self.expression(target, scope)? != Kind::Sequence {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "indexed receiver must be a declared array"));
+                }
+                if self.expression(index, scope)? != Kind::Number
+                    || self.integer_width(index, scope) == Some(IntegerWidth::Long)
+                {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "array subscript must have an int-compatible type"));
+                }
                 declared()
             }
             _ => return Err(super::error("NORM-EXPRESSION", self.id)),

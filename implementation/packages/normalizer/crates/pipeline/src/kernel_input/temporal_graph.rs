@@ -136,7 +136,7 @@ pub(super) fn publish(
                             names.get(name).cloned().ok_or_else(|| fail("invalid record array name"))?
                         }
                     },
-                    Candidates::Literal(values) => format!("[{}]", values.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")),
+                    Candidates::Literal(values) => format!("[{}]", values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")),
                 };
                 let (fallback, element) = match &choice.empty {
                     Fallback::Integer(value) => (ChoiceOuter::Expression(value.clone()), "number"),
@@ -146,7 +146,7 @@ pub(super) fn publish(
                 let source = match &choice.members {
                     Candidates::Input(name) => ChoiceOuter::Parameter { name: name.clone(), kind: format!("{element}[]") },
                     Candidates::Literal(values) => ChoiceOuter::Expression(b::array_lit(values.iter()
-                        .map(|&value| b::lit_int(i64::from(value))).collect())),
+                        .cloned().map(b::lit_integer).collect())),
                 };
                 Slot::Choice { members, empty: value, guard: choice.guard.clone(), shape: ChoiceShape { source, fallback } }
             }

@@ -7,7 +7,7 @@ use super::source_arrays::LocalIntArray;
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum Candidates {
     Input(String),
-    Literal(Vec<i32>),
+    Literal(Vec<math::Integer>),
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -59,15 +59,18 @@ impl Engine<'_> {
                 return Err(fail("local member choice requires a snapshot of the updated array")),
             Some(Value::LocalIntArray(LocalIntArray::Zeroed { length: 0, .. })) => Choice::Fixed(empty.clone()),
             Some(Value::LocalIntArray(LocalIntArray::Zeroed { .. })) => Choice::Fixed(b::lit_int(0)),
-            Some(Value::LocalIntArray(LocalIntArray::Initialized { values, .. })) => match values.as_slice() {
+            Some(Value::LocalIntArray(LocalIntArray::Initialized { values, .. })) => match values.as_ref() {
                 [] => Choice::Fixed(empty.clone()),
                 [value, rest @ ..] if rest.iter().all(|other| other == value) =>
-                    Choice::Fixed(b::lit_int(i64::from(*value))),
+                    Choice::Fixed(value.clone()),
                 _ => {
                     // The array has already been evaluated. For a choice with
                     // no order or distribution promise, only the support set
                     // of this literal is observable.
-                    let mut support = values.clone();
+                    let mut support = values.iter().map(|value| {
+                        value.as_lit().and_then(math::Lit::as_integer)
+                            .ok_or_else(|| fail("independent local member choice requires a certified constant support set"))
+                    }).collect::<Result<Vec<_>>>()?;
                     support.sort_unstable();
                     support.dedup();
                     Choice::Independent(Candidates::Literal(support))

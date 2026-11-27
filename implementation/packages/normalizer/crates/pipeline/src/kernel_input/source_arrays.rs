@@ -7,7 +7,7 @@ const NEGATIVE_SIZE: &str = "java.lang.NegativeArraySizeException";
 
 #[derive(Clone, PartialEq)]
 pub(super) enum LocalIntArray {
-    Initialized { values: Vec<i32>, identity: i64 },
+    Initialized { values: std::rc::Rc<[Expr]>, identity: i64 },
     Zeroed { length: i32, identity: i64 },
     Unreachable,
 }
@@ -29,15 +29,13 @@ impl LocalIntArray {
         }
     }
 
-    fn get(&self, index: i32) -> Option<i32> {
-        if index < 0 || i64::from(index) >= self.length() {
-            return None;
+    fn get(&self, index: i64) -> Option<Expr> {
+        if !(0..self.length()).contains(&index) { return None; }
+        match self {
+            Self::Initialized { values, .. } => Some(values[index as usize].clone()),
+            Self::Zeroed { .. } => Some(b::lit_int(0)),
+            Self::Unreachable => None,
         }
-        Some(match self {
-            Self::Initialized { values, .. } => values[index as usize],
-            Self::Zeroed { .. } => 0,
-            Self::Unreachable => return None,
-        })
     }
 }
 
@@ -111,8 +109,11 @@ fn slot_delta(value: Expr, original: &Expr, path: &Expr) -> Expr {
 
 impl Engine<'_> {
     pub(super) fn source_local_array_initializer(&mut self, values: Vec<Value>) -> Result<LocalIntArray> {
-        let entries = values.into_iter().map(exact_java_int).collect::<Result<_>>()?;
-        Ok(LocalIntArray::Initialized { values: entries, identity: self.heap.new_object().id() })
+        let entries = values.into_iter().map(|value| {
+            need(value.ty() == Ty::Integer, "expected Java int for local array")?;
+            value.scalar()
+        }).collect::<Result<Vec<_>>>()?;
+        Ok(LocalIntArray::Initialized { values: entries.into(), identity: self.heap.new_object().id() })
     }
 
     pub(super) fn source_local_array_allocation(&mut self, size: Value, path: Expr) -> Result<LocalIntArray> {
@@ -180,7 +181,7 @@ impl Engine<'_> {
     pub(super) fn source_array_store(&mut self, array: Value, index: Value, rhs: Value, path: Expr) -> Result<()> {
         need(rhs.ty() == Ty::Integer, "source array update requires an exact integer value")?;
         if let Value::LocalIntArray(local) = array {
-            let index = exact_java_int(index)?;
+            let index = index_value(index)?;
             let path = self.normal_path(path);
             if path.as_bool() == Some(false) { return Ok(()); }
             let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
@@ -242,17 +243,8 @@ impl Engine<'_> {
             return Ok(Value::Term(Ty::Integer, result));
         }
         if let Value::LocalIntArray(local) = array {
-            let index = exact_java_int(index)?;
-            let Some(value) = local.get(index) else {
-                self.throw_source_on_path(path, OUT_OF_BOUNDS);
-                // This continuation is now unreachable; do not use null as a
-                // normal result for an integer-valued Java expression.
-                return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
-            };
-            let reference = local.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
-            let value = self.realtime_store.read_with_initial(&reference, &index.to_string(), &path,
-                Some(b::lit_int(i64::from(value)))).ok_or_else(|| fail("uninitialized local array element"))?;
-            return Ok(Value::Term(Ty::Integer, value));
+            need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
+            return self.source_local_array_read(&local, index.scalar()?, path);
         }
         let root = array_root(array)?;
         need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
@@ -272,6 +264,53 @@ impl Engine<'_> {
             |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
             .ok_or_else(|| fail("indexed observation has no value"))?;
         Ok(Value::Term(Ty::Integer, slot))
+    }
+
+    fn source_local_array_read(&mut self, array: &LocalIntArray, index: Expr, path: Expr) -> Result<Value> {
+        let length = array.length();
+        let outside = if length == 0 { b::lit_bool(true) } else {
+            b::or(b::lt(index.clone(), b::lit_int(0)), b::ge(index.clone(), b::lit_int(length)))
+        };
+        self.throw_source_on_path(b::and(path.clone(), outside), OUT_OF_BOUNDS);
+        let live = self.normal_path(path);
+        if live.as_bool() == Some(false) { return Ok(Value::Term(Ty::Integer, b::lit_null())); }
+        let reference = array.reference().ok_or_else(|| fail("local array identity is not acquired"))?;
+        let read = |slot: i64, domain: &Expr| -> Result<Expr> {
+            let initial = array.get(slot).ok_or_else(|| fail("local array slot outside the selected domain"))?;
+            self.realtime_store.read_with_initial(&reference, &slot.to_string(), domain, Some(initial))
+                .ok_or_else(|| fail("uninitialized local array element"))
+        };
+        let value = if let Some(slot) = literal_integer(&index) {
+            read(slot, &live)?
+        } else {
+            let positions = match array {
+                LocalIntArray::Initialized { .. } => (0..length).collect::<BTreeSet<_>>(),
+                LocalIntArray::Zeroed { .. } => {
+                    // Only written positions of a zeroed array can depart
+                    // from zero, even when declared length is large.
+                    self.realtime_store.entries().iter()
+                        .filter(|entry| entry.reference == reference)
+                        .filter_map(|entry| entry.field.parse::<i64>().ok())
+                        .collect()
+                }
+                LocalIntArray::Unreachable => return Err(fail("local array identity is not acquired")),
+            };
+            let mut arms = Vec::new();
+            for position in positions {
+                let selected = b::eq(index.clone(), b::lit_int(position));
+                let domain = math::normalize(b::and(live.clone(), selected.clone()));
+                if domain.as_bool() == Some(false) { continue; }
+                arms.push((selected, read(position, &domain)?));
+            }
+            let fallback = match array {
+                LocalIntArray::Initialized { .. } => arms.pop()
+                    .ok_or_else(|| fail("local array read has no live element on the bounds domain"))?.1,
+                LocalIntArray::Zeroed { .. } => b::lit_int(0),
+                LocalIntArray::Unreachable => unreachable!("unreachable array rejected above"),
+            };
+            self.normalize_execution_value(b::case_when(arms, fallback))
+        };
+        Ok(Value::Term(Ty::Integer, value))
     }
 
     fn read_symbolic_array_slot(&mut self, root: &str, index: Expr, path: Expr) -> Result<Value> {

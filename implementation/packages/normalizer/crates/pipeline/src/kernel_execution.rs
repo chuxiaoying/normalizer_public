@@ -1062,8 +1062,9 @@ impl<'a> Engine<'a> {
                 .evaluate_local_array_allocation(element_type, length, id, env, path)
                 .map(Value::LocalIntArray),
             J::ArrayAccess { target, index } => {
-                let array = self.java_expr(target, id, env, path.clone())?;
-                let index = self.java_expr(index, id, env, path.clone())?;
+                let Some((array, index, path)) = self.source_binary_operands((target, index), id, env, path)? else {
+                    return Ok(Value::Term(Ty::Integer, b::lit_null()));
+                };
                 self.source_array_read(array, index, path)
             }
             J::FieldAccess { target, field } => {

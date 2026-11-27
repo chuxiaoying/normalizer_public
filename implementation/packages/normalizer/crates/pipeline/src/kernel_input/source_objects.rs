@@ -60,7 +60,12 @@ impl SourceObjects {
     }
 
     pub(super) fn heap_binding_keys(&self) -> BTreeMap<i64, math::HeapBindingIdentity> {
-        self.objects.iter().filter_map(|(&id, (_, origin))| {
+        // Some indexed parameter identities are registered in the comparison
+        // ledger rather than the nominal-object table.
+        let mut bindings: BTreeMap<_, _> = self.compared_parameters.iter().map(|(&id, path)| {
+            (id, math::HeapBindingIdentity::Parameter(path.split('.').map(str::to_owned).collect()))
+        }).collect();
+        bindings.extend(self.objects.iter().filter_map(|(&id, (_, origin))| {
             let identity = match origin {
                 Origin::Parameter { path, .. } => math::HeapBindingIdentity::Parameter(
                     path.split('.').map(str::to_owned).collect(),
@@ -73,7 +78,8 @@ impl SourceObjects {
                 Origin::Allocation | Origin::EntryReceiver => return None,
             };
             Some((id, identity))
-        }).collect()
+        }));
+        bindings
     }
 
     fn knows_identity(&self, value: &Expr) -> bool {
