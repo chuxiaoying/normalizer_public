@@ -275,6 +275,8 @@ groups:
     - main.ts#controller.read
     entry-async-await:
     - total.ts#total
+    entry-typescript-function:
+    - value.ts#read
     entry-javascript-module:
     - total.ts#total
     - vector-case.ts#choose

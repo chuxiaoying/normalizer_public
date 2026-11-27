@@ -59,6 +59,7 @@ pub(crate) enum Ty {
     Decimal,
     CalendarDate,
     Ref,
+    UnknownInput,
     Text,
     Seq(Box<Ty>),
     Record(BTreeMap<String, Ty>),
@@ -81,6 +82,7 @@ impl Ty {
             "bool" => Self::Bool,
             "number" => Self::Integer,
             "ref?" => Self::Ref,
+            "ts_unknown_input" => Self::UnknownInput,
             "text?" => Self::Text,
             "map<text,text>" => Self::OrderedTextMap,
             _ => return Err(fail(format!("unsupported type {s}"))),
@@ -280,6 +282,10 @@ fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::resul
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
+    /// One checked TypeScript unknown input, with native type-test and
+    /// non-coercing projection only on the admitted normal completion.
+    #[serde(rename = "source.guard_unknown_text")]
+    GuardUnknownText { name: String, message: String },
     #[serde(rename = "value.observe_tuple")]
     ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.text_trim")]
@@ -737,6 +743,15 @@ impl Loaded {
                 let ty = Ty::parse(&p.typ)?;
                 let override_type = self.project.parameter_override(id.rsplit('.').next().unwrap_or(id), &p.name)?;
                 need(ty == *override_type.as_ref().unwrap_or(fallback), "semantic parameter type mismatch")?;
+                if ty == Ty::UnknownInput {
+                    let entry_context = self.project.entry_contexts.get(id);
+                    need(*fallback == Ty::Ref && parameters.is_empty() && f.params.len() == 1
+                        && matches!(&f.body, Node::GuardUnknownText { name, .. } if name == &p.name)
+                        && entry_context.is_some_and(|context| context.parameter_type(&p.name) == Some("unknown")
+                            && context.return_type() == "text")
+                        && self.project.exceptions.get("TypeError").is_some_and(|domain| domain == "text"),
+                        "unknown slot requires the checked native text guard and completion contract")?;
+                }
                 parameters.push(ty);
             }
             need(
@@ -927,6 +942,7 @@ fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) ->
             Ty::Ref,
             b::heap_ref(heap.new_path_object().id()),
         ),
+        Ty::UnknownInput => Value::Term(t.clone(), b::param(name, ScalarSymbolType::UntrustedSourceValue)),
         Ty::Bool => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Boolean)),
         Ty::Integer => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Integer)),
         Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),

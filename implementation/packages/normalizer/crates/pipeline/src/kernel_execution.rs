@@ -149,6 +149,18 @@ impl<'a> Engine<'a> {
                 Ok(Value::Term(Ty::Text,
                     crate::normalized_text::default_if_blank(text.scalar()?, fallback.scalar()?)))
             }
+            Node::GuardUnknownText { name, message } => {
+                need(path.as_bool() == Some(true), "unknown type guard must own the complete entry domain")?;
+                let value = env.get(name).filter(|value| value.ty() == Ty::UnknownInput)
+                    .ok_or_else(|| fail("native type guard requires the exact unknown input"))?.scalar()?;
+                let guard = math::domains::source_type_guard::is_native_text(value.clone());
+                let text = math::domains::source_type_guard::certified_text(value);
+                self.realtime_completion = realtime_state::join_completion(
+                    guard, realtime_state::Completion::Return(text.clone()),
+                    realtime_state::Completion::Throw { class: "TypeError".into(), payload: Some(b::lit_str(message)) },
+                ).ok_or_else(|| fail("unsupported native type-guard completion"))?;
+                Ok(Value::Term(Ty::Text, text))
+            }
             Node::NumberVector { items } => {
                 let mut values = Vec::with_capacity(items.len());
                 for item in items {

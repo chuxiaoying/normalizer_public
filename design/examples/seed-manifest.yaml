@@ -110,6 +110,7 @@ seeds:
   state-collection-mutation: { kind: topic, topic: state-and-aliasing, related: [collections] }
   loop-variable-finite-bound: { kind: topic, topic: loops-and-termination, related: [] }
   loop-break-continue: { kind: topic, topic: loops-and-termination, related: [control-flow] }
+  entry-typescript-function: { kind: topic, topic: language-entries, related: [control-flow] }
   entry-javascript-module: { kind: topic, topic: language-entries, related: [unified-canonical-form] }
   entry-async-await: { kind: topic, topic: language-entries, related: [external-boundaries] }
   external-timeout: { kind: topic, topic: external-boundaries, related: [control-flow] }

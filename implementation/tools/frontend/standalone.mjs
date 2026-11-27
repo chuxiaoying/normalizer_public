@@ -13,6 +13,7 @@ import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { checkedTypeScript, failTypedModule, typedModuleAst } from './typed-module.mjs';
 import { entryLocator } from './entry-locator.mjs';
+import { guardedUnknownText } from './module-unknown-text.mjs';
 import { projectSources } from './project-source.mjs';
 import {isOfficialNamespaceImport, standardCalls} from './standard-library.mjs';
 
@@ -22,11 +23,11 @@ const readonlyVector = 'ReadonlyArray<number>';
 const readonlyMap = 'ReadonlyMap<string,string>';
 const nullableText = 'string|null';
 const parameter = domain => scalar(domain) ?? (domain === readonlyVector ? 'number[]'
-  : domain === nullableText ? 'text?' : null);
+  : domain === nullableText ? 'text?' : domain === 'unknown' ? 'unknown' : null);
 const carrier = domain => domain === readonlyVector ? 'int[]'
-  : domain === nullableText ? 'String' : domains.get(domain)[0];
+  : domain === nullableText ? 'String' : domain === 'unknown' ? 'Object' : domains.get(domain)[0];
 const valueType = domain => domain === readonlyVector ? 'vector<number>'
-  : domain === 'string' ? 'text?' : parameter(domain);
+  : domain === 'string' ? 'text?' : domain === 'unknown' ? 'ts_unknown_input' : parameter(domain);
 function declaredParameter(node, sf) {
   if (node && ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword &&
       ts.isArrayTypeNode(node.type) && node.type.elementType.kind === ts.SyntaxKind.NumberKeyword) {
@@ -157,6 +158,13 @@ function compile(source, file, entry, physicalPath, linked) {
   const {sf, fn} = typedModuleAst(source, physicalPath, entry);
   const formals = namedParameters(fn.parameters);
   if (formals.error) fail(formals.error);
+  if (fn.parameters.some(param => param.type?.kind === ts.SyntaxKind.UnknownKeyword)) {
+    const checker = checkedTypeScript(physicalPath, sf, fail);
+    const proof = guardedUnknownText(sf, fn, checker, fail);
+    const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
+    return projectInput(file, entry, params, 'string', false, 'text',
+      {op: 'source.guard_unknown_text', ...proof}, fn.getText(sf), {exceptions: {TypeError: 'text'}});
+  }
   const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
   const isStateEvent = isListener && fn.body.statements.some(st => ts.isExpressionStatement(st)
     && ts.isBinaryExpression(st.expression) && st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
@@ -202,14 +210,14 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
   const declaredReturn = fn.type;
   const orderedMap = declaredOrderedMap(declaredReturn);
   const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf);
-  if (!orderedMap && !parameter(returnDomain)) fail('expected declared business scalar or non-null readonly Vector return type');
+  if (!orderedMap && (!parameter(returnDomain) || returnDomain === 'unknown')) fail('expected declared business scalar or non-null readonly Vector return type');
   if (orderedMap && sf.statements.some(declaration => declaration.name?.text === 'Map')) {
     fail('readonly Map requires an unshadowed built-in Map');
   }
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
     const domain = declaredParameter(param.type, sf);
-    if (!parameter(domain)) fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
+    if (!parameter(domain) || domain === 'unknown') fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
@@ -367,7 +375,8 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
     result_value_types: resultTypes,
     ...(typed.ports && {ports: typed.ports}),
     ...(typed.exceptions && {exceptions: typed.exceptions}),
-    parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector).map(p => [p.name, 'vector<number>']))},
+    parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector || p.domain === 'unknown')
+        .map(p => [p.name, valueType(p.domain)]))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
       ...(typed.externalResults && {external_results: typed.externalResults}),

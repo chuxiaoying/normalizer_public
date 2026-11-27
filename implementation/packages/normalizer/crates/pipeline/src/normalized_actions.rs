@@ -183,6 +183,8 @@ impl Project {
             // unit observes only the exception class; no payload is invented.
             let payload = if ty == "unit" {
                 Ty::Unit
+            } else if ty == "text" {
+                Ty::Text
             } else {
                 let ty = Ty::parse(ty)?;
                 need(

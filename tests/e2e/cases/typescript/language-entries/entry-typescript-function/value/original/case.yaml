@@ -1,0 +1,13 @@
+entry: src/value.ts#read
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/value.ts#read, returns: text }
+  P:
+    parameters:
+      value: { position: 0, type: unknown }
+  R: value
+  throws:
+    - type: TypeError
+      when: 'typeof(value) != "string"'
+      payload: '"Expected text"'
+      payload_type: text

@@ -280,6 +280,14 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     };
     let registered_name = math::func_name(key);
     if ctx.business_inputs.is_some() {
+        if let [value] = args {
+            if registered_name == math::domains::source_type_guard::TYPEOF {
+                return format!("typeof({})", format_expr_with_ctx(value, ctx));
+            }
+            if registered_name == math::domains::source_type_guard::TEXT_PROJECTION {
+                return format_expr_with_ctx(value, ctx);
+            }
+        }
         if let Some((root, position, field)) = math::domains::relation::positional::field_projection(expr) {
             let position = format_expr_with_ctx(position, ctx);
             return format!("{}[{position}].{field}", array_name(root, ctx));

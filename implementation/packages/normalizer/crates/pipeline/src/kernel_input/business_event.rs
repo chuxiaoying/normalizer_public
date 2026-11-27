@@ -313,6 +313,16 @@ pub(super) fn observations(
                     need(
                         (project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
                             && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))))
+                            || (!project.direct_source && class == "TypeError"
+                                && project.functions.values().any(|function| {
+                                    let super::Node::GuardUnknownText { name, message } = &function.body else { return false; };
+                                    let Some((id, _)) = function.java.split_once('(') else { return false; };
+                                    let input = b::param(name, math::ScalarSymbolType::UntrustedSourceValue);
+                                    let failure = math::normalize(b::not(math::domains::source_type_guard::is_native_text(input)));
+                                    project.entry_contexts.get(id).is_some_and(|context| std::ptr::eq(context, entry))
+                                        && value.as_lit().is_some_and(|value| matches!(value, math::Lit::Str(text) if text == message))
+                                        && b::path_implies(&alternative.guard, &failure)
+                                }))
                             || external_payloads.iter().any(|(declared, observed, domain)|
                                 declared == class && observed == value
                                     && b::path_implies(&alternative.guard, domain)),

@@ -1,0 +1,5 @@
+entry: src/value.ts#read
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - 'unknown guard must have exactly a native type decision'

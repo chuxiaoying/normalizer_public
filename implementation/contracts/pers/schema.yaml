@@ -115,7 +115,7 @@ $defs:
     type: string
     pattern: '^[A-Za-z_][A-Za-z0-9_]*(\[\])*\??$'
     not:
-      pattern: '^(void|number|money|date|bool|text)(\[\])*\??$'
+      pattern: '^(void|number|money|date|bool|text|unknown)(\[\])*\??$'
   type-name:
     allOf:
       - $ref: '#/$defs/identifier'
@@ -152,7 +152,9 @@ $defs:
         type: integer
         minimum: 0
       type:
-        $ref: '#/$defs/value-type'
+        oneOf:
+          - const: unknown
+          - $ref: '#/$defs/value-type'
   p-sources:
     description: 保留完整入口参数，包括化简后未被 R、S 或 throws 引用的参数。
     type: object

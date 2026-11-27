@@ -30,7 +30,9 @@ export function assertPers(document, label) {
   };
   typeRef(document.entry.returns, 'entry.returns');
   for (const [name, declaration] of Object.entries(types)) fields(declaration.fields, 'types.' + name);
-  for (const [name, parameter] of Object.entries(document.P.parameters)) typeRef(parameter.type, 'P.' + name);
+  for (const [name, parameter] of Object.entries(document.P.parameters)) {
+    if (parameter.type !== 'unknown') typeRef(parameter.type, 'P.' + name);
+  }
   for (const [name, source] of Object.entries(document.E ?? {})) {
     if (source.type) typeRef(source.type, 'E.' + name);
     else if (source.kind !== 'acquisition') fields(source.fields ?? source.columns, 'E.' + name);
