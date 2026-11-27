@@ -394,10 +394,43 @@ impl Engine<'_> {
         value: Value,
         path: Expr,
     ) -> Result<()> {
-        let id = reference
-            .as_heap_ref()
-            .ok_or_else(|| fail("unresolved source receiver"))?;
-        let (owner, origin) = &self.source_objects.objects[&id];
+        let path = self.normal_path(path);
+        if path.as_bool() == Some(false) {
+            return Ok(());
+        }
+        if self.source_objects.has_complete_identity_partition(reference) {
+            let (arms, fallback) = reference.as_total_case_when().expect("certified total receiver partition");
+            // The receiver and RHS have already been evaluated. Dispatch
+            // their single store using the existing first-match domains.
+            let mut remaining = path;
+            for (condition, receiver) in arms {
+                let (guard, later) = b::first_match_domains(remaining, condition);
+                self.write_source_field_on_identity(receiver, field, value.clone(), guard)?;
+                remaining = later;
+            }
+            return self.write_source_field_on_identity(fallback, field, value, remaining);
+        }
+        self.write_source_field_on_identity(reference, field, value, path)
+    }
+
+    fn write_source_field_on_identity(
+        &mut self,
+        reference: &Expr,
+        field: &str,
+        value: Value,
+        path: Expr,
+    ) -> Result<()> {
+        let path = self.normal_path(path);
+        if path.as_bool() == Some(false) {
+            return Ok(());
+        }
+        if reference.is_null() {
+            self.throw_source_on_path(path, "java.lang.NullPointerException");
+            return Ok(());
+        }
+        let (owner, origin) = reference.as_heap_ref()
+            .and_then(|id| self.source_objects.objects.get(&id))
+            .ok_or_else(|| fail("field write requires a closed source object"))?;
         if matches!(origin, Origin::EntryReceiver) {
             return self.write_entry_state(&owner.clone(), field, value, path);
         }
@@ -425,7 +458,6 @@ impl Engine<'_> {
 
         // Java evaluates receiver and right-hand side before putfield checks
         // the receiver. A failed check records a throw, never a write.
-        let path = self.normal_path(path);
         let null = self.source_object_null(reference);
         self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
         let path = self.normal_path(path);

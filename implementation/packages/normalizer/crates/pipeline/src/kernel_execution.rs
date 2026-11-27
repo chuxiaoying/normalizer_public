@@ -640,12 +640,7 @@ impl<'a> Engine<'a> {
                     let reference = self.java_expr(target, id, env, path.clone())?;
                     // Java evaluates RHS before the target putfield null check.
                     let value = self.java_expr(value, id, env, path.clone())?;
-                    if self.source_objects.owns(&reference.scalar()?)
-                    {
-                        self.write_source_field(&reference.scalar()?, field, value, path.clone())?;
-                    } else {
-                        return Err(fail("field write requires a closed source object"));
-                    }
+                    self.write_source_field(&reference.scalar()?, field, value, path)?;
                 }
                 S::If {
                     cond,
