@@ -33,7 +33,7 @@
 | `frontend-vo-production` | 看事件或生命周期入口（如 `onLoad`）如何读取环境并写入页面展示状态（VO） | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
 | `frontend-vo-consumption` | 看单个组件属性如何读已有 VO 并返回展示值；准备成同步、导出的无参函数，不分析整次渲染 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
 
-**当前场景适配限制，不是设计约束：** 生产适配器目前只接收具名的 `async` 导出入口，能处理的等待写法包括直接等待已声明的外部端口。第七章里的同步生产事件仍是合法设计输入，不能加一个 `async`、把未等待的动作改成等待，或把并发等待改成串行，只为通过当前适配器。如果没有能维持原完成合同和观察结果的表示，就报告工具缺口。
+**当前场景适配限制，不是设计约束：** 生产适配器目前只接收具名的 `async` 导出入口，能处理的等待写法包括直接等待已声明的外部端口。《PERS登场》里的同步生产事件仍是合法设计输入，不能加一个 `async`、把未等待的动作改成等待，或把并发等待改成串行，只为通过当前适配器。如果没有能维持原完成合同和观察结果的表示，就报告工具缺口。
 
 直接可运行的两条完整命令见[新手入门](getting-started.md#3-前端-vo运行生产入口与消费入口)。
 
@@ -48,4 +48,4 @@
 | 分析未完成或预算不足 | 按未完成处理，不把局部输出当最终结果，也不凭空缩小循环或取数范围。 |
 | 诊断要求预处理或不支持 | 保留具体位置及 stderr，按[预处理 Skill](skills/normalizer-preprocess/SKILL.md)区分输入证据缺失和当前实现不支持。前者补证据，后者如实报告，不改业务行为以换取成功。 前端错误若提到内部工程或 Java，不表示该把 TypeScript 改写成 Java；先保留纯净 TypeScript 的最小复现。 |
 
-分析拒绝没有成功 PERS。如果合法源码可能抛出业务异常，它仍可以成功归一化，并在 PERS 中出现 `throws`。区分两类结果见[第七章](../design/chapters/第七章%20·%20PERS%20登场.md)。
+分析拒绝没有成功 PERS。如果合法源码可能抛出业务异常，它仍可以成功归一化，并在 PERS 中出现 `throws`。区分两类结果见[PERS登场](../design/chapters/PERS登场.md)。

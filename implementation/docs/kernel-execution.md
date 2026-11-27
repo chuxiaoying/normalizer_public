@@ -1,6 +1,6 @@
 # 内核执行、状态与出口排查
 
-本页供内核维护者确定问题首次出现的位置。执行与输出的语义分别见[第一章](../../design/chapters/第一章%20·%20JVM%20模拟器：执行即归约.md)、[第二章](../../design/chapters/第二章%20·%20多重宇宙的分裂坍缩.md)和[第七章](../../design/chapters/第七章%20·%20PERS%20登场.md)。接口字段查[机器接口](../contracts/business-pers.md)。
+本页供内核维护者确定问题首次出现的位置。执行与输出的语义分别见[符号执行](../../design/chapters/符号执行.md)、[多重宇宙](../../design/chapters/多重宇宙.md)和[PERS登场](../../design/chapters/PERS登场.md)。接口字段查[机器接口](../contracts/business-pers.md)。
 
 ## 按执行阶段定位
 

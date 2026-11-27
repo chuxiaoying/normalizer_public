@@ -43,7 +43,7 @@ throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: 'LENGTH(values) == 0' }
 ```
 
-R 中扣的是写入前的有序首项，按[统一定形规范](../../../chapters/第八章%20·%20统一定形规范.md)记作 `FIRST(value FROM values)`；S 中的 `values[0]` 仍是精确的写入目标，不能改成读公式。
+R 中扣的是写入前的有序首项，按[统一定形](../../../chapters/统一定形.md)记作 `FIRST(value FROM values)`；S 中的 `values[0]` 仍是精确的写入目标，不能改成读公式。
 
 例如 values=[2,4]、next=7 时，返回 11，不是入口快照之和 6。数组为空时越界且无写回；没有正常返回。
 

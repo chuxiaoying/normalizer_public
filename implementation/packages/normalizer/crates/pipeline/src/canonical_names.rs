@@ -1,4 +1,4 @@
-//! Public names known to execution or boundary projection for 统一正则规范.
+//! Public names known to execution or boundary projection for 统一定形规范.
 //! Names order expressions; they do not identify or merge heap objects.
 use std::collections::{BTreeMap, BTreeSet};
 

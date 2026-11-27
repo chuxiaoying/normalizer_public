@@ -1,4 +1,4 @@
-//! 统一正则规范 (Unified Canonical Form): shared structural ordering.
+//! 统一定形规范 (Unified Canonical Form): shared structural ordering.
 //!
 //! This module is the shared `expr.compareTo(ctx)` foundation.
 //! Callers may use it only after they have proven the surrounding expression
@@ -6,7 +6,7 @@
 //! to reorder CaseWhen arms, side-effect ledgers, arguments, list elements, or
 //! string concatenation.
 //!
-//! The design contract is `design/chapters/第八章 · 统一定形规范.md`. The shared key is:
+//! The design contract is `design/chapters/统一定形.md`. The shared key is:
 //!
 //! ```text
 //! subject_key

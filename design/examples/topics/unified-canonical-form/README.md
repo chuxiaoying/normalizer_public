@@ -1,6 +1,6 @@
 # 统一定形案例
 
-设计规则查[第八章](../../../chapters/第八章%20·%20统一定形规范.md)及[二级设计](../../README.md#二级设计)。用例登记和预期写法查[测试区](../../../../tests/README.md)。
+设计规则查[统一定形](../../../chapters/统一定形.md)及[二级设计](../../README.md#二级设计)。用例登记和预期写法查[测试区](../../../../tests/README.md)。
 
 - [交换、结合与文本顺序](java-associative-normal-form.md) · [文本顺序](java-text-order.md) · [总布尔排序](java-total-boolean-order.md)
 - [二分 CASE](java-binary-case.md) · [整数区间](java-integer-partition.md) · [LET](../expression-simplification/java-case-let-extraction.md)

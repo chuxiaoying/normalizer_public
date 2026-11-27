@@ -28,4 +28,4 @@ END
 
 若源程序按 `count < 0` 分支，但在 `count == 0` 时两个结果都是 0，可先把等值点归入返回 0 的一臂，再按基准比较选向。不是看到某一臂为零就改动边界：若相等点的两个结果不同（例如 fallback 是 -1），不能挪动它。不要混入只读 Vector 长度的自然域证明、word 运算或 IEEE 浮点。
 
-`AND` 与其 De Morgan 补 `OR` 在已取得的总布尔条件下可能形成互补方向。先按第八章比较整个值的复杂度；只有同复杂度、同取得域，才用共享结构键在基准候选中裁决。见[总布尔守卫的结构对照](../examples/topics/unified-canonical-form/java-total-boolean-order.md)。
+`AND` 与其 De Morgan 补 `OR` 在已取得的总布尔条件下可能形成互补方向。先按《统一定形》比较整个值的复杂度；只有同复杂度、同取得域，才用共享结构键在基准候选中裁决。见[总布尔守卫的结构对照](../examples/topics/unified-canonical-form/java-total-boolean-order.md)。

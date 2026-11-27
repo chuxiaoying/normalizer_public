@@ -456,7 +456,7 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     if out.len() < 2 {
         return Some(rebuild_and(&out));
     }
-    // AND 和 OR 共用统一正则规范的结构排序键。
+    // AND 和 OR 共用统一定形规范的结构排序键。
     let out = sort_commutative(out, ctx);
     // Sorting the leaves is not enough: differently associated trees can
     // have identical flat order. Compare the complete canonical left fold.

@@ -56,7 +56,7 @@ topics:
         focus: 无法判定的条件保留为路径约束
         test_status: covered
   unified-canonical-form:
-    title: 统一正则规范
+    title: 统一定形规范
     scope: 可交换表达式、CASE 与观察边界的唯一结构和反例
     seeds:
       - id: expr-associative-commutative-normal-form
