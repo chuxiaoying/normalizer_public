@@ -309,6 +309,46 @@ impl Engine<'_> {
         Ok(Value::Term(Ty::Ref, b::heap_ref(child_ref)))
     }
 
+    pub(super) fn read_source_field_partition(
+        &mut self,
+        reference: &Expr,
+        field: &str,
+        ty: Ty,
+        path: Expr,
+    ) -> Result<Value> {
+        let (arms, fallback) = if reference.is_null() {
+            (&[][..], reference)
+        } else {
+            reference.as_total_case_when().expect("certified total receiver partition")
+        };
+        let mut remaining = path;
+        let mut values = Vec::with_capacity(arms.len() + 1);
+        let else_guard = b::lit_bool(true);
+        for (condition, identity) in arms.iter().map(|(c, r)| (c, r))
+            .chain(std::iter::once((&else_guard, fallback)))
+        {
+            let (guard, later) = b::first_match_domains(remaining, condition);
+            remaining = later;
+            let guard = self.normal_path(guard);
+            if guard.as_bool() == Some(false) { continue; }
+
+            let null = if identity.is_null() { b::lit_bool(true) } else { self.source_object_null(identity) };
+            self.throw_source_on_path(b::and(guard.clone(), null), "java.lang.NullPointerException");
+            let live = self.normal_path(guard);
+            if live.as_bool() == Some(false) { continue; }
+            let value = self.read_or_bind_source_field(identity, field, &live)?;
+            need(value.ty() == ty, "selected source field type mismatch")?;
+            values.push((live, value.scalar()?));
+        }
+        // The remaining alternatives cover the normal completion domain.
+        // With no live read the typed carrier is never observed.
+        let result = match values.pop() {
+            Some((_, fallback)) => math::normalize(b::case_when(values, fallback)),
+            None => b::lit_null(),
+        };
+        Ok(Value::Term(ty, result))
+    }
+
     pub(super) fn source_object_null(&mut self, reference: &Expr) -> Expr {
         let origin = reference.as_heap_ref().and_then(|id| {
             self.source_objects.objects.get(&id).map(|(_, origin)| (id, origin))

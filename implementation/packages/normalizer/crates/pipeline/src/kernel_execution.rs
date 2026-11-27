@@ -993,9 +993,13 @@ impl<'a> Engine<'a> {
                 if matches!(reference.ty(), Ty::Record(_)) {
                     return values::field(reference, field);
                 }
-                if let Some(value)=self.read_selected_field(&reference.scalar()?,field,&path)? { return Ok(value); }
-                if self.source_objects.owns(&reference.scalar()?) {
-                    let reference = reference.scalar()?;
+                let reference = reference.scalar()?;
+                if let Some(value) = self.read_selected_field(&reference, field, &path)? { return Ok(value); }
+                if self.source_objects.has_complete_identity_partition(&reference) || reference.is_null() {
+                    let field_type = self.project.parameter_type(&self.source_declared_type(j, id)?)?;
+                    return self.read_source_field_partition(&reference, field, field_type, path);
+                }
+                if self.source_objects.owns(&reference) {
                     let null = self.source_object_null(&reference);
                     self.throw_source_on_path(b::and(path.clone(), null), "java.lang.NullPointerException");
                     self.read_or_bind_source_field(&reference, field, &path)
