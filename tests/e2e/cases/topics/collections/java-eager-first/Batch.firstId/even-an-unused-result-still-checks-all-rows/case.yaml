@@ -19,4 +19,4 @@ expected:
   R: "7"
   throws:
     - type: java.lang.NullPointerException
-      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)
+      when: 0 < COALESCE(SUM(SELECT 1 FROM rows AS r WHERE r.ticket IS NULL), 0)

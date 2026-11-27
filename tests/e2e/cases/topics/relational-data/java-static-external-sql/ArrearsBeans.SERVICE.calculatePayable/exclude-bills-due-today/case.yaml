@@ -38,30 +38,30 @@ expected:
         result: $e_0
   R: |-
     CASE
-      WHEN $e_0.quota < COALESCE(
+      WHEN $e_0.quota > COALESCE(
         SUM(
           SELECT bill.amount - bill.waived_amount
           FROM bill
           WHERE bill.account_id == accountId
-            AND bill.due_date < today
-            AND $e_0.minPriority <= bill.priority
-            AND bill.amount > bill.waived_amount
             AND bill.status == "OPEN"
+            AND bill.amount > bill.waived_amount
+            AND bill.due_date < today
+            AND bill.priority >= $e_0.minPriority
         ),
         0
-      ) THEN $e_0.quota
-      ELSE COALESCE(
+      ) THEN COALESCE(
         SUM(
           SELECT bill.amount - bill.waived_amount
           FROM bill
           WHERE bill.account_id == accountId
-            AND bill.due_date < today
-            AND $e_0.minPriority <= bill.priority
-            AND bill.amount > bill.waived_amount
             AND bill.status == "OPEN"
+            AND bill.amount > bill.waived_amount
+            AND bill.due_date < today
+            AND bill.priority >= $e_0.minPriority
         ),
         0
       )
+      ELSE $e_0.quota
     END
   throws:
     - type: ProfileFetchError

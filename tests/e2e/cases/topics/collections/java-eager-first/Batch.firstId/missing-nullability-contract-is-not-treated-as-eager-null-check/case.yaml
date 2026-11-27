@@ -1,5 +1,21 @@
 entry: src/Batch.java#Batch.firstId
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - eager projection member requires an explicit nullable record declaration
+expected:
+  schema: normalizer.pers/1
+  types:
+    Ticket:
+      fields:
+        id: number
+    Row:
+      fields:
+        ticket: Ticket
+  entry:
+    function: src/Batch.java#Batch.firstId
+    returns: number
+  P:
+    parameters:
+      rows:
+        position: 0
+        type: Row[]
+  R: FIRST(r.ticket.id FROM rows AS r)
+  throws:
+    - { type: java.lang.ArrayIndexOutOfBoundsException, when: '0 == LENGTH(rows)' }

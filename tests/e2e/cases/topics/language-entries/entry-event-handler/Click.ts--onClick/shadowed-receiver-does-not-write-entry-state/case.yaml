@@ -1,5 +1,9 @@
 entry: src/Click.ts#onClick
-reject:
-  fragments:
-  - "SCENARIO_MODULE_INPUT:"
-  - "write has no bound @N entryState root: counter"
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/Click.ts#onClick, returns: void }
+  P:
+    parameters:
+      reset: { position: 0, type: bool }
+      value: { position: 1, type: number }
+  R: void
