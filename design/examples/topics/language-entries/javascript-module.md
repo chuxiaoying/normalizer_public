@@ -215,3 +215,5 @@ R: |-
 同长度的两条向量若在两个位置都不同，例如 `enabled ? [left, fixed] : [right, left]`，应保留一个外层 CASE，不能把同一次判断复制到两个槽。反之，`[enabled ? left : right, !enabled ? right : fixed]` 的两次判断使用互补守卫，必须按同一次真假决定取值：真得到 `[left, fixed]`，假得到 `[right, right]`。当槽内是已取得数值的纯运算时也可用同一证明；换成独立守卫则不能合成同一决定。
 
 已知布尔守卫直接执行：把首槽守卫写成 `!false` 或 `!true`，R 分别是 `[left, fixed]` 和 `[right, fixed]`，已声明的入口参数仍留在 P。布尔字面量不是数字或宿主真值转换。
+
+**布尔插入对照**　若改由已取得的 `p`、`q` 依次控制常量成员 `["a", "A"]`、`["b", "B"]`，则根据 [CF-12](../../../chapters/08-统一定形.md#cf-12-有序映射按有序成员构造)保留每个映射的成员顺序，根据 [CF-11](../../../chapters/08-统一定形.md#cf-11-纯布尔-case-从有效域选形)选 CASE：`WHEN p AND q THEN MAP([["a","A"],["b","B"]]) WHEN p THEN MAP([["a","A"]]) WHEN q THEN MAP([["b","B"]]) ELSE MAP([])`。原例的文本空值检查不属于以总布尔入参构造守卫的合同，不套用这条换序。
