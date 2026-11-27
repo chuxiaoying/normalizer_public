@@ -479,16 +479,17 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
 // 多元 OR 化简
 // =============================================================================
 
+fn boolean_parameter(expr: &Expr) -> bool {
+    matches!(expr.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
+        if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
+}
+
 /// Two complementary selector arms with complementary Boolean results
 /// select equality (or inequality) of the selectors. A shared consequence
 /// stays outside that equality: p ? (q OR c) : (!q OR c) == (p == q) OR c.
 fn diagonal_boolean_pair(left: &Expr, right: &Expr) -> Option<Expr> {
     fn sign(expr: &Expr) -> (&Expr, bool) {
         expr.as_not().map_or((expr, true), |base| (base, false))
-    }
-    fn boolean_parameter(expr: &Expr) -> bool {
-        matches!(expr.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
-            if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
     }
     let (BinOpKind::And, a, b) = left.as_binop()? else { return None; };
     let (BinOpKind::And, c, d) = right.as_binop()? else { return None; };
@@ -786,7 +787,23 @@ fn resolution_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
                     next.push(rebuild_and(&filtered));
                 }
             } else {
-                next.push(current[j].clone());
+                // Each disjunct only needs to explain the domain in which
+                // its siblings are false. In p OR (p == q), the second
+                // disjunct is therefore evaluated with p fixed to false.
+                let replacement = current[j].as_binop()
+                    .filter(|(op, left, right)| matches!(op, BinOpKind::Eq | BinOpKind::Ne)
+                        && boolean_parameter(left) && boolean_parameter(right))
+                    .and_then(|(op, left, right)| current.iter().enumerate().find_map(|(i, anchor)| {
+                        if i == j { return None; }
+                        let (subject, fixed) = anchor.as_not().map_or((anchor, false), |part| (part, true));
+                        let remaining = if subject == left { right }
+                            else if subject == right { left } else { return None; };
+                        Some(if fixed == (op == BinOpKind::Eq) {
+                            remaining.clone()
+                        } else { builder::not(remaining.clone()) })
+                    }));
+                changed |= replacement.is_some();
+                next.push(replacement.unwrap_or_else(|| current[j].clone()));
             }
         }
         current = next;
