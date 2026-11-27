@@ -313,6 +313,8 @@ enum Node {
     GuardUnknownText { name: String, message: WireText },
     #[serde(rename = "source.throw_unknown_input")]
     ThrowUnknownInput { name: String },
+    #[serde(rename = "source.clock")]
+    ReadClock,
     #[serde(rename = "value.observe_tuple")]
     ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.text_trim")]
@@ -345,6 +347,10 @@ enum Node {
         left: Box<Node>,
         right: Box<Node>,
     },
+    Sub {
+        left: Box<Node>,
+        right: Box<Node>,
+    },
     Var {
         name: String,
     },
@@ -363,6 +369,10 @@ enum Node {
         right: Box<Node>,
     },
     Gt {
+        left: Box<Node>,
+        right: Box<Node>,
+    },
+    Lt {
         left: Box<Node>,
         right: Box<Node>,
     },

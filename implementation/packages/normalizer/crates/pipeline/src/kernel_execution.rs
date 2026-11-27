@@ -170,6 +170,14 @@ impl<'a> Engine<'a> {
         }
     }
 
+    fn observe_clock(&mut self, path: Expr) -> Value {
+        let guard = self.normal_path(path);
+        if guard.as_bool() == Some(false) { return Value::Term(Ty::Integer, b::lit_null()); }
+        let binding = self.fresh_binding();
+        self.realtime_effects.acquire(guard, realtime_state::Acquisition::Clock, binding);
+        Value::Term(Ty::Integer, b::sym_e(binding, ScalarSymbolType::Integer))
+    }
+
     fn diagnostic_entry(&self) -> &str {
         self.public_source_entry.unwrap_or(self.selected_entry.id)
     }
@@ -189,6 +197,7 @@ impl<'a> Engine<'a> {
             );
         }
         match n {
+            Node::ReadClock => Ok(self.observe_clock(path)),
             Node::ObserveTuple(observation) =>
                 self.observe_tuple(&observation.tuple, &observation.body, env, path),
             Node::OrderedTextMap { entries } => {
@@ -263,11 +272,12 @@ impl<'a> Engine<'a> {
             Node::Settled { returns, steps } =>
                 self.action_scope(returns, steps.as_slice(), env, path, true),
             Node::Action { returns, steps } => self.action_scope(returns, steps, env, path, false),
-            Node::Add { left, right } => {
+            Node::Add { left, right } | Node::Sub { left, right } => {
                 let left = self.node(left, env, path.clone())?;
                 let right = self.node(right, env, path)?;
                 need(left.ty() == Ty::Integer && right.ty() == Ty::Integer, "exact arithmetic requires business numbers")?;
-                Ok(Value::Term(Ty::Integer, self.normalize_execution_value(b::add(left.scalar()?, right.scalar()?))))
+                let op = if matches!(n, Node::Add { .. }) { b::add } else { b::sub };
+                Ok(Value::Term(Ty::Integer, self.normalize_execution_value(op(left.scalar()?, right.scalar()?))))
             }
             Node::Var { name } => env
                 .get(name)
@@ -303,7 +313,7 @@ impl<'a> Engine<'a> {
                 need(v.ty() == Ty::Bool, "not type")?;
                 Ok(Value::Term(Ty::Bool, b::not(v.scalar()?)))
             }
-            Node::Eq { left, right } | Node::Gt { left, right } => {
+            Node::Eq { left, right } | Node::Gt { left, right } | Node::Lt { left, right } => {
                 let l = self.node(left, env, path.clone())?;
                 let r = self.node(right, env, path)?;
                 need(l.ty() == r.ty(), "binary type mismatch")?;
@@ -312,19 +322,13 @@ impl<'a> Engine<'a> {
                     matches!(l.ty(), Ty::Bool | Ty::Integer | Ty::Ref),
                     "composite equality is not declared",
                 )?;
-                let gt = matches!(n, Node::Gt { .. });
-                need(
-                    !gt || matches!(l.ty(), Ty::Integer),
-                    "gt requires integer",
-                )?;
-                Ok(Value::Term(
-                    Ty::Bool,
-                    if gt {
-                        b::gt(l.scalar()?, r.scalar()?)
-                    } else {
-                        b::eq(l.scalar()?, r.scalar()?)
-                    },
-                ))
+                let op = match n {
+                    Node::Gt { .. } => BinOpKind::Gt,
+                    Node::Lt { .. } => BinOpKind::Lt,
+                    _ => BinOpKind::Eq,
+                };
+                need(op == BinOpKind::Eq || l.ty() == Ty::Integer, "ordered comparison requires numbers")?;
+                Ok(Value::Term(Ty::Bool, self.order_execution_comparison(op, l.scalar()?, r.scalar()?)))
             }
         }
     }
@@ -1238,10 +1242,7 @@ impl<'a> Engine<'a> {
                 if self.project.direct_source && self.program.find_class(id.rsplit_once('.').unwrap().0)
                     .is_some_and(|caller| crate::normalized_text::clock_intrinsic(self.program, caller, &callee, args.len()))
                 {
-                    let guard = self.normal_path(path);
-                    let binding = self.fresh_binding();
-                    self.realtime_effects.acquire(guard, realtime_state::Acquisition::Clock, binding);
-                    return Ok(Value::Term(Ty::Integer, b::sym_e(binding, ScalarSymbolType::Integer)));
+                    return Ok(self.observe_clock(path));
                 }
                 use crate::normalized_decimal::{decimal_intrinsic, round_rule, DecimalIntrinsic};
                 if let Some(intrinsic) = self.program.find_class(id.rsplit_once('.').unwrap().0)

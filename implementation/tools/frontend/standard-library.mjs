@@ -7,6 +7,7 @@ const declarations = `
 export function trim(value: string): string;
 export function trim(value: string | null): string | null;
 export function defaultIfBlank(value: string | null, fallback: string): string;
+export function currentTimeMillis(): number;
 `;
 export function officialDeclaration() {
   return ts.createSourceFile(officialModulePath, declarations, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -38,6 +39,6 @@ export function standardCalls(checker, fail) {
         || node.arguments.some(ts.isSpreadElement)) {
       fail('unsupported official @normalizer/stdlib member call');
     }
-    return {op: 'official-text', name: callee.name.text, args: node.arguments.map(lower)};
+    return {op: 'official-call', name: callee.name.text, args: node.arguments.map(lower)};
   };
 }

@@ -132,10 +132,10 @@ function mapEntries(node, names, fail) {
 }
 
 const numericOperators = {
-  '+': ['number', 'add'],
-  '>': ['bool', 'gt'], '<': ['bool', 'gt', true],
-  '>=': ['bool', 'gt', true, true], '<=': ['bool', 'gt', false, true],
-  '===': ['bool', 'eq'], '!==': ['bool', 'eq', false, true],
+  '+': ['number', 'add'], '-': ['number', 'sub'],
+  '>': ['bool', 'gt'], '<': ['bool', 'lt'],
+  '>=': ['bool', 'lt', true], '<=': ['bool', 'gt', true],
+  '===': ['bool', 'eq'], '!==': ['bool', 'eq', true],
 };
 
 function compile(source, file, entry, physicalPath, linked) {
@@ -305,7 +305,13 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
       return {type: 'text', node: internal('const', {type: 'text?', value: expr.value})};
     if (textExpressions && expr.op === 'literal' && expr.type === 'null')
       return {type: 'text?', node: internal('const', {type: 'unit', value: null})};
-    if (expr.op === 'official-text') {
+    if (expr.op === 'official-call') {
+      if (expr.name === 'currentTimeMillis' && expr.args.length === 0) {
+        // Link-time expression substitution can duplicate or erase a helper
+        // argument. Don't lower observations through that pure path.
+        if (linked) fail('linked clock call requires source-ordered acquisition before helper substitution');
+        return {type: 'number', node: internal('source.clock')};
+      }
       const args = expr.args.map(evaluate);
       if (expr.name === 'trim' && args.length === 1 && ['text', 'text?'].includes(args[0].type))
         return {type: args[0].type, node: internal('value.text_trim', {value: args[0].node})};
@@ -320,13 +326,14 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
       return {type: 'bool', node: internal('not', {value: operand.node})};
     }
     if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
-      const [type, operator, swap, negate] = numericOperators[expr.operator];
+      const [type, operator, negate] = numericOperators[expr.operator];
       const left = evaluate(expr.left), right = evaluate(expr.right);
       // Negating an ordered comparison is valid on exact business numbers,
       // not on unrestricted JS values (which may include NaN or coercion).
       if (left.type !== 'number' || right.type !== 'number') fail('scalar arithmetic and comparison require two business numbers');
-      const [a, b] = swap ? [right, left] : [left, right];
-      const node = internal(operator, {left: a.node, right: b.node});
+      // Preserve source evaluation order; the kernel canonicalizes only
+      // the resulting already acquired operands.
+      const node = internal(operator, {left: left.node, right: right.node});
       return {type, node: negate ? internal('not', {value: node}) : node};
     }
     if (expr.op === 'read') {
