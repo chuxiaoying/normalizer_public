@@ -269,7 +269,14 @@ impl Engine<'_> {
         id
     }
     pub(super) fn action_value(&mut self, n: &Node, env: &mut Env) -> Result<Value> {
-        self.node(n, env, self.action_path.clone())
+        let value = self.node(n, env, self.action_path.clone())?;
+        Ok(match value {
+            // The checked source action has acquired this value on its
+            // continuing path. Canonicalize it with the real completion and
+            // observation evidence before it enters a local or an effect.
+            Value::Term(ty, expression) => Value::Term(ty, self.normalize_execution_value(expression)),
+            value => value,
+        })
     }
     pub(super) fn action_scope(
         &mut self,
@@ -465,7 +472,7 @@ impl Engine<'_> {
                     let value = self.action_value(value, env)?;
                     need(value.ty() == expected, "incompatible state write value")?;
                     let value = value.scalar()?;
-                    let guard = math::normalize(b::and(
+                    let guard = self.normalize_execution_value(b::and(
                         self.action_path.clone(),
                         self.realtime_completion.continuing_guard(),
                     ));
