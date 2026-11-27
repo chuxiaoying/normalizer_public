@@ -507,6 +507,7 @@ fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent
     let e = integer_ac::simplify(&e, ctx);
     let e = integer_ranges::strict_endpoint(&e).unwrap_or(e);
     let e = crate::canonical_order::orient_ordered_expression(&e, ctx);
+    let e = integer_equations::isolate_single_subject(&e).unwrap_or(e);
     let e = integer_equations::isolate_offset(&e, ctx).unwrap_or(e);
     let e = boolean::simplify(&e, ctx);
     let e = integer_ranges::canonical_guard(&e, parent, ctx).unwrap_or(e);

@@ -108,11 +108,8 @@ impl Equation {
     fn accumulate(&mut self, value: &Expr, factor: &BigInt) -> Option<()> {
         if let Some(n) = value.as_lit().and_then(crate::Lit::as_integer) {
             self.constant += factor * n;
-        } else if let Some(SymVarOrigin::Parameter { name, .. }) = value.as_sym_var() {
-            if !super::integer_ac::total_integer(value) {
-                return None;
-            }
-            *self.coefficients.entry(name.clone()).or_default() += factor;
+        } else if let Some(name) = direct_integer_input(value) {
+            *self.coefficients.entry(name.to_owned()).or_default() += factor;
         } else {
             let (op, left, right) = value.as_binop()?;
             match op {
@@ -147,6 +144,50 @@ impl Equation {
     }
 }
 
+/// MA-02: isolate a single acquired integer in an affine comparison.
+pub(super) fn isolate_single_subject(expr: &Expr) -> Option<Expr> {
+    let (op, left, right) = expr.as_binop()?;
+    let mut op = op.comparison()?;
+    let affine_work = |operand: &Expr| matches!(operand.as_binop(),
+        Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, _, _)));
+    if !affine_work(left) && !affine_work(right) { return None; }
+    let nodes = expr.size();
+    if nodes > 256 || expr.depth() > 48 || !super::consume_proof_budget(nodes, nodes) {
+        return None;
+    }
+    let mut affine = Equation::default();
+    affine.accumulate(left, &BigInt::one())?;
+    affine.accumulate(right, &-BigInt::one())?;
+    affine.coefficients.retain(|_, coefficient| !coefficient.is_zero());
+    use crate::expr::Comparison::*;
+    if affine.coefficients.is_empty() {
+        return Some(b::lit_bool(BinOpKind::from(op).comparison_test::<BigInt>()?(&affine.constant, &BigInt::zero())));
+    }
+    if affine.coefficients.len() != 1 { return None; }
+    let (name, mut coefficient) = affine.coefficients.into_iter().next()?;
+    let mut bound = -affine.constant;
+    if coefficient.is_negative() {
+        coefficient = -coefficient;
+        bound = -bound;
+        op = op.swapped();
+    }
+    let quotient = &bound / &coefficient;
+    let exact = (&bound % &coefficient).is_zero();
+    let floor = if !exact && bound.is_negative() { &quotient - 1 } else { quotient };
+    let ceil = if exact { floor.clone() } else { &floor + 1 };
+    let (direction, endpoint) = match op {
+        Eq | Ne if !exact => return Some(b::lit_bool(matches!(op, Ne))),
+        Eq | Ne => (op, floor),
+        Lt => (Lt, ceil),
+        Le => (Lt, floor + 1),
+        Gt => (Gt, floor),
+        Ge => (Gt, ceil - 1),
+    };
+    let result = b::binop_public(direction.into(),
+        b::param(name, crate::ScalarSymbolType::Integer), b::lit_integer(endpoint));
+    (result != *expr).then_some(result)
+}
+
 // Divide both sides by a nonzero common factor and fix the leading
 // sign. This identifies equal integer solution sets without selecting
 // particular values for free inputs.
@@ -164,6 +205,12 @@ fn primitive(mut equation: Equation) -> Equation {
         equation.constant /= &factor;
         for coefficient in equation.coefficients.values_mut() {
             *coefficient /= &factor;
+        }
+    }
+    if equation.coefficients.values().next().unwrap_or(&equation.constant).is_negative() {
+        equation.constant = -equation.constant;
+        for coefficient in equation.coefficients.values_mut() {
+            *coefficient = -std::mem::take(coefficient);
         }
     }
     equation
