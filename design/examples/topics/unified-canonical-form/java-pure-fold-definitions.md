@@ -1,8 +1,8 @@
-# 两个纯有序递推的稳定 T 定义
+# 两个纯有序递推的值表达式
 
 ## 设计意图
 
-检验独立纯递推的稳定 T 顺序、相同递推的复用及有依赖时的先后。空序列保留固有初值，条件取得的初值不能在取得前使用。
+检验有序递推保留各自输入、更新关系以及递推间的依赖。空序列保留固有初值，条件取得的初值不能在取得前使用。
 
 ## 输入原始代码
 
@@ -65,17 +65,16 @@ P:
     left: { position: 0, type: 'number[]' }
     right: { position: 1, type: 'number[]' }
     initial: { position: 2, type: number }
-T:
-  - { id: $t_0, op: fold, type: number, source: left, initial: initial, accumulator: acc, element: item, body: 'item + acc * 2' }
-  - { id: $t_1, op: fold, type: number, source: right, initial: initial, accumulator: acc, element: item, body: 'item + acc * 2' }
-R: $t_0 - $t_1
+R: |-
+  REDUCE(left FROM initial AS (acc, item) YIELD item + acc * 2)
+  - REDUCE(right FROM initial AS (acc, item) YIELD item + acc * 2)
 ```
 
-两个定义均无依赖，按公开输入 left、right 排列。acc 和 item 只在定义体内有效；不泄漏源码的私有变量名。初值为 1、左侧 [3,4] 时左值为 14；换为 [4,3] 则为 15，证明不能重排元素。 若改为从倍增的累加值减去当前元素，减法方向不可交换。仅观察左侧终值时，独立且未使用的右递推不发布；E 的同级字段可以各自作为独立初值，不能从字段类型猜出依赖。若左递推以右递推终值为初值，右定义必须先发布，且左定义、R 一并使用新编号。
+两个独立纯递推分别占据减法左右，不能互换。acc 和 item 只在定义体内有效；不泄漏源码的私有变量名。初值为 1、左侧 [3,4] 时左值为 14；换为 [4,3] 则为 15，证明不能重排元素。 若改为从倍增的累加值减去当前元素，减法方向不可交换。仅观察左侧终值时，独立且未使用的右递推不发布；E 的同级字段可以各自作为独立初值，不能从字段类型猜出依赖。若左递推以右递推终值为初值，左递推的 `FROM` 槽使用右递推表达式，先取得初值再遍历左侧。
 
 ## 初值依赖已经取得的 E 状态字段
 
-下例展示已经闭合的分析副本。状态字段已经在入口取得，无写入、RPC 或异常。读取名称仍来自 E，而不是伪装成新增参数。将这个明确的依赖保留在 T 的初值中。
+下例展示已经闭合的分析副本。状态字段已经在入口取得，无写入、RPC 或异常。读取名称仍来自 E，而不是伪装成新增参数。将这个明确的依赖保留在 R 的递推初值中。
 
 ```java
 import normalizer.intrinsics.N;
@@ -105,13 +104,11 @@ P:
     values: { position: 0, type: 'number[]' }
 E:
   seed: { kind: state, source: src/CanonicalFolds.java#CanonicalFolds.INSTANCE.seed, fields: { value: number } }
-T:
-  - { id: $t_0, op: fold, type: number, source: values, initial: seed.value, accumulator: acc, element: item, body: 'item + acc * 2' }
-R: $t_0
+R: REDUCE(values FROM seed.value AS (acc, item) YIELD item + acc * 2)
 ```
 
 若入口参数也叫 `seed`，初值必须写成 `E.seed.value`，不能捕获同名 P。
 
-数组的私有局部别名不改变公开输入名。若把整个递推放进仅在某个条件成立时调用的函数，必须保持真实取得域；尚没有可表达这个条件定义的合同就明确拒绝，不能把它发布为无条件 T。
+数组的私有局部别名不改变公开输入名。若把整个递推放进仅在某个条件成立时调用的函数，必须保持真实取得域；不能把守卫下才取得的初值变成无条件取得。
 
-对照已发布的精确整数 T 与已发布的整记录 T：名字可用或取得域完整都不改变值域，记录不能作为可交换的整数。没有取得证据的整数 T 同样不能仅按其类型参与消去。
+对照精确整数递推和记录值：取得域完整不改变值域，记录不能作为可交换的整数。不能仅凭类型消去尚未取得的整数值。

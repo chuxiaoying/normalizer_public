@@ -87,7 +87,7 @@ topics:
       - id: canonical-member-choice
         status: seeded
         surface: java
-        focus: 内部独立成员选择和稳定 T 引用
+        focus: 内部独立成员选择与同一次选择的字段关联
         test_status: covered
       - id: canonical-exception-payload
         status: seeded
@@ -112,7 +112,7 @@ topics:
       - id: canonical-pure-fold-definitions
         status: seeded
         surface: java
-        focus: 纯有序递推依赖、局部词法绑定和稳定公开编号
+        focus: 纯有序递推依赖、局部词法绑定和稳定值表达式
         test_status: covered
       - id: canonical-ordinary-case-reuse
         status: seeded

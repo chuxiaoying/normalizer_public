@@ -2,7 +2,7 @@
 
 ## 设计意图
 
-区别有序递推体里的 CASE 与同一个 R 值中直接重复的 CASE。递推体保留独立的有序定义；两次引用递推终值既不代表两次执行递推，也不构成 R 的 CASE 共享候选。
+检验同一纯有序递推值重复使用时的 LET：整个重复值自身含 CASE，且可在同一安全域内共享；递推的输入顺序和更新体不变。
 
 ## 输入原始代码
 
@@ -45,7 +45,7 @@ class Reduce {
 
 ## 归一化最终结果
 
-更新依赖上一步结果，不能把递推换成可交换 SUM。初值为 1、开关为假时，输入 [3, 4] 得终值 14，交换为 [4, 3] 则得 15。CASE 属于 T 的递推定义，R 中重复的是已经得到的 `$t_0`，不是 CASE；只发布一份 T，不生成 LET，也不把 T 内联到 R。
+更新依赖上一步结果，不能把递推换成可交换 SUM。初值为 1、开关为假时，输入 [3, 4] 得终值 14，交换为 [4, 3] 则得 15。平方重复使用同一个纯递推值。递推表达式自身含 CASE，提取后少一份 CASE，且没有跨守卫或移动外部观察，符合《统一定形》的 LET 规则。
 
 ```yaml
 schema: normalizer.pers/1
@@ -56,13 +56,14 @@ P:
     enabled: { position: 1, type: bool }
     initial: { position: 2, type: number }
     step: { position: 3, type: number }
-T:
-  - { id: $t_0, op: fold, type: number, source: values, initial: initial, accumulator: acc, element: item, body: 'item + acc * 2 + CASE WHEN enabled THEN step ELSE 0 END' }
-R: $t_0 * $t_0
+R: |-
+  LET $l_0 = REDUCE(values FROM initial AS (acc, item)
+                    YIELD item + acc * 2 + CASE WHEN enabled THEN step ELSE 0 END)
+  IN $l_0 * $l_0
 ```
 
 | 对照 | 预期 |
 | --- | --- |
 | 反写同一个 CASE，改局部名字 | 完整 PERS 不变。 |
-| 去掉条件，直接加 step | T 的 body 改变；仍只发布一个 T，不增加 LET。 |
-| 只返回一次递推结果 | R 改为 $t_0；T 不变。 |
+| 去掉条件，直接加 step | 递推更新直接加 `step`；已无 CASE，平方两边内联，不提 LET。 |
+| 只返回一次递推结果 | R 直接写一次递推表达式，不提 LET。 |

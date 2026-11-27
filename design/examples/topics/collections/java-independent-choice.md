@@ -2,7 +2,7 @@
 
 ## 设计意图
 
-检验相同候选条件下两次选择仍独立，一次结果的多个字段共享同一选择。重命名本地记录不改变身份；把读取移到第二次选择必须改变 T 依赖。
+检验相同候选条件下两次选择仍独立，一次结果的多个字段共享同一选择。重命名本地记录不改变身份；把读取移到第二次选择必须改变 R 引用的成员。
 
 [本主题](README.md)
 
@@ -49,7 +49,7 @@ class Offers {
  }
 ```
 
-注释中的 choose 是原位关系指令：两个源码位置分别代表独立的选择位置、候选和缺省值；下方 `T.member_choice` 定义整记录选择。只允许已声明的标量字段投影；不能把选中的记录当作可写引用。
+注释中的 choose 是原位关系指令：两个源码位置分别代表独立的选择位置、候选和缺省值；下方 R 中的 `CHOOSE` 每次选一整条记录。只允许已声明的标量字段投影；不能把选中的记录当作可写引用。
 
 ## 归一化最终结果
 
@@ -64,21 +64,16 @@ P:
   parameters:
     offers: { position: 0, type: 'Offer[]' }
     backup: { position: 1, type: Offer }
-T:
-  - { id: $t_0, op: member_choice, when: 'true', members: offers, empty: backup }
-  - { id: $t_1, op: member_choice, when: 'true', members: offers, empty: backup }
 R: |-
-  {
-    firstCode: $t_0.code,
-    firstPrice: $t_0.price,
-    secondCode: $t_1.code
-  }
+  CHOOSE(offers DEFAULT backup AS member0 YIELD
+    CHOOSE(offers DEFAULT backup AS member1 YIELD
+      {firstCode: member0.code, firstPrice: member0.price, secondCode: member1.code}))
 ```
 
-`$t_0.code` 和 `$t_0.price` 来自同一份报价。第二次选择绑定到 `$t_1`，可以与第一份相同，也可以不同。
+`member0.code` 和 `member0.price` 来自同一份报价。第二次选择绑定到 `member1`，可以与第一份相同，也可以不同。
 
 **判别例**　候选为 (A,7)、(B,9) 时，(A,7,B) 和 (A,7,A) 都允许，(A,9,B) 不允许。
 
 增加布尔字段 `available` 时，`Offer` 的公开形状包含 `available: bool`，而没有读取它的 `Pick` 结果保持不变。不因字段类型变化而重排或合并两个选择。
 
-备用记录经由局部别名 `Offer same = backup` 仍是同一个已取得的入口值。首个选择若从 `same` 取得备用值，公开 T 仍写 `empty: backup`，不新增参数或第三次选择。
+备用记录经由局部别名 `Offer same = backup` 仍是同一个已取得的入口值。首个选择若从 `same` 取得备用值，R 仍写 `DEFAULT backup`，不新增参数或第三次选择。
