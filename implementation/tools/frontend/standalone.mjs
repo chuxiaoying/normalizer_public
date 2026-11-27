@@ -325,12 +325,23 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
       if (operand.type !== 'bool') fail('logical negation in a standalone value requires a Boolean');
       return {type: 'bool', node: internal('not', {value: operand.node})};
     }
+    if (expr.op === 'binary' && (expr.operator === '&&' || expr.operator === '||')) {
+      const left = evaluate(expr.left), right = evaluate(expr.right);
+      if (left.type !== 'bool' || right.type !== 'bool') fail('short circuit needs two declared Boolean values');
+      const and = expr.operator === '&&';
+      const literal = internal('const', {type: 'bool', value: !and});
+      return {type: 'bool', node: internal('if', {
+        cond: left.node, then: and ? right.node : literal, else: and ? literal : right.node,
+      })};
+    }
     if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
       const [type, operator, negate] = numericOperators[expr.operator];
       const left = evaluate(expr.left), right = evaluate(expr.right);
       // Negating an ordered comparison is valid on exact business numbers,
       // not on unrestricted JS values (which may include NaN or coercion).
-      if (left.type !== 'number' || right.type !== 'number') fail('scalar arithmetic and comparison require two business numbers');
+      const numberPair = left.type === 'number' && right.type === 'number';
+      const booleanEquality = operator === 'eq' && left.type === 'bool' && right.type === 'bool';
+      if (!numberPair && !booleanEquality) fail('scalar operations need two numbers or, for equality, two Booleans');
       // Preserve source evaluation order; the kernel canonicalizes only
       // the resulting already acquired operands.
       const node = internal(operator, {left: left.node, right: right.node});
