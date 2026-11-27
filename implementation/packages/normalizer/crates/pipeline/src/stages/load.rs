@@ -2,7 +2,7 @@
 
 use crate::error::PipelineError;
 use simulator_parser::{parse, JavaProgram, ParseOptions};
-use std::{fs, path::{Path, PathBuf}};
+use std::{collections::BTreeMap, fs, path::{Path, PathBuf}};
 
 fn collect_java_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), PipelineError> {
     let path_error = |error| PipelineError::Io(format!("[SOURCE-WALK-FAILED] {}: {error}", dir.display()));
@@ -34,6 +34,7 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
     }
     paths.sort();
     let mut program = JavaProgram::new();
+    let mut sources = BTreeMap::new();
     let options = ParseOptions::default();
     for path in paths {
         let file = path.to_str().ok_or_else(|| PipelineError::Io(
@@ -44,6 +45,16 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
         if !resolved.starts_with(&scope) {
             return Err(PipelineError::Io(format!(
                 "[SOURCE-OUTSIDE-ROOT] {file} resolves outside the selected source directory"
+            )));
+        }
+        if !fs::metadata(&resolved).map_err(read_error)?.is_file() {
+            return Err(PipelineError::Io(format!(
+                "[SOURCE-READ-FAILED] {file} is not a regular source file"
+            )));
+        }
+        if let Some(previous) = sources.insert(resolved.clone(), file.to_owned()) {
+            return Err(PipelineError::Io(format!(
+                "[SOURCE-ALIAS] {previous} and {file} identify the same source file"
             )));
         }
         let bytes = fs::read(resolved).map_err(read_error)?;
