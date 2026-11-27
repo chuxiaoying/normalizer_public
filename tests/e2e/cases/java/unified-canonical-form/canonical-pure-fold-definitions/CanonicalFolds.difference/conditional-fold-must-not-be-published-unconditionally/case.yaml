@@ -1,0 +1,5 @@
+entry: src/CanonicalFolds.java#CanonicalFolds.difference
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - pure fold requires unconditional evaluation over one ordered source array

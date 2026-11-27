@@ -1,0 +1,6 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - "return:"
+    - nonconstant short binding input cannot implicitly narrow to Java byte

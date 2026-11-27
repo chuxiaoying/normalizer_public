@@ -1,0 +1,5 @@
+entry: src/vector-case.ts#choose
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - length requires a direct declared non-null readonly Vector

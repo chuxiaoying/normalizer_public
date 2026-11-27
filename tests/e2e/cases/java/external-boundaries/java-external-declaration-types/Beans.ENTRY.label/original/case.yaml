@@ -1,0 +1,24 @@
+entry: src/ExternalTypeDemo.java#Beans.ENTRY.label
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ExternalTypeDemo.java#Beans.ENTRY.label
+    returns: text
+  P:
+    parameters:
+      id:
+        position: 0
+        type: number
+  types:
+    Packet:
+      fields:
+        approved: bool
+        label: text
+  S:
+    - call:
+        external: src/ExternalTypeDemo.java#Beans.ENTRY.port.lookup
+        args:
+          - id
+        result: $e_0
+        returns: Packet
+  R: $e_0.label

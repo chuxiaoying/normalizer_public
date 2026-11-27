@@ -1,0 +1,6 @@
+entry: src/DistinctValues.java#DistinctValues.distinctCount
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - kind=PREPROCESS_REQUIRED
+    - where requires bool

@@ -1,0 +1,5 @@
+entry: src/LexicalScope.java#LexicalScope.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - duplicate local declaration tally

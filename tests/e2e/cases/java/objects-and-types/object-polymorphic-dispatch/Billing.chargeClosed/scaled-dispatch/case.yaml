@@ -1,0 +1,15 @@
+entry: src/Billing.java#Billing.chargeClosed
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Billing.java#Billing.chargeClosed
+    returns: number
+  P:
+    parameters:
+      fixed:
+        position: 0
+        type: bool
+      value:
+        position: 1
+        type: number
+  R: value * 2

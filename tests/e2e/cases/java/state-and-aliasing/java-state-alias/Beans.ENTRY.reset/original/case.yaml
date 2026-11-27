@@ -1,0 +1,33 @@
+entry: src/Account.java#Beans.ENTRY.reset
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quota:
+      fields:
+        units: number
+  entry:
+    function: src/Account.java#Beans.ENTRY.reset
+    returns: number
+  P:
+    parameters:
+      observer:
+        position: 0
+        type: Quota?
+  E:
+    quota:
+      kind: state
+      source: src/Account.java#Beans.ENTRY.quota
+      fields:
+        units: number
+  S:
+    - write:
+        target: quota.units
+        value: "7"
+  R: |-
+    CASE
+      WHEN observer == quota THEN 7
+      ELSE observer.units
+    END
+  throws:
+    - type: java.lang.NullPointerException
+      when: observer == null

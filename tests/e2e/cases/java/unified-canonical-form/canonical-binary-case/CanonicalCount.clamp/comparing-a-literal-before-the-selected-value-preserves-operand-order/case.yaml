@@ -1,0 +1,12 @@
+entry: src/CanonicalCount.java#CanonicalCount.clamp
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalCount.java#CanonicalCount.clamp
+    returns: bool
+  P:
+    parameters:
+      count:
+        position: 0
+        type: number
+  R: count <= 0

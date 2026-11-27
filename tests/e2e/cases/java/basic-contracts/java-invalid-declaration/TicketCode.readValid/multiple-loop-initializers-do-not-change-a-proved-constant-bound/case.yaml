@@ -1,0 +1,12 @@
+entry: src/TicketCode.java#TicketCode.readValid
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/TicketCode.java#TicketCode.readValid
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: value + 2

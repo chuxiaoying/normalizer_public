@@ -1,0 +1,5 @@
+entry: src/Batch.java#Batch.firstId
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - eager projection leaf must be a declared integer

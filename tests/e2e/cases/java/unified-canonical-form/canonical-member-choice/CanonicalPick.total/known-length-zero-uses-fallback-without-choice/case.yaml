@@ -1,0 +1,15 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalPick.java#CanonicalPick.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      backup:
+        position: 1
+        type: number
+  R: backup + backup

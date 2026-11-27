@@ -1,0 +1,5 @@
+entry: src/CanonicalFolds.java#CanonicalFolds.difference
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - pure fold body requires closed exact-integer arithmetic

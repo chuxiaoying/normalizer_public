@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "src/TicketCode.java:8:55:"
+    - instanceof

@@ -1,0 +1,12 @@
+entry: src/StateList.java#Beans.ENTRY.update
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/StateList.java#Beans.ENTRY.update
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: LENGTH(values)

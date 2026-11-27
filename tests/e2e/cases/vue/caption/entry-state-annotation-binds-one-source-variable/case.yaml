@@ -1,0 +1,6 @@
+entry: src/ArrearsPage.ts#caption
+vueSource: src/ArrearsPage.vue
+reject:
+  fragments:
+    - "SCENARIO_MODULE_INPUT:"
+    - "@N entryState must mark one named binding"

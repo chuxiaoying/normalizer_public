@@ -1,0 +1,7 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - target=TicketCode.booleanValue
+    - kind=ABORT
+    - not-support

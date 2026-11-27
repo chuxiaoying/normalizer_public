@@ -1,0 +1,9 @@
+entry: src/Catalog.java#Catalog.price
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Catalog.java#Catalog.price
+    returns: number
+  P:
+    parameters: {}
+  R: "99"

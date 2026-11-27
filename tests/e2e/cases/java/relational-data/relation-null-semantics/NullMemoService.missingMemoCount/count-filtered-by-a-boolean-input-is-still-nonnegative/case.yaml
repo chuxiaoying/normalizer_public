@@ -1,0 +1,22 @@
+entry: src/NullMemoService.java#NullMemoService.missingMemoCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NullMemoService.java#NullMemoService.missingMemoCount
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      enabled:
+        position: 1
+        type: bool
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        memo: text?
+  R: "7"

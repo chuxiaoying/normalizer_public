@@ -1,0 +1,15 @@
+entry: src/LexicalScope.java#LexicalScope.INSTANCE.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/LexicalScope.java#LexicalScope.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      choose:
+        position: 0
+        type: bool
+      input:
+        position: 1
+        type: number
+  R: input + 3

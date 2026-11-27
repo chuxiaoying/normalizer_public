@@ -1,0 +1,5 @@
+entry: src/vector-construction.ts#pair
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - readonly Vector literal requires a closed list of numbers

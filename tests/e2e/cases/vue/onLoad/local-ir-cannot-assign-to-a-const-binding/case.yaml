@@ -1,0 +1,6 @@
+entry: src/ArrearsPage.ts#onLoad
+vueSource: src/ArrearsPage.vue
+reject:
+  fragments:
+    - "SCENARIO_MODULE_INPUT:"
+    - local IR requires a writable local assignment in this block

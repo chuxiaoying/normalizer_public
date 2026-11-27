@@ -1,0 +1,5 @@
+entry: src/TaskBatch.java#TaskBatch.complete
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - unbound local stack operand

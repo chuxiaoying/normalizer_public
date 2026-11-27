@@ -1,0 +1,4 @@
+entry: src/RemotePayload.java#RemotePayload.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-EXCEPTION-DECLARATION]"

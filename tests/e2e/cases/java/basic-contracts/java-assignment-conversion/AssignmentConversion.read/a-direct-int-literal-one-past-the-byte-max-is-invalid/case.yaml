@@ -1,0 +1,6 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - initializer for value
+    - integral literal 128 is outside the Java byte range

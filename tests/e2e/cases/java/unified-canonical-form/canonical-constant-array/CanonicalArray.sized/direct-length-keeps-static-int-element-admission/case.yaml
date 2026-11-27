@@ -1,0 +1,5 @@
+entry: src/CanonicalArray.java#CanonicalArray.sized
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - array initializer requires number, got bool

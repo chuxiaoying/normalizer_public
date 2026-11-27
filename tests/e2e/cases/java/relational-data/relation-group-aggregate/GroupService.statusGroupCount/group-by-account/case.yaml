@@ -1,0 +1,27 @@
+entry: src/GroupService.java#GroupService.statusGroupCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GroupService.java#GroupService.statusGroupCount
+    returns: number
+  P:
+    parameters: {}
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        status: text
+        account_id: number
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM (
+          SELECT bill.account_id
+          FROM bill
+          GROUP BY bill.account_id
+        ) AS groups
+      ),
+      0
+    )

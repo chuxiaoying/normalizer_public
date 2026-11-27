@@ -1,0 +1,22 @@
+class BillOrderRow {
+    int accountId;
+    int dueDate;
+    int id;
+}
+class DueDateService {
+    static int firstDueDate(int accountId) {
+        BillOrderRow[] bills;
+        /* @normalizer-ir
+           bills = from bill as b
+               where b.account_id == accountId
+               yield { accountId: b.account_id, dueDate: b.due_date, id: b.id }
+        */
+        int dueDate;
+        /* @normalizer-ir
+           dueDate = first from bills as row
+               let accountId = row.dueDate + 1 order by row.dueDate, row.id
+               yield accountId else 0
+        */
+        return dueDate;
+    }
+}

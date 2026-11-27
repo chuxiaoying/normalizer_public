@@ -1,0 +1,21 @@
+entry: src/PairFactory.java#PairFactory.make
+expected:
+  schema: normalizer.pers/1
+  types:
+    Pair:
+      fields:
+        left: number
+        right: number
+  entry:
+    function: src/PairFactory.java#PairFactory.make
+    returns: Pair
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: |-
+    {
+      left: value + 7,
+      right: value + 1
+    }

@@ -1,0 +1,21 @@
+entry: src/CycleState.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  types:
+    Node:
+      fields:
+        next: Node
+        value: number
+  entry:
+    function: src/CycleState.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters: {}
+  E:
+    root:
+      kind: state
+      source: src/CycleState.java#Beans.ENTRY.root
+      fields:
+        next: Node
+        value: number
+  R: root.value

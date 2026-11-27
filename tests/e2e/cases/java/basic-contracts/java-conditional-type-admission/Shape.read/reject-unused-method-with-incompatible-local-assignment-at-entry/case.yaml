@@ -1,0 +1,7 @@
+entry: src/Shape.java#Shape.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Shape.unused
+    - assignment to n requires number, got bool

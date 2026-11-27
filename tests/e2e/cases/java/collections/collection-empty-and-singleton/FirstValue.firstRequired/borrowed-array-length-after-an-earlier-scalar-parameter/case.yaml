@@ -1,0 +1,15 @@
+entry: src/FirstValue.java#FirstValue.firstRequired
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstRequired
+    returns: number
+  P:
+    parameters:
+      earlier:
+        position: 0
+        type: number
+      values:
+        position: 1
+        type: number[]
+  R: LENGTH(values)

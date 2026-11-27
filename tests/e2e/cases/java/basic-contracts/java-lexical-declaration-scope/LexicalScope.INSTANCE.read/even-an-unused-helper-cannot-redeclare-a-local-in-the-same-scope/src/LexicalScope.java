@@ -1,0 +1,14 @@
+class LexicalScope { static int unused() { int i=99; int i=1; return i; }
+    static final LexicalScope INSTANCE = new LexicalScope();
+    int tally;
+    int read(boolean choose, int input) {
+        int tally = input;
+        if (choose) {
+            int branch = tally + 1;
+            return branch;
+        } else {
+            int branch = tally + 2;
+            return branch;
+        }
+    }
+}

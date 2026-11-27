@@ -1,0 +1,6 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - assignment to value
+    - nonconstant int binding input cannot implicitly narrow to Java short

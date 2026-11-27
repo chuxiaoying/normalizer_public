@@ -1,9 +1,0 @@
-entry: src/total.ts#total
-input:
-  src/total.ts: |
-    function unused() { return JSON.parse('{}'); }
-    export function total(value: number, base: number): number { return value + base; }
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - resolved any is not an admitted analysis type

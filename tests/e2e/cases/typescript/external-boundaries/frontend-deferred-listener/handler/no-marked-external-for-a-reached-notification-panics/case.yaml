@@ -1,0 +1,6 @@
+entry: src/handler.ts#handle
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - target=notices.notify
+    - "[NORM-ENGINE-FAILURE]"

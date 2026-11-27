@@ -1,0 +1,5 @@
+entry: src/handler.ts#handle
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - listener host requires a closed declared receiver interface or source shape

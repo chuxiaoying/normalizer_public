@@ -1,0 +1,9 @@
+entry: src/CanonicalArray.java#CanonicalArray.sized
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.sized
+    returns: number
+  P:
+    parameters: {}
+  R: "3"

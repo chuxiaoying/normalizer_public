@@ -1,0 +1,9 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.large
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuotient.java#CanonicalQuotient.large
+    returns: number
+  P:
+    parameters: {}
+  R: "9223372036854775808"

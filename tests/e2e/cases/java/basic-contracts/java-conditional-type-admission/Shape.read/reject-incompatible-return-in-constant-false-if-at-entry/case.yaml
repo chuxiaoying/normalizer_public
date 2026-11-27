@@ -1,0 +1,7 @@
+entry: src/Shape.java#Shape.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Shape.read
+    - return requires number, got bool

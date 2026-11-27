@@ -1,0 +1,7 @@
+entry: src/UnsupportedBoundary.java#UnsupportedBoundary.format
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - kind=ABORT
+    - UnsupportedBoundary.runtimeFormat
+    - not-support

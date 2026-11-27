@@ -1,0 +1,16 @@
+entry: src/CanonicalCount.java#CanonicalCount.present
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalCount.java#CanonicalCount.present
+    returns: number
+  P:
+    parameters:
+      label:
+        position: 0
+        type: text?
+  R: |-
+    CASE
+      WHEN label == null THEN 0
+      ELSE 1
+    END

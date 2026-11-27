@@ -1,0 +1,12 @@
+entry: src/Bound.java#Bound.safe
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Bound.java#Bound.safe
+    returns: bool
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: value > 0

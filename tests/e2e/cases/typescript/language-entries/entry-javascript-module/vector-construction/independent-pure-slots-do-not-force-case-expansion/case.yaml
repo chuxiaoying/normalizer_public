@@ -1,0 +1,45 @@
+entry: src/vector-construction.ts#pair
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/vector-construction.ts#pair
+    returns: number[]
+  P:
+    parameters:
+      enabled:
+        position: 0
+        type: bool
+      left:
+        position: 1
+        type: number
+      right:
+        position: 2
+        type: number
+      fixed:
+        position: 3
+        type: number
+      gate0:
+        position: 4
+        type: bool
+      gate1:
+        position: 5
+        type: bool
+      gate2:
+        position: 6
+        type: bool
+      gate3:
+        position: 7
+        type: bool
+      gate4:
+        position: 8
+        type: bool
+      gate5:
+        position: 9
+        type: bool
+      gate6:
+        position: 10
+        type: bool
+      gate7:
+        position: 11
+        type: bool
+  R: "[(CASE WHEN gate0 THEN 1 ELSE 0 END), (CASE WHEN gate1 THEN 1 ELSE 0 END), (CASE WHEN gate2 THEN 1 ELSE 0 END), (CASE WHEN gate3 THEN 1 ELSE 0 END), (CASE WHEN gate4 THEN 1 ELSE 0 END), (CASE WHEN gate5 THEN 1 ELSE 0 END), (CASE WHEN gate6 THEN 1 ELSE 0 END), (CASE WHEN gate7 THEN 1 ELSE 0 END)]"

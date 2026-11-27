@@ -1,0 +1,9 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.signed
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuotient.java#CanonicalQuotient.signed
+    returns: number
+  P:
+    parameters: {}
+  R: "-23"

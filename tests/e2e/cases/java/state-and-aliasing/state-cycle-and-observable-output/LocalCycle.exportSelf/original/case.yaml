@@ -1,0 +1,7 @@
+entry: src/LocalCycle.java#LocalCycle.exportSelf
+reject:
+  fragments:
+    - "[NORM-CYCLIC-CONTENT-EXIT]"
+    - kind=ABORT
+    - LocalCycle.exportSelf
+  kind: ABORT

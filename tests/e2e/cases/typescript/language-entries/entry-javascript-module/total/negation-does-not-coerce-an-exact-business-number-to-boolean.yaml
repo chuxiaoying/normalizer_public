@@ -1,8 +1,0 @@
-entry: src/total.ts#total
-input:
-  src/total.ts: |
-    export function total(value: number, base: number): boolean { return !value; }
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - logical negation in a standalone value requires a Boolean

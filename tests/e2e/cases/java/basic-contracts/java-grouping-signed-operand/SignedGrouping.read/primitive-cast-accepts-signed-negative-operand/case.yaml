@@ -1,0 +1,12 @@
+entry: src/SignedGrouping.java#SignedGrouping.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/SignedGrouping.java#SignedGrouping.read
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: "-1"

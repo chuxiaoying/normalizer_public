@@ -1,0 +1,5 @@
+entry: src/Catalog.java#Catalog.price
+reject:
+  fragments:
+    - "[NORM-FIELD-DECLARATION]"
+    - location=DuplicateField

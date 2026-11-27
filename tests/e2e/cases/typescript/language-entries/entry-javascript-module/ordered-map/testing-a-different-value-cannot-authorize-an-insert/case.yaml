@@ -1,0 +1,5 @@
+entry: src/ordered-map.ts#labels
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - readonly Map requires each null guard to protect the inserted value

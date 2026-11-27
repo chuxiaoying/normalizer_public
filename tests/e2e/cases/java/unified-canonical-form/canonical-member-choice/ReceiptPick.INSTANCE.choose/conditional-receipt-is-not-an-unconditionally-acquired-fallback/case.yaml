@@ -1,0 +1,5 @@
+entry: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - temporal definitions with effects require unconditional nonthrowing integer receipts

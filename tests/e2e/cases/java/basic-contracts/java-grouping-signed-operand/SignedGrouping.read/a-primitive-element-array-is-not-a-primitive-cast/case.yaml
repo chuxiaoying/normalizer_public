@@ -1,0 +1,5 @@
+entry: src/SignedGrouping.java#SignedGrouping.read
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - expected expression

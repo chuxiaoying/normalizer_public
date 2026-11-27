@@ -1,0 +1,6 @@
+entry: src/DecimalPrice.java#DecimalPrice.roundPrice
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - N.round

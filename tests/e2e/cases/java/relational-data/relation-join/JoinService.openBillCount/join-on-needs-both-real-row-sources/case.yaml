@@ -1,0 +1,5 @@
+entry: src/JoinService.java#JoinService.openBillCount
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - join ON must depend on both typed rows

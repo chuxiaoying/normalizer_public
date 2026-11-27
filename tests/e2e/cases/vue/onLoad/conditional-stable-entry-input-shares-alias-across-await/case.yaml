@@ -1,0 +1,105 @@
+entry: src/ArrearsPage.ts#onLoad
+vueSource: src/ArrearsPage.vue
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        accountId: number
+        minPriority: number
+        quota: number
+    BillRow:
+      fields:
+        accountId: number
+        dueDate: number
+        amount: number
+        waivedAmount: number
+        priority: number
+  entry:
+    function: src/ArrearsPage.ts#onLoad
+    returns: void
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      today:
+        position: 1
+        type: number
+  E:
+    arrears:
+      kind: state
+      source: src/ArrearsPage.ts#arrears
+      fields:
+        loadedAccountId: number
+        status:
+          loading: bool
+          ready: bool
+          failed: bool
+        summary:
+          payable: number
+  S:
+    - write:
+        target: arrears.loadedAccountId
+        value: accountId
+    - write:
+        target: arrears.status.loading
+        value: true
+    - call:
+        external: src/ArrearsPage.ts#profileClient.fetchProfile
+        args:
+          - accountId
+        returns: Profile
+        result: $e_0
+    - call:
+        external: src/ArrearsPage.ts#arrearsClient.queryOpenBills
+        args:
+          - $e_0.accountId
+        returns: BillRow[]
+        result: $e_1
+        when: completion.is_return($e_0)
+    - write:
+        target: arrears.status.loading
+        value: false
+    - write:
+        target: arrears.summary.payable
+        value: today
+        when: |-
+          CASE
+            WHEN completion.is_return($e_0) THEN completion.is_return($e_1)
+            ELSE false
+          END
+    - write:
+        target: arrears.status.ready
+        value: true
+        when: |-
+          CASE
+            WHEN completion.is_return($e_0) THEN completion.is_return($e_1)
+            ELSE false
+          END
+    - write:
+        target: arrears.status.failed
+        value: true
+        when: |-
+          CASE
+            WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
+            ELSE completion.is_throw($e_1, BillQueryError)
+          END
+    - write:
+        target: arrears.status.ready
+        value: false
+        when: |-
+          CASE
+            WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
+            ELSE completion.is_throw($e_1, BillQueryError)
+          END
+  R: void
+  throws:
+    - type: BillQueryError
+      when: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, BillQueryError)
+          ELSE false
+        END
+    - type: ProfileFetchError
+      when: completion.is_throw($e_0, ProfileFetchError)

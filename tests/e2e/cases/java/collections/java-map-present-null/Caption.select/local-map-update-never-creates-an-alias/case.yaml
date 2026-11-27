@@ -1,0 +1,5 @@
+entry: src/Caption.java#Caption.select
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - local map update cannot alias to another binding

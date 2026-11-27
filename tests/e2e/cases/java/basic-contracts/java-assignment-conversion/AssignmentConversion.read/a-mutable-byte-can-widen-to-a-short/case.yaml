@@ -1,0 +1,9 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/AssignmentConversion.java#AssignmentConversion.read
+    returns: number
+  P:
+    parameters: {}
+  R: "65"

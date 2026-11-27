@@ -1,0 +1,26 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalPick.java#CanonicalPick.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      backup:
+        position: 1
+        type: number
+  T:
+    - id: $t_0
+      op: member_choice
+      when: "true"
+      members: "[2, 7]"
+      empty: backup
+    - id: $t_1
+      op: member_choice
+      when: "true"
+      members: "[2, 7]"
+      empty: backup
+  R: $t_0 + $t_1

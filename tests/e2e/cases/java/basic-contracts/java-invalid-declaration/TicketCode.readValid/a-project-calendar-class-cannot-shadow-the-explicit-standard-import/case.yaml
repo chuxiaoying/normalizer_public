@@ -1,0 +1,5 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[NORM-INTRINSIC-SHADOW]"
+    - java.time.LocalDate

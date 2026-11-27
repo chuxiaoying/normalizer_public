@@ -1,0 +1,25 @@
+entry: src/Identity.java#Identity.samePairs
+expected:
+  schema: normalizer.pers/1
+  types:
+    Box:
+      fields:
+        value: number
+  entry:
+    function: src/Identity.java#Identity.samePairs
+    returns: bool
+  P:
+    parameters:
+      zebra:
+        position: 0
+        type: Box
+      yellow:
+        position: 1
+        type: Box
+      blue:
+        position: 2
+        type: Box
+      amber:
+        position: 3
+        type: Box
+  R: amber == blue AND yellow == zebra

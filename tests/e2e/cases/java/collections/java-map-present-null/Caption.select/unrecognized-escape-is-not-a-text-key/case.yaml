@@ -1,0 +1,5 @@
+entry: src/Caption.java#Caption.select
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - unsupported text escape

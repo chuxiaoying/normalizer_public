@@ -1,0 +1,6 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - initializer for value
+    - cannot implicitly narrow

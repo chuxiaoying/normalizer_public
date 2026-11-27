@@ -1,0 +1,5 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - member choice guard requires acquired entry scalars

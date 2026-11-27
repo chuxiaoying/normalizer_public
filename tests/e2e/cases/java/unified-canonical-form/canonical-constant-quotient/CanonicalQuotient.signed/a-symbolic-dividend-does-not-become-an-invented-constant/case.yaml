@@ -1,0 +1,5 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.signed
+reject:
+  fragments:
+    - "[NORM-EXPRESSION]"
+    - division and remainder require concrete integers

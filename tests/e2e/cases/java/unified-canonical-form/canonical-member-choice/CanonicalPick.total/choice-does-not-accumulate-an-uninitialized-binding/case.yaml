@@ -1,0 +1,5 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - member choice must initialize its binding with =

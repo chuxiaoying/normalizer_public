@@ -1,0 +1,5 @@
+entry: src/vector-construction.ts#pair
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - unsupported standalone scalar operation literal

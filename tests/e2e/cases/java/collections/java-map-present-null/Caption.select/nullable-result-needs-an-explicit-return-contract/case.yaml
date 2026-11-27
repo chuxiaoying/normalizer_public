@@ -1,0 +1,5 @@
+entry: src/Caption.java#Caption.select
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - local map text result must declare a nullable return

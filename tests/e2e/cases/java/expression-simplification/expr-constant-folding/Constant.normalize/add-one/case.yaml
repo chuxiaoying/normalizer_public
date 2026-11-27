@@ -1,0 +1,12 @@
+entry: src/Constant.java#Constant.normalize
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Constant.java#Constant.normalize
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: value + 1

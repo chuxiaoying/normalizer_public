@@ -1,0 +1,23 @@
+entry: src/BillReport.java#BillReport.countAccounts
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/BillReport.java#BillReport.countAccounts
+    returns: number
+  P:
+    parameters: {}
+  E:
+    pending_bill:
+      kind: table
+      source: pending_bill
+      columns:
+        account_id: number
+    posted_bill:
+      kind: table
+      source: posted_bill
+      columns:
+        account_id: number
+  R: |-
+    SELECT COUNT(*) FROM (
+      SELECT DISTINCT account_id FROM pending_bill
+    ) AS accounts

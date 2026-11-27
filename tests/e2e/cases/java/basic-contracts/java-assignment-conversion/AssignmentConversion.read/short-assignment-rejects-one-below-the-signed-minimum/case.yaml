@@ -1,0 +1,6 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - assignment to value
+    - integral literal -32769 is outside the Java short range

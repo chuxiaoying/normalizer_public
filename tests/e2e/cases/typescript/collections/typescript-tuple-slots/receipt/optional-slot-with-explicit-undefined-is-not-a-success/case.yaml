@@ -1,0 +1,15 @@
+entry: src/receipt.ts#traceCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/receipt.ts#traceCount
+    returns: number
+  P:
+    parameters:
+      failed:
+        position: 0
+        type: bool
+      detailed:
+        position: 1
+        type: bool
+  R: "0"

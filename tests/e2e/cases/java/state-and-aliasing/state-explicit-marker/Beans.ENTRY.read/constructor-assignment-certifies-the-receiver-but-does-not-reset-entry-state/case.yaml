@@ -1,0 +1,14 @@
+entry: src/Counter.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters: {}
+  E:
+    value:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.value
+      type: number
+  R: value + 1

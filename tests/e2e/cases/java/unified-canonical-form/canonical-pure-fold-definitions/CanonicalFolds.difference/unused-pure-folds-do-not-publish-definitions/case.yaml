@@ -1,0 +1,18 @@
+entry: src/CanonicalFolds.java#CanonicalFolds.difference
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalFolds.java#CanonicalFolds.difference
+    returns: number
+  P:
+    parameters:
+      left:
+        position: 0
+        type: number[]
+      right:
+        position: 1
+        type: number[]
+      initial:
+        position: 2
+        type: number
+  R: initial

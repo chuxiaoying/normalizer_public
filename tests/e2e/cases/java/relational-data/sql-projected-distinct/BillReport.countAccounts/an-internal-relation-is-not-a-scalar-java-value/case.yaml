@@ -1,0 +1,7 @@
+entry: src/BillReport.java#BillReport.countAccounts
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - location=BillReport.countAccounts
+    - initializer for result requires number, got source sequence<number>

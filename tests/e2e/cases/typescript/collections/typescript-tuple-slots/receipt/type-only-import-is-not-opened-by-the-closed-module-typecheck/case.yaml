@@ -1,0 +1,5 @@
+entry: src/receipt.ts#traceCount
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - typed module cannot import outside declarations

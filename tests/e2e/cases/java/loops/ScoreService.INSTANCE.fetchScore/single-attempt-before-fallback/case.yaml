@@ -1,0 +1,27 @@
+entry: src/ScoreService.java#ScoreService.INSTANCE.fetchScore
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ScoreService.java#ScoreService.INSTANCE.fetchScore
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      availableCredits:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.fetchScore
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+  R: |-
+    CASE
+      WHEN completion.is_return($e_0) THEN $e_0
+      WHEN availableCredits > 0 THEN availableCredits
+      ELSE 0
+    END

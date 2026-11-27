@@ -1,0 +1,19 @@
+entry: src/First.java#First.first
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/First.java#First.first
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      columns:
+        account_id: number
+        amount: number
+      kind: table
+      source: bill
+  R: "0"

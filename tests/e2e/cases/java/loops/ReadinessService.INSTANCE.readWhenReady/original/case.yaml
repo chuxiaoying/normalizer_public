@@ -1,0 +1,8 @@
+entry: src/ReadinessService.java#ReadinessService.INSTANCE.readWhenReady
+reject:
+  fragments:
+    - "[NORM-EXTERNAL-POLL]"
+    - kind=PREPROCESS_REQUIRED
+    - external response
+    - no finite bound
+  kind: PREPROCESS_REQUIRED

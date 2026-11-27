@@ -1,0 +1,6 @@
+entry: src/FirstValue.java#FirstValue.firstOrZero
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - expected a nonnegative integer slice offset

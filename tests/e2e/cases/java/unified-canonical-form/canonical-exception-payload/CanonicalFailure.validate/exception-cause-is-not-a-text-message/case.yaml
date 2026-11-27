@@ -1,0 +1,5 @@
+entry: src/CanonicalFailure.java#CanonicalFailure.validate
+reject:
+  fragments:
+    - "[NORM-EXPLICIT-THROW]"
+    - kind=PREPROCESS_REQUIRED

@@ -1,0 +1,24 @@
+entry: src/Counter.java#Beans.ENTRY.readPair
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.readPair
+    returns: number
+  P:
+    parameters: {}
+  E:
+    zebra:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.zebra
+      fields:
+        units: number
+    amber:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.amber
+      fields:
+        units: number
+  R: amber.units
+  S:
+    - write:
+        target: zebra.units
+        value: "9"

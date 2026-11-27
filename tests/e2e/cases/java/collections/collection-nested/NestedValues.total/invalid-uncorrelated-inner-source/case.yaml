@@ -1,0 +1,6 @@
+entry: src/NestedValues.java#NestedValues.total
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - nested sum requires a scalar sum from the outer row

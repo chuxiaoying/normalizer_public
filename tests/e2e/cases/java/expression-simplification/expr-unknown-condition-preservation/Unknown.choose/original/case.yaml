@@ -1,0 +1,15 @@
+entry: src/Unknown.java#Unknown.choose
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Unknown.java#Unknown.choose
+    returns: number
+  P:
+    parameters:
+      enabled:
+        position: 0
+        type: bool
+      value:
+        position: 1
+        type: number
+  R: CASE WHEN enabled THEN value ELSE value + 1 END

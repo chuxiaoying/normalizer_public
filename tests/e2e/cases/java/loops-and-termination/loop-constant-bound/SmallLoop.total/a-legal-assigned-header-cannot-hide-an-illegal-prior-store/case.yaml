@@ -1,0 +1,6 @@
+entry: src/SmallLoop.java#SmallLoop.total
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - assignment to i
+    - cannot implicitly narrow

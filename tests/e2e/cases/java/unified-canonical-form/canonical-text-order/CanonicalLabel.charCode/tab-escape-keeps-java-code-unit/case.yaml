@@ -1,0 +1,9 @@
+entry: src/CanonicalLabel.java#CanonicalLabel.charCode
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalLabel.java#CanonicalLabel.charCode
+    returns: number
+  P:
+    parameters: {}
+  R: "19"

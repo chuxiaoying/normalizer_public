@@ -1,0 +1,41 @@
+entry: src/Offers.java#Offers.sample
+expected:
+  schema: normalizer.pers/1
+  types:
+    Offer:
+      fields:
+        code: text
+        price: number
+    Pick:
+      fields:
+        firstCode: text
+        firstPrice: number
+        secondCode: text
+  entry:
+    function: src/Offers.java#Offers.sample
+    returns: Pick
+  P:
+    parameters:
+      offers:
+        position: 0
+        type: Offer[]
+      backup:
+        position: 1
+        type: Offer
+  T:
+    - id: $t_0
+      op: member_choice
+      when: "true"
+      members: offers
+      empty: backup
+    - id: $t_1
+      op: member_choice
+      when: "true"
+      members: offers
+      empty: backup
+  R: |-
+    {
+      firstCode: $t_0.code,
+      firstPrice: $t_0.price,
+      secondCode: $t_1.code
+    }

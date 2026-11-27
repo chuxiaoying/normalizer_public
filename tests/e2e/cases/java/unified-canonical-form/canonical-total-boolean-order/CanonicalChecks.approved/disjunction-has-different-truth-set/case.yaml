@@ -1,0 +1,18 @@
+entry: src/CanonicalChecks.java#CanonicalChecks.approved
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalChecks.java#CanonicalChecks.approved
+    returns: bool
+  P:
+    parameters:
+      address:
+        position: 0
+        type: bool
+      balance:
+        position: 1
+        type: bool
+      consent:
+        position: 2
+        type: bool
+  R: address OR balance OR consent

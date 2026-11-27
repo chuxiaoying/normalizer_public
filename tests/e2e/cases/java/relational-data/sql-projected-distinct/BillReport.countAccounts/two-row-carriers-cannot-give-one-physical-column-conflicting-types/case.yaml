@@ -1,0 +1,5 @@
+entry: src/BillReport.java#BillReport.countAccounts
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - "conflicting physical column type: pending_bill.account_id"

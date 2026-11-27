@@ -1,0 +1,22 @@
+entry: src/CanonicalChecks.java#CanonicalChecks.priority
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalChecks.java#CanonicalChecks.priority
+    returns: number
+  P:
+    parameters:
+      a:
+        position: 0
+        type: bool
+      b:
+        position: 1
+        type: bool
+      c:
+        position: 2
+        type: bool
+  R: |-
+    CASE
+      WHEN NOT (a) AND b THEN 20
+      ELSE 10
+    END

@@ -1,0 +1,16 @@
+entry: src/VariableLoop.java#VariableLoop.count
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/VariableLoop.java#VariableLoop.count
+    returns: number
+  P:
+    parameters:
+      limit:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN limit + 1 > 0 THEN limit + 1
+      ELSE 0
+    END

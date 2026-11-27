@@ -1,0 +1,6 @@
+entry: src/Catalog.java#Catalog.price
+reject:
+  fragments:
+    - "[NORM-DUPLICATE-CLASS]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Price

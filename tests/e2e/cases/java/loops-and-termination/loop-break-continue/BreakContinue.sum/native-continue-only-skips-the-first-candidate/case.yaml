@@ -1,0 +1,19 @@
+entry: src/BreakContinue.java#BreakContinue.sum
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/BreakContinue.java#BreakContinue.sum
+    returns: number
+  P:
+    parameters:
+      limit:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN limit <= 1 THEN 0
+      WHEN limit == 2 THEN 1
+      WHEN limit == 3 THEN 3
+      WHEN limit == 4 THEN 6
+      ELSE 10
+    END

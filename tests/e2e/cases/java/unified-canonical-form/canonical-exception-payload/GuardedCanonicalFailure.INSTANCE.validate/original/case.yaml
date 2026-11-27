@@ -1,0 +1,30 @@
+entry: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.validate
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.validate
+    returns: number
+  P:
+    parameters:
+      enabled:
+        position: 0
+        type: bool
+      code:
+        position: 1
+        type: number
+  R: code
+  S:
+    - call:
+        external: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.classifier.rank
+        args:
+          - code
+        returns: number
+        result: $e_0
+        when: enabled
+  throws:
+    - type: java.lang.RuntimeException
+      when: CASE WHEN enabled THEN $e_0 == 1 ELSE false END
+      payload: '"alpha"'
+    - type: java.lang.RuntimeException
+      when: CASE WHEN enabled THEN $e_0 == 2 ELSE false END
+      payload: '"zeta"'

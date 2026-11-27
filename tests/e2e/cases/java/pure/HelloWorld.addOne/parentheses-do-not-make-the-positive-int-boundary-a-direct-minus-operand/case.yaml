@@ -1,0 +1,5 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - decimal int literal exceeds its source range

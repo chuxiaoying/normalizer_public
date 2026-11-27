@@ -1,0 +1,19 @@
+entry: src/NestedLoop.java#NestedLoop.count
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NestedLoop.java#NestedLoop.count
+    returns: number
+  P:
+    parameters:
+      rows:
+        position: 0
+        type: number
+      columns:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN columns > 0 AND rows > 0 THEN columns * rows
+      ELSE 0
+    END

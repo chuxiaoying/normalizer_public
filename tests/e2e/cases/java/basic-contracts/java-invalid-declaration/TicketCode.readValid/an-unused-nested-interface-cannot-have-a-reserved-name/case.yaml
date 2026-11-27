@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-RESERVED-TYPE-NAME]"
+    - "TicketCode.while: reserved keyword used as a Java type name"

@@ -1,0 +1,12 @@
+entry: src/MapValues.java#MapValues.sumPlusOne
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/MapValues.java#MapValues.sumPlusOne
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: COALESCE(SUM(SELECT value - 1 FROM values), 0)

@@ -1,0 +1,5 @@
+entry: src/SignedGrouping.java#SignedGrouping.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - undeclared value Missing

@@ -1,0 +1,5 @@
+entry: src/handler.ts#handle
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - listener registration requires a proven local callback equality

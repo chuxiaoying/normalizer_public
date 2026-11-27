@@ -1,0 +1,5 @@
+entry: src/SmallLoop.java#SmallLoop.total
+reject:
+  fragments:
+    - "[NORM-LOOP]"
+    - SmallLoop.total

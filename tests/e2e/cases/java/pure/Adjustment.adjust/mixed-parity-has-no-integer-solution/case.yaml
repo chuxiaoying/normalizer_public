@@ -1,0 +1,21 @@
+entry: src/Adjustment.java#Adjustment.adjust
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Adjustment.java#Adjustment.adjust
+    returns: number
+  P:
+    parameters:
+      base:
+        position: 0
+        type: number
+      x:
+        position: 1
+        type: number
+      y:
+        position: 2
+        type: number
+      preferred:
+        position: 3
+        type: bool
+  R: "0"

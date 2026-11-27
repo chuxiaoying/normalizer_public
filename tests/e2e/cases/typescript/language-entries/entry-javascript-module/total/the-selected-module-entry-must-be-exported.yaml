@@ -1,8 +1,0 @@
-entry: src/total.ts#total
-input:
-  src/total.ts: |
-    function total(value: number, base: number): number { return value + base; }
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - "expected one defined exported function: total"

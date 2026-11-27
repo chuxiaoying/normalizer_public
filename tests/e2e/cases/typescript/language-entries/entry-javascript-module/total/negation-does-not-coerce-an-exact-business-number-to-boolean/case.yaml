@@ -1,0 +1,5 @@
+entry: src/total.ts#total
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - logical negation in a standalone value requires a Boolean

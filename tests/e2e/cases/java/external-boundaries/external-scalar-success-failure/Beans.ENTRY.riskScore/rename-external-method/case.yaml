@@ -1,0 +1,23 @@
+entry: src/RiskService.java#Beans.ENTRY.riskScore
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/RiskService.java#Beans.ENTRY.riskScore
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  S:
+    - call:
+        external: src/RiskService.java#Beans.ENTRY.riskClient.readScore
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+  R: |-
+    CASE
+      WHEN completion.is_throw($e_0, RiskUnavailable) THEN 0
+      ELSE $e_0
+    END

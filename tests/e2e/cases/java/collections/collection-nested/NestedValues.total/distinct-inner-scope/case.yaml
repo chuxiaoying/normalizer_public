@@ -1,0 +1,15 @@
+entry: src/NestedValues.java#NestedValues.total
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NestedValues.java#NestedValues.total
+    returns: number
+  P:
+    parameters:
+      groups:
+        position: 0
+        type: number[][]
+      value:
+        position: 1
+        type: number
+  R: COALESCE(SUM(SELECT COALESCE(SUM(SELECT value_ - value FROM grp AS value_), 0) FROM groups AS grp), 0)

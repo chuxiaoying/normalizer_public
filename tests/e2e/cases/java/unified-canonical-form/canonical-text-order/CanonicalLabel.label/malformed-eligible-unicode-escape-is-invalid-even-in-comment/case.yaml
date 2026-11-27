@@ -1,0 +1,6 @@
+entry: src/CanonicalLabel.java#CanonicalLabel.label
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - "[JAVA-UNICODE-ESCAPE] expected four hexadecimal digits"

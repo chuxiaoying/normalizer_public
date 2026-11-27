@@ -1,0 +1,5 @@
+entry: src/Account.java#Beans.ENTRY.reset
+reject:
+  fragments:
+    - "[NORM-SOURCE-ANNOTATION]"
+    - unsupported source parameter annotation N.Nullable

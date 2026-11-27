@@ -1,0 +1,15 @@
+entry: src/Ratio.java#Ratio.unchecked
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Ratio.java#Ratio.unchecked
+    returns: number
+  P:
+    parameters:
+      divisor:
+        position: 0
+        type: number
+  R: "1"
+  throws:
+    - type: java.lang.ArithmeticException
+      when: divisor == 0

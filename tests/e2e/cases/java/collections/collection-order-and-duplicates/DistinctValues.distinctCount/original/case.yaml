@@ -1,0 +1,12 @@
+entry: src/DistinctValues.java#DistinctValues.distinctCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/DistinctValues.java#DistinctValues.distinctCount
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: COUNT(DISTINCT value FROM values)

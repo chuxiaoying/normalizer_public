@@ -1,0 +1,20 @@
+entry: src/Counter.java#Beans.ENTRY.readPair
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.readPair
+    returns: number
+  P:
+    parameters: {}
+  E:
+    zebra:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.zebra
+      fields:
+        units: number
+    amber:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.amber
+      fields:
+        units: number
+  R: zebra.units - amber.units

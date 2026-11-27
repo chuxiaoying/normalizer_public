@@ -1,0 +1,20 @@
+entry: src/Alias.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Alias.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters: {}
+  E:
+    box:
+      kind: state
+      source: src/Alias.java#Beans.ENTRY.box
+      fields:
+        value: number
+        other: number
+  R: box.value
+  S:
+    - write:
+        target: box.other
+        value: "9"

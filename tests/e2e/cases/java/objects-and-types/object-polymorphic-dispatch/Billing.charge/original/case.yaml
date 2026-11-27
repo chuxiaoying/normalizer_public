@@ -1,0 +1,10 @@
+entry: src/Billing.java#Billing.charge
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - kind=ABORT
+    - "[NORM-ENGINE-FAILURE]"
+    - Billing.charge
+    - Fee.apply
+    - unsupported
+  kind: ABORT

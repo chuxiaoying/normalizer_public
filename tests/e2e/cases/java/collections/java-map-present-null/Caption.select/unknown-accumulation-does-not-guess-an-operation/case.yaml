@@ -1,0 +1,6 @@
+entry: src/Caption.java#Caption.select
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[NORM-UNSUPPORTED-LOCAL-IR]"
+    - unknown accumulating local operation

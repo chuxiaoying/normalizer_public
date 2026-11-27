@@ -1,0 +1,15 @@
+entry: src/ReduceValues.java#ReduceValues.sumFrom
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ReduceValues.java#ReduceValues.sumFrom
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      initial:
+        position: 1
+        type: number
+  R: initial - COALESCE(SUM(SELECT value FROM values), 0)

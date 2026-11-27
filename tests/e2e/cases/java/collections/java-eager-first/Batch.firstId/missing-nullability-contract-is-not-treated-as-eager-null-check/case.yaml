@@ -1,0 +1,5 @@
+entry: src/Batch.java#Batch.firstId
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - eager projection member requires an explicit nullable record declaration

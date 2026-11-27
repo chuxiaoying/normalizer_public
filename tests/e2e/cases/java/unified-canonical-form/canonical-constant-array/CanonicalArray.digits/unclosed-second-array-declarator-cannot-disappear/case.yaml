@@ -1,0 +1,5 @@
+entry: src/CanonicalArray.java#CanonicalArray.digits
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - expected ']' in array declarator

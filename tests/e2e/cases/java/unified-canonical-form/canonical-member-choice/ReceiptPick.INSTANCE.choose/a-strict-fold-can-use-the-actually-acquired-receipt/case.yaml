@@ -1,0 +1,37 @@
+entry: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      code:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
+        args:
+          - code
+        returns: number
+        result: $e_0
+    - call:
+        external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
+        args:
+          - $e_0
+        returns: number
+        result: $e_1
+  T:
+    - id: $t_0
+      op: fold
+      type: number
+      source: values
+      initial: $e_1
+      accumulator: acc
+      element: item
+      body: acc * 2 + item
+  R: $t_0

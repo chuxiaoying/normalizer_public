@@ -1,0 +1,5 @@
+entry: src/handler.ts#handle
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - unsupported listener host contract tag

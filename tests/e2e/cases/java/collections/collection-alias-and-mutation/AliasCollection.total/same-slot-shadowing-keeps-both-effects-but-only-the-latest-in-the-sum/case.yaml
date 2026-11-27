@@ -1,0 +1,28 @@
+entry: src/AliasCollection.java#AliasCollection.total
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/AliasCollection.java#AliasCollection.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      next:
+        position: 1
+        type: number
+  S:
+    - write:
+        target: values[0]
+        value: next
+        when: LENGTH(values) > 0
+    - write:
+        target: values[0]
+        value: next + 1
+        when: LENGTH(values) > 0
+  R: |-
+    COALESCE(SUM(SELECT value FROM values), 0) + CASE
+      WHEN LENGTH(values) > 0 THEN next + 1 - FIRST(value FROM values)
+      ELSE 0
+    END

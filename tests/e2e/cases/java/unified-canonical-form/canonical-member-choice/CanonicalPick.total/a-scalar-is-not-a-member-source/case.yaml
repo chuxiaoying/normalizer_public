@@ -1,0 +1,5 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - member choice requires a direct integer source array

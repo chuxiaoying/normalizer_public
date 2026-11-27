@@ -1,0 +1,6 @@
+entry: src/Balance.java#Balance.addFee
+reject:
+  fragments:
+    - "[NORM-DECIMAL-OP]"
+    - kind=PREPROCESS_REQUIRED
+    - Java operators do not perform BigDecimal arithmetic

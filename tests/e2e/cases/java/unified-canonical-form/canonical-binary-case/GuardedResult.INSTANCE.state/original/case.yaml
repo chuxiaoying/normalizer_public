@@ -1,0 +1,32 @@
+entry: src/GuardedResult.java#GuardedResult.INSTANCE.state
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GuardedResult.java#GuardedResult.INSTANCE.state
+    returns: number
+  P:
+    parameters:
+      a:
+        position: 0
+        type: number
+      b:
+        position: 1
+        type: number
+  E:
+    result:
+      kind: state
+      source: src/GuardedResult.java#GuardedResult.INSTANCE.result
+      type: number
+  R: |-
+    CASE
+      WHEN a == 1 AND b == 2 THEN 7
+      ELSE 9
+    END
+  S:
+    - write:
+        target: result
+        value: |-
+          CASE
+            WHEN a == 1 AND b == 2 THEN 7
+            ELSE 9
+          END

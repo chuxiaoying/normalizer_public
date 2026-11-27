@@ -1,0 +1,27 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FinallyService.java#FinallyService.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    attempts:
+      kind: state
+      source: src/FinallyService.java#FinallyService.INSTANCE.attempts
+      type: number
+  S:
+    - call:
+        external: src/FinallyService.java#FinallyService.INSTANCE.client.fetch
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+    - write:
+        target: attempts
+        value: attempts + 1
+  R: "42"

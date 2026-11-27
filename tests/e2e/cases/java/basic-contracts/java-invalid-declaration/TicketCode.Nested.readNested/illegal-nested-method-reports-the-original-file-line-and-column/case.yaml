@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.Nested.readNested
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "src/TicketCode.java:3:20:"
+    - TicketCode.Nested.return

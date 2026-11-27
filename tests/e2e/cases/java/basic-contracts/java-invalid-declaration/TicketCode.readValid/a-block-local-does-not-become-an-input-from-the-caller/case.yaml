@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - location=TicketCode.readValid
+    - undeclared value local

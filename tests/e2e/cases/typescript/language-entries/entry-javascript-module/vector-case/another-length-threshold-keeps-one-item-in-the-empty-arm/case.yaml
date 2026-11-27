@@ -1,0 +1,16 @@
+entry: src/vector-case.ts#choose
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/vector-case.ts#choose
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: |-
+    CASE
+      WHEN LENGTH(values) > 1 THEN 7
+      ELSE 11
+    END

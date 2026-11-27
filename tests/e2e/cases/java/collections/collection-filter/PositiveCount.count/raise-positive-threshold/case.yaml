@@ -1,0 +1,28 @@
+entry: src/PositiveCount.java#PositiveCount.count
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/PositiveCount.java#PositiveCount.count
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      columns:
+        account_id: number
+        amount: number
+      kind: table
+      source: bill
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM bill
+        WHERE bill.account_id == accountId
+          AND bill.amount >= 10
+      ),
+      0
+    )

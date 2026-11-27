@@ -1,0 +1,18 @@
+entry: src/System.java#System.consistent
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/System.java#System.consistent
+    returns: bool
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      target:
+        position: 1
+        type: number
+      limit:
+        position: 2
+        type: number
+  R: limit >= target AND target == value + 1

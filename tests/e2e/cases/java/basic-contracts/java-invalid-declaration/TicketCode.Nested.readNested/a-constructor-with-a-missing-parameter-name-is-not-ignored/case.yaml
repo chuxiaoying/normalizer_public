@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.Nested.readNested
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-PARAMETER]"
+    - expected a parameter name

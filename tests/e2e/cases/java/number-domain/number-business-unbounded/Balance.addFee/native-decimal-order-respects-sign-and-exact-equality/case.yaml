@@ -1,0 +1,15 @@
+entry: src/Balance.java#Balance.addFee
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Balance.java#Balance.addFee
+    returns: number
+  P:
+    parameters:
+      balance:
+        position: 0
+        type: number
+      fee:
+        position: 1
+        type: number
+  R: "1"

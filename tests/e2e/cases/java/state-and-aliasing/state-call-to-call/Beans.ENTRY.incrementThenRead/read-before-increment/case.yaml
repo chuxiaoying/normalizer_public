@@ -1,0 +1,18 @@
+entry: src/Counter.java#Beans.ENTRY.incrementThenRead
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.incrementThenRead
+    returns: number
+  P:
+    parameters: {}
+  E:
+    value:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.value
+      type: number
+  S:
+    - write:
+        target: value
+        value: value + 1
+  R: value

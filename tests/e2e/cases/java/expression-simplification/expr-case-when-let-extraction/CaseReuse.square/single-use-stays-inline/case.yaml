@@ -1,0 +1,18 @@
+entry: src/CaseReuse.java#CaseReuse.square
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CaseReuse.java#CaseReuse.square
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      enabled:
+        position: 1
+        type: bool
+      extra:
+        position: 2
+        type: number
+  R: COALESCE(SUM(SELECT value + CASE WHEN enabled THEN extra ELSE 0 END FROM values), 0)

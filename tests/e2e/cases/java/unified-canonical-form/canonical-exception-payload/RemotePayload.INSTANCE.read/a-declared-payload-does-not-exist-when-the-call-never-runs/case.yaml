@@ -1,0 +1,12 @@
+entry: src/RemotePayload.java#RemotePayload.INSTANCE.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/RemotePayload.java#RemotePayload.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      input:
+        position: 0
+        type: number
+  R: input

@@ -1,0 +1,6 @@
+class Sequence {
+    static int next(int current) {
+        if (current == 0) return 1;
+        return current + 1;
+    }
+}

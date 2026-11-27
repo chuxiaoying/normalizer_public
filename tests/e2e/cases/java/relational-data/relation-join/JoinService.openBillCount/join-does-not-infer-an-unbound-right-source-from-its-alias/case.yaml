@@ -1,0 +1,5 @@
+entry: src/JoinService.java#JoinService.openBillCount
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - join requires two typed table bindings

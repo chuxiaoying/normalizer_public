@@ -1,0 +1,20 @@
+entry: src/Branch.java#Branch.clamp
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Branch.java#Branch.clamp
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      limit:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN value < 0 THEN 0
+      WHEN value > limit + 1 THEN limit + 1
+      ELSE value
+    END

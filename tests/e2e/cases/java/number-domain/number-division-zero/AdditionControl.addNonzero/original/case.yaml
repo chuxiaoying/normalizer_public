@@ -1,0 +1,19 @@
+entry: src/AdditionControl.java#AdditionControl.addNonzero
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/AdditionControl.java#AdditionControl.addNonzero
+    returns: number
+  P:
+    parameters:
+      total:
+        position: 0
+        type: number
+      operand:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN operand == 0 THEN 0
+      ELSE operand + total
+    END

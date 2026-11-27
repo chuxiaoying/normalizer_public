@@ -1,0 +1,15 @@
+entry: src/NumberService.java#Beans.ENTRY.doubled
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NumberService.java#Beans.ENTRY.doubled
+    returns: number
+  P:
+    parameters: {}
+  R: $e_0 + $e_0
+  S:
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_0

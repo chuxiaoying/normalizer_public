@@ -1,0 +1,24 @@
+entry: src/JoinService.java#JoinService.openBillCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/JoinService.java#JoinService.openBillCount
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    account:
+      kind: table
+      source: account
+      columns:
+        id: number
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        status: text
+  R: "0"

@@ -1,0 +1,11 @@
+record Offer(String code, int price) {}
+class Pick { String firstCode; int firstPrice; String secondCode; Pick(String firstCode, int firstPrice, String secondCode) { this.firstPrice = firstPrice; this.secondCode = secondCode; } }
+class Offers {
+    static Pick sample(Offer[] offers, Offer backup) {
+        Offer first;
+        /* @normalizer-ir first = choose from offers else backup */
+        Offer second;
+        /* @normalizer-ir second = choose from offers else backup */
+        return new Pick(first.code(), first.price(), second.code());
+    }
+}

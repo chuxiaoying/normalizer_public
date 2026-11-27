@@ -1,0 +1,38 @@
+entry: src/PayableService.java#PayableService.close
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/PayableService.java#PayableService.close
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      amount:
+        position: 1
+        type: number
+  E:
+    payable:
+      kind: table
+      source: payable
+      columns:
+        account_id: number
+        closed_amount: number
+        status: text
+  S:
+    - sql: |-
+        UPDATE payable
+        SET closed_amount = amount, status = 'CLOSED'
+        WHERE payable.account_id = accountId
+      returns: number
+      result: $e_0
+      when: amount >= 0
+  R: amount
+  throws:
+    - type: DatabaseWriteError
+      when: |-
+        CASE
+          WHEN amount >= 0 THEN completion.is_throw($e_0, DatabaseWriteError)
+          ELSE false
+        END

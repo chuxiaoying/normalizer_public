@@ -1,0 +1,20 @@
+entry: src/OptionalField.java#OptionalField.hasLabel
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        label: text?
+  entry:
+    function: src/OptionalField.java#OptionalField.hasLabel
+    returns: number
+  P:
+    parameters:
+      profile:
+        position: 0
+        type: Profile
+  R: |-
+    CASE
+      WHEN profile.label == null THEN 0
+      ELSE 1
+    END

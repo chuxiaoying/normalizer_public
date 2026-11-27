@@ -1,0 +1,34 @@
+entry: src/Calculator.java#Calculator.summarize
+expected:
+  schema: normalizer.pers/1
+  types:
+    SummaryRequest:
+      fields:
+        value: number
+        limit: number
+        fallback: number
+    Summary:
+      fields:
+        raised: number
+        selected: number
+        delta: number
+  entry:
+    function: src/Calculator.java#Calculator.summarize
+    returns: Summary
+  P:
+    parameters:
+      request:
+        position: 0
+        type: SummaryRequest
+  R: |-
+    {
+      raised: request.value + 1,
+      selected: CASE
+        WHEN request.limit < request.value + 1 THEN request.value + 1
+        ELSE request.fallback
+      END,
+      delta: CASE
+        WHEN request.limit < request.value + 1 THEN 0
+        ELSE request.fallback - (request.value + 1)
+      END
+    }

@@ -1,0 +1,6 @@
+entry: src/JoinService.java#JoinService.openBillCount
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - kind=PREPROCESS_REQUIRED
+    - undeclared query input b

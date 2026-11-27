@@ -1,0 +1,6 @@
+entry: src/Catalog.java#Catalog.price
+reject:
+  fragments:
+    - "[NORM-OVERLOAD]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Catalog.price

@@ -1,0 +1,6 @@
+entry: src/LexicalScope.java#LexicalScope.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - location=LexicalScope.unused
+    - duplicate local declaration input

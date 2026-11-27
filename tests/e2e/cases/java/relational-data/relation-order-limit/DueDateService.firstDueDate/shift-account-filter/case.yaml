@@ -1,0 +1,30 @@
+entry: src/DueDateService.java#DueDateService.firstDueDate
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/DueDateService.java#DueDateService.firstDueDate
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        due_date: number
+        id: number
+  R: |-
+    COALESCE(
+      (
+        SELECT bill.due_date
+        FROM bill
+        WHERE bill.account_id == accountId + 1
+        ORDER BY bill.due_date, bill.id
+        LIMIT 1
+      ),
+      0
+    )

@@ -1,0 +1,5 @@
+entry: src/handler.ts#handle
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - listener callback return must be a closed pure value

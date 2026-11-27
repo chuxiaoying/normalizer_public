@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadFixtureEntries } from './fixtures.mjs';
@@ -17,8 +17,7 @@ for (const { seedId, entry, scene, language, cases } of loadFixtureEntries(root)
     test([seedId, entry, fixture.name].join(' / '), t => {
       const project = mkdtempSync(join(tmpdir(), 'normalizer-example-'));
       t.after(() => rmSync(project, { recursive: true, force: true }));
-      mkdirSync(join(project, 'src'));
-      for (const [path, text] of Object.entries(fixture.input)) writeFileSync(join(project, path), text);
+      cpSync(join(root, fixture.directory, 'src'), join(project, 'src'), { recursive: true });
       const locator = fixture.entry;
       const args = scene ? ['scenario', scene, project, '--entry', locator, '--source', fixture.vueSource]
         : language === 'typescript' ? ['module', project, '--entry', locator]

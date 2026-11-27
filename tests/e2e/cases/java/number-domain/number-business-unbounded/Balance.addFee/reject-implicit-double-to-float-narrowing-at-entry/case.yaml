@@ -1,0 +1,6 @@
+entry: src/Balance.java#Balance.addFee
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - return requires float, got double

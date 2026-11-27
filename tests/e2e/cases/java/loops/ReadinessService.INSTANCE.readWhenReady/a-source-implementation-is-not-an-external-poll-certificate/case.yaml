@@ -1,0 +1,6 @@
+entry: src/ReadinessService.java#ReadinessService.INSTANCE.readWhenReady
+reject:
+  fragments:
+    - "[NORM-LOOP]"
+    - kind=PREPROCESS_REQUIRED
+    - ReadinessService.readWhenReady

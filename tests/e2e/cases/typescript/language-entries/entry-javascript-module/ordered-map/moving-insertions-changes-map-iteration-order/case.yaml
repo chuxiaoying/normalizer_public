@@ -1,0 +1,24 @@
+entry: src/ordered-map.ts#labels
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ordered-map.ts#labels
+    returns: map<text,text>
+  P:
+    parameters:
+      a:
+        position: 0
+        type: text?
+      b:
+        position: 1
+        type: text?
+      c:
+        position: 2
+        type: text?
+  R: |-
+    CASE
+      WHEN a == null AND b == null THEN MAP([])
+      WHEN a == null THEN MAP([["10", b]])
+      WHEN b == null THEN MAP([["2", a]])
+      ELSE MAP([["10", b], ["2", a]])
+    END

@@ -1,0 +1,23 @@
+entry: src/Decision.java#Decision.choose
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Decision.java#Decision.choose
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      limit:
+        position: 1
+        type: number
+      fallback:
+        position: 2
+        type: number
+  R: |-
+    CASE
+      WHEN limit < value + 1 THEN value + 1
+      WHEN limit == value + 1 THEN fallback
+      ELSE value
+    END

@@ -1,0 +1,6 @@
+entry: src/Catalog.java#Catalog.price
+reject:
+  fragments:
+    - "[NORM-ENTRY]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Catalog.price

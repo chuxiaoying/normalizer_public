@@ -1,0 +1,6 @@
+entry: src/GroupService.java#GroupService.statusGroupCount
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - kind=PREPROCESS_REQUIRED
+    - unknown projected field

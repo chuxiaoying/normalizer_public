@@ -1,0 +1,5 @@
+entry: src/CleanupService.java#CleanupService.removeClosed
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - "conflicting physical column type: bill.account_id"

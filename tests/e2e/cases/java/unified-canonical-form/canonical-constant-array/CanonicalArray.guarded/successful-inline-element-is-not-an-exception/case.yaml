@@ -1,0 +1,12 @@
+entry: src/CanonicalArray.java#CanonicalArray.guarded
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.guarded
+    returns: number
+  P:
+    parameters:
+      fail:
+        position: 0
+        type: bool
+  R: "7"

@@ -1,0 +1,50 @@
+entry: src/PayableAudit.java#PayableAudit.closeWithAudit
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/PayableAudit.java#PayableAudit.closeWithAudit
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      amount:
+        position: 1
+        type: number
+  E:
+    payable_log:
+      kind: table
+      source: payable_log
+      columns:
+        account_id: number
+        amount: number
+    payable:
+      kind: table
+      source: payable
+      columns:
+        account_id: number
+        status: text
+  S:
+    - sql: |-
+        INSERT INTO payable_log (account_id, amount)
+        VALUES (accountId, amount)
+      returns: number
+      result: $e_0
+    - sql: |-
+        UPDATE payable
+        SET status = 'CLOSED'
+        WHERE payable.account_id = accountId
+      returns: number
+      result: $e_1
+      when: completion.is_return($e_0)
+  R: $e_1
+  throws:
+    - type: AuditInsertError
+      when: completion.is_throw($e_0, AuditInsertError)
+    - type: CloseUpdateError
+      when: |-
+        CASE
+          WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, CloseUpdateError)
+          ELSE false
+        END

@@ -1,0 +1,12 @@
+entry: src/ExternalTypeDemo.java#Beans.ENTRY.label
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ExternalTypeDemo.java#Beans.ENTRY.label
+    returns: text
+  P:
+    parameters:
+      id:
+        position: 0
+        type: number
+  R: '"offline"'

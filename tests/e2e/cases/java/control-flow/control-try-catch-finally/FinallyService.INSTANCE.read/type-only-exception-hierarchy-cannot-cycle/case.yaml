@@ -1,0 +1,5 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-EXCEPTION-CYCLE]"
+    - ParentError

@@ -1,0 +1,25 @@
+entry: src/QuotaService.java#QuotaService.INSTANCE.difference
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quota:
+      fields:
+        units: number
+  entry:
+    function: src/QuotaService.java#QuotaService.INSTANCE.difference
+    returns: number
+  P:
+    parameters:
+      quota:
+        position: 0
+        type: Quota
+      adjustment:
+        position: 1
+        type: number
+  E:
+    quota:
+      kind: state
+      source: src/QuotaService.java#QuotaService.INSTANCE.quota
+      fields:
+        units: number
+  R: adjustment + (P.quota.units - E.quota.units)

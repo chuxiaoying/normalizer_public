@@ -1,0 +1,32 @@
+entry: src/NullMemoService.java#NullMemoService.missingMemoCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NullMemoService.java#NullMemoService.missingMemoCount
+    returns: bool
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      enabled:
+        position: 1
+        type: bool
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        memo: text?
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM bill
+        WHERE bill.account_id == accountId
+          AND enabled
+          AND bill.memo IS NULL
+      ),
+      0
+    ) == 0

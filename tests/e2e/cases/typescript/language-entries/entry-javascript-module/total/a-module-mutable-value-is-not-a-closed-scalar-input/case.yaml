@@ -1,0 +1,5 @@
+entry: src/total.ts#total
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - standalone scalar modules require closed function declarations

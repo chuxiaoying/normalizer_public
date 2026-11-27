@@ -1,0 +1,22 @@
+entry: src/CaseReuse.java#CaseReuse.cap
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CaseReuse.java#CaseReuse.cap
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      limit:
+        position: 1
+        type: number
+      base:
+        position: 2
+        type: number
+  R: |-
+    CASE
+      WHEN limit < value + 1 THEN limit
+      ELSE base + value + 1
+    END

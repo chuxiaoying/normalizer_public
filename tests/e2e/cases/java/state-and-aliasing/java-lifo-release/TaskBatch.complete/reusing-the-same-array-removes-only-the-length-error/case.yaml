@@ -1,0 +1,22 @@
+entry: src/TaskBatch.java#TaskBatch.complete
+expected:
+  schema: normalizer.pers/1
+  types:
+    Task:
+      fields:
+        id: number
+  entry:
+    function: src/TaskBatch.java#TaskBatch.complete
+    returns: bool
+  P:
+    parameters:
+      opened:
+        position: 0
+        type: Task[]
+      closed:
+        position: 1
+        type: Task[]
+  R: "true"
+  throws:
+    - type: java.lang.IllegalArgumentException
+      when: EXISTS (SELECT 1 FROM indices(LENGTH(opened)) AS i WHERE opened[i].id != opened[LENGTH(opened) - 1 - i].id)

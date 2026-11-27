@@ -1,0 +1,19 @@
+entry: src/OptionalField.java#OptionalField.hasLabel
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        label: text?
+  entry:
+    function: src/OptionalField.java#OptionalField.hasLabel
+    returns: Profile
+  P:
+    parameters:
+      profile:
+        position: 0
+        type: Profile
+  R: |-
+    {
+      label: null
+    }

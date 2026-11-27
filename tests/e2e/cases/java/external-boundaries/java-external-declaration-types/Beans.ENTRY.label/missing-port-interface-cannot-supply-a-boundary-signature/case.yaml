@@ -1,0 +1,6 @@
+entry: src/ExternalTypeDemo.java#Beans.ENTRY.label
+reject:
+  fragments:
+    - "[NORM-EXTERNAL-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Records

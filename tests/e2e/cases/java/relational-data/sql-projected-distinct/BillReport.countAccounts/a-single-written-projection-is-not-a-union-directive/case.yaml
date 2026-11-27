@@ -1,0 +1,5 @@
+entry: src/BillReport.java#BillReport.countAccounts
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - projected union needs at least two closed branches

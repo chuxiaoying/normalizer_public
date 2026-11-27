@@ -1,0 +1,15 @@
+entry: src/Greeting.java#Greeting.label
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Greeting.java#Greeting.label
+    returns: text
+  P:
+    parameters:
+      name:
+        position: 0
+        type: text
+      fallback:
+        position: 1
+        type: text
+  R: '"上海账单"'

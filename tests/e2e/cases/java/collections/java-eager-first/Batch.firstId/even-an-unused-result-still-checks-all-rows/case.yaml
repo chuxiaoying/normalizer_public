@@ -1,0 +1,22 @@
+entry: src/Batch.java#Batch.firstId
+expected:
+  schema: normalizer.pers/1
+  types:
+    Ticket:
+      fields:
+        id: number
+    Row:
+      fields:
+        ticket: Ticket?
+  entry:
+    function: src/Batch.java#Batch.firstId
+    returns: number
+  P:
+    parameters:
+      rows:
+        position: 0
+        type: Row[]
+  R: "7"
+  throws:
+    - type: java.lang.NullPointerException
+      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)

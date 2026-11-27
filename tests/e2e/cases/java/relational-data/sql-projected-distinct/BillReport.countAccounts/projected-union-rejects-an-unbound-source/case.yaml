@@ -1,0 +1,5 @@
+entry: src/BillReport.java#BillReport.countAccounts
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - projected union needs a declared table row source

@@ -1,0 +1,5 @@
+entry: src/total.ts#total
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - cannot disable or suppress the strict preflight

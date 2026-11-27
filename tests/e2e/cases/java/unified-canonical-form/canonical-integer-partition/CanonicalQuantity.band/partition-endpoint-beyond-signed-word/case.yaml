@@ -1,0 +1,17 @@
+entry: src/CanonicalQuantity.java#CanonicalQuantity.band
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuantity.java#CanonicalQuantity.band
+    returns: number
+  P:
+    parameters:
+      quantity:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN quantity <= 9223372036854775807 THEN 10
+      WHEN quantity == 9223372036854775808 THEN 20
+      ELSE 30
+    END

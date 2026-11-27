@@ -1,0 +1,9 @@
+entry: src/TicketCode.java#TicketCode.read
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-RESERVED-METHOD-NAME]"
+    - TicketCode.return
+    - reserved keyword used as a Java method name
+  kind: PREPROCESS_REQUIRED
+  location: src/TicketCode.java

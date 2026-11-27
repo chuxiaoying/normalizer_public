@@ -1,0 +1,6 @@
+entry: src/Balance.java#Balance.addFee
+reject:
+  fragments:
+    - "[NORM-NUMBER-LITERAL]"
+    - kind=PREPROCESS_REQUIRED
+    - would round to infinity or zero

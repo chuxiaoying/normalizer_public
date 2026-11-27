@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-NATIVE-DECLARATION]"
+    - cannot have a default value

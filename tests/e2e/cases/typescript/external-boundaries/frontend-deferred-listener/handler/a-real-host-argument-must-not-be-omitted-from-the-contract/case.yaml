@@ -1,0 +1,5 @@
+entry: src/handler.ts#handle
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - listener requires a named required zero-argument void member

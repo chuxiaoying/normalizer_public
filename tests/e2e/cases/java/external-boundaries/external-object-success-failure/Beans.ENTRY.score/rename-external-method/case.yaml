@@ -1,0 +1,26 @@
+entry: src/ProfileService.java#Beans.ENTRY.score
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        score: number
+  entry:
+    function: src/ProfileService.java#Beans.ENTRY.score
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  R: $e_0.score
+  S:
+    - call:
+        external: src/ProfileService.java#Beans.ENTRY.client.read
+        args:
+          - accountId
+        returns: Profile
+        result: $e_0
+  throws:
+    - type: ProfileUnavailable
+      when: completion.is_throw($e_0, ProfileUnavailable)

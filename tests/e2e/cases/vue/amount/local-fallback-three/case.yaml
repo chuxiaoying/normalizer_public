@@ -1,0 +1,19 @@
+entry: src/ArrearsPage.ts#amount
+vueSource: src/ArrearsPage.vue
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ArrearsPage.ts#amount
+    returns: number
+  P:
+    parameters: {}
+  E:
+    arrears:
+      kind: state
+      source: src/ArrearsPage.ts#arrears
+      fields:
+        status:
+          ready: bool
+        summary:
+          payable: number
+  R: CASE WHEN arrears.status.ready THEN arrears.summary.payable ELSE 3 END

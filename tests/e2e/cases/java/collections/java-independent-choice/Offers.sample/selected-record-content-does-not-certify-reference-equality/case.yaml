@@ -1,0 +1,5 @@
+entry: src/Offers.java#Offers.sample
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - member choice record has content but no Java reference identity

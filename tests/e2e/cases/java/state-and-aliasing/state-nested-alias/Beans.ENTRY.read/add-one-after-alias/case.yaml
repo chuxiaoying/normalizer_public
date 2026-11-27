@@ -1,0 +1,15 @@
+entry: src/Alias.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Alias.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters: {}
+  E:
+    box:
+      kind: state
+      source: src/Alias.java#Beans.ENTRY.box
+      fields:
+        value: number
+  R: box.value + 1

@@ -1,0 +1,29 @@
+entry: src/StateList.java#Beans.ENTRY.update
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/StateList.java#Beans.ENTRY.update
+    returns: number
+  P:
+    parameters:
+      next:
+        position: 0
+        type: number
+  E:
+    values:
+      kind: state
+      source: src/StateList.java#Beans.ENTRY.values
+      type: number[]
+  S:
+    - write:
+        target: values[0]
+        value: next
+        when: LENGTH(values) > 0
+    - write:
+        target: values[1]
+        value: next + 1
+        when: LENGTH(values) >= 2
+  R: next + 1
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: LENGTH(values) <= 1

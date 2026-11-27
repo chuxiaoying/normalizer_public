@@ -1,0 +1,9 @@
+entry: src/SmallLoop.java#SmallLoop.total
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/SmallLoop.java#SmallLoop.total
+    returns: number
+  P:
+    parameters: {}
+  R: "1"

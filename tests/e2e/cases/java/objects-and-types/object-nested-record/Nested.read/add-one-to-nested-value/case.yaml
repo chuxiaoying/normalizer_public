@@ -1,0 +1,19 @@
+entry: src/Nested.java#Nested.read
+expected:
+  schema: normalizer.pers/1
+  types:
+    Inner:
+      fields:
+        value: number
+    Outer:
+      fields:
+        inner: Inner
+  entry:
+    function: src/Nested.java#Nested.read
+    returns: number
+  P:
+    parameters:
+      outer:
+        position: 0
+        type: Outer
+  R: outer.inner.value + 1

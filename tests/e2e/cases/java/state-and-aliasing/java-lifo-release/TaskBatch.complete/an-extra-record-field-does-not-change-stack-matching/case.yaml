@@ -1,0 +1,23 @@
+entry: src/TaskBatch.java#TaskBatch.complete
+expected:
+  schema: normalizer.pers/1
+  types:
+    Task:
+      fields:
+        id: number
+        rank: number
+  entry:
+    function: src/TaskBatch.java#TaskBatch.complete
+    returns: bool
+  P:
+    parameters:
+      opened:
+        position: 0
+        type: Task[]
+      closed:
+        position: 1
+        type: Task[]
+  R: LENGTH(closed) == LENGTH(opened)
+  throws:
+    - type: java.lang.IllegalArgumentException
+      when: LENGTH(closed) > LENGTH(opened) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE closed[i].id != opened[LENGTH(opened) - 1 - i].id)

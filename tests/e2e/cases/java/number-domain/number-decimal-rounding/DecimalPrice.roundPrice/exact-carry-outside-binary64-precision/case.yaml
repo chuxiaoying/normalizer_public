@@ -1,0 +1,12 @@
+entry: src/DecimalPrice.java#DecimalPrice.roundPrice
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/DecimalPrice.java#DecimalPrice.roundPrice
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: "9007199254740994"

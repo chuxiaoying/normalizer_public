@@ -1,0 +1,23 @@
+entry: src/NullMemoService.java#NullMemoService.missingMemoCount
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NullMemoService.java#NullMemoService.missingMemoCount
+    returns: number
+  P:
+    parameters:
+      request:
+        position: 0
+        type: MemoFilter
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        memo: text?
+  R: "7"
+  types:
+    MemoFilter:
+      fields:
+        accountId: number

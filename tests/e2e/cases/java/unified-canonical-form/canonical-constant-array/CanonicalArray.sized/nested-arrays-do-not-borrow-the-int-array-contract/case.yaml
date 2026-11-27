@@ -1,0 +1,4 @@
+entry: src/CanonicalArray.java#CanonicalArray.sized
+reject:
+  fragments:
+    - "[NORM-EXPRESSION]"

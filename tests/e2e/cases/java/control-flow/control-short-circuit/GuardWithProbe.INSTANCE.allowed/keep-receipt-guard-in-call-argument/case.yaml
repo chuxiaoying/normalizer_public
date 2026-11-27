@@ -1,0 +1,29 @@
+entry: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.allowed
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.allowed
+    returns: bool
+  P:
+    parameters:
+      active:
+        position: 0
+        type: bool
+      value:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read
+        args:
+          - value
+        returns: number
+        result: $e_0
+        when: active
+    - call:
+        external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.publish
+        args:
+          - CASE WHEN active THEN $e_0 > 0 ELSE false END
+        returns: void
+        result: $e_1
+  R: CASE WHEN active THEN $e_0 > 0 ELSE false END

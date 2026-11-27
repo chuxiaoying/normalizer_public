@@ -1,0 +1,24 @@
+entry: src/Ledger.java#Beans.ENTRY.delta
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Ledger.java#Beans.ENTRY.delta
+    returns: number
+  P:
+    parameters:
+      amount:
+        position: 0
+        type: number
+  E:
+    balance:
+      kind: state
+      source: src/Ledger.java#Beans.ENTRY.balance
+      type: number
+  S:
+    - write:
+        target: balance
+        value: balance + amount
+    - write:
+        target: balance
+        value: balance + amount + 1
+  R: "1"

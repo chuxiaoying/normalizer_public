@@ -1,0 +1,6 @@
+entry: src/Shape.java#Shape.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - location=Shape.unused
+    - undeclared value missing

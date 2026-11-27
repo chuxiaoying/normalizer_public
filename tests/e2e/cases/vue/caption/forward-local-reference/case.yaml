@@ -1,0 +1,6 @@
+entry: src/ArrearsPage.ts#caption
+vueSource: src/ArrearsPage.vue
+reject:
+  fragments:
+    - "SCENARIO_MODULE_INPUT:"
+    - Block-scoped variable 'later' used before its declaration

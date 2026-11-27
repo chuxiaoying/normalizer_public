@@ -1,0 +1,6 @@
+entry: src/CanonicalLabel.java#CanonicalLabel.charCode
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - invalid Java literal escape

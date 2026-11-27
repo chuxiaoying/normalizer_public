@@ -1,0 +1,16 @@
+entry: src/ProfileScores.java#ProfileScores.total
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        score: number
+  entry:
+    function: src/ProfileScores.java#ProfileScores.total
+    returns: number
+  P:
+    parameters:
+      profiles:
+        position: 0
+        type: Profile[]
+  R: COALESCE(SUM(SELECT profile.score FROM profiles AS profile WHERE profile.score > 0), 0)

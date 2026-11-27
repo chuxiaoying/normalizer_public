@@ -1,9 +1,0 @@
-entry: src/total.ts#total
-input:
-  src/total.ts: |
-    let state = 1;
-    export function total(value: number, base: number): number { return value + base + state; }
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - standalone scalar modules require closed function declarations

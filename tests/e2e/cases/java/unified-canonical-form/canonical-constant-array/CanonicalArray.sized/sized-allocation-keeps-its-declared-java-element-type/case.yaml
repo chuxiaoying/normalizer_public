@@ -1,0 +1,5 @@
+entry: src/CanonicalArray.java#CanonicalArray.sized
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - Java array element type differs from the declared array

@@ -1,0 +1,4 @@
+class TicketCode { static class Extra<T> {}
+    static int readValid(int value) { return value; }
+    static native int booleanValue();
+}

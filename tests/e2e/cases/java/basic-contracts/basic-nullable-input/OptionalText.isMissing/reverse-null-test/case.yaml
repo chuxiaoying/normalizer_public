@@ -1,0 +1,12 @@
+entry: src/OptionalText.java#OptionalText.isMissing
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/OptionalText.java#OptionalText.isMissing
+    returns: bool
+  P:
+    parameters:
+      value:
+        position: 0
+        type: text?
+  R: value != null

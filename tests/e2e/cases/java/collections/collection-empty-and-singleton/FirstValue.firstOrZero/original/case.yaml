@@ -1,0 +1,12 @@
+entry: src/FirstValue.java#FirstValue.firstOrZero
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstOrZero
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: CASE WHEN LENGTH(values) == 0 THEN 0 ELSE values[0] END

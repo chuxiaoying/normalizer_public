@@ -1,0 +1,12 @@
+entry: src/FirstValue.java#FirstValue.firstOrZero
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstOrZero
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: CASE WHEN LENGTH(values) > 18446744073709551616 THEN values[18446744073709551616] ELSE 0 END

@@ -1,0 +1,6 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - catch requires an exception class name

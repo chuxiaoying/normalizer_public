@@ -1,0 +1,7 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-CATCH-ORDER]"
+    - kind=PREPROCESS_REQUIRED
+    - location=FinallyService.read
+    - catch class RemoteError is already caught by java.lang.RuntimeException

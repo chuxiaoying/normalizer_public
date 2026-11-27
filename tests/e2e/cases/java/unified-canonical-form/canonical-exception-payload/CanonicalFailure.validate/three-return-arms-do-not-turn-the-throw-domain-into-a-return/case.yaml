@@ -1,0 +1,21 @@
+entry: src/CanonicalFailure.java#CanonicalFailure.validate
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalFailure.java#CanonicalFailure.validate
+    returns: number
+  P:
+    parameters:
+      code:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN code == 1 THEN 10
+      WHEN code == 2 THEN 20
+      ELSE 30
+    END
+  throws:
+    - type: java.lang.RuntimeException
+      when: code <= 0 or code >= 4
+      payload: '"invalid"'

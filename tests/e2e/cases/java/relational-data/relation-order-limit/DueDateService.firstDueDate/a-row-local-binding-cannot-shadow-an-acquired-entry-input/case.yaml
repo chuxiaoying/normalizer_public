@@ -1,0 +1,5 @@
+entry: src/DueDateService.java#DueDateService.firstDueDate
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - duplicate local query binding

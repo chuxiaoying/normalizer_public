@@ -32,7 +32,7 @@
 
 ### 已有正式对照
 
-- **关系查询标量的 `!=`**：[`PositiveCount.count` 用例组](../../tests/e2e/cases/java/collections/collection-filter/PositiveCount.count/original.yaml)使用 `where row.amount != 0`，断言排除零并保留原账户筛选、聚合及空结果默认值的完整 PERS。该场景不是待补用例；运行时命中仍以当前提交的实际覆盖报告为准。
+- **关系查询标量的 `!=`**：[`PositiveCount.count` 原例](../../tests/e2e/cases/java/collections/collection-filter/PositiveCount.count/original/case.yaml)使用 `where row.amount != 0`，断言排除零并保留原账户筛选、聚合及空结果默认值的完整 PERS。该场景不是待补用例；运行时命中仍以当前提交的实际覆盖报告为准。
 
 - **关系谓词与可选子句**：正式对照已核验小写 `is null`／`is not null`、无 `where` 的连接计数、无 `as` 的 UPDATE 表名绑定，以及无 `where` 的全行 UPDATE。依[关系指令](../../design/secondary/关系指令的统一写法.md)分别保留输出、行数与写入效果。
 - **计数的精确下界**：按[可空关系列种子](../../design/examples/topics/relational-data/java-null-semantics.md)，`count <= -1`、`1 + count == 0` 恒假，`count > -1`、`count >= 0` 恒真。正式对照保留表和筛选所依赖的 P/E，不把带未知偏移的表达式错判为常量。

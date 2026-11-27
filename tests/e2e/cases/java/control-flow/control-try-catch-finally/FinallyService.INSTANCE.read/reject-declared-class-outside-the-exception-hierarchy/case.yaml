@@ -1,0 +1,7 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-CATCH-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - location=FinallyService.read
+    - undeclared catch class Ordinary

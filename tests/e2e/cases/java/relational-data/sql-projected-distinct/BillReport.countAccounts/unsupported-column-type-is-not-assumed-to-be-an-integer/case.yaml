@@ -1,0 +1,5 @@
+entry: src/BillReport.java#BillReport.countAccounts
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - projected union field must be a declared nonnullable integer

@@ -1,0 +1,6 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - invalid int literal

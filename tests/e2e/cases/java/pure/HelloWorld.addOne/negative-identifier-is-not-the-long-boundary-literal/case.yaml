@@ -1,0 +1,12 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/HelloWorld.java#HelloWorld.addOne
+    returns: number
+  P:
+    parameters:
+      _9223372036854775808L:
+        position: 0
+        type: number
+  R: "- (_9223372036854775808L)"

@@ -1,0 +1,5 @@
+entry: src/BreakContinue.java#BreakContinue.sum
+reject:
+  fragments:
+    - "[NORM-LOOP]"
+    - PREPROCESS_REQUIRED

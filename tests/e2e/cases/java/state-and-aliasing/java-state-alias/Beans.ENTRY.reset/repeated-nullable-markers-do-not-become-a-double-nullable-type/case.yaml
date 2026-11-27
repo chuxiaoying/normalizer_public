@@ -1,0 +1,6 @@
+entry: src/Account.java#Beans.ENTRY.reset
+reject:
+  fragments:
+    - "[NORM-SOURCE-ANNOTATION]"
+    - Account.reset.observer
+    - multiple source parameter annotations cannot define nullability

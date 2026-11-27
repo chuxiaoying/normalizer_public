@@ -1,27 +1,43 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
 import { loadCases } from './catalog.mjs';
 import { diagnosticCode } from './rejection.mjs';
 
-const sourcePath = /^src\/[\w-]+\.(?:java|vue|mjs|js|ts)$/;
-const caseName = /^[a-z0-9]+(?:-[a-z0-9]+)*\.yaml$/;
-const entryPath = /^(src\/[\w-]+\.(?:java|ts))#([^#]+)$/;
+const sourcePath = /^src\/(?:[\w$.-]+\/)*[\w$.-]+\.(?:java|vue|ts)$/;
+const caseName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const sourceDirectory = /^[\w$.-]+$/;
 
-function loadFixture(root, file, language, entry, scene, inputs) {
+// Walk the project as checked in, keeping relative paths independent of the host OS.
+function readSources(root, directory, relative = 'src') {
+  return readdirSync(join(root, directory, relative), { withFileTypes: true }).flatMap(item => {
+    const path = posix.join(relative, item.name);
+    if (item.isDirectory()) {
+      assert.match(item.name, sourceDirectory, directory + ': invalid source directory ' + path);
+      return readSources(root, directory, path);
+    }
+    assert.ok(item.isFile() && sourcePath.test(path), directory + ': unexpected source file ' + path);
+    return [[path, readFileSync(join(root, directory, path), 'utf8')]];
+  });
+}
+
+function loadFixture(root, directory, language, entry, scene, inputs) {
+  const file = directory + '/case.yaml';
+  const children = readdirSync(join(root, directory), { withFileTypes: true });
+  assert.ok(children.length === 2 && children.some(item => item.name === 'case.yaml' && item.isFile()) &&
+    children.some(item => item.name === 'src' && item.isDirectory()),
+    directory + ': expected exactly case.yaml and a src directory');
   const fixture = YAML.parse(readFileSync(join(root, file), 'utf8'));
-  const { entry: locator, vueSource, input, expected, reject } = fixture;
+  const { entry: locator, vueSource, expected, reject } = fixture;
   assert.notEqual(Object.hasOwn(fixture, 'expected'), Object.hasOwn(fixture, 'reject'),
     file + ': declare exactly one outcome');
   assert.deepEqual(Object.keys(fixture).sort(),
-    ['entry', 'input', scene && 'vueSource', reject ? 'reject' : 'expected'].filter(Boolean).sort(), file);
-  const [, main, symbol] = entryPath.exec(locator) ?? [];
-  assert.ok(main && symbol, file + ': invalid CLI entry locator');
-  assert.ok(input && typeof input === 'object' && !Array.isArray(input), file + ': missing prepared project');
-  const sources = Object.entries(input).sort(([left], [right]) => left.localeCompare(right));
-  assert.ok(sources.every(([path, text]) => sourcePath.test(path) && typeof text === 'string'),
-    file + ': each input file must have a legal source path and complete text');
+    ['entry', scene && 'vueSource', reject ? 'reject' : 'expected'].filter(Boolean).sort(), file);
+  const [main, symbol, extra] = typeof locator === 'string' ? locator.split('#') : [];
+  assert.ok(symbol && extra === undefined && sourcePath.test(main), file + ': invalid CLI entry locator');
+  const sources = readSources(root, directory).sort(([left], [right]) => left.localeCompare(right));
+  const input = Object.fromEntries(sources);
   assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
   if (scene) {
     assert.ok(main.endsWith('.ts') && symbol === entry && sourcePath.test(vueSource) &&
@@ -46,7 +62,7 @@ function loadFixture(root, file, language, entry, scene, inputs) {
     sources.filter(([path]) => path !== vueSource)]);
   assert.ok(!inputs.has(key), 'Duplicate CLI input: ' + inputs.get(key) + ' and ' + file);
   inputs.set(key, file);
-  return fixture;
+  return { file, directory, input, ...fixture };
 }
 
 export function* loadFixtureEntries(root, seeds) {
@@ -55,13 +71,12 @@ export function* loadFixtureEntries(root, seeds) {
     const { entry, group, scene, caseDirectory } = registration;
     const language = group.split('/')[0];
     const files = readdirSync(join(root, caseDirectory), { withFileTypes: true });
-    assert.ok(files.some(file => file.name === 'original.yaml'), caseDirectory + ': missing original');
-    assert.ok(files.every(file => file.isFile() && caseName.test(file.name)), caseDirectory + ': unexpected fixture file');
-    const names = ['original.yaml', ...files.map(file => file.name).filter(name => name !== 'original.yaml').sort()];
-    const cases = names.map(name => {
-      const file = caseDirectory + '/' + name;
-      return { name: name.slice(0, -5), file, ...loadFixture(root, file, language, entry, scene, inputs) };
-    });
+    assert.ok(files.some(file => file.name === 'original'), caseDirectory + ': missing original');
+    assert.ok(files.every(file => file.isDirectory() && caseName.test(file.name)), caseDirectory + ': unexpected fixture item');
+    const names = ['original', ...files.map(file => file.name).filter(name => name !== 'original').sort()];
+    const cases = names.map(name => ({
+      name, ...loadFixture(root, caseDirectory + '/' + name, language, entry, scene, inputs),
+    }));
     yield { ...registration, language, entry: language === 'typescript' ? entry.split('#')[1] : entry, cases };
   }
 }

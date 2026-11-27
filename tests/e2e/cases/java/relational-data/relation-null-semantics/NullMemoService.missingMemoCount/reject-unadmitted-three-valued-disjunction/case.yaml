@@ -1,0 +1,6 @@
+entry: src/NullMemoService.java#NullMemoService.missingMemoCount
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - OR is not supported in local relation predicates

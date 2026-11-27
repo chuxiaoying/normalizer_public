@@ -1,8 +1,0 @@
-entry: src/total.ts#total
-input:
-  src/total.ts: |
-    export function total(value: boolean, base: number): number { return value + base; }
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - scalar arithmetic and comparison require two business numbers

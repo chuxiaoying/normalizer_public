@@ -1,0 +1,6 @@
+entry: src/RiskService.java#Beans.ENTRY.riskScore
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - target=RiskClient.fetchScore
+    - "[NORM-ENGINE-FAILURE]"

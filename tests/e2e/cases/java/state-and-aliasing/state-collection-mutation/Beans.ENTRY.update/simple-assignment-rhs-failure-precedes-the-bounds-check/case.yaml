@@ -1,0 +1,19 @@
+entry: src/StateList.java#Beans.ENTRY.update
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/StateList.java#Beans.ENTRY.update
+    returns: number
+  P:
+    parameters:
+      next:
+        position: 0
+        type: number
+  E:
+    values:
+      kind: state
+      source: src/StateList.java#Beans.ENTRY.values
+      type: number[]
+  throws:
+    - type: java.lang.ArithmeticException
+      when: "true"

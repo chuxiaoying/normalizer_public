@@ -1,0 +1,9 @@
+entry: src/CanonicalArray.java#CanonicalArray.digits
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.digits
+    returns: number
+  P:
+    parameters: {}
+  R: "72"

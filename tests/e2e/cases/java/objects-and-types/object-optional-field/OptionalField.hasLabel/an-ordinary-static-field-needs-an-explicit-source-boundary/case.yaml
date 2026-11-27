@@ -1,0 +1,6 @@
+entry: src/OptionalField.java#OptionalField.hasLabel
+reject:
+  fragments:
+    - "[NORM-FIELD-DECLARATION]"
+    - kind=PREPROCESS_REQUIRED
+    - OptionalField

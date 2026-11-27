@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
 import { vueScenario } from '../../implementation/tools/scenarios/registry.mjs';
 
@@ -191,8 +191,8 @@ export function loadCases(root, seeds = loadSeeds(root)) {
     assert.equal(plan.testStatus, expected, 'Seed plan test status disagrees with the CLI catalog: ' + id);
   }
   assert.deepEqual([...assigned].sort(), [...seeds.keys()].sort(), 'Every seed needs a test binding or an explicit pending status');
-  const directories = [...new Set(inventory(root, fixtures, file => file.endsWith('.yaml'))
-    .map(file => file.slice(0, file.lastIndexOf('/'))))].sort();
+  const directories = [...new Set(inventory(root, fixtures, file => file.endsWith('/case.yaml'))
+    .map(file => dirname(dirname(file))))].sort();
   assert.deepEqual([...series].map(file => file.slice(0, -5)).sort(), directories,
     'Registered entries and fixture directories must correspond one to one');
   return cases;

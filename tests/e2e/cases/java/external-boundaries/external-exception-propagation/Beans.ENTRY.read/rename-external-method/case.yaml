@@ -1,0 +1,22 @@
+entry: src/Pass.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Pass.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  R: $e_0
+  S:
+    - call:
+        external: src/Pass.java#Beans.ENTRY.client.read
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+  throws:
+    - type: RiskUnavailable
+      when: completion.is_throw($e_0, RiskUnavailable)

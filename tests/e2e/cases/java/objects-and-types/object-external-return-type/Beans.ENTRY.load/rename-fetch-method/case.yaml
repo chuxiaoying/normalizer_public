@@ -1,0 +1,23 @@
+entry: src/ProfileService.java#Beans.ENTRY.load
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        score: number
+  entry:
+    function: src/ProfileService.java#Beans.ENTRY.load
+    returns: Profile
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  S:
+    - call:
+        external: src/ProfileService.java#Beans.ENTRY.client.loadProfile
+        args:
+          - accountId
+        returns: Profile
+        result: $e_0
+  R: $e_0

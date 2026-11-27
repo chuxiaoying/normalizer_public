@@ -1,0 +1,9 @@
+entry: src/LocalCycle.java#LocalCycle.readSelf
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/LocalCycle.java#LocalCycle.readSelf
+    returns: number
+  P:
+    parameters: {}
+  R: "12"

@@ -1,0 +1,15 @@
+entry: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.validate
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GuardedCanonicalFailure.java#GuardedCanonicalFailure.INSTANCE.validate
+    returns: number
+  P:
+    parameters:
+      enabled:
+        position: 0
+        type: bool
+      code:
+        position: 1
+        type: number
+  R: code

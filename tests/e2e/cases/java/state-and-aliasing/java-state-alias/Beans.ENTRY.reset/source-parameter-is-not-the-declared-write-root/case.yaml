@@ -1,0 +1,5 @@
+entry: src/Account.java#Beans.ENTRY.reset
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - observable mutation of an input object requires a state write

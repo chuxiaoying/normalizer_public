@@ -1,0 +1,12 @@
+entry: src/Sequence.java#Sequence.next
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Sequence.java#Sequence.next
+    returns: number
+  P:
+    parameters:
+      current:
+        position: 0
+        type: number
+  R: current + 1

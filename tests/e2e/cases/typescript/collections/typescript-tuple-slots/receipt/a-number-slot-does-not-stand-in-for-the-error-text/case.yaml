@@ -1,0 +1,5 @@
+entry: src/receipt.ts#traceCount
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - is not assignable to type 'string'

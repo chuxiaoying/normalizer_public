@@ -1,0 +1,26 @@
+entry: src/CanonicalArray.java#CanonicalArray.guarded
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.guarded
+    returns: number
+  P:
+    parameters:
+      fail:
+        position: 0
+        type: bool
+  R: CASE WHEN fail THEN 42 ELSE 3 END
+  S:
+    - call:
+        external: src/CanonicalArray.java#CanonicalArray.INSTANCE.probe.read
+        args:
+          - "10"
+        returns: number
+        result: $e_0
+    - call:
+        external: src/CanonicalArray.java#CanonicalArray.INSTANCE.probe.read
+        args:
+          - "30"
+        returns: number
+        result: $e_1
+        when: NOT (fail)

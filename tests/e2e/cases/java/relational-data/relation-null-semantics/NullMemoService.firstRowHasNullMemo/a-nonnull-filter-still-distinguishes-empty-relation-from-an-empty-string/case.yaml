@@ -1,0 +1,20 @@
+entry: src/NullMemoService.java#NullMemoService.firstRowHasNullMemo
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NullMemoService.java#NullMemoService.firstRowHasNullMemo
+    returns: bool
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        id: number
+        memo: text?
+  R: EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.memo IS NOT NULL)

@@ -1,0 +1,5 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - member choice requires one integer empty fallback

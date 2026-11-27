@@ -1,0 +1,5 @@
+class Greeting {
+    static String label(String name, String fallback) {
+        return "请核对本期账单金额和到期日确认账户信息与服务记录一致如有疑问请联系客户服务团队并提供账单编号以便工作人员及时查询处理结果并反馈相关进度请妥善保留回执作为后续凭证谢谢配合请注";
+    }
+}

@@ -1,0 +1,12 @@
+entry: src/NestedValues.java#NestedValues.total
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NestedValues.java#NestedValues.total
+    returns: number
+  P:
+    parameters:
+      groups:
+        position: 0
+        type: number[][]
+  R: "0"

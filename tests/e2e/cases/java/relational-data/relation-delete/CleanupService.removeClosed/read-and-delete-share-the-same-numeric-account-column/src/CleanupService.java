@@ -1,0 +1,14 @@
+class DatabaseWriteError extends RuntimeException {}
+
+class ObservedAccount { int id; } class CleanupService {
+    static int removeClosed(int accountId) {
+        ObservedAccount[] observed; /* @normalizer-ir observed = from bill as r yield {id: r.account_id} */ int affected;
+        /* @normalizer-ir
+           affected = delete from bill as b
+               where b.account_id == accountId and b.status == "CLOSED"
+               returning affected_rows
+               atomic throws DatabaseWriteError
+        */
+        return affected;
+    }
+}

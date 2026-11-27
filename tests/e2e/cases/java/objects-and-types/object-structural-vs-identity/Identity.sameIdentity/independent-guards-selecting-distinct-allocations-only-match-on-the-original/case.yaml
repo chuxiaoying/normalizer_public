@@ -1,0 +1,22 @@
+entry: src/Identity.java#Identity.sameIdentity
+expected:
+  schema: normalizer.pers/1
+  types:
+    Box:
+      fields:
+        value: number
+  entry:
+    function: src/Identity.java#Identity.sameIdentity
+    returns: bool
+  P:
+    parameters:
+      prior:
+        position: 0
+        type: Box?
+      p:
+        position: 1
+        type: bool
+      q:
+        position: 2
+        type: bool
+  R: NOT (p) AND NOT (q)

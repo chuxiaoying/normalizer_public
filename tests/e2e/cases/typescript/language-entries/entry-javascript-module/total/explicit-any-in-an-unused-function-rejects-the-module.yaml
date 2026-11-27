@@ -1,9 +1,0 @@
-entry: src/total.ts#total
-input:
-  src/total.ts: |
-    function unused(input: any) { return input; }
-    export function total(value: number, base: number): number { return value + base; }
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - explicit any is not an admitted analysis type

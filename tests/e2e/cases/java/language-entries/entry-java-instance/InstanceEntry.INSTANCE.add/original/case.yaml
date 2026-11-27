@@ -1,0 +1,15 @@
+entry: src/InstanceEntry.java#InstanceEntry.INSTANCE.add
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/InstanceEntry.java#InstanceEntry.INSTANCE.add
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      fee:
+        position: 1
+        type: number
+  R: fee + value

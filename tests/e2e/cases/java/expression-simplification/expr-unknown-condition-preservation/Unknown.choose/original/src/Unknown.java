@@ -1,0 +1,5 @@
+class Unknown {
+    static int choose(boolean enabled, int value) {
+        return enabled ? value : value + 1;
+    }
+}

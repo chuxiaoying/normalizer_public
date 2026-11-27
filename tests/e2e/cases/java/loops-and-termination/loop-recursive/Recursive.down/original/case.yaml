@@ -1,0 +1,7 @@
+entry: src/Recursive.java#Recursive.down
+reject:
+  fragments:
+    - "[NORM-RECURSION]"
+    - kind=PREPROCESS_REQUIRED
+    - Recursive.down
+  kind: PREPROCESS_REQUIRED

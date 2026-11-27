@@ -1,0 +1,15 @@
+entry: src/Money.java#Money.toMinorUnits
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Money.java#Money.toMinorUnits
+    returns: number
+  P:
+    parameters:
+      major:
+        position: 0
+        type: number
+      minor:
+        position: 1
+        type: number
+  R: major * 100 + minor + 1

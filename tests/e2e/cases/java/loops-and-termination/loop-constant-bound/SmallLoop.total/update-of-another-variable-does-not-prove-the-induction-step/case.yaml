@@ -1,0 +1,6 @@
+entry: src/SmallLoop.java#SmallLoop.total
+reject:
+  fragments:
+    - "[NORM-LOOP]"
+    - kind=PREPROCESS_REQUIRED
+    - SmallLoop.total

@@ -1,0 +1,15 @@
+entry: src/RowArithmetic.java#RowArithmetic.sum
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/RowArithmetic.java#RowArithmetic.sum
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      extra:
+        position: 1
+        type: number
+  R: COALESCE(SUM(SELECT value + 1 FROM values), 0)
