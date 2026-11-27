@@ -180,15 +180,26 @@ impl<'a> Engine<'a> {
         use super::realtime_state::{Acquisition, EffectOperation};
         let guard = self.normal_path(path.clone());
         let after: Vec<_> = self.realtime_effects.events().iter().filter_map(|event| {
-            let EffectOperation::Sql { statement, receipt } = &event.operation else { return None; };
-            if statement.table() != table { return None; }
-            let success = b::not(math::domains::completion::is_throw(
-                receipt.response().clone(), statement.exception()));
+            let (receipt, success, mutated_table) = match &event.operation {
+                EffectOperation::Sql { statement, receipt } => {
+                    let success = b::not(math::domains::completion::is_throw(
+                        receipt.response().clone(), statement.exception()));
+                    (receipt, success, Some(statement.table()))
+                }
+                EffectOperation::Port { receipt, completion, .. } if completion.throwing() =>
+                    (receipt, completion.normal_condition(receipt.response()), None),
+                _ => return None,
+            };
             let when = math::normalize(b::and(event.guard.clone(), success));
             if math::normalize(b::and(guard.clone(), when.clone())).as_bool() == Some(false) {
                 return None;
             }
-            let relative = if b::path_implies(&guard, &when) { b::lit_bool(true) } else { when };
+            let dominant = b::path_implies(&guard, &when);
+            // Even an unrelated table can only be read after a failure-
+            // gating completion that dominates the read. A conditional
+            // data dependency is relevant only to the mutated table.
+            if mutated_table != Some(table) && !dominant { return None; }
+            let relative = if dominant { b::lit_bool(true) } else { when };
             Some((receipt.binding_id(), relative))
         }).collect();
         if guard.as_bool() == Some(false) { return RelationExpr::base(table, table); }
