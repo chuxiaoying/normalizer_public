@@ -516,7 +516,7 @@ pub(crate) fn subtype(child: &str, parent: &str, parents: &BTreeMap<String, Stri
 /// A protected expression may bind local temporaries in evaluation order. An
 /// exception can leave at any binding. Such temporaries are out of scope in
 /// every handler, so their partial values need no exceptional snapshot.
-pub(crate) fn protected_return(body: &[S]) -> bool {
+fn closed_terminal_block(body: &[S]) -> bool {
     fn isolated(statement: &S) -> bool {
         match statement {
             S::VarDecl { initializer: Some(_), .. } | S::Throw(_) | S::Return(_) => true,
@@ -526,7 +526,11 @@ pub(crate) fn protected_return(body: &[S]) -> bool {
             _ => false,
         }
     }
-    matches!(body.split_last(), Some((S::Return(_), prefix)) if prefix.iter().all(isolated))
+    matches!(body.split_last(), Some((S::Return(_) | S::Throw(_), prefix)) if prefix.iter().all(isolated))
+}
+
+pub(crate) fn rethrows_caught_value(handler: &simulator_parser::ast::CatchClause) -> bool {
+    matches!(handler.body(), [S::Throw(E::Ident(name))] if name == handler.var_name())
 }
 
 /// Syntactic terminal-throw shape. Admission binds its declared type before execution.
@@ -549,10 +553,10 @@ fn continuing_try_body(body: &[S]) -> bool {
 }
 fn validate_protected_try(body: &[S], catches: &[simulator_parser::ast::CatchClause], finally: Option<&[S]>, id: &str) -> Result<(), String> {
     let closed_handlers = catches.iter().all(|handler|
-        protected_return(handler.body()) || finally.is_none() && handler.body().is_empty());
-    let terminal = protected_return(body);
+        closed_terminal_block(handler.body()) || finally.is_none() && handler.body().is_empty());
+    let terminal = closed_terminal_block(body);
     let continuing = catches.len() == 1 && finally.is_none() && continuing_try_body(body);
-    if closed_handlers && !catches.is_empty() && (terminal || continuing) {
+    if closed_handlers && (!catches.is_empty() || finally.is_some()) && (terminal || continuing) {
         return Ok(());
     }
     Err(error("NORM-CATCH-BODY", id))
@@ -936,7 +940,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                         .ok_or_else(|| error("NORM-RESOURCE-CLOSURE", at))?;
                     statements(std::slice::from_ref(resource.as_ref()), at, calls, catch_admission, inside_finally)?;
                     calls.push((SourceCall::Resolved(close), 0));
-                    if catches.is_empty() && !protected_return(body) && !continuing_try_body(body) {
+                    if catches.is_empty() && !closed_terminal_block(body) && !continuing_try_body(body) {
                         return Err(error("NORM-CATCH-BODY", at));
                     }
                 }
@@ -970,7 +974,9 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                         alternatives.push(class);
                     }
                     prior_types.extend(alternatives);
-                    statements(handler.body(), at, calls, catch_admission, inside_finally)?;
+                    if !rethrows_caught_value(handler) {
+                        statements(handler.body(), at, calls, catch_admission, inside_finally)?;
+                    }
                 }
                 if let Some(finally) = finally_block {
                     let body = match finally.split_last()

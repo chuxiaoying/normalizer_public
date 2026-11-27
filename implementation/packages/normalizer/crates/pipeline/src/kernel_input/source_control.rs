@@ -432,6 +432,7 @@ impl Engine<'_> {
                 .map(|name| &self.project.source_exception_bindings[id][name])
                 .collect::<Vec<_>>();
             let mut guard = b::lit_bool(false);
+            let rethrow = crate::normalized::rethrows_caught_value(catch);
             pending.retain(|alternative| {
                 if let CompletionOutcome::Throw { class, .. } = &alternative.outcome {
                     if caught.iter().any(|kind| crate::normalized::subtype(
@@ -439,7 +440,14 @@ impl Engine<'_> {
                         kind,
                         &self.project.source_exception_parents,
                     )) {
-                        guard = b::or(guard.clone(), alternative.guard.clone());
+                        if rethrow {
+                            // The handler rethrows its exact binding. Preserve
+                            // the matched completion class, payload and domain;
+                            // do not build a new object of the catch class.
+                            handled.push(alternative.clone());
+                        } else {
+                            guard = b::or(guard.clone(), alternative.guard.clone());
+                        }
                         return false;
                     }
                 }
@@ -494,14 +502,12 @@ impl Engine<'_> {
             self.realtime_completion = parent.replace_continue(finished);
             return Ok(());
         }
-        for CompletionAlternative { guard, outcome } in &pending {
-            if matches!(outcome, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_)) {
-                let escaped = math::normalize(b::and(path.clone(), guard.clone()));
-
-                self.realtime_throws.push(escaped);
-            }
-        }
         pending.extend(handled);
+        self.realtime_throws.truncate(prior_realtime_throws);
+        self.realtime_throws.extend(pending.iter().filter_map(|CompletionAlternative { guard, outcome }| {
+            matches!(outcome, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_))
+                .then(|| math::normalize(b::and(path.clone(), guard.clone())))
+        }));
         self.realtime_completion = parent.replace_continue(Completion::from_alternatives(pending));
         Ok(())
     }
