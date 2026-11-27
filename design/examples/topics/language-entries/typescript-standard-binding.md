@@ -25,14 +25,10 @@ P:
   parameters:
     raw: {position: 0, type: 'text?'}
     fallback: {position: 1, type: text}
-R: |-
-  CASE
-    WHEN blank(TRIM(raw)) THEN fallback
-    ELSE TRIM(raw)
-  END
+R: N.defaultIfBlank(N.trim(raw), fallback)
 ```
 
-原始输入保持可空，裁剪不把 null 改为空串；在 `blank` 分支之外返回裁剪后的文本。不产生 E 或 S。
+原始输入保持可空，裁剪不把 null 改为空串；只有标准空白合同命中才使用备用值，其余返回裁剪后的原文本。R 表达的是同一组官方值操作，不把应用 namespace 的本地别名当成新的表达式身份。不产生 E 或 S。
 
 ## 对照
 

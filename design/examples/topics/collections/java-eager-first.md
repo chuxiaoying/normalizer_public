@@ -63,7 +63,7 @@ P:
 R: FIRST(r.ticket.id FROM rows AS r)
 throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: '0 == LENGTH(rows)' }
-  - { type: java.lang.NullPointerException, when: 'EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)' }
+  - { type: java.lang.NullPointerException, when: '0 < COALESCE(SUM(SELECT 1 FROM rows AS r WHERE r.ticket IS NULL), 0)' }
 ```
 
 完整取号先完成，成功后才取索引。这里的 FIRST 只是正常结果的显示，不能移除全数组的缺失检查。空输入已蕴含没有缺失行，故其越界条件无需再写一条否定检查。

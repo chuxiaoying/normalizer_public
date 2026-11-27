@@ -53,8 +53,8 @@ class LabelService {
 
 | 声明上的静态方法 | 共享语义 |
 |---|---|
-| `String trim(String value)` | `text.trim(value)`。输入为 null 时返回 null，否则仅去掉两端值不超过 U+0020 的 UTF-16 码元。 |
-| `String defaultIfBlank(String value, String fallback)` | `text.is_blank(value) ? fallback : value`。null、空串和所有码元均满足 Java 17 `Character.isWhitespace(char)` 的字符串取 fallback。 |
+| `String trim(String value)` | `N.trim(value)`。输入为 null 时返回 null，否则仅去掉两端值不超过 U+0020 的 UTF-16 码元。 |
+| `String defaultIfBlank(String value, String fallback)` | `N.defaultIfBlank(value, fallback)`。null、空串和所有码元均满足 Java 17 `Character.isWhitespace(char)` 的字符串取 fallback。 |
 
 内层 `trim(raw)` 仍只调用一次。U+2003 经 trim 后仍是空白，结果为 fallback；U+00A0 则原样返回。
 
@@ -80,17 +80,13 @@ P:
       position: 1
       type: text
 
-R: |-
-  CASE
-    WHEN blank(TRIM(raw)) THEN fallback
-    ELSE TRIM(raw)
-  END
+R: N.defaultIfBlank(N.trim(raw), fallback)
 ```
 
 本例的两个文本操作都是纯计算，因此结果只有一个返回表达式。 变体将 `raw` 换成原源码中的具体文本，先验证内核对普通文本、空白和非断行空格的执行结果；原例继续核对未知文本的符号公式。
 
 **PERS 验收要点**：最终表达应呈现文本操作的业务含义，字符遍历与编码结构留在操作合同内；公共文本语义仍须覆盖完整原始字符域，不能用更简短的公式掩盖孤立代理项。
 
-**空值守卫对照**　将内层换为原始 `raw`，再显式写成 `raw == null ? fallback : N.defaultIfBlank(raw, fallback)`。注册的空白谓词自身已经覆盖 null，因此 R 是 `CASE WHEN blank(raw) THEN fallback ELSE raw END`。非空但属于空白的文本仍返回 fallback；非空白文本仍保留原值。无需额外识别旧 Java 库实现里的空值写法。
+**空值守卫对照**　将内层换为原始 `raw`，再显式写成 `raw == null ? fallback : N.defaultIfBlank(raw, fallback)`。[标准操作的合同](../../../chapters/04-AI救赎.md#ai-02-标准操作的合同)已经覆盖 null，因此 R 是 `N.defaultIfBlank(raw, fallback)`。非空但属于空白的文本仍返回 fallback；非空白文本仍保留原值。无需额外识别旧 Java 库实现里的空值写法。
 
 直接给纯文本内建操作传 `null` 与经 `trim(null)` 取得的空值同属文本语义：第一实参为空时选备用文本。后备值按本入口约定非空，不用一个永远不选中的值绕过类型检查。两种情况都不生成 S。
