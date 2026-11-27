@@ -65,11 +65,32 @@ pub enum Lit {
     /// Exact mathematical integer outside the compact i64 representation.
     BigInt(num_bigint::BigInt),
     Str(String),
+    /// Text containing an isolated UTF-16 code unit.
+    StrUnits(Vec<u16>),
     Bool(bool),
     Null,
 }
 
 impl Lit {
+    pub fn from_text_units(units: Vec<u16>) -> Self {
+        match String::from_utf16(&units) {
+            Ok(text) => Self::Str(text),
+            Err(_) => Self::StrUnits(units),
+        }
+    }
+
+    pub fn is_text(&self) -> bool {
+        matches!(self, Self::Str(_) | Self::StrUnits(_))
+    }
+
+    pub fn text_units(&self) -> Option<Vec<u16>> {
+        match self {
+            Self::Str(text) => Some(text.encode_utf16().collect()),
+            Self::StrUnits(units) => Some(units.clone()),
+            _ => None,
+        }
+    }
+
     /// Mathematical integer value; storage width does not define its domain.
     pub fn as_integer(&self) -> Option<num_bigint::BigInt> {
         match self {

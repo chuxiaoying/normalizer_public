@@ -178,7 +178,7 @@ fn assembly_argument(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bo
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Bool(_))) => name == "boolean",
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Int(_))) => matches!(name.as_str(), "int" | "long"),
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Long(_))) => name == "long",
-        (JavaType::Class(name), JavaExpr::Lit(JavaLit::Str(_))) => matches!(name.as_str(), "String" | "java.lang.String"),
+        (JavaType::Class(name), JavaExpr::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_))) => matches!(name.as_str(), "String" | "java.lang.String"),
         (JavaType::Class(name), JavaExpr::New { java_type, args }) if ty == java_type && args.is_empty() =>
             program.find_class(name).is_some_and(|class| class.fields().is_empty())
                 && assembly_allocation(program, ty, arg),

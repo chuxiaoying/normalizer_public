@@ -1095,8 +1095,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         match self.peek() {
             Some(b'"') => {
-                let s = self.read_string_literal()?;
-                Ok(Some(JavaLit::Str(s)))
+                Ok(Some(self.read_string_literal()?))
             }
             Some(b'\'') => {
                 let c = self.read_char_literal()?;
@@ -1168,15 +1167,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn read_string_literal(&mut self) -> Result<String, ParseError> {
+    fn read_string_literal(&mut self) -> Result<JavaLit, ParseError> {
         self.pos += 1; // try_parse_literal has already matched the opening quote.
-        let mut out = String::new();
+        let mut units = Vec::new();
         loop {
             if self.peek() == Some(b'"') {
                 self.pos += 1;
-                return Ok(out);
+                return Ok(match String::from_utf16(&units) {
+                    Ok(text) => JavaLit::Str(text),
+                    Err(_) => JavaLit::StrUnits(units),
+                });
             }
-            out.push(self.read_literal_unit()?);
+            if let Some(unit) = self.surrogates.at(self.pos) {
+                self.pos += char::REPLACEMENT_CHARACTER.len_utf8();
+                units.push(unit);
+            } else {
+                units.extend_from_slice(self.read_literal_unit()?.encode_utf16(&mut [0; 2]));
+            }
         }
     }
 

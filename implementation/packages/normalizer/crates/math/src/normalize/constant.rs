@@ -58,13 +58,19 @@ fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
             _ => op.comparison_test().map(|compare| builder::lit_bool(compare(&x, &y))),
         };
     }
+    if a.is_text() && b.is_text() {
+        return match op {
+            Add => {
+                let mut joined = a.text_units()?;
+                joined.extend(b.text_units()?);
+                Some(builder::lit(Lit::from_text_units(joined)))
+            },
+            Eq | Ne => Some(builder::lit_bool((a == b) == (op == Eq))),
+            _ => None,
+        };
+    }
     match (op, a, b) {
-        // String literal concat: 纯数学折叠，两侧均为 Str(Lit) 时直接拼接。
-        // 归一化纪律："ok: " + "default" → "ok: default" 不应保留为 BinOp。
-        (Add, Str(x), Str(y)) => Some(builder::lit_str(format!("{}{}", x, y))),
-
-        (Eq | Ne, Null, _) | (Eq | Ne, _, Null)
-        | (Eq | Ne, Str(_), Str(_)) | (Eq | Ne, Bool(_), Bool(_)) =>
+        (Eq | Ne, Null, _) | (Eq | Ne, _, Null) | (Eq | Ne, Bool(_), Bool(_)) =>
             Some(builder::lit_bool((a == b) == (op == Eq))),
 
         (And, Bool(x), Bool(y)) => Some(builder::lit_bool(*x && *y)),

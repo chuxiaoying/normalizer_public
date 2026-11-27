@@ -686,6 +686,15 @@ fn format_lit(lit: &Lit) -> String {
         Lit::Int(n) => n.to_string(),
         Lit::BigInt(n) => n.to_string(),
         Lit::Str(s) => serde_json::to_string(s).expect("string literal serialization"),
+        Lit::StrUnits(units) => {
+            use std::fmt::Write;
+            let mut quoted = String::from('"');
+            for unit in units {
+                write!(quoted, "\\u{unit:04X}").expect("write into string");
+            }
+            quoted.push('"');
+            quoted
+        },
         Lit::Bool(b) => b.to_string(),
         Lit::Null => "null".to_string(),
     }

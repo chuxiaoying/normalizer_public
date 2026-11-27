@@ -466,6 +466,7 @@ pub enum JavaLit {
     Decimal { digits: String, radix: u32, power: i32, single: bool },
     Bool(bool),
     Str(String),
+    StrUnits(Vec<u16>),
     Char(u16),
     Null,
 }

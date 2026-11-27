@@ -18,6 +18,7 @@ enum Payload {
     Bool(bool),
     Number(Exact),
     Text(String),
+    CodePoints(Vec<u32>),
     Texts(Vec<String>),
     Table(TableKey),
     Tables(Vec<(TableKey, String)>),
@@ -202,7 +203,14 @@ impl Keys<'_> {
                 crate::Lit::Int(_) | crate::Lit::BigInt(_) =>
                     literal("number", vec![Payload::Number(Exact(value.as_integer().expect("integer literal"), 0))]),
                 crate::Lit::Bool(value) => literal("bool", vec![Payload::Bool(*value)]),
-                crate::Lit::Str(value) => literal("text", vec![Payload::Text(value.clone())]),
+                crate::Lit::Str(value) => literal("text",
+                    vec![Payload::CodePoints(value.chars().map(u32::from).collect())]),
+                crate::Lit::StrUnits(units) => literal("text", vec![Payload::CodePoints(
+                    char::decode_utf16(units.iter().copied()).map(|item| match item {
+                        Ok(point) => u32::from(point),
+                        Err(isolated) => u32::from(isolated.unpaired_surrogate()),
+                    }).collect()
+                )]),
                 crate::Lit::Null => literal("null", vec![]),
             },
             SymVar { origin } => {

@@ -319,7 +319,7 @@ pub(super) fn observations(
                 if let Some(value) = payload {
                     need(
                         (project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
-                            && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_))))
+                            && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_) | math::Lit::StrUnits(_))))
                             || (!project.direct_source && class == "TypeError"
                                 && project.functions.values().any(|function| {
                                     let super::Node::GuardUnknownText { name, message } = &function.body else { return false; };

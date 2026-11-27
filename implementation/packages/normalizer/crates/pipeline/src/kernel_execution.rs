@@ -512,6 +512,8 @@ impl<'a> Engine<'a> {
                         Some(RuntimeThrowMessage::Absent) => (crate::normalized::RUNTIME_EXCEPTION.into(), None),
                         Some(RuntimeThrowMessage::Null) => (crate::normalized::RUNTIME_EXCEPTION.into(), Some(b::lit_null())),
                         Some(RuntimeThrowMessage::Text(text)) => (crate::normalized::RUNTIME_EXCEPTION.into(), Some(b::lit_str(text))),
+                        Some(RuntimeThrowMessage::TextUnits(units)) => (crate::normalized::RUNTIME_EXCEPTION.into(),
+                            Some(b::lit(math::Lit::from_text_units(units.to_vec())))),
                         None => {
                             let class = crate::normalized::finally_throw(s)
                                 .and_then(|raw| self.project.source_exception_bindings.get(id)?.get(raw))
@@ -794,7 +796,7 @@ impl<'a> Engine<'a> {
         if op == JavaArithmetic::Add && (left.ty() == Ty::Text || right.ty() == Ty::Text) {
             let (left, right) = (left.scalar()?, right.scalar()?);
             let text = |value: Expr| match value.as_lit() {
-                Some(math::Lit::Str(_)) => Some(value),
+                Some(literal) if literal.is_text() => Some(value),
                 Some(math::Lit::Null) => Some(b::lit_str("null")),
                 _ => None,
             };
@@ -1026,6 +1028,8 @@ impl<'a> Engine<'a> {
                 Ok(Value::Term(Ty::Bool, b::lit_bool(present)))
             }
             J::Lit(JavaLit::Str(v)) => Ok(Value::Term(Ty::Text, b::lit_str(v))),
+            J::Lit(JavaLit::StrUnits(units)) => Ok(Value::Term(Ty::Text,
+                b::lit(math::Lit::from_text_units(units.clone())))),
             // A char constant contributes its unsigned UTF-16 code unit to
             // a numeric expression, not a text value or reference identity.
             J::Lit(JavaLit::Char(v)) => Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(*v)))),

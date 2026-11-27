@@ -90,9 +90,11 @@ pub fn lit_null() -> Expr {
 
 /// 通用 Lit 构造器：包装任意 Lit 为 Expr（P2 方案 B：evaluator 返回值使用）
 pub fn lit(l: Lit) -> Expr {
-    match l {
-        other => Expr::new(ExprKind::Lit(other)),
-    }
+    let value = match l {
+        Lit::StrUnits(units) => Lit::from_text_units(units),
+        other => other,
+    };
+    Expr::new(ExprKind::Lit(value))
 }
 
 // =============================================================================

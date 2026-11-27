@@ -273,7 +273,7 @@ impl Admission<'_> {
                 }
                 if *single { Kind::Float } else { Kind::Double }
             }
-            E::Lit(JavaLit::Str(_)) => Kind::Text,
+            E::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)) => Kind::Text,
             E::Lit(JavaLit::Null) => Kind::Null,
             E::FieldAccess { target, field } => {
                 if matches!(target.as_ref(), E::Ident(name) if name == "this") {

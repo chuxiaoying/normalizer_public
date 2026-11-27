@@ -52,6 +52,8 @@ pub(crate) fn closed_field_initializer(t: &JavaType, e: &E) -> Option<math::Expr
         }
         (JavaType::Primitive(ty), E::Lit(JavaLit::Bool(value))) if ty == "boolean" => Some(b::lit_bool(*value)),
         (JavaType::Class(ty), E::Lit(JavaLit::Str(value))) if matches!(ty.as_str(), "String" | "java.lang.String") => Some(b::lit_str(value)),
+        (JavaType::Class(ty), E::Lit(JavaLit::StrUnits(units))) if matches!(ty.as_str(), "String" | "java.lang.String") =>
+            Some(b::lit(math::Lit::from_text_units(units.clone()))),
         (JavaType::Class(_), E::Lit(JavaLit::Null)) => Some(b::lit_null()),
         _ => None,
     }
@@ -850,6 +852,7 @@ pub(crate) enum RuntimeThrowMessage<'a> {
     Absent,
     Null,
     Text(&'a str),
+    TextUnits(&'a [u16]),
 }
 
 pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
@@ -858,6 +861,7 @@ pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
     match args.as_slice() {
         [] => Some(RuntimeThrowMessage::Absent),
         [E::Lit(JavaLit::Str(text))] => Some(RuntimeThrowMessage::Text(text)),
+        [E::Lit(JavaLit::StrUnits(units))] => Some(RuntimeThrowMessage::TextUnits(units)),
         [E::Cast { target_type: JavaType::Class(ty), operand }]
             if ty == "java.lang.String"
                 && matches!(operand.as_ref(), E::Lit(JavaLit::Null)) => Some(RuntimeThrowMessage::Null),
@@ -1152,7 +1156,7 @@ fn inline_int_array_initializer(e: &E) -> bool {
 
 fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
     match e {
-        E::Ident(_) | E::Lit(JavaLit::Bool(_) | JavaLit::Str(_) | JavaLit::Null) => (),
+        E::Ident(_) | E::Lit(JavaLit::Bool(_) | JavaLit::Str(_) | JavaLit::StrUnits(_) | JavaLit::Null) => (),
         E::Lit(JavaLit::Int(_) | JavaLit::Long(_) | JavaLit::Char(_) | JavaLit::Decimal { .. }) => (),
         E::Cast {
             target_type,

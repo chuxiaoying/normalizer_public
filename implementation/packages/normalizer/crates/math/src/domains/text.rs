@@ -24,7 +24,7 @@ pub(crate) fn fold_default_if_blank(key: crate::FuncKey, args: &[Expr]) -> Optio
     if value == fallback { return Some(value.clone()); }
     match value.as_lit()? {
         Lit::Null => Some(fallback.clone()),
-        Lit::Str(text) => Some(if text.encode_utf16().all(whitespace) { fallback } else { value }.clone()),
+        text if text.is_text() => Some(if text.text_units()?.into_iter().all(whitespace) { fallback } else { value }.clone()),
         _ => None,
     }
 }
@@ -60,9 +60,14 @@ pub fn trim(value: Expr) -> Expr {
         Some(Primitive::String),
         FuncSemantics::pure_function()
             .with_null_behavior(vec![0], Lit::Null)
-            .with_evaluator(std::sync::Arc::new(|args| evaluate_text(args, |text| {
-                Lit::Str(text.trim_matches(|c: char| c <= '\u{20}').into())
-            }))),
+            .with_evaluator(std::sync::Arc::new(|args| {
+                let [text] = args else { return None; };
+                let units = text.text_units()?;
+                let first = units.iter().position(|&unit| unit > 0x20);
+                let last = units.iter().rposition(|&unit| unit > 0x20);
+                Some(Lit::from_text_units(first.zip(last).map_or_else(Vec::new,
+                    |(first, last)| units[first..=last].to_vec())))
+            })),
     ));
     crate::normalize(b::call(key, vec![value]))
 }
@@ -79,10 +84,4 @@ pub(crate) fn repeat_trim(key: crate::FuncKey, args: &[Expr]) -> Option<Expr> {
 pub fn whitespace(unit: u16) -> bool {
     matches!(unit, 0x0009..=0x000d | 0x001c..=0x0020 | 0x1680 |
         0x2000..=0x2006 | 0x2008..=0x200a | 0x2028..=0x2029 | 0x205f | 0x3000)
-}
-fn evaluate_text(args: &[Lit], evaluate: impl FnOnce(&str) -> Lit) -> Option<Lit> {
-    match args {
-        [Lit::Str(text)] => Some(evaluate(text)),
-        _ => None,
-    }
 }
