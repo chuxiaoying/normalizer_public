@@ -11,7 +11,7 @@ expected:
         type: number
   R: |-
     CASE
-      WHEN limit <= 2 THEN 0
+      WHEN limit < 3 THEN 0
       WHEN limit == 3 THEN 2
       WHEN limit == 4 THEN 5
       WHEN limit == 5 THEN 9
