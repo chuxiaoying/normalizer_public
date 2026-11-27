@@ -105,6 +105,9 @@ pub fn preferred_complement(
 fn preferred_complement_for_case(
     condition: &Expr, yes: &Expr, no: &Expr, context: &dyn SortContext,
 ) -> Option<Expr> {
+    // In SQL a third outcome can fall through in both orientations.
+    // NOT UNKNOWN does not select the former ELSE arm.
+    if condition.may_observe_sql_unknown() { return None; }
     let complement = crate::normalize_with(crate::builder::not(condition.clone()), context);
     let original = crate::builder::case_when(vec![(condition.clone(), yes.clone())], no.clone());
     let swapped = crate::builder::case_when(vec![(complement.clone(), no.clone())], yes.clone());
@@ -161,6 +164,20 @@ pub(crate) fn canonicalize_binary_case(
         }
         let canonical = order_selection(op, yes, no, context)?;
         return (canonical != *expression).then_some(canonical);
+    }
+    let literal_point = |value: &Expr| value.as_lit()?.as_integer();
+    if let Some((source, literal, when_true_is_source)) = match (literal_point(yes), literal_point(no)) {
+        (None, Some(point)) => Some((yes, (no, point), true)),
+        (Some(point), None) => Some((no, (yes, point), false)),
+        _ => None,
+    } {
+        let (literal, point) = literal;
+        if let Some(op) = crate::normalize::integer_ranges::integer_selection(
+            condition, source, &point, when_true_is_source, parent,
+        ) {
+            let candidate = order_selection(op, source, literal, context)?;
+            return (candidate != *expression).then_some(candidate);
+        }
     }
     let complement = preferred_complement_for_case(condition, yes, no, context)?;
     Some(crate::builder::case_when(vec![(complement, no.clone())], yes.clone()))

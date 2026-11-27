@@ -21,7 +21,7 @@ mod constant;
 pub(crate) mod constraint;
 mod integer_ac;
 mod integer_equations;
-mod integer_ranges;
+pub(crate) mod integer_ranges;
 
 /// Canonicalize a closed, exact integer condition at its terminal boundary.
 pub fn canonical_terminal_guard(value: Expr) -> Expr {

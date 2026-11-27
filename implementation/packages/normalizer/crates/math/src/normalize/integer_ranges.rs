@@ -215,6 +215,40 @@ pub(super) fn canonical_guard(
     (!crate::canonical_order::canonical_cost_compare(&selected, expr, ctx).is_gt()).then_some(selected)
 }
 
+/// Determine which extremum the original complete CASE computes, even
+/// when its guard uses a shifted integer threshold. At the literal itself
+/// either arm is valid. Do not identify an extremum on an empty domain.
+pub(crate) fn integer_selection(
+    condition: &Expr, subject: &Expr, point: &BigInt, when_true_is_subject: bool, parent: Option<&Expr>,
+) -> Option<B> {
+    if !is_input_integer(subject) { return None; }
+    let mut input = Some(subject.clone());
+    let mut cuts = vec![point.clone(), point + 1];
+    let predicate = guard(condition, &mut input, &mut cuts)?;
+    let domain = match parent {
+        Some(parent) => guard(parent, &mut input, &mut cuts)?,
+        None => Guard::Bool(true),
+    };
+    let nodes = condition.size().saturating_add(parent.map_or(0, Expr::size));
+    if !super::require_candidate_budget(cuts.len().saturating_add(1).saturating_mul(nodes), nodes) {
+        return None;
+    }
+    let (mut maximum, mut minimum, mut saw_difference) = (true, true, false);
+    for (lo, hi) in cells(cuts) {
+        let at = cell_representative(&lo, &hi);
+        if !domain.at(&at) || &at == point { continue; }
+        saw_difference = true;
+        let selected_subject = predicate.at(&at) == when_true_is_subject;
+        maximum &= selected_subject == (&at > point);
+        minimum &= selected_subject == (&at < point);
+    }
+    match (saw_difference, maximum, minimum) {
+        (true, true, false) => Some(B::Gt),
+        (true, false, true) => Some(B::Lt),
+        _ => None,
+    }
+}
+
 pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)>, Expr)> {
     if branches.len() < 3
         || !branches.last()?.0.as_bool().is_some_and(|b| b)
