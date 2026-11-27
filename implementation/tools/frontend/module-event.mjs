@@ -204,12 +204,12 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
     for (let index = 0; index <= block.statements.length; index++) {
       const st = block.statements[index];
       const end = st ? st.getStart(sf) : block.end - 1;
-      for (const source of directives.after(before, end)) {
-        const binding = /^([A-Za-z_$][\w$]*)\s*(\+=|=(?!=))/.exec(source);
+      for (const {text, line} of directives.after(before, end)) {
+        const binding = /^([A-Za-z_$][\w$]*)\s*(\+=|=(?!=))/.exec(text);
         if (!binding || !locals.get(binding[1])
             || uninitialized && (binding[1] !== uninitialized || binding[2] !== '='))
           fail('local IR requires a writable local assignment in this block and must initialize any pending binding');
-        steps.push({ op: 'local_ir', source });
+        steps.push({ op: 'local_ir', source: {text, location: modulePath + ':' + line} });
         if (uninitialized === binding[1]) scope.get(binding[1]).assignedByDirective = true;
         uninitialized = undefined;
       }

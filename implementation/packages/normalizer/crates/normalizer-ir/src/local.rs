@@ -331,7 +331,8 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
     let insert = tokens.take("insert");
     let delete = !insert && tokens.take("delete");
     if !insert && !delete && !tokens.take("update") {
-        return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation".into());
+        let operation = tokens.name().map(|name| format!(": {name}")).unwrap_or_default();
+        return Err(format!("[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation{operation}"));
     }
     if insert { tokens.expect("into")?; }
     if delete { tokens.expect("from")?; }

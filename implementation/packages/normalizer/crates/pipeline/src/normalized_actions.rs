@@ -157,12 +157,21 @@ where
     D: serde::Deserializer<'de>,
 {
     use normalizer_ir::local::{parse, LocalIr};
-    let source = String::deserialize(decoder)?;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Source {
+        Located { text: String, location: String },
+        Bare(String),
+    }
+    let (source, location) = match Source::deserialize(decoder)? {
+        Source::Located {text, location} => (text, format!(" at {location}")),
+        Source::Bare(text) => (text, String::new()),
+    };
     match parse(&source) {
         Ok(LocalIr::Relation(query)) => Ok(Box::new(query)),
-        Ok(_) => Err(serde::de::Error::custom("expected a typed relation query")),
+        Ok(_) => Err(serde::de::Error::custom(format!("expected a typed relation @normalizer-ir query{location}"))),
         Err(error) => Err(serde::de::Error::custom(format!(
-            "expected a typed relation query: {error}"
+            "expected a typed relation @normalizer-ir query{location}: {error}"
         ))),
     }
 }

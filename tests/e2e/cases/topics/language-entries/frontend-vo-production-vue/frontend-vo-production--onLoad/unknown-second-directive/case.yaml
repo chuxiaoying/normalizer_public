@@ -1,5 +1,7 @@
 entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
-    - "unknown_operation"
+    - "SCENARIO_KERNEL_FAILED:"
+    - "[NORM-PROJECT]"
+    - "@normalizer-ir query at src/ArrearsPage.ts:"
+    - "unknown local operation: unknown_operation"

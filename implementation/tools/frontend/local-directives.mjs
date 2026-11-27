@@ -31,7 +31,8 @@ export function localDirectives(sourceFile, body) {
       const directives = [];
       for (const range of commentRanges(position)) {
         if (range.end <= end && pending.has(range.pos)) {
-          directives.push(pending.get(range.pos));
+          const {line} = sourceFile.getLineAndCharacterOfPosition(range.pos);
+          directives.push({text: pending.get(range.pos), line: line + 1});
           pending.delete(range.pos);
         }
       }
