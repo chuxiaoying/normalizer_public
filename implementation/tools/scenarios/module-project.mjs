@@ -1,11 +1,11 @@
 // Compile a synchronous component projection to the shared symbolic kernel.
 // Each binding denotes a read of a plain field during this render observation.
-import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { readModuleEvent } from '../frontend/module-event.mjs';
 import { readModuleProjection } from '../frontend/module-projection.mjs';
 import { projectSources } from '../frontend/project-source.mjs';
-import { vueScenario } from './registry.mjs';
+import { frontendScenario } from './registry.mjs';
 
 const carriers = {
   bool: ['boolean', 'bool'], text: ['String', 'text?'],
@@ -155,21 +155,18 @@ function eventContract(modulePath, moduleText, name, physicalPath) {
   };
 }
 
-export function buildModuleProject({ scene, root, file, name, original, directory }) {
-  const build = {event: eventContract, projection: projectionContract}[vueScenario(scene)];
-  if (!build || extname(original) !== '.vue' || extname(file) !== '.ts') {
-    throw new Error('SCENARIO_MODULE_INPUT: expected a supported scenario with its Vue source and prepared .ts module');
-  }
-  const source = projectSources(root);
-  const component = source(original);
-  const module = source(file);
-  accessSync(component.path, constants.R_OK);
+export function buildModuleProject({ scene, root, file, name, directory }) {
+  const build = {event: eventContract, projection: projectionContract}[frontendScenario(scene)];
+  const isTypeScript = path => extname(path) === '.ts' && !path.endsWith('.d.ts');
+  if (!build) throw new Error('SCENARIO_MODULE_INPUT: unknown frontend scenario: ' + scene);
+  if (!isTypeScript(file)) throw new Error('SCENARIO_MODULE_INPUT: scenario requires a prepared executable .ts entry');
+  const module = projectSources(root)(file);
+  if (!isTypeScript(module.path)) throw new Error('SCENARIO_MODULE_INPUT: scenario entry must resolve to an executable .ts file');
   const moduleText = readFileSync(module.path, 'utf8');
   const project = build(module.name, moduleText, name, module.declared);
   const [entry] = project.entries;
   writeFileSync(join(directory, 'Normalized.java'), project.source_text);
   writeFileSync(join(directory, 'Prepared.ts'), moduleText);
-  writeFileSync(join(directory, 'Original.vue'), readFileSync(component.path));
   const projectPath = join(directory, 'project.json');
   writeFileSync(projectPath, JSON.stringify(project, null, 2) + '\n');
   return { projectPath, entry };

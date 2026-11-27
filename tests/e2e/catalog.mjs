@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
-import { vueScenario } from '../../implementation/tools/scenarios/registry.mjs';
+import { frontendScenario } from '../../implementation/tools/scenarios/registry.mjs';
 
 function record(value, name) {
   assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Expected a mapping: ' + name);
@@ -155,7 +155,7 @@ export function loadCases(root, seeds = loadSeeds(root)) {
       if (group.split('/')[0] === 'vue') {
         assert.deepEqual(Object.keys(binding ?? {}).sort(), ['entries', 'scene'], 'Vue seed requires explicit entries and scene: ' + seedId);
         ({ entries, scene } = binding);
-        assert.ok(vueScenario(scene),
+        assert.ok(frontendScenario(scene),
           'Unknown or incompatible Vue CLI scene: ' + scene);
       }
       assert.ok(Array.isArray(entries) && entries.length, 'No test entry for seed: ' + seedId);

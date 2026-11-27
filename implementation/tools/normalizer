@@ -11,7 +11,7 @@ usage() {
 Usage:
   implementation/tools/normalizer source SOURCE_DIR 'src/Entry.java#Entry.run'
   implementation/tools/normalizer module PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
-  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION --source ORIGINAL.vue
+  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
   implementation/tools/normalizer test business-examples
 
 source, module and scenario write final business PERS to stdout.
@@ -80,7 +80,7 @@ case "$command" in
     exec node "$ROOT/tools/frontend/standalone.mjs" "$KERNEL" "$2" "$3" "$4"
     ;;
   scenario)
-    require_args 7 "$#"
+    require_args 5 "$#"
     ensure_frontend_dependencies
     ensure_kernel
     exec node "$ROOT/tools/scenarios/runner.mjs" "$KERNEL" "${@:2}"

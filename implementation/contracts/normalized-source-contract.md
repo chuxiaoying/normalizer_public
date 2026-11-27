@@ -5,7 +5,7 @@
 | 交接 | 看哪里 | 保留的工程信息 |
 |---|---|---|
 | Java 源码 → 入口和闭合调用 | `crates/simulator-parser/src/`、`crates/pipeline/src/normalized.rs`、`crates/pipeline/src/kernel_input/source_entry.rs` | 解析时保留所属类型、源码位置和参数签名。解析失败沿用原文件及可用行列；部分静态绑定诊断只给出入口或方法身份和失败原因，不保证每条都有源码行列。 |
-| 独立模块 / Vue → 内部工程数据 | [TypeScript 适配](../tools/frontend/README.md)、`tools/scenarios/module-project.mjs` | 从已准备的严格 `.ts` 封装有类型的 `normalizer.kernel-input/1` JSON。Vue 原件用于来源定位：检查路径、存在性和可读性，不解析原件，也不验证改写等价。 |
+| 独立模块 / 前端 VO 场景 → 内部工程数据 | [TypeScript 适配](../tools/frontend/README.md)、`tools/scenarios/module-project.mjs` | 从已准备的严格 `.ts` 封装有类型的 `normalizer.kernel-input/1` JSON。CLI 不读取原始组件或改写对照；这类材料由预处理侧保留供审查。 |
 | 内部工程数据 → 内核输入 | `crates/pipeline/src/kernel_input.rs`、`crates/normalizer-ir/src/local.rs` | 核对 schema、声明绑定和表达式类型；这些节点与诊断属于内部交接，不是最终 PERS。 |
 
 `crates/` 相对 `implementation/packages/normalizer/`，`tools/` 相对 `implementation/`。用户命令统一查[CLI 参考](../../usage/cli.md)；内部 JSON 不是额外的公开 CLI。修改任一交接字段，要同时核对生成端、加载端、失败阶段和诊断所能提供的源码定位，再以种子派生的完整 PERS 验收。语言特定的源码证据保留在对应入口，不为同一语义增设第二套 PERS 格式。

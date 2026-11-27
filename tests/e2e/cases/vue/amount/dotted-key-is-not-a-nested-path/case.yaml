@@ -1,5 +1,4 @@
 entry: src/ArrearsPage.ts#amount
-vueSource: src/ArrearsPage.vue
 reject:
   fragments:
     - "SCENARIO_MODULE_INPUT:"

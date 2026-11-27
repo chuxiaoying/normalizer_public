@@ -62,9 +62,8 @@ function renderOutcome(test, codeBlock) {
 function testPage(seed, {entry, seriesFile, tests}, codeBlock) {
   const sections = tests.map(test => {
     const input = Object.entries(test.input).map(([file, source]) => {
-      const language = {java:'java', ts:'typescript', vue:'vue', mjs:'javascript', js:'javascript'}[file.split('.').at(-1)];
-      const role = file === test.vueSource ? '（Vue 原件，仅作来源标记）' : '';
-      return '<p class="test-path"><code>' + escape(file) + '</code>' + role + '</p>' + codeBlock(source, language);
+      const language = {java:'java', ts:'typescript'}[file.split('.').at(-1)];
+      return '<p class="test-path"><code>' + escape(file) + '</code></p>' + codeBlock(source, language);
     }).join('');
     const heading = '<h2 id="case-' + escape(test.name) + '">' + escape(caseTitle(test.name)) + '</h2>';
     return '<section class="test-case">' + heading + '<p>CLI 入口：<code>' + escape(test.entry)

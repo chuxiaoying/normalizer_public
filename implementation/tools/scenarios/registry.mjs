@@ -1,9 +1,9 @@
 // The same scene inventory drives interpretation and E2E entry admission.
-const vueScenarios = new Map([
+const frontendScenarios = new Map([
   ['frontend-vo-production', 'event'],
   ['frontend-vo-consumption', 'projection'],
 ]);
 
-export function vueScenario(scene) {
-  return vueScenarios.get(scene);
+export function frontendScenario(scene) {
+  return frontendScenarios.get(scene);
 }

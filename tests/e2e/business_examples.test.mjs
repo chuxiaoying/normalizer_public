@@ -19,7 +19,7 @@ for (const { seedId, entry, scene, language, cases } of loadFixtureEntries(root)
       t.after(() => rmSync(project, { recursive: true, force: true }));
       cpSync(join(root, fixture.directory, 'src'), join(project, 'src'), { recursive: true });
       const locator = fixture.entry;
-      const args = scene ? ['scenario', scene, project, '--entry', locator, '--source', fixture.vueSource]
+      const args = scene ? ['scenario', scene, project, '--entry', locator]
         : language === 'typescript' ? ['module', project, '--entry', locator]
         : ['source', project, locator];
       const run = spawnSync(join(root, 'implementation/tools/normalizer'), args, {

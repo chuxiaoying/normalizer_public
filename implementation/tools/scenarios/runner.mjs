@@ -5,16 +5,16 @@ import { invokeKernel } from '../frontend/invoke-kernel.mjs';
 import { buildModuleProject } from './module-project.mjs';
 import { entryLocator } from '../frontend/entry-locator.mjs';
 
-const [kernel, scene, root, entryFlag, entry, sourceFlag, original, ...extra] = process.argv.slice(2);
+const [kernel, scene, root, entryFlag, entry, ...extra] = process.argv.slice(2);
 let directory;
 try {
   const fail = message => { throw new Error('SCENARIO_MODULE_INPUT: ' + message); };
-  if (entryFlag !== '--entry' || sourceFlag !== '--source' || !original || extra.length) {
-    fail('expected --entry path#export --source original.vue');
+  if (entryFlag !== '--entry' || !entry || extra.length) {
+    fail('expected --entry path.ts#export');
   }
   const {file, name} = entryLocator(entry, fail);
   directory = mkdtempSync(join(tmpdir(), 'normalizer-scenario-'));
-  const project = buildModuleProject({scene, root, file, name, original, directory});
+  const project = buildModuleProject({scene, root, file, name, directory});
   const result = invokeKernel(kernel, ['--project', project.projectPath, project.entry]);
   if (result.status !== 0) {
     const detail = result.stderr  ;

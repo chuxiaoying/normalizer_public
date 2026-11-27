@@ -1,5 +1,4 @@
 entry: src/ArrearsPage.ts#onLoad
-vueSource: src/ArrearsPage.vue
 reject:
   fragments:
     - "SCENARIO_KERNEL_FAILED:"

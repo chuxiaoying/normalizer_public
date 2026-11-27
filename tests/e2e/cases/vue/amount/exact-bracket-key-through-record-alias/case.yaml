@@ -1,5 +1,4 @@
 entry: src/ArrearsPage.ts#amount
-vueSource: src/ArrearsPage.vue
 expected:
   schema: normalizer.pers/1
   entry:

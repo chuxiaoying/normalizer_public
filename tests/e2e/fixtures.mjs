@@ -5,7 +5,7 @@ import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/ind
 import { loadCases } from './catalog.mjs';
 import { diagnosticCode } from './rejection.mjs';
 
-const sourcePath = /^src\/(?:[\w$.-]+\/)*[\w$.-]+\.(?:java|vue|ts)$/;
+const sourcePath = /^src\/(?:[\w$.-]+\/)*[\w$.-]+\.(?:java|ts)$/;
 const caseName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const sourceDirectory = /^[\w$.-]+$/;
 
@@ -29,19 +29,18 @@ function loadFixture(root, directory, language, entry, scene, inputs) {
     children.some(item => item.name === 'src' && item.isDirectory()),
     directory + ': expected exactly case.yaml and a src directory');
   const fixture = YAML.parse(readFileSync(join(root, file), 'utf8'));
-  const { entry: locator, vueSource, expected, reject } = fixture;
+  const { entry: locator, expected, reject } = fixture;
   assert.notEqual(Object.hasOwn(fixture, 'expected'), Object.hasOwn(fixture, 'reject'),
     file + ': declare exactly one outcome');
   assert.deepEqual(Object.keys(fixture).sort(),
-    ['entry', scene && 'vueSource', reject ? 'reject' : 'expected'].filter(Boolean).sort(), file);
+    ['entry', reject ? 'reject' : 'expected'], file);
   const [main, symbol, extra] = typeof locator === 'string' ? locator.split('#') : [];
   assert.ok(symbol && extra === undefined && sourcePath.test(main), file + ': invalid CLI entry locator');
   const sources = readSources(root, directory).sort(([left], [right]) => left.localeCompare(right));
   const input = Object.fromEntries(sources);
   assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
   if (scene) {
-    assert.ok(main.endsWith('.ts') && symbol === entry && sourcePath.test(vueSource) &&
-      vueSource.endsWith('.vue') && Object.hasOwn(input, vueSource), file + ': invalid Vue source or locator');
+    assert.ok(main.endsWith('.ts') && symbol === entry, file + ': invalid prepared frontend locator');
   } else if (language === 'typescript') {
     assert.equal(locator, 'src/' + entry, file + ': standalone TypeScript locator must match the catalog');
   } else {
@@ -57,9 +56,7 @@ function loadFixture(root, directory, language, entry, scene, inputs) {
     assert.equal(expected?.entry?.function, locator, file + ': the complete PERS must name this entry');
   }
 
-  // Vue's original file is copied only for attribution, not read for analysis.
-  const key = JSON.stringify([language, scene ?? null, locator, vueSource ?? null,
-    sources.filter(([path]) => path !== vueSource)]);
+  const key = JSON.stringify([language, scene ?? null, locator, sources]);
   assert.ok(!inputs.has(key), 'Duplicate CLI input: ' + inputs.get(key) + ' and ' + file);
   inputs.set(key, file);
   return { file, directory, input, ...fixture };
