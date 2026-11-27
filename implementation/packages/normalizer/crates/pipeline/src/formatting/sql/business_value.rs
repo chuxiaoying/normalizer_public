@@ -123,21 +123,6 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
 }
 
 
-// The mathematical CASE already selected its arms. In a minimum/maximum,
-// display the test with its selected operand first, so WHEN and THEN agree.
-pub(super) fn format_selection(expr: &Expr, ctx: &mut FormatCtx) -> Option<String> {
-    let ([(guard, selected)], other) = expr.as_total_case_when()? else {
-        return None;
-    };
-    let op = math::case_orientation::selection_comparison(guard, selected, other)?;
-    let first = super::format_expr_with_ctx(selected, ctx).replace('\n', "\n  ");
-    let second = super::format_expr_with_ctx(other, ctx).replace('\n', "\n  ");
-    let comparison = super::binop_display_token(op);
-    Some(format!(
-        "CASE\n  WHEN {first} {comparison} {second} THEN {first}\n  ELSE {second}\nEND"
-    ))
-}
-
 /// A short-circuit candidate must be safe to observe, not merely algebraically
 /// equivalent on total Boolean values.
 fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {

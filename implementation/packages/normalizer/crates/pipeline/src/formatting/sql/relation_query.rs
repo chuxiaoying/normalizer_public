@@ -2,22 +2,31 @@
 
 use math::{
     domains::relation::{self as r, RelationExpr},
-    BinOpKind, Expr, SymVarOrigin,
+    BinOpKind, Expr,
 };
 
-fn comparison(expr: &Expr) -> Option<(BinOpKind, BinOpKind, &Expr, &Expr)> {
-    let (op, left, right) = expr.as_binop()?;
-    Some((op, op.swapped_comparison()?, left, right))
+fn predicate_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
+    // SQL NULL spelling is a rendering rule, not an operand priority.
+    if let Some((op @ (BinOpKind::Eq | BinOpKind::Ne), left, right)) = expr.as_binop() {
+        let row = if right.is_null() { left.as_row_value() }
+            else if left.is_null() { right.as_row_value() } else { None };
+        if let Some(row) = row {
+            let test = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
+            return format!("{row} {test}");
+        }
+    }
+    crate::format_expr_with_ctx(expr, ctx)
 }
 
-fn symbol_origins(expr: &Expr) -> (bool, bool) {
-    let (mut parameter, mut external) = (false, false);
-    expr.walk(&mut |part| match part.as_sym_var() {
-        Some(SymVarOrigin::Parameter { .. }) => parameter = true,
-        Some(SymVarOrigin::External { .. }) => external = true,
-        _ => {}
-    });
-    (parameter, external)
+fn sort_predicates(predicates: &mut Vec<&Expr>, ctx: &crate::FormatCtx) {
+    let external = ctx.published_external_names();
+    let public = crate::canonical_names::CanonicalNames {
+        heap: &ctx.business_identities,
+        external: (!external.is_empty()).then_some(&external),
+        total_temporals: None,
+        temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
+    };
+    predicates.sort_by_cached_key(|expr| math::canonical_order_key(expr, &public));
 }
 
 fn relation_name<'a>(physical: &'a str, snapshot: Option<u64>, ctx: &'a crate::FormatCtx) -> Option<&'a str> {
@@ -76,31 +85,13 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             let ((left, left_alias), (right, right_alias)) = (left, right);
             let left = relation_name(&left.name, left.snapshot, ctx)?.to_owned();
             let right = relation_name(&right.name, right.snapshot, ctx)?.to_owned();
-            let rank = |expr: &Expr| {
-                let mut left = false;
-                let mut right = false;
-                expr.walk(&mut |node| {
-                    if let Some((alias, _)) = node.as_row_value().and_then(|p| p.split_once('.')) {
-                        left |= alias == left_alias;
-                        right |= alias == right_alias;
-                    }
-                });
-                if left { 0 } else if right { 1 } else { 2 }
-            };
-            let fmt_predicate = |expr: &Expr, ctx: &mut crate::FormatCtx| {
-                let Some((op, _, left, right)) = comparison(expr) else {
-                    return crate::format_expr_with_ctx(expr, ctx);
-                };
-                let token = super::binop_display_token(op);
-                format!("{} {token} {}", crate::format_expr_with_ctx(left, ctx), crate::format_expr_with_ctx(right, ctx))
-            };
-            let on = fmt_predicate(on, ctx);
+            let on = predicate_text(on, ctx);
             let mut filters = filters.iter().collect::<Vec<_>>();
-            filters.sort_by_key(|f| (rank(f), math::canonical_order_key(f, &math::DefaultSortContext)));
+            sort_predicates(&mut filters, ctx);
             let mut out = format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM {left} AS {left_alias}\n    JOIN {right} AS {right_alias} ON {on}");
             for (i, f) in filters.into_iter().enumerate() {
                 out.push_str(if i == 0 { "\n    WHERE " } else { "\n      AND " });
-                out.push_str(&fmt_predicate(f, ctx));
+                out.push_str(&predicate_text(f, ctx));
             }
             out.push_str("\n  ),\n  0\n)");
             return Some(out);
@@ -156,59 +147,11 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         }
         crate::format_expr_with_ctx(e, ctx)
     };
-    fn class(e: &Expr) -> u8 {
-        let (parameter, external) = symbol_origins(e);
-        let mut rank = if parameter { 0 } else if external { 1 } else { 2 };
-        if rank == 2 {
-            if let Some((_, l, r)) = e.as_binop() {
-                if l.as_lit().is_some() || r.as_lit().is_some() {
-                    rank = 3;
-                }
-                if [l, r]
-                    .iter()
-                    .any(|v| matches!(v.as_lit(), Some(math::Lit::Str(_))))
-                {
-                    rank = 4;
-                }
-            }
-        }
-        rank
-    }
-    predicates.sort_by_key(|e| {
-        (
-            class(e),
-            math::canonical_order_key(e, &math::DefaultSortContext),
-        )
-    });
+    sort_predicates(&mut predicates, ctx);
     let projection = fmt(value, ctx);
     let mut clauses = vec![format!("FROM {from}")];
     let inline_body = |clauses: &[String]| {
         clauses.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ")
-    };
-    let predicate_text = |e: &Expr, ctx: &mut crate::FormatCtx| {
-        let Some((op, reverse, left, right)) = comparison(e) else {
-            return fmt(e, ctx);
-        };
-        if matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
-            if right.is_null() && left.as_row_value().is_some() {
-                let predicate = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
-                return format!("{} {predicate}", fmt(left, ctx));
-            }
-        }
-        // Keep physical table columns on the left unless the other operand
-        // is a lower external threshold with its own acquisition identity.
-        let row_first = left.as_row_value().is_none() && right.as_row_value().is_some()
-            && !symbol_origins(left).1;
-        // If row_first swaps, its new RHS has already been proven nonexternal.
-        let (op, a, z) = if row_first
-            || (matches!(op, BinOpKind::Ge | BinOpKind::Gt) && symbol_origins(right).1)
-        {
-            (reverse, right, left)
-        } else {
-            (op, left, right)
-        };
-        let token = super::binop_display_token(op);
-        format!("{} {token} {}", fmt(a, ctx), fmt(z, ctx))
     };
     for (i, p) in predicates.iter().enumerate() {
         clauses.push(format!(

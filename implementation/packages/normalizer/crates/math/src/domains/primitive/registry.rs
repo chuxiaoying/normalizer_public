@@ -87,6 +87,7 @@ impl FuncSemantics {
 #[derive(Clone)]
 pub(crate) struct FuncEntry {
     pub name: String,
+    param_types: Vec<crate::primitive_enum::Primitive>,
     pub return_type: Option<crate::primitive_enum::Primitive>,
     pub semantics: FuncSemantics,
 }
@@ -136,7 +137,7 @@ pub fn register_func(
     return_type: Option<crate::primitive_enum::Primitive>,
     semantics: FuncSemantics,
 ) -> FuncKey {
-    let key_hint = (name.to_string(), param_types);
+    let key_hint = (name.to_string(), param_types.clone());
     let reg = registry();
     // Recheck under the writer so concurrent first registrations share a key.
     if let Some(&key) = reg.read().unwrap().name_arity_index.get(&key_hint) {
@@ -148,6 +149,7 @@ pub fn register_func(
         let key = FuncKey(entries.len() as u32);
         entries.push(FuncEntry {
             name: name.to_string(),
+            param_types,
             return_type,
             semantics,
         });
@@ -173,4 +175,10 @@ pub fn func_return_type(key: FuncKey) -> Option<crate::primitive_enum::Primitive
 pub fn func_semantics(key: FuncKey) -> FuncSemantics {
     let r = registry().read().unwrap();
     r.entries[key.0 as usize].semantics.clone()
+}
+
+pub(crate) fn func_signature(key: FuncKey) -> (String, Vec<crate::Primitive>, Option<crate::Primitive>) {
+    let registry = registry().read().unwrap();
+    let entry = &registry.entries[key.0 as usize];
+    (entry.name.clone(), entry.param_types.clone(), entry.return_type)
 }

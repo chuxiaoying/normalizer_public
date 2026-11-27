@@ -42,7 +42,7 @@ pub use normalize::{
     normalize, normalize_with, try_normalize_with, BudgetKind, NormalizationLimit,
 };
 pub use canonical_order::{
-    canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison,
+    canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison, CanonicalKey,
 };
 pub use primitive_enum::Primitive;
 pub use sort_context::{DefaultSortContext, SortContext};

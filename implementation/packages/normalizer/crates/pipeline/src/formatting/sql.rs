@@ -303,13 +303,6 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         return format!("{l} {token} {r}");
     }
     if let Some(branches) = expr.as_case_when() {
-        if ctx.business_inputs.is_some() {
-            if ctx.relation_scope.slots.is_empty() {
-                if let Some(selection) = business_value::format_selection(expr, ctx) {
-                    return selection;
-                }
-            }
-        }
         return format_case_when(branches, ctx);
     }
     // All other shapes have already been handled. The remaining non-call

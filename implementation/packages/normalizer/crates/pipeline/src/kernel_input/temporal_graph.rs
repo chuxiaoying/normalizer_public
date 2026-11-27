@@ -37,7 +37,7 @@ pub(super) struct Publication {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum Ready {
-    Fold(String, Operand, String),
+    Fold(String, Operand, std::rc::Rc<math::CanonicalKey>),
     Choice(u64),
 }
 
