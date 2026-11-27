@@ -454,6 +454,12 @@ fn relation_structural_key(
             ],
         ),
         R::Distinct(input) => key_node("distinct", vec![relation_structural_key(input, ctx)]),
+        R::Join { left, right, on, filters } => key_node("join", vec![
+            key_node("left", vec![left.0.clone(), left.1.clone()]),
+            key_node("right", vec![right.0.clone(), right.1.clone()]),
+            structural_key(on, ctx),
+            key_node("where", filters.iter().map(|term| structural_key(term, ctx)).collect()),
+        ]),
         R::Grouped(group) => key_node("group", vec![
             group.table().into(), key_node("columns", group.columns().map(str::to_owned).collect()),
         ]),

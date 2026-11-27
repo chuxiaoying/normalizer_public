@@ -635,6 +635,10 @@ fn walk_relation_expr<F: FnMut(&Expr)>(rel: &crate::domains::relation::RelationE
             value.walk(f);
             walk_relation_expr(input, f);
         }
+        RelationExpr::Join { on, filters, .. } => {
+            on.walk(f);
+            filters.iter().for_each(|filter| filter.walk(f));
+        }
         RelationExpr::Distinct(inner) => {
             walk_relation_expr(inner, f);
         }
@@ -725,6 +729,14 @@ impl ExprProfile {
                 parent
             }
             R::Distinct(input) => Self::relation(input).wrapped(),
+            R::Join { left, right, on, filters } => {
+                let mut p = Self::from_children(std::iter::once(on).chain(filters).map(|term| term.1.as_ref()));
+                for (table, alias) in [left, right] {
+                    p.vars.insert(table.clone());
+                    p.vars.insert(alias.clone());
+                }
+                p
+            }
             R::Grouped(group) => {
                 let mut p = Self::leaf();
                 p.vars.insert(group.table().into());

@@ -161,23 +161,6 @@ mod physical_column_contract {
         assert!(!query_row_matches(&fields, Some(&different_shape)));
     }
 
-    #[test]
-    fn generic_correlated_sums_are_not_unconditionally_flattened_to_a_join() {
-        let accounts = RelationExpr::base("accounts", "a");
-        let bills = RelationExpr::base("bills", "b");
-        let key = b::eq(b::row_value("a.id"), b::row_value("b.account_id"));
-        let tenant = b::eq(b::row_value("a.tenant"), b::row_value("b.tenant"));
-        let count = |condition, input| r::relation_sum(RelationExpr::select(condition, input), b::lit_int(1));
-        let joined = count(key.clone(), bills.clone());
-        assert!(inner_join_count(&accounts, &joined).is_some());
-
-        let two_dependent_terms = count(b::and(key, tenant), bills);
-        assert!(inner_join_count(&accounts, &two_dependent_terms).is_none());
-        let independent_inner = count(b::eq(b::row_value("a.account_id"), b::lit_int(1)),
-            RelationExpr::base("bills", "a"));
-        assert!(inner_join_count(&accounts, &independent_inner).is_none());
-    }
-
 
 }
 
@@ -522,7 +505,7 @@ impl<'a> Engine<'a> {
             }
             Operation::JoinCount { source: other, alias: rhs, on, filters } => {
                 let mut names = env.clone();
-                let mut bind = |source: &str, alias: &str| -> Result<RelationExpr> {
+                let mut bind = |source: &str, alias: &str| -> Result<(String, String)> {
                     need(!env.contains_key(alias), "join alias would shadow a local value")?;
                     let Some(Value::Rows(rows)) = env.get(source) else {
                         return Err(fail("join requires two typed table bindings"));
@@ -545,10 +528,10 @@ impl<'a> Engine<'a> {
                         names.insert(format!("{alias}.{field}"),
                             Value::Term(ty, b::row_value(format!("{alias}.{field}"))));
                     }
-                    Ok(RelationExpr::base(name, alias))
+                    Ok((name.clone(), alias.into()))
                 };
-                let outer = bind(&query.source, &query.alias)?;
-                let mut inner = bind(other, rhs)?;
+                let left = bind(&query.source, &query.alias)?;
+                let right = bind(other, rhs)?;
                 let predicate = |expr| {
                     let value = Self::query_value(expr, "", &BTreeMap::new(), &names)?;
                     need(value.ty() == Ty::Bool, "join predicate must be bool")?;
@@ -557,15 +540,14 @@ impl<'a> Engine<'a> {
                 let on = predicate(on)?;
                 let dependency = |predicate: &Expr| join_dependency(predicate, &query.alias, rhs);
                 need(dependency(&on) == 3, "join ON must depend on both typed rows")?;
-                inner = RelationExpr::select(on, inner);
-                for clause in filters {
+                let filters = filters.iter().map(|clause| {
                     let filter = predicate(clause)?;
                     need(dependency(&filter) != 3, "join WHERE may filter one row per clause")?;
-                    inner = RelationExpr::select(filter, inner);
-                }
+                    Ok(filter)
+                }).collect::<Result<Vec<_>>>()?;
                 need(decl.is_none_or(crate::normalized::integral), "join count needs a numeric local")?;
-                // Correlated sum counts every matching pair, with multiplicity.
-                let result = r::relation_sum(outer, r::relation_sum(inner, b::lit_int(1)));
+                // SUM(1) over the matched pairs preserves their multiplicity.
+                let result = math::normalize(r::relation_sum(RelationExpr::Join { left, right, on, filters }, b::lit_int(1)));
                 env.insert(query.binding.clone(), Value::Term(Ty::Integer, result));
                 return Ok(());
             }
@@ -914,41 +896,6 @@ fn join_dependency(predicate: &Expr, left: &str, right: &str) -> u8 {
     mask
 }
 
-pub(crate) struct InnerJoinCount<'a> {
-    pub(crate) left: (&'a str, &'a str),
-    pub(crate) right: (&'a str, &'a str),
-    pub(crate) on: &'a Expr,
-    pub(crate) filters: Vec<&'a Expr>,
-}
-
-pub(crate) fn inner_join_count<'a>(outer: &'a RelationExpr, projection: &'a Expr) -> Option<InnerJoinCount<'a>> {
-    let RelationExpr::Base { name: left_name, alias: left } = outer else { return None };
-    let (math::RelationAggregateKind::Sum, right_relation, Some(one), _) = projection.as_relation_aggregate()? else { return None };
-    if one != &b::lit_int(1) { return None; }
-    let (right_name, right) = relation_base(right_relation)?;
-    if left == right { return None; }
-    fn collect<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
-        if let Some((BinOpKind::And, a, b)) = expr.as_binop() {
-            collect(a, out);
-            collect(b, out);
-        } else { out.push(expr); }
-    }
-    let mut predicates = vec![];
-    let mut input = right_relation;
-    while let RelationExpr::Select { predicate, input: next } = input {
-        collect(predicate, &mut predicates);
-        input = next;
-    }
-    let mut on = None;
-    let mut filters = vec![];
-    for predicate in predicates {
-        if join_dependency(predicate, left, right) == 3 {
-            if on.replace(predicate).is_some() { return None; }
-        } else { filters.push(predicate); }
-    }
-    Some(InnerJoinCount { left: (left_name, left), right: (right_name, right), on: on?, filters })
-}
-
 pub(super) fn correlated_array_relation(relation: &RelationExpr) -> Option<(&str, &str)> {
     let mut base = relation;
     while let RelationExpr::Select { input, .. } = base { base = input; }
@@ -965,7 +912,6 @@ pub(super) fn is_table_expression(
     scalar_element: bool,
     nested_arrays: &std::collections::BTreeSet<String>,
     correlated: &std::collections::BTreeSet<(String, String)>,
-    join_tables: &std::collections::BTreeSet<(String, String)>,
     record_inputs: &BTreeMap<String, std::collections::BTreeSet<String>>,
     record_rows: &BTreeMap<String, std::collections::BTreeSet<String>>,
 ) -> bool {
@@ -983,7 +929,6 @@ pub(super) fn is_table_expression(
     }
     let table_source = |relation: &RelationExpr| relation_base(relation).is_some_and(|(name, alias)| {
         (name == alias && tables.contains_key(name))
-            || join_tables.contains(&(name.into(), alias.into()))
             || (alias == "value" && arrays.contains(name))
             || record_inputs.contains_key(name)
     });
@@ -995,6 +940,9 @@ pub(super) fn is_table_expression(
                 || (value == Some(&b::lit_int(1)) &&
                     matches!(relation, RelationExpr::Grouped(group) if tables.get(group.table())
                         .is_some_and(|columns| group.columns().all(|column| columns.contains_key(column)))))
+                || (value == Some(&b::lit_int(1)) &&
+                    matches!(relation, RelationExpr::Join { left, right, .. }
+                        if tables.contains_key(&left.0) && tables.contains_key(&right.0)))
                 || relation_base(relation).is_some_and(|(name, _)| nested_arrays.contains(name))
                 || correlated_array_relation(relation).is_some_and(|pair|
                     correlated.iter().any(|(group, element)| pair == (group.as_str(), element.as_str()))),

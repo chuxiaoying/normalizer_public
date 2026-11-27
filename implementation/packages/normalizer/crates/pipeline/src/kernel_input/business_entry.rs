@@ -466,17 +466,15 @@ impl EntryContext {
             let mut scalar_element = false;
             let mut record_rows = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
             let mut correlated = std::collections::BTreeSet::new();
-            let mut join_tables = std::collections::BTreeSet::new();
             expression.walk(&mut |node| {
                 if let Some((kind, relation, select, _)) = node.as_relation_aggregate() {
                     use super::business_relation::{correlated_array_relation, relation_base};
                     use math::RelationAggregateKind::Sum;
                     if kind == Sum {
-                        if let Some(join) = select.and_then(|p| super::business_relation::inner_join_count(relation, p)) {
-                            for (table, alias) in [join.left, join.right] {
+                        if let crate::kernel_input::RelationExpr::Join { left, right, .. } = relation {
+                            for (table, alias) in [left, right] {
                                 if let Some(columns) = result.source_tables.get(table) {
-                                    join_tables.insert((table.into(), alias.into()));
-                                    record_rows.entry(alias.into()).or_default().extend(columns.keys().cloned());
+                                    record_rows.entry(alias.clone()).or_default().extend(columns.keys().cloned());
                                 }
                             }
                         }
@@ -514,7 +512,7 @@ impl EntryContext {
                     }
                     Some(SymVarOrigin::Temporal { .. }) => super::temporal_definition_id(node)
                         .is_some_and(|id| definition_names.contains_key(&id)),
-                    None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &join_tables, &record_inputs, &record_rows)
+                    None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &record_inputs, &record_rows)
                         || (certified_composite_return && node.as_array_lit().is_some())
                         || (certified_composite_return && self.returns == "map<text,text>"
                             && math::domains::composite::ordered_text_map_entries(node).is_some())

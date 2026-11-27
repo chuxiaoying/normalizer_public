@@ -51,14 +51,15 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
                 return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {table}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
             }
         }
-        if let Some(mut join) = crate::kernel_input::business_relation::inner_join_count(relation, value) {
+        if let RelationExpr::Join { left, right, on, filters } = relation {
+            let ((left, left_alias), (right, right_alias)) = (left, right);
             let rank = |expr: &Expr| {
                 let mut left = false;
                 let mut right = false;
                 expr.walk(&mut |node| {
                     if let Some((alias, _)) = node.as_row_value().and_then(|p| p.split_once('.')) {
-                        left |= alias == join.left.1;
-                        right |= alias == join.right.1;
+                        left |= alias == left_alias;
+                        right |= alias == right_alias;
                     }
                 });
                 if left { 0 } else if right { 1 } else { 2 }
@@ -70,11 +71,11 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
                 let token = super::binop_display_token(op);
                 format!("{} {token} {}", crate::format_expr_with_ctx(left, ctx), crate::format_expr_with_ctx(right, ctx))
             };
-            let ((left, left_alias), (right, right_alias)) = (join.left, join.right);
-            let on = fmt_predicate(join.on, ctx);
-            join.filters.sort_by_key(|f| (rank(f), math::canonical_order_key(f, &math::DefaultSortContext)));
+            let on = fmt_predicate(on, ctx);
+            let mut filters = filters.iter().collect::<Vec<_>>();
+            filters.sort_by_key(|f| (rank(f), math::canonical_order_key(f, &math::DefaultSortContext)));
             let mut out = format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM {left} AS {left_alias}\n    JOIN {right} AS {right_alias} ON {on}");
-            for (i, f) in join.filters.into_iter().enumerate() {
+            for (i, f) in filters.into_iter().enumerate() {
                 out.push_str(if i == 0 { "\n    WHERE " } else { "\n      AND " });
                 out.push_str(&fmt_predicate(f, ctx));
             }

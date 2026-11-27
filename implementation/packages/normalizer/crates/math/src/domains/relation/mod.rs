@@ -78,6 +78,14 @@ pub enum RelationExpr {
     Distinct(Box<RelationExpr>),
     ProjectedUnion(ProjectedColumns),
     Grouped(GroupedColumns),
+    /// Inner join of two bound table aliases. Predicates remain separate
+    /// so a generic nested SUM cannot masquerade as an authored join.
+    Join {
+        left: (String, String),
+        right: (String, String),
+        on: Expr,
+        filters: Vec<Expr>,
+    },
 }
 
 impl RelationExpr {
@@ -196,6 +204,18 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
             value: crate::normalize(value),
             alias,
         },
+        RelationExpr::Join { left, right, on, filters } => {
+            let on = crate::normalize(on);
+            let where_all = crate::normalize(filters.into_iter().fold(builder::lit_bool(true), builder::and));
+            if crate::normalize(builder::and(on.clone(), where_all.clone())).as_bool() == Some(false) {
+                return RelationExpr::Empty;
+            }
+            let mut filters = Vec::new();
+            where_all.for_each_conjunct(|term| {
+                if term.as_bool() != Some(true) { filters.push(term.clone()); }
+            });
+            RelationExpr::Join { left, right, on, filters }
+        }
         leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_)) => leaf,
     }
 }

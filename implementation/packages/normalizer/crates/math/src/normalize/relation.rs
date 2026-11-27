@@ -124,6 +124,8 @@ fn relation_profile_size(relation: &RelationExpr) -> usize {
         RelationExpr::Distinct(input) => 1 + relation_profile_size(input),
         RelationExpr::ProjectedUnion(columns) => 1 + columns.iter().len(),
         RelationExpr::Grouped(group) => 1 + group.columns().count(),
+        RelationExpr::Join { on, filters, .. } =>
+            1 + on.size() + filters.iter().map(Expr::size).sum::<usize>(),
     }
 }
 

@@ -153,3 +153,17 @@
           ),
           0
         )
+
+- name: a-repeated-filter-and-true-do-not-change-join-pairs
+  edits:
+    - {from: 'a.id == accountId and b.status == "OPEN"', to: 'a.id == accountId and b.status == "OPEN" and true and b.status == "OPEN"'}
+
+- name: join-on-needs-both-real-row-sources
+  edits:
+    - {from: 'on a.id == b.account_id', to: 'on a.id == accountId'}
+  reject: ['[NORM-PROJECT]', 'join ON must depend on both typed rows']
+
+- name: cross-row-comparisons-cannot-be-silently-moved-from-where-to-on
+  edits:
+    - {from: 'a.id == accountId and b.status == "OPEN"', to: 'a.id == accountId and a.id != b.account_id'}
+  reject: ['[NORM-PROJECT]', 'join WHERE may filter one row per clause']
