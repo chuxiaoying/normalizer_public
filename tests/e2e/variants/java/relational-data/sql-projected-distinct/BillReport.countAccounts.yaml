@@ -72,3 +72,41 @@
   edits:
     - { from: 'posted = from posted_bill as q yield', to: 'posted = from posted_bill as q where q.account_id > 0 yield' }
   reject: ['[NORM-PROJECT]', 'projected union needs direct table rows without filters']
+- name: two-distinct-account-columns-from-one-table-both-contribute
+  edits:
+    - from: 'long count;'
+      to: 'AccountRow[] alternate; /* @normalizer-ir alternate = from pending_bill as q yield {accountId: q.alternate_account_id} */ long count;'
+    - from: 'pending.accountId, posted.accountId'
+      to: 'pending.accountId, alternate.accountId, posted.accountId'
+  expect:
+    - {path: [E, pending_bill, columns, alternate_account_id], add: number}
+    - path: [R]
+      value: |-
+        SELECT COUNT(*) FROM (
+          SELECT account_id FROM pending_bill
+          UNION
+          SELECT alternate_account_id FROM pending_bill
+          UNION
+          SELECT account_id FROM posted_bill
+        ) AS accounts
+- name: reordering-and-repeating-a-physical-projection-keeps-one-canonical-union
+  edits:
+    - from: 'long count;'
+      to: 'AccountRow[] alternate; /* @normalizer-ir alternate = from pending_bill as q yield {accountId: q.alternate_account_id} */ long count;'
+    - from: 'pending.accountId, posted.accountId'
+      to: 'posted.accountId, alternate.accountId, pending.accountId, pending.accountId'
+  expect:
+    - {path: [E, pending_bill, columns, alternate_account_id], add: number}
+    - path: [R]
+      value: |-
+        SELECT COUNT(*) FROM (
+          SELECT account_id FROM pending_bill
+          UNION
+          SELECT alternate_account_id FROM pending_bill
+          UNION
+          SELECT account_id FROM posted_bill
+        ) AS accounts
+- name: a-single-written-projection-is-not-a-union-directive
+  edits:
+    - {from: 'pending.accountId, posted.accountId', to: 'pending.accountId'}
+  reject: ['[SOURCE-PARSE-FAILED]', 'projected union needs at least two closed branches']

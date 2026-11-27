@@ -202,7 +202,6 @@ mod physical_column_contract {
         ] {
             assert!(projected_union_columns(&RelationExpr::Union(vec![branch])).is_none());
         }
-        assert!(projected_union_columns(&RelationExpr::Union(Vec::new())).is_none());
     }
 }
 
@@ -972,7 +971,8 @@ pub(super) fn correlated_array_relation(relation: &RelationExpr) -> Option<(&str
 
 pub(crate) fn projected_union_columns(relation: &RelationExpr) -> Option<Vec<(&str, &str)>> {
     let RelationExpr::Union(branches) = relation else { return None; };
-    if branches.is_empty() { return None; }
+    // The source directive parses at least two projections. Normalization
+    // can deduplicate them to one, never remove every branch.
     branches.iter().map(|branch| {
         let RelationExpr::Project { value, alias, input } = branch else { return None; };
         let RelationExpr::Base { name, alias: source } = input.as_ref() else { return None; };
