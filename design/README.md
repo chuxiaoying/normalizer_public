@@ -30,7 +30,6 @@
 - [关系指令的统一写法](secondary/关系指令的统一写法.md)
 - [关系读取的快照边界](secondary/关系读取的快照边界.md)
 - [回执与异常怎样进入 PERS](secondary/回执与异常怎样进入%20PERS.md)
-- [完整二分 CASE 怎么选方向](secondary/完整二分%20CASE%20怎么选方向.md)
 - [观察身份与稳定编号](secondary/观察身份与稳定编号.md)
 - [什么时候可以引入 LET](secondary/什么时候可以引入%20LET.md)
 - [精确数值与区间怎样化简](secondary/精确数值与区间怎样化简.md)
