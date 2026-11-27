@@ -242,6 +242,12 @@ impl Keys<'_> {
             RowValue { alias, acquired_integer, sql: None } => binding(if alias.contains('.') { Class::Read } else { Class::Reference },
                 if *acquired_integer { "integer" } else { "row_value" }, Identity::Column(path(alias))),
             Call { key, args } => {
+                if let Some((source, order)) = crate::domains::relation::order_value_components(expression) {
+                    let children = std::iter::once(Some(self.relation(source)))
+                        .chain(order.iter().map(|key| Some(self.expr(key)))).collect();
+                    return node(Class::Relation, named("order_by"), vec!["relation".into()],
+                        vec!["ascending_non_null_integer_keys".into()], vec![], children, None, 0, 1);
+                }
                 let (name, parameters, result) = registry::func_signature(*key);
                 let ty = result.map(|result| result.algebra_name().into()).into_iter().collect();
                 let signature = parameters.iter().map(|p| p.algebra_name().into()).collect();
@@ -316,8 +322,14 @@ impl Keys<'_> {
                 Payload::Table(TableKey { path: path(name), snapshot: snapshot.map(|id| observation(self.context, id)) }),
                 Payload::Text(alias.clone()),
             ], vec![]),
-            RelationExpr::Vector { value, alias } =>
-                ("vector", vec![Payload::Text(alias.clone())], vec![Some(self.expr(value))]),
+            RelationExpr::Vector { value, alias } => {
+                if alias == "ordered" && crate::domains::relation::order_value_components(value).is_some() {
+                    // The constructor wraps ORDER BY only to carry it in
+                    // RelationExpr. This adapter is not another operation.
+                    return self.expr(value);
+                }
+                ("vector", vec![Payload::Text(alias.clone())], vec![Some(self.expr(value))])
+            }
             RelationExpr::Select { predicate, input } =>
                 ("select", vec![], vec![Some(self.relation(input)), Some(self.expr(predicate))]),
             RelationExpr::Project { value, alias, input } =>

@@ -13,7 +13,7 @@ pub fn order_by(
 ) -> RelationExpr {
     let key_count = 1 + remaining.len();
     let op = crate::register_func(
-        &format!("relation.order_by/{key_count}"),
+        "relation.order_by",
         std::iter::once(Primitive::Composite)
             .chain((0..key_count).map(|_| Primitive::Number))
             .collect(),
@@ -35,7 +35,7 @@ pub fn order_components(relation: &RelationExpr) -> Option<(&RelationExpr, &[Exp
 pub fn order_value_components(value: &Expr) -> Option<(&RelationExpr, &[Expr])> {
     let (op, args) = value.as_call()?;
     let (source, keys) = args.split_first()?;
-    if keys.is_empty() || crate::func_name(op) != format!("relation.order_by/{}", keys.len()) {
+    if keys.is_empty() || crate::func_name(op) != "relation.order_by" {
         return None;
     }
     Some((source.as_relation()?, keys))
