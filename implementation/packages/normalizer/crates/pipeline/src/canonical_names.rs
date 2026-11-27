@@ -31,6 +31,7 @@ impl math::SortContext for CanonicalNames<'_> {
 pub(crate) struct ChoiceKeys<'a> {
     pub(crate) base: CanonicalNames<'a>,
     pub(crate) slots: &'a BTreeMap<u64, usize>,
+    pub(crate) cases: &'a std::collections::HashMap<math::Expr, math::CaseArmKeys>,
 }
 
 impl math::SortContext for ChoiceKeys<'_> {
@@ -38,6 +39,8 @@ impl math::SortContext for ChoiceKeys<'_> {
     fn external_names(&self) -> Option<&BTreeMap<u64, String>> { self.base.external_names() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
     fn reduce_shapes(&self) -> Option<&BTreeMap<u64, math::ReduceShape>> { self.base.reduce_shapes() }
+    fn case_arm_keys(&self, expression: &math::Expr) -> Option<&math::CaseArmKeys> { self.cases.get(expression) }
+    fn has_case_arm_keys(&self) -> bool { !self.cases.is_empty() }
     fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { (!self.slots.is_empty()).then_some(self.slots) }
     fn temporal_is_total(&self, id: u64) -> bool { self.base.temporal_is_total(id) }
 }

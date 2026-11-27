@@ -244,13 +244,17 @@ impl Keys<'_> {
                 let mut slots = Vec::new();
                 let terminal = branches.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true));
                 let decision_count = branches.len() - usize::from(terminal);
-                for (guard, value) in &branches[..decision_count] {
-                    slots.extend([Some(self.expr(guard)), Some(self.expr(value))]);
+                let scoped = ctx.case_arm_keys(expression);
+                for (index, (guard, value)) in branches[..decision_count].iter().enumerate() {
+                    let (guard, value) = scoped.map_or_else(|| (self.expr(guard), self.expr(value)),
+                        |arms| arms[index].clone());
+                    slots.extend([Some(guard), Some(value)]);
                 }
                 let mut case = node(Class::Construct, named("case"), vec![], vec![], vec![], slots,
                     None, branches.len(), 1);
                 if terminal {
-                    let fallback = self.expr(&branches[decision_count].1);
+                    let fallback = scoped.map_or_else(|| self.expr(&branches[decision_count].1),
+                        |arms| arms[decision_count].1.clone());
                     let key = Rc::get_mut(&mut case).expect("new CASE key");
                     key.arms += &fallback.arms;
                     key.operations += &fallback.operations;
@@ -314,7 +318,7 @@ thread_local! {
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
     let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
     if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.external_names().is_some()
-        || ctx.in_reduce_body() || ctx.choice_slots().is_some() || ctx.reduce_shapes().is_some_and(|shapes| !shapes.is_empty())
+        || ctx.in_reduce_body() || ctx.has_case_arm_keys() || ctx.choice_slots().is_some() || ctx.reduce_shapes().is_some_and(|shapes| !shapes.is_empty())
     {
         return keys.expr(expr);
     }
@@ -391,7 +395,7 @@ pub fn named_parameter_key(name: &str, kind: &str) -> Rc<CanonicalKey> {
     binding(Class::Reference, kind, Identity::Parameter(path(name)))
 }
 
-fn wrap_choices(mut value: Rc<CanonicalKey>, prefix: &[ChoiceOperands]) -> Rc<CanonicalKey> {
+pub fn wrap_choices(mut value: Rc<CanonicalKey>, prefix: &[ChoiceOperands]) -> Rc<CanonicalKey> {
     for (source, fallback) in prefix.iter().rev() {
         value = node(Class::Relation, named("choose"), value.types.clone(), value.contract.clone(),
             vec![], vec![Some(source.clone()), Some(fallback.clone()), Some(value)], None, 0, 1);

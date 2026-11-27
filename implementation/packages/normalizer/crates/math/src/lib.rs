@@ -43,10 +43,10 @@ pub use normalize::{
 };
 pub use canonical_order::{
     canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison, CanonicalKey,
-    canonical_let_plan, let_eager_children, named_parameter_key, ChoiceOperands,
+    canonical_let_plan, let_eager_children, named_parameter_key, wrap_choices, ChoiceOperands,
 };
 pub use primitive_enum::Primitive;
-pub use sort_context::{DefaultSortContext, ReduceBodyContext, ReduceShape, SortContext};
+pub use sort_context::{CaseArmKeys, DefaultSortContext, ReduceBodyContext, ReduceShape, SortContext};
 pub use symvar::{ScalarSymbolType, SymVarOrigin};
 
 /// Exact mathematical integer, distinct from source-language machine words.

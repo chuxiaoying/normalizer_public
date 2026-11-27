@@ -571,33 +571,38 @@ impl Expr {
 
     /// Walk all sub-expressions (including self) depth-first, calling `f` on each.
     pub fn walk<F: FnMut(&Expr)>(&self, f: &mut F) {
-        f(self);
+        self.walk_pruned(&mut |node| { f(node); true });
+    }
+
+    /// Walk depth-first, descending only when the visitor accepts this node.
+    pub fn walk_pruned<F: FnMut(&Expr) -> bool>(&self, f: &mut F) {
+        if !f(self) { return; }
         match self.kind() {
             ExprKind::Lit(_)
             | ExprKind::SymVar { .. }
             | ExprKind::HeapRef(_)
             | ExprKind::RowValue { .. } => {}
             ExprKind::BinOp { left, right, .. } => {
-                left.walk(f);
-                right.walk(f);
+                left.walk_pruned(f);
+                right.walk_pruned(f);
             }
             ExprKind::UnaryOp { operand, .. } => {
-                operand.walk(f);
+                operand.walk_pruned(f);
             }
             ExprKind::CaseWhen { branches } => {
                 for (cond, val) in branches {
-                    cond.walk(f);
-                    val.walk(f);
+                    cond.walk_pruned(f);
+                    val.walk_pruned(f);
                 }
             }
             ExprKind::Call { args, .. } => {
                 for arg in args {
-                    arg.walk(f);
+                    arg.walk_pruned(f);
                 }
             }
             ExprKind::ArrayLit(items) => {
                 for item in items {
-                    item.walk(f);
+                    item.walk_pruned(f);
                 }
             }
             ExprKind::RelationAggregate {
@@ -608,10 +613,10 @@ impl Expr {
             } => {
                 walk_relation_expr(relation, f);
                 if let Some(se) = select_expr {
-                    se.walk(f);
+                    se.walk_pruned(f);
                 }
                 if let Some(de) = default_expr {
-                    de.walk(f);
+                    de.walk_pruned(f);
                 }
             }
             ExprKind::Relation(rel) => {
@@ -622,23 +627,23 @@ impl Expr {
 }
 
 /// Walk all Expr nodes inside a RelationExpr.
-fn walk_relation_expr<F: FnMut(&Expr)>(rel: &crate::domains::relation::RelationExpr, f: &mut F) {
+fn walk_relation_expr<F: FnMut(&Expr) -> bool>(rel: &crate::domains::relation::RelationExpr, f: &mut F) {
     use crate::domains::relation::RelationExpr;
     match rel {
         RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_)
         | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. } => {}
-        RelationExpr::Vector { value, .. } => value.walk(f),
+        RelationExpr::Vector { value, .. } => value.walk_pruned(f),
         RelationExpr::Select { predicate, input } => {
-            predicate.walk(f);
+            predicate.walk_pruned(f);
             walk_relation_expr(input, f);
         }
         RelationExpr::Project { value, input, .. } => {
-            value.walk(f);
+            value.walk_pruned(f);
             walk_relation_expr(input, f);
         }
         RelationExpr::Join { on, filters, .. } => {
-            on.walk(f);
-            filters.iter().for_each(|filter| filter.walk(f));
+            on.walk_pruned(f);
+            filters.iter().for_each(|filter| filter.walk_pruned(f));
         }
         RelationExpr::Distinct(inner) => {
             walk_relation_expr(inner, f);

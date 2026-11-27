@@ -154,8 +154,9 @@ impl FormatCtx {
         }
     }
 
-    fn eligible_choices(&self, expression: &Expr) -> Vec<usize> {
-        let active = self.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+    fn eligible_choices(
+        &self, expression: &Expr, active: &Expr, bound: &[usize],
+    ) -> Vec<usize> {
         let mut needed = std::collections::BTreeSet::new();
         let slots = self.relation_scope.slots.clone();
         if slots.is_empty() { return vec![]; }
@@ -167,35 +168,72 @@ impl FormatCtx {
             }
         });
         needed.into_iter().filter(|slot| matches!(&slots[*slot], scoped_relation::Slot::Choice { guard, .. }
-            if !self.relation_scope.members.contains_key(slot) && math::builder::path_implies(&active, guard))).collect()
+            if !bound.contains(slot) && math::builder::path_implies(active, guard))).collect()
     }
 
-    fn active_choice_slots(&self) -> std::collections::BTreeMap<u64, usize> {
+    fn choice_keys(&self, order: &[usize]) -> std::collections::BTreeMap<u64, usize> {
         self.temporal_names.iter().filter_map(|(&id, &slot)| {
-            self.relation_scope.member_order.iter().position(|&active| active == slot)
-                .map(|position| (id, position))
+            order.iter().position(|&active| active == slot).map(|position| (id, position))
         }).collect()
     }
 
-    fn choice_prefix_keys(
+    fn prepare_value_keys(
         &self, expression: &Expr, external: &std::collections::BTreeMap<u64, String>,
-    ) -> (Vec<math::ChoiceOperands>, std::collections::BTreeMap<u64, usize>) {
-        let mut lexical = self.active_choice_slots();
-        let ids: std::collections::BTreeMap<_, _> = self.temporal_names.iter().map(|(&id, &slot)| (slot, id)).collect();
-        let mut shapes = Vec::new();
-        for slot in self.eligible_choices(expression) {
-            let scoped_relation::Slot::Choice { shape, .. } = &self.relation_scope.slots[slot] else { unreachable!("certified choice slot") };
-            let ctx = crate::canonical_names::ChoiceKeys { base: CanonicalNames { heap: &self.business_identities,
-                external: (!external.is_empty()).then_some(external), total_temporals: None,
-                reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) }, slots: &lexical };
-            shapes.push((shape.source.key(&ctx), shape.fallback.key(&ctx)));
-            lexical.insert(ids[&slot], self.relation_scope.member_order.len() + shapes.len() - 1);
+        active: &Expr, bound: &[usize], enter: bool,
+    ) -> scoped_relation::ValueKeys {
+        use scoped_relation::{Slot, ValueKeys};
+        let mut order = bound.to_vec();
+        let mut prepared = ValueKeys { lexical: self.choice_keys(&order), ..ValueKeys::default() };
+        let empty_cases = HashMap::new();
+        let base = || CanonicalNames { heap: &self.business_identities,
+            external: (!external.is_empty()).then_some(external), total_temporals: None,
+            reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) };
+        if enter {
+            for slot in self.eligible_choices(expression, active, bound) {
+                let Slot::Choice { shape, .. } = &self.relation_scope.slots[slot] else {
+                    unreachable!("certified choice slot");
+                };
+                let compare = crate::canonical_names::ChoiceKeys {
+                    base: base(), slots: &prepared.lexical, cases: &empty_cases,
+                };
+                prepared.prefix.push((shape.source.key(&compare), shape.fallback.key(&compare)));
+                order.push(slot);
+                prepared.lexical = self.choice_keys(&order);
+            }
         }
-        (shapes, lexical)
+        if !expression.has_case_when() || !self.relation_scope.slots.iter().any(|slot| matches!(slot, Slot::Choice { .. })) {
+            return prepared;
+        }
+        // Visit each CASE only from its enclosing scope. A structurally equal
+        // CASE under a different arm has different availability and keys.
+        expression.walk_pruned(&mut |part| {
+            let Some(branches) = part.as_case_when() else { return part.has_case_when(); };
+            if prepared.cases.contains_key(part) { return false; }
+            let child_key = |child: &Expr, domain: &Expr, enter| {
+                let inner = self.prepare_value_keys(child, external, domain, &order, enter);
+                let compare = crate::canonical_names::ChoiceKeys {
+                    base: base(), slots: &inner.lexical, cases: &inner.cases,
+                };
+                math::wrap_choices(math::canonical_order_key(child, &compare), &inner.prefix)
+            };
+            let mut remaining = active.clone();
+            let arms = branches.iter().map(|(guard, value)| {
+                let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
+                // A guard uses the enclosing bindings. Starting a new
+                // choice in the guard would not bind its selected arm.
+                let pair = (child_key(guard, &remaining, false), child_key(value, &selected, true));
+                remaining = next;
+                pair
+            }).collect();
+            prepared.cases.insert(part.clone(), arms);
+            false
+        });
+        prepared
     }
 
     pub(crate) fn in_relation_scope(&mut self, expression: &Expr, render: impl FnOnce(&mut Self) -> String) -> String {
-        let needed = self.eligible_choices(expression);
+        let active = self.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+        let needed = self.eligible_choices(expression, &active, &self.relation_scope.member_order);
         let slots = self.relation_scope.slots.clone();
         let mut bindings = Vec::new();
         for slot in needed {
@@ -365,13 +403,18 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some(rendered) = business_value::format_guarded_boolean(op, left, right, ctx) {
             return rendered;
         }
-        let lexical = ctx.active_choice_slots();
+        let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+        let keys = if op.swapped_comparison().is_some() {
+            ctx.prepare_value_keys(expr, &ctx.business_states, &domain, &ctx.relation_scope.member_order, false)
+        } else {
+            scoped_relation::ValueKeys::default()
+        };
         let public = crate::canonical_names::ChoiceKeys { base: CanonicalNames {
             heap: &ctx.business_identities,
             external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
             total_temporals: None, reductions: Some(&ctx.reductions),
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-        }, slots: &lexical };
+        }, slots: &keys.lexical, cases: &keys.cases };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.
         let (op, left, right) = match math::canonical_order_ordered_comparison(op, left, right, &public) {

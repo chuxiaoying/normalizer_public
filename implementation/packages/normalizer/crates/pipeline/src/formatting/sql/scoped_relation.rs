@@ -1,6 +1,6 @@
 //! Internal graph projection for the lexical REDUCE and CHOOSE forms of RA-09.
 use math::Expr;
-use std::{collections::{BTreeMap, BTreeSet}, rc::Rc};
+use std::{collections::{BTreeMap, BTreeSet, HashMap}, rc::Rc};
 
 #[derive(Clone)]
 pub(crate) enum Operand {
@@ -36,6 +36,13 @@ impl ChoiceOuter {
 pub(crate) struct ChoiceShape {
     pub(crate) source: ChoiceOuter,
     pub(crate) fallback: ChoiceOuter,
+}
+
+#[derive(Default)]
+pub(super) struct ValueKeys {
+    pub(super) prefix: Vec<math::ChoiceOperands>,
+    pub(super) lexical: BTreeMap<u64, usize>,
+    pub(super) cases: HashMap<Expr, math::CaseArmKeys>,
 }
 
 #[derive(Default)]

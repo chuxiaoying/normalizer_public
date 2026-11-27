@@ -13,6 +13,10 @@ pub struct ReduceShape {
     pub body: crate::Expr,
 }
 
+/// Prebound WHEN and result keys, in source slot order. The last WHEN is
+/// omitted from the actual structure when its result is the ELSE.
+pub type CaseArmKeys = Vec<(std::rc::Rc<crate::CanonicalKey>, std::rc::Rc<crate::CanonicalKey>)>;
+
 /// 排序上下文 trait — 提供 HeapRef display_name 查询能力
 pub trait SortContext {
     /// 查询 HeapRef 的 display_name（入口参数或命名状态的公开路径）
@@ -34,6 +38,12 @@ pub trait SortContext {
     /// A selected member bound in the current YIELD, independent of
     /// publication handles (which also index unrelated REDUCE nodes).
     fn choice_slots(&self) -> Option<&std::collections::BTreeMap<u64, usize>> { None }
+
+    /// Resolve a CASE prepared in this lexical scope. Scope construction
+    /// already proved availability; key construction does not prove it again.
+    fn case_arm_keys(&self, _case: &crate::Expr) -> Option<&CaseArmKeys> { None }
+
+    fn has_case_arm_keys(&self) -> bool { false }
 
     /// Retained evaluation handles lower to this structure for comparison.
     fn reduce_shapes(&self) -> Option<&std::collections::BTreeMap<u64, ReduceShape>> { None }
