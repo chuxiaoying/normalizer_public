@@ -158,6 +158,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       if (inputs.get(n.text) === declaration && declaration) return variable(n.text);
       const slot = scope.get(n.text);
       if (!slot || declaration !== slot.declaration) fail('unbound local ' + n.text);
+      if (slot.recordFields) fail('local record reference cannot escape its synchronous scope: ' + n.text);
       if (slot.assignedByDirective) typedIRReads.add(n.getStart(sf));
       return variable(n.text);
     }
@@ -172,6 +173,14 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       while (ts.isPropertyAccessExpression(root) && !root.questionDotToken) {
         fields.unshift(root.name.text);
         root = unwrapParens(root.expression);
+      }
+      if (ts.isIdentifier(root)) {
+        const slot = scope.get(root.text);
+        if (slot?.recordFields && symbol(root) === slot.declaration) {
+          const field = fields.length === 1 && slot.recordFields.get(fields[0]);
+          if (!field) fail('unbound local record field ' + n.getText(sf));
+          return variable(field);
+        }
       }
       if (ts.isIdentifier(root) && stateDeclarations.has(root.text)
           && symbol(root) === stateDeclarations.get(root.text)) {
@@ -231,6 +240,23 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
           uninitialized = name;
           continue;
         }
+        if (synchronous && ts.isObjectLiteralExpression(init) && !writable) {
+          // These nonescaping records are local to this synchronous entry.
+          // Use bound field versions so updating a shadowing local does
+          // not become a write to the module's entry-state object.
+          const recordFields = new Map();
+          for (const property of init.properties) {
+            if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)
+                || property.name.text === '__proto__' || recordFields.has(property.name.text)) {
+              fail('local record requires plain unique initialized fields');
+            }
+            const key = local();
+            steps.push({op: 'let', name: key, value: lowerValue(property.initializer, scope)});
+            recordFields.set(property.name.text, key);
+          }
+          scope.set(name, {declaration: dec, recordFields});
+          continue;
+        }
         if (ts.isAwaitExpression(init) && ts.isCallExpression(init.expression)) {
           const call = init.expression, callee = call.expression;
           if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression) ||
@@ -266,6 +292,17 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
         while (ts.isPropertyAccessExpression(root) && !root.questionDotToken) {
           target.unshift(root.name.text);
           root = unwrapParens(root.expression);
+        }
+        if (ts.isIdentifier(root)) {
+          const slot = scope.get(root.text);
+          if (slot?.recordFields && symbol(root) === slot.declaration) {
+            if (target.length !== 1 || !slot.recordFields.has(target[0])) fail('unbound local record write');
+            const value = lowerValue(st.expression.right, scope);
+            const key = local();
+            steps.push({op: 'let', name: key, value});
+            slot.recordFields.set(target[0], key);
+            continue;
+          }
         }
         if (!ts.isIdentifier(root) || !stateDeclarations.has(root.text) ||
             symbol(root) !== stateDeclarations.get(root.text)) {

@@ -142,11 +142,11 @@ function compile(source, file, entry, physicalPath, linked) {
   if (entry.includes('.')) {
     const sf = linked?.ast ?? parseSourceModule(physicalPath, source, fail, ts.ScriptKind.TS);
     const official = !linked && sf.statements.some(isOfficialNamespaceImport);
-    const {fn, fields} = closedReceiver(sf, entry, fail, {linked: Boolean(linked) || official});
+    const {fn, fields, assembly} = closedReceiver(sf, entry, fail, {linked: Boolean(linked) || official});
     const formals = namedParameters(fn.parameters);
     if (formals.error) fail(formals.error);
     const checker = !linked ? checkedTypeScript(physicalPath, sf, fail, {allowOfficial: official}) : undefined;
-    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, linked, officialChecker: official ? checker : undefined});
+    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, receiverAssembly: assembly, linked, officialChecker: official ? checker : undefined});
   }
   if (linked) {
     const sf = linked.ast;
@@ -213,7 +213,7 @@ function compile(source, file, entry, physicalPath, linked) {
   return compileScalar(sf, fn, file, entry, formals.names, {officialChecker: usesStandard ? checker : undefined});
 }
 
-function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, officialChecker} = {}) {
+function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAssembly = [], linked, officialChecker} = {}) {
   // Nonstandard imports, top-level initialization and other module state
   // require a separate certified linked graph or receiver assembly.
   if (!receiverFields && !linked && sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
@@ -260,6 +260,15 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
   };
   // Text literals are admitted for closed text expressions, not as vector slots.
   const textExpressions = checker || returnDomain === 'string' || returnDomain === nullableText;
+  // Lower all module-startup expressions, including fields unused by the
+  // selected method. The linked scalar rules admit only closed, pure
+  // computations here, so reading their acquired value may reuse that IR.
+  const initializerValues = new Map();
+  for (const initializer of receiverAssembly) {
+    const value = expression(lowerExpression(initializer, sf, lowerCall), new Map());
+    if (!['number', 'bool', 'text', 'text?'].includes(value.type)) fail('object receiver requires a closed pure scalar initializer');
+    initializerValues.set(initializer, value);
+  }
   function expression(expr, lexical = names) {
     const evaluate = child => expression(child, lexical);
     if (expr.op === 'linked-call') {
@@ -350,9 +359,10 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, of
     if (expr.op === 'read') {
       const [name, field] = expr.target;
       if (name === 'this' && receiverFields && lexical === names) {
-        const value = expr.target.length === 2 && receiverFields.get(field);
-        if (!value) fail('entry receiver field is not a proved literal: ' + field);
-        return {type: value.type, node: internal('const', value)};
+        const initializer = expr.target.length === 2 && receiverFields.get(field);
+        const value = initializer && initializerValues.get(initializer);
+        if (!value) fail('entry receiver field is not a proved acquired scalar: ' + field);
+        return value;
       }
       const binding = lexical.get(name);
       if (expr.target.length !== 2 || field !== 'length' || binding?.type !== 'number[]') {
@@ -445,7 +455,9 @@ try {
   const { declared, name, path } = sourceEntry;
   if (!path.endsWith('.ts') || path.endsWith('.d.ts')) fail('standalone .ts entry must resolve to an executable .ts source file');
   const source = readFileSync(path, 'utf8');
-  const linked = hasProjectImports(source, declared) ? checkedProjectModules(sourceEntry, resolveProjectSource, fail, {rootReceiver: entry.includes('.')}) : undefined;
+  const rootReceiver = entry.includes('.');
+  const linked = rootReceiver || hasProjectImports(source, declared)
+    ? checkedProjectModules(sourceEntry, resolveProjectSource, fail, {rootReceiver}) : undefined;
   const {carrier, carrierFile = 'Carrier.java', binding, project, closure, moduleFile} = compile(source, name, entry, declared, linked);
   if (closure) {
     const result = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));

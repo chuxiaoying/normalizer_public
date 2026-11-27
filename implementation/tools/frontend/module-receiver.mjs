@@ -2,7 +2,7 @@
 // Preserve which literal provided `this`; never detach the method or infer
 // the receiver from a matching property name on a different declaration.
 import ts from 'typescript';
-import { exactIntegerLiteral, unwrapParens } from './ir.mjs';
+import { unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 
 function objectLiteral(declaration) {
@@ -19,6 +19,7 @@ export function closedReceiver(sf, entry, fail, {linked = false} = {}) {
   if (names.length !== 2) fail('object entry needs one exported receiver and one method: ' + entry);
   const [receiver, member] = names;
   let chosen;
+  const assembly = [];
   for (const declaration of sf.statements) {
     if (linked && ts.isImportDeclaration(declaration)) continue; // Already resolved in the checked graph.
     if (ts.isFunctionDeclaration(declaration) || ts.isTypeAliasDeclaration(declaration)
@@ -40,12 +41,9 @@ export function closedReceiver(sf, entry, fail, {linked = false} = {}) {
           && !property.typeParameters?.length && !property.modifiers?.length) {
         methods.set(name, property);
       } else if (ts.isPropertyAssignment(property)) {
-        const value = unwrapParens(property.initializer);
-        const number = exactIntegerLiteral(value, sf);
-        if (number !== undefined) fields.set(name, {type: 'number', value: number});
-        else if (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword) {
-          fields.set(name, {type: 'bool', value: value.kind === ts.SyntaxKind.TrueKeyword});
-        } else fail('object receiver field must be a closed non-effectful scalar literal: ' + name);
+        const initializer = unwrapParens(property.initializer);
+        fields.set(name, initializer);
+        assembly.push(initializer);
       } else fail('object receiver cannot use computed access, spreading, or a dynamic member: ' + name);
     }
     if (variable.name.text === receiver) chosen = {fields, methods};
@@ -53,5 +51,5 @@ export function closedReceiver(sf, entry, fail, {linked = false} = {}) {
   if (!chosen) fail('entry receiver is not an exported const object: ' + receiver);
   const fn = chosen.methods.get(member);
   if (!fn) fail('entry method is not declared on its exported receiver: ' + entry);
-  return {fn, fields: chosen.fields};
+  return {fn, fields: chosen.fields, assembly};
 }
