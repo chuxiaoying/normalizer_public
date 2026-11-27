@@ -6,7 +6,37 @@ use super::{
 use math::{builder as b, domains::completion, Expr, Lit};
 use normalizer_ir::local::{SqlOperation, ScalarOperand, SqlWrite};
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
+
+pub(super) enum ColumnEvidence {
+    Declaration,
+    Operand,
+}
+
+/// A table has one business type per physical column. A write operand
+/// can confirm the base type, but cannot override declared nullability.
+pub(super) fn register_column(
+    columns: &mut BTreeMap<String, String>,
+    table: &str,
+    name: &str,
+    ty: &str,
+    evidence: ColumnEvidence,
+) -> Result<()> {
+    match columns.entry(name.into()) {
+        Entry::Vacant(column) => { column.insert(ty.into()); }
+        Entry::Occupied(column) => {
+            let prior = column.get().as_str();
+            let expected = match evidence {
+                ColumnEvidence::Declaration => prior,
+                ColumnEvidence::Operand => prior.strip_suffix('?').unwrap_or(prior),
+            };
+            if expected != ty {
+                return Err(fail(format!("conflicting physical column type: {table}.{name}")));
+            }
+        }
+    }
+    Ok(())
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct SqlEffect {
@@ -49,7 +79,7 @@ impl Engine<'_> {
                 ScalarOperand::Text(s) => (Ty::Text, b::lit_str(s)),
             };
             let ty = column_type(&ty, false).ok_or_else(|| fail("unsupported SQL column type"))?;
-            columns.insert(column.clone(), ty.into());
+            register_column(&mut columns, &write.table, column, ty, ColumnEvidence::Operand)?;
             args.push(value);
         }
         let guard = self.normal_path(path);
@@ -98,7 +128,7 @@ impl SqlEffect {
     ) -> Result<serde_json::Value> {
         let table = tables.entry(self.statement.table.clone()).or_default();
         for (column, ty) in &self.columns {
-            table.insert(column.clone(), ty.clone());
+            register_column(table, &self.statement.table, column, ty, ColumnEvidence::Operand)?;
         }
         let operands = args.iter().map(|operand| match operand.as_lit() {
             Some(Lit::Str(text)) => format!("'{}'", text.replace('\'', "''")),

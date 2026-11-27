@@ -340,16 +340,9 @@ impl<'a> Engine<'a> {
         for (name, ty) in &columns {
             let business_type = super::business_sql::column_type(ty, nullable_columns.contains(name))
                 .ok_or_else(|| fail("unsupported table column type"))?;
-            match table.entry(name.clone()) {
-                std::collections::btree_map::Entry::Vacant(column) => {
-                    column.insert(business_type.into());
-                }
-                std::collections::btree_map::Entry::Occupied(column) => {
-                    if column.get() != business_type {
-                        return Err(fail(format!("conflicting physical column type: {}.{name}", query.source)));
-                    }
-                }
-            }
+            super::business_sql::register_column(
+                table, &query.source, name, business_type, super::business_sql::ColumnEvidence::Declaration,
+            )?;
         }
         Ok(Rows {
             input: RelationExpr::base(&query.source, &query.source),
