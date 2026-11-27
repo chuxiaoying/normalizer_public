@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct CanonicalNames<'a> {
-    pub(crate) heap: &'a BTreeMap<i64, String>,
+    pub(crate) heap: &'a BTreeMap<i64, math::HeapBindingIdentity>,
     pub(crate) external: Option<&'a BTreeMap<u64, math::ObservationIdentity>>,
     pub(crate) total_temporals: Option<&'a BTreeSet<u64>>,
     pub(crate) reductions: Option<&'a BTreeMap<u64, math::ReduceShape>>,
@@ -11,8 +11,8 @@ pub(crate) struct CanonicalNames<'a> {
 }
 
 impl math::SortContext for CanonicalNames<'_> {
-    fn heap_display_name(&self, heap_id: i64) -> Option<String> {
-        self.heap.get(&heap_id).cloned()
+    fn heap_binding_identity(&self, heap_id: i64) -> Option<&math::HeapBindingIdentity> {
+        self.heap.get(&heap_id)
     }
 
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> { self.external }
@@ -37,7 +37,7 @@ pub(crate) struct ScopedValueKeys<'a> {
 }
 
 impl math::SortContext for ScopedValueKeys<'_> {
-    fn heap_display_name(&self, id: i64) -> Option<String> { self.base.heap_display_name(id) }
+    fn heap_binding_identity(&self, id: i64) -> Option<&math::HeapBindingIdentity> { self.base.heap_binding_identity(id) }
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> { self.base.observation_identities() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
     fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> { self.base.reduce_shape(id) }

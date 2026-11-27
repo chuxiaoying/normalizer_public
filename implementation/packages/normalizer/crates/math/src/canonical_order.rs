@@ -2,7 +2,7 @@
 //! prove equivalence or normalize a child. Callers prove movement separately.
 use crate::domains::{decimal, primitive::registry, relation::{RelationExpr, TableSource}};
 use crate::expr::{BinOpKind, Expr, ExprKind, RelationAggregateKind, UnaryOpKind};
-use crate::sort_context::{ObservationIdentity, SortContext};
+use crate::sort_context::{HeapBindingIdentity, ObservationIdentity, SortContext};
 use crate::symvar::SymVarOrigin;
 use num_bigint::{BigInt, BigUint, Sign};
 use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
@@ -196,8 +196,11 @@ impl Keys<'_> {
                 };
                 binding(class, origin.primitive_type(), id)
             }
-            HeapRef(id) => binding(Class::Reference, "reference", ctx.heap_display_name(*id)
-                .map_or(Identity::InternalHeap(*id), |name| Identity::Parameter(path(&name)))),
+            HeapRef(id) => binding(Class::Reference, "reference", match ctx.heap_binding_identity(*id) {
+                Some(HeapBindingIdentity::Parameter(path)) => Identity::Parameter(path.clone()),
+                Some(HeapBindingIdentity::EntrySnapshot(path)) => Identity::EntrySnapshot(path.clone()),
+                None => Identity::InternalHeap(*id),
+            }),
             RowValue { sql: Some(column), .. } =>
                 node(Class::Reference, named("binding"), vec![column.scalar_type.into()], vec!["sql".into()],
                     vec![], vec![], Some(Identity::SqlColumn(physical(&column.table, ctx),

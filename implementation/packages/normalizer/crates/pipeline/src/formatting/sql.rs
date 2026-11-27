@@ -31,6 +31,7 @@ pub struct FormatCtx {
     relation_scope: scoped_relation::Scope,
     scoped_plans: Option<scoped_relation::ScopedPlans>,
     business_identities: std::collections::BTreeMap<i64, String>,
+    heap_bindings: std::collections::BTreeMap<i64, math::HeapBindingIdentity>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
     observation_identities: std::collections::BTreeMap<u64, math::ObservationIdentity>,
@@ -55,6 +56,7 @@ impl Default for FormatCtx {
             relation_scope: Default::default(),
             scoped_plans: None,
             business_identities: Default::default(),
+            heap_bindings: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
             observation_identities: Default::default(),
@@ -191,7 +193,7 @@ impl FormatCtx {
         if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
         let keys = self.prepare_value_keys(value, external, active, bound, true);
         let compare = crate::canonical_names::ScopedValueKeys {
-            base: CanonicalNames { heap: &self.business_identities,
+            base: CanonicalNames { heap: &self.heap_bindings,
                 external: (!external.is_empty()).then_some(external), total_temporals: None,
                 reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
             slots: &keys.lexical, cases: &keys.cases, in_reduce_body: self.relation_scope.in_reduce_yield,
@@ -212,7 +214,7 @@ impl FormatCtx {
         let mut order = bound.to_vec();
         let mut prepared = ValueKeys { lexical: self.choice_keys(&order), ..ValueKeys::default() };
         let empty_cases = HashMap::new();
-        let base = || CanonicalNames { heap: &self.business_identities,
+        let base = || CanonicalNames { heap: &self.heap_bindings,
             external: (!external.is_empty()).then_some(external), total_temporals: None,
             reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) };
         if enter {
@@ -283,8 +285,12 @@ impl FormatCtx {
         value
     }
 
-    pub(crate) fn set_business_identities(&mut self, roots: std::collections::BTreeMap<i64, String>) {
+    pub(crate) fn set_business_identities(
+        &mut self, roots: std::collections::BTreeMap<i64, String>,
+        bindings: std::collections::BTreeMap<i64, math::HeapBindingIdentity>,
+    ) {
         self.business_identities = roots;
+        self.heap_bindings = bindings;
     }
 
     pub(crate) fn set_record_arrays(&mut self, arrays: std::collections::BTreeSet<String>) {
@@ -442,7 +448,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             scoped_relation::ValueKeys::default()
         };
         let public = crate::canonical_names::ScopedValueKeys { base: CanonicalNames {
-            heap: &ctx.business_identities,
+            heap: &ctx.heap_bindings,
             external: (!external.is_empty()).then_some(external),
             total_temporals: None, reductions: Some(&ctx.reductions),
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),

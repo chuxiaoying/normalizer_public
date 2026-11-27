@@ -2,8 +2,7 @@
 //!
 //! ## 设计
 //!
-//! math 层不依赖 pipeline/heap，但排序需要 HeapRef 的 display_name。
-//! 通过 trait 让 pipeline 实现信息提供能力，math 通过 interface 查询。
+//! math 不依赖执行堆。排序通过此接口读取有语义的绑定身份。
 
 /// The three RA-09 slots of a retained exact-integer recurrence.
 #[derive(Clone, PartialEq, Eq)]
@@ -27,13 +26,16 @@ pub enum ObservationIdentity {
     Internal(u64),
 }
 
-/// 排序上下文 trait — 提供 HeapRef display_name 查询能力
+/// An acquired object can alias another object without sharing its binding.
+#[derive(Clone)]
+pub enum HeapBindingIdentity {
+    Parameter(Vec<String>),
+    EntrySnapshot(Vec<String>),
+}
+
+/// Supplies the bound identities used to compare an expression.
 pub trait SortContext {
-    /// 查询 HeapRef 的 display_name（入口参数或命名状态的公开路径）
-    ///
-    /// - 有 display_name → 返回 Some(name)，用作主符号路径
-    /// - 无 display_name → 返回 None，由排序规则使用 id 稳定字符串
-    fn heap_display_name(&self, heap_id: i64) -> Option<String>;
+    fn heap_binding_identity(&self, _id: i64) -> Option<&HeapBindingIdentity> { None }
 
     /// Stable identities of already acquired environment observations.
     fn observation_identities(&self) -> Option<&std::collections::BTreeMap<u64, ObservationIdentity>> {
@@ -67,14 +69,10 @@ pub trait SortContext {
     fn temporal_is_total(&self, _id: u64) -> bool { false }
 }
 
-/// 默认空上下文 — 所有 heap_display_name 返回 None
+/// Context for expressions with no acquired binding metadata.
 pub struct DefaultSortContext;
 
-impl SortContext for DefaultSortContext {
-    fn heap_display_name(&self, _heap_id: i64) -> Option<String> {
-        None
-    }
-}
+impl SortContext for DefaultSortContext {}
 
 
 /// A recurrence YIELD with its own accumulator and member slots.
@@ -93,6 +91,5 @@ impl ReduceBodyContext {
     }
 }
 impl SortContext for ReduceBodyContext {
-    fn heap_display_name(&self, _heap_id: i64) -> Option<String> { None }
     fn in_reduce_body(&self) -> bool { true }
 }

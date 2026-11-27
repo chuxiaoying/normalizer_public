@@ -342,6 +342,20 @@ impl EntryContext {
         })).collect()
     }
 
+    pub(super) fn source_identity_keys(
+        &self, result: &ExecutionResult, names: &BTreeMap<i64, String>,
+    ) -> BTreeMap<i64, math::HeapBindingIdentity> {
+        names.keys().map(|&id| {
+            let identity = if let Some(&binding) = result.source_identity_states.get(&id) {
+                math::HeapBindingIdentity::EntrySnapshot(vec![result.source_state_bindings[&binding].clone()])
+            } else {
+                math::HeapBindingIdentity::Parameter(
+                    result.source_identity_parameters[&id].split('.').map(str::to_owned).collect())
+            };
+            (id, identity)
+        }).collect()
+    }
+
     pub(super) fn source_state_path(&self, root: &str, path: &[String]) -> bool {
         self.state_shape_at(root, path).is_ok()
     }
@@ -446,6 +460,7 @@ impl EntryContext {
             Some((name.clone(), record.fields.keys().cloned().collect::<std::collections::BTreeSet<_>>()))
         }).collect::<BTreeMap<_, _>>();
         let identities = self.source_identity_names(result);
+        let heap_keys = self.source_identity_keys(result, &identities);
         let publication = match &output {
             BusinessOutput::Pure(returned) if !result.temporal_definitions.is_empty() => {
                 let returned = if let Some(fields) = &result.source_record_return {
@@ -532,7 +547,7 @@ impl EntryContext {
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             let expression = if expression.has_heap_ref() || !definition_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
-                    heap: &identities,
+                    heap: &heap_keys,
                     external: (!states.is_empty()).then_some(ctx.observation_identities()),
                     total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };
@@ -551,7 +566,7 @@ impl EntryContext {
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());
             ctx.set_record_arrays(record_inputs.keys().cloned().collect());
-            ctx.set_business_identities(identities.clone());
+            ctx.set_business_identities(identities.clone(), heap_keys.clone());
             Ok(if let Some(fields) = record_fields {
                 crate::formatting::sql::business_value::format_record(&expression, fields, &mut ctx)
             } else {

@@ -21,7 +21,7 @@ fn predicate_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
 fn sort_predicates(predicates: &mut Vec<&Expr>, ctx: &crate::FormatCtx) {
     let external = ctx.observation_identities();
     let public = crate::canonical_names::CanonicalNames {
-        heap: &ctx.business_identities,
+        heap: &ctx.heap_bindings,
         external: (!external.is_empty()).then_some(external),
         total_temporals: None,
         reductions: Some(&ctx.reductions),

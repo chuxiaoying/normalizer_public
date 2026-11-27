@@ -59,6 +59,14 @@ impl SourceObjects {
             | (Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::EntryReceiver), Some(Origin::Allocation)))
     }
 
+    fn heap_binding_keys(&self) -> BTreeMap<i64, math::HeapBindingIdentity> {
+        self.compared_parameters.iter().map(|(&id, path)| {
+            (id, math::HeapBindingIdentity::Parameter(path.split('.').map(str::to_owned).collect()))
+        }).chain(self.compared_states.iter().map(|(&id, binding)| {
+            (id, math::HeapBindingIdentity::EntrySnapshot(vec![self.state_bindings[binding].clone()]))
+        })).collect()
+    }
+
     fn knows_identity(&self, value: &Expr) -> bool {
         value.is_null() || self.owns(value)
     }
@@ -521,9 +529,9 @@ impl Engine<'_> {
         let left_partition = self.source_objects.has_complete_identity_partition(&left);
         let right_partition = self.source_objects.has_complete_identity_partition(&right);
         if left_partition && right_partition {
-            let names = &self.source_objects.compared_parameters;
+            let roots = self.source_objects.heap_binding_keys();
             let order = crate::canonical_names::CanonicalNames {
-                heap: names, external: None, total_temporals: None, reductions: None, temporals: None,
+                heap: &roots, external: None, total_temporals: None, reductions: None, temporals: None,
             };
             let key = |(guard, _): &(Expr, Expr)| math::canonical_order_key(guard, &order);
             let a = left.as_case_when().unwrap().iter().map(key);
@@ -570,8 +578,9 @@ impl Engine<'_> {
         if self.source_objects.fresh_and_acquired(&left, &right) { return Ok(b::lit_bool(different)); }
         self.check_borrowed_identity(&left, &right)?;
         let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };
+        let roots = self.source_objects.heap_binding_keys();
         let names = crate::canonical_names::CanonicalNames {
-            heap: &self.source_objects.compared_parameters, external: None, total_temporals: None, reductions: None, temporals: None,
+            heap: &roots, external: None, total_temporals: None, reductions: None, temporals: None,
         };
         if math::canonical_order_ordered_comparison(kind, &left, &right, &names).is_some() {
             std::mem::swap(&mut left, &mut right);

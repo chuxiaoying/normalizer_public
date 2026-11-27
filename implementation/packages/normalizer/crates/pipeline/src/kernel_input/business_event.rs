@@ -68,6 +68,7 @@ pub(super) fn observations(
         .map(|(&id, root)| (id, entry.qualified("E", root))).collect::<BTreeMap<_, _>>();
     let arrays = entry.scalar_array_symbols();
     let identities = entry.source_identity_names(result);
+    let heap_keys = entry.source_identity_keys(result, &identities);
     let mut names = names;
     let alternatives = &result.terminal;
     let projected_record = result.source_record_return.as_deref();
@@ -96,7 +97,7 @@ pub(super) fn observations(
         for arg in event.arguments() { add_declared_paths(arg); }
     }
     let mut ctx = crate::FormatCtx::for_business(names.clone(), states);
-    ctx.set_business_identities(identities.clone());
+    ctx.set_business_identities(identities.clone(), heap_keys.clone());
     ctx.set_scalar_arrays(arrays.clone());
     ctx.set_record_arrays(entry.record_array_symbols());
     ctx.declare_nullable_columns(&result.source_tables);
@@ -373,7 +374,7 @@ pub(super) fn observations(
     if reorderable {
         let identities = ctx.observation_identities();
         let public = crate::canonical_names::CanonicalNames {
-            heap: &BTreeMap::new(),
+            heap: &heap_keys,
             external: Some(identities),
             total_temporals: None, reductions: None, temporals: None,
         };
@@ -423,7 +424,7 @@ pub(super) fn observations(
             let observation_identities = ctx.observation_identities();
             super::temporal_graph::validate_reads(&returned, &result.temporal_definitions)?;
             let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
-                heap: &BTreeMap::new(),
+                heap: &heap_keys,
                 external: Some(observation_identities),
                 total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: Some(temporal_names),
             }).map_err(|error| fail(error.to_string()))?;

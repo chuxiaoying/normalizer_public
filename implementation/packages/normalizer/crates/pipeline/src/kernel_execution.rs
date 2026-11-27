@@ -108,7 +108,6 @@ pub(super) struct Engine<'a> {
 struct ExecutionOrder<'a>(&'a [super::temporal_graph::Definition]);
 
 impl math::SortContext for ExecutionOrder<'_> {
-    fn heap_display_name(&self, _id: i64) -> Option<String> { None }
 
     fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> {
         match self.0.get(usize::try_from(id).ok()?)? {
