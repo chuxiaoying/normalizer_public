@@ -220,8 +220,14 @@ impl Engine<'_> {
             return Ok(Value::Term(Ty::Integer, b::lit_int(i64::from(value))));
         }
         let root = array_root(array)?;
-        let index = index_value(index)?;
+        need(index.ty() == Ty::Integer, "array subscript must be an exact integer")?;
+        let expression = math::normalize(index.scalar()?);
         let path = self.normal_path(path);
+        let Some(index) = literal_integer(&expression) else {
+            need(expression.as_lit().is_none(), "array subscript outside Java int range")?;
+            return self.read_symbolic_array_slot(&root, expression, path);
+        };
+        need(i32::try_from(index).is_ok(), "array subscript outside Java int range")?;
         let guard = self.check_source_bounds(&root, index, &path);
         if guard.as_bool() == Some(false) {
             return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
@@ -231,6 +237,35 @@ impl Engine<'_> {
             |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
             .ok_or_else(|| fail("indexed observation has no value"))?;
         Ok(Value::Term(Ty::Integer, slot))
+    }
+
+    fn read_symbolic_array_slot(&mut self, root: &str, index: Expr, path: Expr) -> Result<Value> {
+        let outside = b::or(b::lt(index.clone(), b::lit_int(0)),
+            b::ge(index.clone(), borrowed_array_length(root)));
+        self.throw_source_on_path(b::and(path.clone(), outside), OUT_OF_BOUNDS);
+        let live = self.normal_path(path);
+        if live.as_bool() == Some(false) {
+            return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
+        }
+        let original = r::relation_nth_value(initial_array(root), index.clone());
+        let positions: BTreeSet<_> = self.source_array_writes.values().flatten().copied().collect();
+        let mut arms = Vec::new();
+        for position in positions {
+            let selected = b::eq(index.clone(), b::lit_int(position));
+            let active = math::normalize(b::and(live.clone(), selected.clone()));
+            if active.as_bool() == Some(false) { continue; }
+            let sources = self.array_slot_sources(root, position);
+            if sources.is_empty() { continue; }
+            let initial = original_slot(root, position);
+            let updated = self.realtime_store.read_matching_with_initial(&position.to_string(), &active, Some(initial.clone()),
+                |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, alias)| alias.clone()))
+                .ok_or_else(|| fail("indexed observation has no value"))?;
+            if updated != initial { arms.push((selected, updated)); }
+        }
+        // The index selections are disjoint. The fallback is the original
+        // slot of the same snapshot on the already checked normal domain.
+        let value = if arms.is_empty() { original } else { b::case_when(arms, original) };
+        Ok(Value::Term(Ty::Integer, math::normalize(value)))
     }
 
     pub(super) fn source_array_sum(&mut self, array: Value, start: Expr, offset: i64, path: Expr) -> Result<Value> {
