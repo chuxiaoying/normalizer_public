@@ -33,7 +33,7 @@ pub struct FuncSemantics {
 
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NullBehavior {
     /// 哪些参数位置触发（通常是 [0]，即第一个参数）
     pub trigger_positions: Vec<usize>,
@@ -114,23 +114,28 @@ fn registry() -> &'static RwLock<FuncRegistry> {
     REG.get_or_init(|| RwLock::new(FuncRegistry::new()))
 }
 
-/// 注册一个外部函数（Primitive Functions）。
+fn verify_repeated_contract(
+    entry: &FuncEntry,
+    return_type: Option<crate::Primitive>,
+    semantics: &FuncSemantics,
+) {
+    let same_evaluator = match (&entry.semantics.evaluator, &semantics.evaluator) {
+        (None, None) => true,
+        (Some(registered), Some(supplied)) => Arc::ptr_eq(registered, supplied),
+        _ => false,
+    };
+    assert!(entry.return_type == return_type
+        && entry.semantics.pure == semantics.pure
+        && entry.semantics.null_behavior == semantics.null_behavior
+        && same_evaluator,
+        "[NORM-INVARIANT] conflicting contracts for canonical operation {}", entry.name);
+}
+
+/// 注册有明确值合同的原生运算。
 ///
-/// ## 参数类型强制 primitive（用户 20260428122100 明令）
-///
-/// `param_types` 必须是 **封闭枚举 `Primitive` 列表**。编译器强制：
-/// - 不允许 Object / 泛型 T/E/K/V / 业务 Pojo
-/// - 只有 primitive 演算函数能注册 Primitive Functions
-///
-/// 这是"Primitive Functions 红线"从人工自律升级为编译器强制的核心机制。违规 Primitive Functions 将编译失败，
-/// 按清单整改（走 hack / $normalizer 后门）。
-///
-/// ## 行为
-///
-/// - 同 `(name, param_types)` 重复注册返回同一 key（幂等）
-/// - 重复注册复用首次注册的元数据。
-///
-/// 返回的 FuncKey 是唯一的身份凭证，之后构造 Call 必须用它。
+/// A repeated name and typed signature must reuse exactly the same contract.
+/// Evaluator-bearing registrations should be shared by their declaring
+/// operation, not created afresh by unrelated callers.
 pub fn register_func(
     name: &str,
     param_types: Vec<crate::primitive_enum::Primitive>,
@@ -140,21 +145,23 @@ pub fn register_func(
     let key_hint = (name.to_string(), param_types.clone());
     let reg = registry();
     // Recheck under the writer so concurrent first registrations share a key.
-    if let Some(&key) = reg.read().unwrap().name_arity_index.get(&key_hint) {
-        return key;
+    {
+        let current = reg.read().unwrap();
+        if let Some(&key) = current.name_arity_index.get(&key_hint) {
+            verify_repeated_contract(&current.entries[key.0 as usize], return_type, &semantics);
+            return key;
+        }
     }
     let mut writer = reg.write().unwrap();
-    let FuncRegistry { name_arity_index, entries, .. } = &mut *writer;
-    *name_arity_index.entry(key_hint).or_insert_with(|| {
-        let key = FuncKey(entries.len() as u32);
-        entries.push(FuncEntry {
-            name: name.to_string(),
-            param_types,
-            return_type,
-            semantics,
-        });
-        key
-    })
+    if let Some(&key) = writer.name_arity_index.get(&key_hint) {
+        verify_repeated_contract(&writer.entries[key.0 as usize], return_type, &semantics);
+        return key;
+    }
+    let key = FuncKey(u32::try_from(writer.entries.len())
+        .expect("[NORM-ANALYSIS-INCOMPLETE] primitive contract registry exhausted"));
+    writer.entries.push(FuncEntry { name: name.to_owned(), param_types, return_type, semantics });
+    writer.name_arity_index.insert(key_hint, key);
+    key
 }
 
 /// 查询 FuncKey 对应的函数名（用于 Display）。
