@@ -791,8 +791,11 @@ impl ExprProfile {
     }
 
     fn include_child_shape(&mut self, child: &Self) {
-        self.size += child.size;
-        self.depth = self.depth.max(1 + child.depth);
+        // These machine-width counters are resource estimates, never the
+        // arbitrary-precision CF-02 cost. A large shared tree must not
+        // wrap and masquerade as a cheap one.
+        self.size = self.size.saturating_add(child.size);
+        self.depth = self.depth.max(child.depth.saturating_add(1));
         self.has_heap_ref |= child.has_heap_ref;
         self.has_case_when |= child.has_case_when;
         self.has_relation_aggregate |= child.has_relation_aggregate;
@@ -816,8 +819,8 @@ impl ExprProfile {
     }
 
     fn wrapped(mut self) -> Self {
-        self.size += 1;
-        self.depth += 1;
+        self.size = self.size.saturating_add(1);
+        self.depth = self.depth.saturating_add(1);
         self
     }
 

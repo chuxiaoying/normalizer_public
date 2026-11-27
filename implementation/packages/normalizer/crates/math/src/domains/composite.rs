@@ -280,7 +280,7 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
             Presence::Decision(index)
         } else {
             if decisions.len() == 7 {
-                return Err("readonly Map CASE lift exceeds its expansion budget");
+                return Err("[NORM-ANALYSIS-INCOMPLETE] readonly Map CASE lift exceeds its expansion budget");
             }
             let index = decisions.len();
             decisions.push(guard);
