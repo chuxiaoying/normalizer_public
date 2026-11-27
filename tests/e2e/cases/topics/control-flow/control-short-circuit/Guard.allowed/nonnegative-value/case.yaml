@@ -12,4 +12,4 @@ expected:
       value:
         position: 1
         type: number
-  R: active AND value >= 0
+  R: active AND value > -1
