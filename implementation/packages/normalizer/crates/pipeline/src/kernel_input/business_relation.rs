@@ -270,12 +270,18 @@ impl<'a> Engine<'a> {
             )?;
         }
         let input = self.acquire_table_rows(&query.source, path);
+        let RelationExpr::Base { ref name, snapshot, .. } = input else {
+            unreachable!("table acquisition always returns a base snapshot")
+        };
+        let table = TableSource { name: name.clone(), snapshot };
         Ok(Rows {
             input,
             fields: columns
                 .into_iter()
                 .map(|(n, t)| {
-                    let value = b::row_value(format!("{}.{}", query.source, n));
+                    let ty = super::business_sql::column_type(&t, nullable_columns.contains(&n))
+                        .expect("column was checked before acquisition");
+                    let value = b::sql_column(&query.source, table.clone(), 0, &n, ty);
                     (n, Value::Term(t, value))
                 })
                 .collect(),
@@ -477,7 +483,7 @@ impl<'a> Engine<'a> {
             }
             Operation::JoinCount { source: other, alias: rhs, on, filters } => {
                 let mut names = env.clone();
-                let mut bind = |source: &str, alias: &str| -> Result<(TableSource, String)> {
+                let mut bind = |source: &str, alias: &str, row_slot| -> Result<(TableSource, String)> {
                     need(!env.contains_key(alias), "join alias would shadow a local value")?;
                     let Some(Value::Rows(rows)) = env.get(source) else {
                         return Err(fail("join requires two typed table bindings"));
@@ -497,13 +503,17 @@ impl<'a> Engine<'a> {
                             .ok_or_else(|| fail("join table declaration must keep physical column names"))?;
                         need(domain != "text?",
                             "join count currently requires non-nullable columns")?;
+                        let declared = super::business_sql::column_type(&ty, false)
+                            .filter(|declared| *declared == domain)
+                            .ok_or_else(|| fail("join column type differs from its physical declaration"))?;
+                        let table = TableSource { name: name.clone(), snapshot: *snapshot };
                         names.insert(format!("{alias}.{field}"),
-                            Value::Term(ty, b::row_value(format!("{alias}.{field}"))));
+                            Value::Term(ty, b::sql_column(alias, table, row_slot, field, declared)));
                     }
                     Ok((TableSource { name: name.clone(), snapshot: *snapshot }, alias.into()))
                 };
-                let left = bind(&query.source, &query.alias)?;
-                let right = bind(other, rhs)?;
+                let left = bind(&query.source, &query.alias, 0)?;
+                let right = bind(other, rhs, 1)?;
                 let predicate = |expr| {
                     let value = Self::query_value(expr, "", &BTreeMap::new(), &names)?;
                     need(value.ty() == Ty::Bool, "join predicate must be bool")?;

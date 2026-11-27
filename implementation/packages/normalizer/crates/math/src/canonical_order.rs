@@ -32,6 +32,7 @@ enum Observation { Entry(Vec<String>), Receipt(u64), Runtime(u64), Unnamed(u64) 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Identity {
     Column(Vec<String>),
+    SqlColumn(TableKey, usize, String),
     EntrySnapshot(Vec<String>),
     Local(usize),
     Parameter(Vec<String>),
@@ -207,7 +208,11 @@ impl Keys<'_> {
             }
             HeapRef(id) => binding(Class::Reference, "reference", ctx.heap_display_name(*id)
                 .map_or(Identity::InternalHeap(*id), |name| Identity::Parameter(path(&name)))),
-            RowValue { alias, acquired_integer } => binding(if alias.contains('.') { Class::Read } else { Class::Reference },
+            RowValue { sql: Some(column), .. } =>
+                node(Class::Reference, named("binding"), vec![column.scalar_type.into()], vec!["sql".into()],
+                    vec![], vec![], Some(Identity::SqlColumn(physical(&column.table, ctx),
+                        column.row_slot, column.column.clone())), 0, 0),
+            RowValue { alias, acquired_integer, sql: None } => binding(if alias.contains('.') { Class::Read } else { Class::Reference },
                 if *acquired_integer { "integer" } else { "row_value" }, Identity::Column(path(alias))),
             Call { key, args } => {
                 let (name, parameters, result) = registry::func_signature(*key);

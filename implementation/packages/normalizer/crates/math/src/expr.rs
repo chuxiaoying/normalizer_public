@@ -200,7 +200,7 @@ pub(crate) enum ExprKind {
     /// primitive type.  It denotes the current row value/path inside a Relation
     /// Calculus predicate or projection, e.g. `$e_0.item` rendered as SQL alias
     /// `p` under relation formatting scope.
-    RowValue { alias: String, acquired_integer: bool },
+    RowValue { alias: String, acquired_integer: bool, sql: Option<SqlColumnBinding> },
 
     /// 调用签名由 FuncKey 唯一决定。
     Call { key: FuncKey, args: Vec<Expr> },
@@ -245,6 +245,15 @@ pub(crate) enum ExprKind {
     Relation(Box<crate::domains::relation::RelationExpr>),
 }
 
+/// Physical column identity, separate from its rendered SQL qualifier.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SqlColumnBinding {
+    pub(crate) table: crate::domains::relation::TableSource,
+    pub(crate) row_slot: usize,
+    pub(crate) column: String,
+    pub(crate) scalar_type: &'static str,
+}
+
 // ===== 手写 PartialEq/Eq/Hash =====
 //
 // 其他变体按字段结构正常比较。
@@ -256,8 +265,9 @@ impl PartialEq for ExprKind {
             (Lit(a), Lit(b)) => a == b,
             (SymVar { origin: a }, SymVar { origin: b }) => a == b,
             (HeapRef(a), HeapRef(b)) => a == b,
-            (RowValue { alias: a, acquired_integer: left },
-                RowValue { alias: b, acquired_integer: right }) => a == b && left == right,
+            (RowValue { alias: a, acquired_integer: left, sql: sql_left },
+                RowValue { alias: b, acquired_integer: right, sql: sql_right }) =>
+                a == b && left == right && sql_left == sql_right,
             (
                 Call {
                     key: k1,
@@ -826,10 +836,11 @@ fn structural_hash_from_kind(kind: &ExprKind) -> u64 {
             2u8.hash(&mut h);
             id.hash(&mut h);
         }
-        RowValue { alias, acquired_integer } => {
+        RowValue { alias, acquired_integer, sql } => {
             11u8.hash(&mut h);
             alias.hash(&mut h);
             acquired_integer.hash(&mut h);
+            sql.hash(&mut h);
         }
         Call {
             key,

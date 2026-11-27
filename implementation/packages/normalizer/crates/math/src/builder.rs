@@ -180,12 +180,22 @@ pub fn heap_ref(id: i64) -> Expr {
 /// parameters.  The alias is still indexed as a relation-row variable so RCL
 /// predicate splitting keeps it inside the relation.
 pub fn row_value<T: Into<String>>(alias: T) -> Expr {
-    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: false })
+    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: false, sql: None })
+}
+
+/// An already-bound physical column. SQL qualification names the slot
+/// without performing a field read on an ordinary record.
+pub fn sql_column(
+    alias: &str, table: crate::domains::relation::TableSource, row_slot: usize,
+    column: &str, scalar_type: &'static str,
+) -> Expr {
+    let sql = crate::expr::SqlColumnBinding { table, row_slot, column: column.into(), scalar_type };
+    Expr::new(ExprKind::RowValue { alias: format!("{alias}.{column}"), acquired_integer: false, sql: Some(sql) })
 }
 
 /// A member acquired from a non-null exact-integer input array.
 pub fn acquired_integer_row<T: Into<String>>(alias: T) -> Expr {
-    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: true })
+    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: true, sql: None })
 }
 
 // =============================================================================

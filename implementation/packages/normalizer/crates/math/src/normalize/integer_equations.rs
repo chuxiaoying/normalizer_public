@@ -54,7 +54,7 @@ pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr>
 
 fn integer_row(expr: &Expr) -> Option<&str> {
     match expr.kind() {
-        crate::expr::ExprKind::RowValue { alias, acquired_integer: true } => Some(alias),
+        crate::expr::ExprKind::RowValue { alias, acquired_integer: true, .. } => Some(alias),
         _ => None,
     }
 }
