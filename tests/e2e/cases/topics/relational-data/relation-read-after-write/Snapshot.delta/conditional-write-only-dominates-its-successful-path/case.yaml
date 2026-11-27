@@ -18,8 +18,8 @@ expected:
       source: bill
       when: |-
         CASE
-          WHEN NOT (remove) THEN true
-          ELSE completion.is_return($e_0)
+          WHEN remove THEN completion.is_return($e_0)
+          ELSE true
         END
       after:
         - result: $e_0

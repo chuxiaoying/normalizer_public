@@ -18,13 +18,11 @@ expected:
       source: bill
   R: |-
     COALESCE(
-      (
-        SELECT bill.amount
+      FIRST(bill.amount
         FROM bill
         WHERE bill.account_id == accountId
-          AND bill.amount >= 10
+          AND bill.amount > 9
         ORDER BY bill.amount
-        LIMIT 1
       ),
       0
     )

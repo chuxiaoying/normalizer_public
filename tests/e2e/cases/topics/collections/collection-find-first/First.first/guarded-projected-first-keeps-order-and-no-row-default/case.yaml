@@ -18,6 +18,6 @@ expected:
       source: bill
   R: |-
     CASE
-      WHEN EXISTS (SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.amount > 0) THEN FIRST(bill.amount FROM bill WHERE bill.account_id == accountId AND bill.amount > 0 ORDER BY bill.amount) + 1
+      WHEN 0 < COALESCE(SUM(SELECT 1 FROM bill WHERE bill.account_id == accountId AND bill.amount > 0), 0) THEN 1 + FIRST(bill.amount FROM bill WHERE bill.account_id == accountId AND bill.amount > 0 ORDER BY bill.amount)
       ELSE 0
     END
