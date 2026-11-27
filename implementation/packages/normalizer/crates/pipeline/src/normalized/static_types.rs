@@ -625,16 +625,28 @@ impl Admission<'_> {
             }
             if let Some(JavaType::Class(owner)) = self.declared_type(value, scope) {
                 if let Some(declaration) = self.program.find_class(&owner) {
-                    if declaration.fields().iter().any(|f| f.name() == field && f.is_final())
-                        && !(self.method.is_constructor() && declaration.full_name() == self.class.full_name()
-                            && matches!(value.as_ref(), E::Ident(name) if name == "this"))
-                    {
-                        return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("cannot update final field {field}")));
+                    let in_own_constructor = self.method.is_constructor()
+                        && declaration.full_name() == self.class.full_name()
+                        && matches!(value.as_ref(), E::Ident(name) if name == "this");
+                    if !in_own_constructor {
+                        if declaration.fields().iter().any(|f| f.name() == field && super::source_ports::marked(declaration, f)) {
+                            return Err(self.diagnostic("NORM-EXTERNAL-FIELD",
+                                &format!("external receiver {field} cannot be reassigned after its certified assembly")));
+                        }
+                        if declaration.fields().iter().any(|f| f.name() == field && f.is_final()) {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("cannot update final field {field}")));
+                        }
                     }
                 }
             }
         }
         if let E::Ident(name) = target {
+            if !scope.contains_key(name) && !self.method.is_constructor()
+                && self.class.fields().iter().any(|field| field.name() == name && super::source_ports::marked(self.class, field))
+            {
+                return Err(self.diagnostic("NORM-EXTERNAL-FIELD",
+                    &format!("external receiver {name} cannot be reassigned after its certified assembly")));
+            }
             if scope.get(name).is_some_and(|binding| binding.initialized_final) {
                 return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!(
                     "cannot update final local {name}")));

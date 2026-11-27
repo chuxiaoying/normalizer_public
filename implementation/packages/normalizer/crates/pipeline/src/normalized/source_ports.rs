@@ -1,4 +1,4 @@
-//! A source port is a final injected field marked @N.External and a declared
+//! A source port is a proven injected field marked @N.External and a declared
 //! external method. Bodylessness alone, including native, never makes a port.
 use super::*;
 use simulator_parser::{JavaClass, JavaField};
@@ -47,7 +47,7 @@ pub(crate) struct SourcePort {
 /// receiver's assembly. A malformed declaration must not be diagnosed as
 /// merely an incompatible constructor argument.
 pub(crate) fn endpoint_declaration<'a>(program: &'a JavaProgram, field: &JavaField) -> Result<&'a JavaClass, String> {
-    if !field.is_final() || field.is_static() || field.has_initializer() {
+    if field.is_static() || field.has_initializer() {
         return Err(error("NORM-EXTERNAL-FIELD", field.name()));
     }
     let JavaType::Class(endpoint) = field.java_type() else {
