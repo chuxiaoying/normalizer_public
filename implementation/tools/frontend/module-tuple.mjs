@@ -43,6 +43,8 @@ export function compileTypedTuple(checker, sf, fn) {
     && ts.isIdentifier(expr.expression) && expr.expression.text === 'Boolean'
     && expr.arguments.length === 1
     && checker.getSymbolAtLocation(expr.expression)?.declarations?.every(dec => dec.getSourceFile().isDeclarationFile);
+  const builtinUndefined = expr => ts.isIdentifier(expr) && expr.text === 'undefined'
+    && !checker.getSymbolAtLocation(expr)?.declarations?.some(dec => !dec.getSourceFile().isDeclarationFile);
 
   function lowerBool(expr, scope) {
     expr = unwrap(expr);
@@ -69,7 +71,7 @@ export function compileTypedTuple(checker, sf, fn) {
   const scope = new Map(helperParams.map((name, i) => [name, simpleBool(call.arguments[i], inputScope)]));
   function slot(expr) {
     expr = unwrap(expr);
-    if (ts.isIdentifier(expr) && expr.text === 'undefined') return {kind: 'undefined'};
+    if (builtinUndefined(expr)) return {kind: 'undefined'};
     if (ts.isStringLiteral(expr)) return {kind: 'text', value: expr.text};
     const invalidSlot = 'tuple requires literal slots or distinct literal scalar record fields';
     if (!ts.isObjectLiteralExpression(expr)) fail(invalidSlot);
@@ -120,12 +122,15 @@ export function compileTypedTuple(checker, sf, fn) {
     positions.set(element.name.text, {index, rest: Boolean(element.dotDotDotToken)});
   }
   const observed = new Map();
+  const reserved = new Set(params);
   let nextProbe = 0;
   function observe(kind, fields) {
     const key = JSON.stringify([kind, fields]);
     if (!observed.has(key)) {
-      // Every lower index has already been allocated or reserved by a formal.
-      observed.set(key, {kind, name: 'tuple_probe_' + nextProbe++, ...fields});
+      let name;
+      do { name = 'tuple_probe_' + nextProbe++; } while (reserved.has(name));
+      reserved.add(name);
+      observed.set(key, {kind, name, ...fields});
     }
     return variable(observed.get(key).name);
   }
@@ -144,7 +149,7 @@ export function compileTypedTuple(checker, sf, fn) {
       }
       if ([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(expr.operatorToken.kind)) {
         const sides = [unwrap(expr.left), unwrap(expr.right)];
-        const undefinedPosition = sides.findIndex((value) => ts.isIdentifier(value) && value.text === 'undefined');
+        const undefinedPosition = sides.findIndex(builtinUndefined);
         const subject = sides[1 - undefinedPosition];
         const item = subject && position(subject);
         if (!item || item.rest) fail('undefined equality needs a tuple slot');
