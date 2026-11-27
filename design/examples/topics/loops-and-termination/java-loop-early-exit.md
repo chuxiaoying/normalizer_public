@@ -167,15 +167,13 @@ E:
 
 R: |-
   COALESCE(
-    (
-      SELECT bill.amount
+    FIRST(bill.amount
       FROM bill
       WHERE bill.account_id == accountId
         AND bill.status == "OPEN"
         AND bill.amount > 0
         AND bill.due_date <= today
       ORDER BY bill.priority, bill.due_date, bill.id
-      LIMIT 1
     ),
     0
   )

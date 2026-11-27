@@ -135,13 +135,11 @@ E:
 
 R: |-
   COALESCE(
-    (
-      SELECT bill.amount
+    FIRST(bill.amount
       FROM bill
       WHERE bill.account_id == accountId
         AND bill.amount > 0
       ORDER BY bill.amount
-      LIMIT 1
     ),
     0
   )

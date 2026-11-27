@@ -223,6 +223,13 @@ E:
       priority: number
       status: text
 
+  $a_0:
+    kind: acquisition
+    source: bill
+    when: completion.is_return($e_0)
+    after:
+      - result: $e_0
+
 S:
   - call:
       external: src/ArrearsService.java#ArrearsBeans.SERVICE.profileClient.fetchProfile
@@ -236,24 +243,24 @@ R: |-
     WHEN $e_0.quota < COALESCE(
       SUM(
         SELECT bill.amount - bill.waived_amount
-        FROM bill
+        FROM $a_0 AS bill
         WHERE bill.account_id == accountId
-          AND bill.due_date <= today
-          AND $e_0.minPriority <= bill.priority
-          AND bill.amount > bill.waived_amount
           AND bill.status == "OPEN"
+          AND bill.amount > bill.waived_amount
+          AND bill.due_date <= today
+          AND bill.priority >= $e_0.minPriority
       ),
       0
     ) THEN $e_0.quota
     ELSE COALESCE(
       SUM(
         SELECT bill.amount - bill.waived_amount
-        FROM bill
+        FROM $a_0 AS bill
         WHERE bill.account_id == accountId
-          AND bill.due_date <= today
-          AND $e_0.minPriority <= bill.priority
-          AND bill.amount > bill.waived_amount
           AND bill.status == "OPEN"
+          AND bill.amount > bill.waived_amount
+          AND bill.due_date <= today
+          AND bill.priority >= $e_0.minPriority
       ),
       0
     )

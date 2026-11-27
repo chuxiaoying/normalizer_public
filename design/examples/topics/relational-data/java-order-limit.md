@@ -66,12 +66,10 @@ E:
 
 R: |-
   COALESCE(
-    (
-      SELECT bill.due_date
+    FIRST(bill.due_date
       FROM bill
       WHERE bill.account_id == accountId
       ORDER BY bill.due_date, bill.id
-      LIMIT 1
     ),
     0
   )
