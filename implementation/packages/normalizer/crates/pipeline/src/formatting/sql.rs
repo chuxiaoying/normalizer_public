@@ -791,6 +791,14 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
         parts.push("END".into());
         return parts.join(" ");
     }
+    let parts = if business {
+        parts.into_iter().map(|part| {
+            if part.contains("THEN LET ") || part.starts_with("ELSE LET ") {
+                // A LET/IN block owns its own alignment and lexical scope.
+                part
+            } else { part.replace('\n', "\n  ") }
+        }).collect::<Vec<_>>()
+    } else { parts };
     format!("{}\nEND", parts.join("\n  "))
 }
 

@@ -76,6 +76,13 @@ fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortConte
 }
 
 fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) -> bool {
+    // A native comparison of the two exact, bound operands already
+    // acquires both values before selecting either. Arithmetic over those
+    // values contributes no new binding or observation to the selection.
+    if (value.as_call().is_some() || matches!(value.as_relation_aggregate(),
+        Some((crate::RelationAggregateKind::Count | crate::RelationAggregateKind::Sum, ..))))
+        && crate::normalize::exact_acquired_arithmetic(value, context)
+    { return true; }
     if let Some(SymVarOrigin::Temporal { binding_id, primitive_type }) = value.as_sym_var() {
         return primitive_type == "integer" && (context.temporal_is_total(*binding_id)
             || context.choice_slots().is_some_and(|slots| slots.contains_key(binding_id)));
