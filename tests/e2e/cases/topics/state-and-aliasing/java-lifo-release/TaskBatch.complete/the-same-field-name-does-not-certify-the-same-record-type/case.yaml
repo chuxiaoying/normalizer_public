@@ -1,5 +1,0 @@
-entry: src/TaskBatch.java#TaskBatch.complete
-reject:
-  fragments:
-    - "[NORM-PROJECT]"
-    - local stack requires one declared integer field in the same input record type

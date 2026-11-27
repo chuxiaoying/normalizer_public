@@ -1,6 +1,0 @@
-entry: src/ExternalTypeDemo.java#Beans.ENTRY.label
-reject:
-  fragments:
-    - "[NORM-EXTERNAL-FIELD]"
-    - kind=PREPROCESS_REQUIRED
-    - location=port

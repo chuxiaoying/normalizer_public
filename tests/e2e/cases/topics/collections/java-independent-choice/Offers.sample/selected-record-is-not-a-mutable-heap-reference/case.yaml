@@ -1,5 +1,6 @@
 entry: src/Offers.java#Offers.sample
 reject:
   fragments:
-    - "[NORM-PROJECT]"
-    - field write requires a closed source object
+    - "[NORM-SOURCE-TYPE]"
+    - "price"
+    - "not writable"

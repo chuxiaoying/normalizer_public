@@ -1,7 +1,5 @@
 entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
-    - "SCENARIO_KERNEL_FAILED:"
-    - "[NORM-PROJECT]"
-    - kind=PREPROCESS_REQUIRED
-    - expected a typed relation query
+    - "SCENARIO_MODULE_INPUT:"
+    - "unknown_operation"

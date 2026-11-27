@@ -19,4 +19,4 @@ expected:
       q:
         position: 2
         type: bool
-  R: NOT (p) AND NOT (q)
+  R: NOT (p OR q)

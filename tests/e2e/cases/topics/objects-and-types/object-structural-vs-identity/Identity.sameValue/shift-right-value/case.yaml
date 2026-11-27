@@ -16,4 +16,4 @@ expected:
       right:
         position: 1
         type: Box
-  R: left.value == right.value + 1
+  R: left.value == 1 + right.value

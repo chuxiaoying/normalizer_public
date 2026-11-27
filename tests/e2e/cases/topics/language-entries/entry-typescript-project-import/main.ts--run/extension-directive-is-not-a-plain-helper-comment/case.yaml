@@ -1,5 +1,6 @@
 entry: src/main.ts#run
 reject:
   fragments:
-  - "[NORM-TS-MODULE]"
-  - "src/helper.ts:2: linked scalar modules do not admit @normalizer-ir directives"
+    - "[NORM-TS-MODULE]"
+    - "@normalizer-ir"
+    - "not_an_admitted_instruction"
