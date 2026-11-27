@@ -19,4 +19,4 @@ expected:
   R: LENGTH(closed) == LENGTH(opened)
   throws:
     - type: java.lang.IllegalArgumentException
-      when: LENGTH(closed) < LENGTH(opened) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE opened[i].id != closed[LENGTH(closed) - 1 - i].id)
+      when: LENGTH(closed) < LENGTH(opened) OR 0 < COALESCE(SUM(SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE opened[i].id != closed[LENGTH(closed) - 1 - i].id), 0)
