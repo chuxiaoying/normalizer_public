@@ -1,6 +1,6 @@
 //! Source recognition for closed normalized text intrinsics.
-pub use math::domains::text::{is_blank, trim, whitespace, KEY};
-pub(crate) use math::domains::text::TRIM_KEY;
+pub use math::domains::text::trim;
+pub(crate) use math::domains::text::{default_if_blank, DEFAULT_IF_BLANK_KEY, TRIM_KEY};
 
 
 pub(crate) fn clock_intrinsic(
@@ -44,9 +44,4 @@ pub(crate) fn bound_receiver(
     };
     bound && !class.fields().iter().any(|field| field.name() == receiver)
         && !program.classes().iter().any(|ty| ty.simple_name().rsplit('.').next() == Some(receiver))
-}
-
-/// The shared value semantics; both operands have already been evaluated.
-pub(crate) fn default_if_blank(value: math::Expr, fallback: math::Expr) -> math::Expr {
-    math::normalize(math::builder::case_when(vec![(is_blank(value.clone()), fallback)], value))
 }

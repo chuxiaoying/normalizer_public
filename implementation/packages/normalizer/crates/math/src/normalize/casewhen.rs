@@ -71,6 +71,9 @@ fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr
 }
 
 fn simplify_impl(expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext) -> Expr {
+    if let Some(value) = crate::domains::text::redundant_null_default(expr) {
+        return value;
+    }
     if let Some(value) = redundant_integer_point_arm(branches) {
         return value;
     }

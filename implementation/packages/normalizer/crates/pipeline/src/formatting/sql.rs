@@ -185,7 +185,7 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
                     format!("{} * {}", format_operand(a, ctx), format_operand(b, ctx))
                 }
                 View::Round(value, scale, mode) =>
-                    format!(r#"ROUND({}, {scale}, "{}")"#, format_expr_with_ctx(value, ctx), mode.name()),
+                    format!("N.round({}, {scale}, N.{})", format_expr_with_ctx(value, ctx), mode.name()),
             };
         }
     }
@@ -295,13 +295,15 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some((operation, response, class)) = math::domains::completion::class_observation(&registered_name, args) {
             return format!("{operation}({}, {class})", format_expr_with_ctx(response, ctx));
         }
-        let display = match registered_name.as_str() {
-            crate::normalized_text::TRIM_KEY => Some("TRIM"),
-            crate::normalized_text::KEY => Some("blank"),
-            _ => None,
-        };
-        if let (Some(display), [value]) = (display, args) {
-            return format!("{display}({})", format_expr_with_ctx(value, ctx));
+        match (registered_name.as_str(), args) {
+            (crate::normalized_text::TRIM_KEY, [value]) => {
+                return format!("N.trim({})", format_expr_with_ctx(value, ctx));
+            }
+            (crate::normalized_text::DEFAULT_IF_BLANK_KEY, [value, fallback]) => {
+                return format!("N.defaultIfBlank({}, {})",
+                    format_expr_with_ctx(value, ctx), format_expr_with_ctx(fallback, ctx));
+            }
+            _ => {}
         }
     }
     let name = math::domains::completion::output_name(math::domains::composite::output_name(

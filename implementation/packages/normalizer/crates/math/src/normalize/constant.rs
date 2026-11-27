@@ -44,6 +44,7 @@ fn fold_call(
         }
     }
     crate::domains::text::repeat_trim(func_key, args)
+        .or_else(|| crate::domains::text::fold_default_if_blank(func_key, args))
 }
 
 fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {

@@ -524,7 +524,7 @@ impl EntryContext {
                         || math::domains::composite::vector_length_input(node)
                             .and_then(math::domains::composite::input_name).is_some_and(|name| arrays.contains(name))
                         || math::domains::composite::input_name(node).is_some_and(|name| arrays.contains(name))
-                        || node.as_call().is_some_and(|(key,_)| matches!(math::func_name(key).as_str(),crate::normalized_text::KEY | crate::normalized_text::TRIM_KEY)),
+                        || node.as_call().is_some_and(|(key,_)| matches!(math::func_name(key).as_str(),crate::normalized_text::DEFAULT_IF_BLANK_KEY | crate::normalized_text::TRIM_KEY)),
                 }
             });
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
