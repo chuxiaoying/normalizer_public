@@ -533,6 +533,15 @@ impl Expr {
         let mut nullable = false;
         self.walk_pruned(&mut |node| match node.kind() {
             ExprKind::RelationAggregate { .. } | ExprKind::Relation(_) => false,
+            ExprKind::BinOp { op: BinOpKind::Eq | BinOpKind::Ne, left, right }
+                if (left.is_null() && matches!(right.kind(), ExprKind::RowValue { sql: Some(_), .. }))
+                    || (right.is_null() && matches!(left.kind(), ExprKind::RowValue { sql: Some(_), .. })) =>
+            {
+                // The relational front end encodes the explicit IS [NOT]
+                // NULL predicate this way. It is total over nullable columns,
+                // unlike SQL equality with an arbitrary nullable operand.
+                false
+            }
             ExprKind::RowValue { sql: Some(column), .. } => {
                 nullable |= column.scalar_type.ends_with('?');
                 false
