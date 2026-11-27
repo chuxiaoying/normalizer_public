@@ -29,6 +29,7 @@ pub struct FormatCtx {
     temporal_names: std::collections::BTreeMap<u64, usize>,
     reductions: std::collections::BTreeMap<u64, math::ReduceShape>,
     relation_scope: scoped_relation::Scope,
+    scoped_plans: Option<scoped_relation::ScopedPlans>,
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
@@ -51,6 +52,7 @@ impl Default for FormatCtx {
             temporal_names: Default::default(),
             reductions: Default::default(),
             relation_scope: Default::default(),
+            scoped_plans: None,
             business_identities: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
@@ -177,6 +179,26 @@ impl FormatCtx {
         }).collect()
     }
 
+    fn canonical_value_plan(
+        &self, value: &Expr, external: &std::collections::BTreeMap<u64, String>, active: &Expr, bound: &[usize],
+    ) -> math::ValuePlan {
+        let location = scoped_relation::ValueLocation(value.clone(), active.clone(), bound.to_vec());
+        let cache = self.scoped_plans.as_ref().filter(|plans| &plans.external == external).map(|plans| &plans.plans);
+        if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
+        let keys = self.prepare_value_keys(value, external, active, bound, true);
+        let compare = crate::canonical_names::ChoiceKeys {
+            base: CanonicalNames { heap: &self.business_identities,
+                external: (!external.is_empty()).then_some(external), total_temporals: None,
+                reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
+            slots: &keys.lexical, cases: &keys.cases,
+        };
+        let plan = math::canonical_let_plan(value, &compare, &keys.prefix,
+            |expr| business_value::closed_candidate(expr, self))
+            .unwrap_or_else(|failure| panic!("{failure}"));
+        if let Some(cache) = cache { cache.borrow_mut().insert(location, plan.clone()); }
+        plan
+    }
+
     fn prepare_value_keys(
         &self, expression: &Expr, external: &std::collections::BTreeMap<u64, String>,
         active: &Expr, bound: &[usize], enter: bool,
@@ -201,27 +223,26 @@ impl FormatCtx {
                 prepared.lexical = self.choice_keys(&order);
             }
         }
-        if !expression.has_case_when() || !self.relation_scope.slots.iter().any(|slot| matches!(slot, Slot::Choice { .. })) {
-            return prepared;
-        }
+        if !expression.has_case_when() || self.business_inputs.is_none() { return prepared; }
         // Visit each CASE only from its enclosing scope. A structurally equal
         // CASE under a different arm has different availability and keys.
         expression.walk_pruned(&mut |part| {
             let Some(branches) = part.as_case_when() else { return part.has_case_when(); };
             if prepared.cases.contains_key(part) { return false; }
-            let child_key = |child: &Expr, domain: &Expr, enter| {
-                let inner = self.prepare_value_keys(child, external, domain, &order, enter);
+            let guard_key = |child: &Expr, domain: &Expr| {
+                let inner = self.prepare_value_keys(child, external, domain, &order, false);
                 let compare = crate::canonical_names::ChoiceKeys {
                     base: base(), slots: &inner.lexical, cases: &inner.cases,
                 };
-                math::wrap_choices(math::canonical_order_key(child, &compare), &inner.prefix)
+                math::canonical_order_key(child, &compare)
             };
             let mut remaining = active.clone();
             let arms = branches.iter().map(|(guard, value)| {
                 let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
                 // A guard uses the enclosing bindings. Starting a new
                 // choice in the guard would not bind its selected arm.
-                let pair = (child_key(guard, &remaining, false), child_key(value, &selected, true));
+                let pair = (guard_key(guard, &remaining),
+                    self.canonical_value_plan(value, external, &selected, &order).key);
                 remaining = next;
                 pair
             }).collect();
@@ -404,14 +425,15 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             return rendered;
         }
         let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+        let external = ctx.scoped_plans.as_ref().map_or(&ctx.business_states, |plans| &plans.external);
         let keys = if op.swapped_comparison().is_some() {
-            ctx.prepare_value_keys(expr, &ctx.business_states, &domain, &ctx.relation_scope.member_order, false)
+            ctx.prepare_value_keys(expr, external, &domain, &ctx.relation_scope.member_order, false)
         } else {
             scoped_relation::ValueKeys::default()
         };
         let public = crate::canonical_names::ChoiceKeys { base: CanonicalNames {
             heap: &ctx.business_identities,
-            external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
+            external: (!external.is_empty()).then_some(external),
             total_temporals: None, reductions: Some(&ctx.reductions),
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
         }, slots: &keys.lexical, cases: &keys.cases };
@@ -603,15 +625,13 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
     let outer_domain = ctx.relation_scope.active.clone();
     let mut remaining = outer_domain.clone().unwrap_or_else(|| math::builder::lit_bool(true));
     for (guard, value) in branches {
-        let text = if scoped {
+        let text = if business {
             let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
             ctx.relation_scope.active = Some(selected);
             let text = business_value::format_value(value, ctx);
             ctx.relation_scope.active = Some(remaining);
             remaining = next;
             text
-        } else if business {
-            business_value::format_value(value, ctx)
         } else {
             format_expr_with_ctx(value, ctx)
         };

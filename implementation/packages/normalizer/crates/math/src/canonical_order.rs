@@ -465,30 +465,40 @@ impl LetSearch<'_> {
     }
 }
 
+/// The chosen definitions and the exact key of the value that owns them.
+#[derive(Clone)]
+pub struct ValuePlan {
+    pub key: Rc<CanonicalKey>,
+    pub definitions: Vec<Expr>,
+}
+
 /// Compare complete CF-09 plans using this module's ordinary structural key.
 /// Eligibility is supplied by the owner of the acquired value. Names are not
 /// part of the search; reference slots are allocated by each candidate order.
 pub fn canonical_let_plan(
     value: &Expr, ctx: &dyn SortContext, choices: &[ChoiceOperands], eligible: impl Fn(&Expr) -> bool,
-) -> Result<Vec<Expr>, &'static str> {
+) -> Result<ValuePlan, &'static str> {
     fn occurrences(expr: &Expr, eligible: &impl Fn(&Expr) -> bool, counts: &mut HashMap<Expr, usize>) {
         if expr.has_case_when() && eligible(expr) { *counts.entry(expr.clone()).or_default() += 1; }
         for child in let_eager_children(expr) { occurrences(child, eligible, counts); }
     }
-    if !value.has_case_when() { return Ok(vec![]); }
+
     let mut counts = HashMap::new();
-    occurrences(value, &eligible, &mut counts);
+    if value.has_case_when() { occurrences(value, &eligible, &mut counts); }
     let mut candidates: Vec<_> = counts.into_iter().filter(|(_, count)| *count >= 2)
         .map(|(expr, _)| { let key = canonical_order_key(&expr, ctx); (expr, key) }).collect();
-    if candidates.is_empty() { return Ok(vec![]); }
-    candidates.sort_by(|(_, a), (_, b)| a.cmp(b));
     let inline = canonical_order_key(value, ctx);
+    let inline_full = wrap_choices(inline.clone(), choices);
+    if candidates.is_empty() {
+        return Ok(ValuePlan { key: inline_full, definitions: vec![] });
+    }
+    candidates.sort_by(|(_, a), (_, b)| a.cmp(b));
     let mut selected = vec![false; candidates.len()];
     let budget = std::env::var("NORMALIZER_MATH_MAX_CANDIDATE_NODES").ok()
         .and_then(|raw| raw.parse().ok()).unwrap_or(4_000_000);
-    let inline_full = wrap_choices(inline.clone(), choices);
     let mut search = LetSearch { value, inline, inline_full: inline_full.clone(), choices,
         candidates, best: (inline_full, vec![]), budget };
     search.search(&mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut selected)?;
-    Ok(search.best.1)
+    let (key, definitions) = search.best;
+    Ok(ValuePlan { key, definitions })
 }

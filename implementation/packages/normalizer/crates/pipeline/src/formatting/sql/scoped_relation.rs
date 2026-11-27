@@ -38,6 +38,15 @@ pub(crate) struct ChoiceShape {
     pub(crate) fallback: ChoiceOuter,
 }
 
+/// A rendering uses one fixed set of named inputs and external observations.
+pub(super) struct ScopedPlans {
+    pub(super) external: BTreeMap<u64, String>,
+    pub(super) plans: std::cell::RefCell<HashMap<ValueLocation, math::ValuePlan>>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(super) struct ValueLocation(pub(super) Expr, pub(super) Expr, pub(super) Vec<usize>);
+
 #[derive(Default)]
 pub(super) struct ValueKeys {
     pub(super) prefix: Vec<math::ChoiceOperands>,

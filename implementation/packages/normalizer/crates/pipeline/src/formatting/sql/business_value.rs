@@ -21,7 +21,7 @@ fn total_value(value: &Expr, ctx: &FormatCtx, row: Option<&str>) -> bool {
     value.as_array_lit().is_some_and(|items| items.iter().all(|item| total_value(item, ctx, row)))
 }
 
-fn closed_candidate(value: &Expr, ctx: &FormatCtx) -> bool {
+pub(super) fn closed_candidate(value: &Expr, ctx: &FormatCtx) -> bool {
     use math::{domains::relation::RelationExpr, RelationAggregateKind};
     if total_value(value, ctx, None) { return true; }
     // A SUM can be shared as a whole only over the exact same acquired
@@ -40,25 +40,23 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut F
         return ctx.in_relation_scope(value, render);
     }
     let external = ctx.published_external_names();
+    let first = ctx.scoped_plans.is_none();
+    if first {
+        ctx.scoped_plans = Some(super::scoped_relation::ScopedPlans {
+            external: external.clone(), plans: Default::default(),
+        });
+    }
     let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| b::lit_bool(true));
-    let keys = ctx.prepare_value_keys(value, &external, &domain, &ctx.relation_scope.member_order, true);
-    let compare = crate::canonical_names::ChoiceKeys { base: crate::canonical_names::CanonicalNames {
-        heap: &ctx.business_identities,
-        external: (!external.is_empty()).then_some(&external),
-        total_temporals: None,
-        reductions: Some(&ctx.reductions),
-        temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-    }, slots: &keys.lexical, cases: &keys.cases };
-    let plan = math::canonical_let_plan(value, &compare, &keys.prefix, |expr| closed_candidate(expr, ctx))
-        .unwrap_or_else(|failure| panic!("{failure}"));
+    let plan = ctx.canonical_value_plan(value, &external, &domain, &ctx.relation_scope.member_order);
     let mut definitions = Vec::new();
-    for (slot, expression) in plan.into_iter().enumerate() {
+    for (slot, expression) in plan.definitions.into_iter().enumerate() {
         let name = format!("$l_{slot}");
         definitions.push(format!("LET {name} = {}", super::format_expr_with_ctx(&expression, ctx)));
         ctx.display_business_value(expression, name);
     }
     let result = ctx.in_relation_scope(value, render);
     for _ in &definitions { ctx.forget_business_value(); }
+    if first { ctx.scoped_plans = None; }
     if definitions.is_empty() { result }
     else { format!("{}\nIN {result}", definitions.join("\n")) }
 }
