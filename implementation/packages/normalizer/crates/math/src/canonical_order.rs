@@ -393,7 +393,13 @@ impl LetSearch<'_> {
                 result.arms += &value.arms;
                 result.operations += &value.operations;
                 result.tail = Some(value);
-                if key < self.best.0 { self.best = (key, bindings.clone()); }
+                // The shared structure key only breaks ties between plans
+                // that have already beaten the inline value in complexity.
+                if (&key.arms, &key.operations) < (&self.inline.arms, &self.inline.operations)
+                    && key < self.best.0
+                {
+                    self.best = (key, bindings.clone());
+                }
             }
         }
         for index in 0..self.candidates.len() {
