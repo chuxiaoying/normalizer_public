@@ -476,9 +476,7 @@ impl<'a> Engine<'a> {
                         .ok_or_else(|| fail("unresolved same-class constructor"))?;
                     let receiver = env.get("this").cloned()
                         .ok_or_else(|| fail("constructor delegation needs the original receiver"))?;
-                    let values = args.iter()
-                        .map(|argument| self.java_expr(argument, id, env, path.clone()))
-                        .collect::<Result<Vec<_>>>()?;
+                    let Some((values, path)) = self.source_arguments(args, id, env, path)? else { continue; };
                     self.java_call_on(&target, values, path, Some(receiver))?;
                 }
                 S::Return(Some(expr)) => {
@@ -830,8 +828,9 @@ impl<'a> Engine<'a> {
         &mut self, element_type: &JavaType, elements: &[J], id: &str, env: &mut Env, path: Expr,
     ) -> Result<super::source_arrays::LocalIntArray> {
         need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
-        let values = elements.iter().map(|element| self.java_expr(element, id, env, path.clone()))
-            .collect::<Result<_>>()?;
+        let Some((values, _)) = self.source_arguments(elements, id, env, path)? else {
+            return Ok(super::source_arrays::LocalIntArray::Zeroed(0));
+        };
         self.source_local_array_initializer(values)
     }
 
@@ -840,6 +839,10 @@ impl<'a> Engine<'a> {
     ) -> Result<super::source_arrays::LocalIntArray> {
         need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
         let size = self.java_expr(length, id, env, path.clone())?;
+        let path = self.normal_path(path);
+        if path.as_bool() == Some(false) {
+            return Ok(super::source_arrays::LocalIntArray::Zeroed(0));
+        }
         self.source_local_array_allocation(size, path)
     }
 
@@ -1102,8 +1105,13 @@ impl<'a> Engine<'a> {
                         let receiver_type = self.source_declared_type(&J::Ident(local.clone()), id)?;
                         if let Some(interface) = crate::normalized::specialized_interface(self.program, &receiver_type) {
                             let receiver = receiver.scalar()?;
-                            let values = args.iter().map(|arg| self.java_expr(arg, id, env, path.clone()))
-                                .collect::<Result<Vec<_>>>()?;
+                            let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                                let signature = interface.methods().iter()
+                                    .find(|decl| decl.name() == method && decl.arity() == args.len())
+                                    .ok_or_else(|| fail("missing declared interface return type"))?;
+                                let ty = self.project.declared_result_type(signature.return_type())?;
+                                return Ok(Value::Term(ty, b::lit_null()));
+                            };
                             return self.invoke_interface(&interface.full_name(), &receiver_type, method, receiver, values, path);
                         }
                         if let JavaType::Class(interface) = receiver_type {
