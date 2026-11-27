@@ -16,6 +16,12 @@ expected:
       kind: table
       source: archived_bill
       columns: { account_id: number }
+    $a_0:
+      kind: acquisition
+      source: archived_bill
+      when: completion.is_return($e_0)
+      after:
+        - result: $e_0
   R: |-
     COALESCE(
       SUM(
@@ -27,7 +33,7 @@ expected:
     ) - COALESCE(
       SUM(
         SELECT 1
-        FROM archived_bill
+        FROM $a_0 AS archived_bill
         WHERE archived_bill.account_id == accountId
       ),
       0
