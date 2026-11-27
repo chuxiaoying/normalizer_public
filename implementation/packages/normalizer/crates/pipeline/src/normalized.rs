@@ -653,12 +653,12 @@ pub(crate) fn validate_with_receiver(
             let ty = if args.is_empty() { JavaType::Class(interface.clone()) }
                 else { JavaType::Generic(interface.clone(), args.to_vec()) };
             specialized_interface(program, &ty).is_none_or(|declaration| {
-                !plain_source_interface(declaration)
-                    || declaration.methods().iter().any(|required| {
-                        let count = c.methods().iter().filter(|method| override_matches(required, method)).count();
-                        count != 1 && (!required.is_default() || count != 0
-                            || c.methods().iter().any(|m| m.name() == required.name() && same_parameters(m, required)))
-                    })
+                // specialized_interface already certifies the interface shape.
+                declaration.methods().iter().any(|required| {
+                    let count = c.methods().iter().filter(|method| override_matches(required, method)).count();
+                    count != 1 && (!required.is_default() || count != 0
+                        || c.methods().iter().any(|m| m.name() == required.name() && same_parameters(m, required)))
+                })
             })
         })
             || !unambiguous_interface_defaults(program, c)

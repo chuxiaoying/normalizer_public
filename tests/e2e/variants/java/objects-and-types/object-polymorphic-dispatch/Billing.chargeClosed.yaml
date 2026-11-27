@@ -79,3 +79,20 @@
   - path:
     - R
     value: '7'
+
+- name: one-explicit-override-resolves-two-interface-defaults
+  edits:
+    - from: 'interface Fee { int apply(int value); }'
+      to: |-
+        interface Fee { default int apply(int value) { return value + 10; } }
+        interface AlternativeFee { default int apply(int value) { return value + 20; } }
+    - {from: 'class FixedFee implements Fee {', to: 'class FixedFee implements Fee, AlternativeFee {'}
+- name: ambiguous-defaults-cannot-be-resolved-by-interface-order
+  edits:
+    - from: 'interface Fee { int apply(int value); }'
+      to: |-
+        interface Fee { default int apply(int value) { return value + 10; } }
+        interface AlternativeFee { default int apply(int value) { return value + 20; } }
+    - from: 'class FixedFee implements Fee { public int apply(int value) { return value - 1; } }'
+      to: 'class FixedFee implements AlternativeFee, Fee {}'
+  reject: ['[NORM-CLASS-SHAPE]', 'FixedFee']
