@@ -137,7 +137,8 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
 fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     if context.iter().any(|c| {
         !profile_pair_can_skip_proof_check(c, expr)
-            && (is_complement(c, expr) || different_throw_tags(c, expr))
+            && (is_complement(c, expr) || different_throw_tags(c, expr)
+                || empty_input_implies_empty_selection(c, &builder::not(expr.clone())))
     }) {
         return true;
     }

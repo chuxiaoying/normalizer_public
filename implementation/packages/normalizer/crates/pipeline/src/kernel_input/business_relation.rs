@@ -425,17 +425,18 @@ impl<'a> Engine<'a> {
                 .ok_or_else(|| fail("eager projection requires its declared record element"))?;
             let member = row.fields().iter().find(|field| field.name() == link)
                 .ok_or_else(|| fail("undeclared eager projection member"))?;
-            need(crate::normalized::source_nullable_field(row, member),
-                "eager projection member requires an explicit nullable record declaration")?;
+            let nullable = crate::normalized::source_nullable_field(row, member);
             let child = self.project.source_owner(member.java_type()).and_then(|owner| self.program.find_class(owner))
                 .ok_or_else(|| fail("eager projection member must be a declared record"))?;
             need(child.fields().iter().any(|field| field.name() == leaf && crate::normalized::integral(field.java_type())),
                 "eager projection leaf must be a declared integer")?;
-            let base = RelationExpr::base(&root, "r");
-            let missing = b::eq(b::row_value(format!("r.{link}")), b::lit_null());
-            // This is the completion of the entire projection, not of a single selected row.
-            let exception = r::relation_exists(RelationExpr::select(missing, base.clone()));
-            self.throw_source_on_path(b::and(guard.clone(), exception), "java.lang.NullPointerException");
+            if nullable {
+                let base = RelationExpr::base(&root, "r");
+                let missing = b::eq(b::row_value(format!("r.{link}")), b::lit_null());
+                // This is the completion of the entire projection, not of a single selected row.
+                let exception = r::relation_exists(RelationExpr::select(missing, base));
+                self.throw_source_on_path(b::and(guard.clone(), exception), "java.lang.NullPointerException");
+            }
             env.insert(query.binding.clone(), Value::EagerIntProjection {
                 source: root, field: format!("{link}.{leaf}"),
             });
