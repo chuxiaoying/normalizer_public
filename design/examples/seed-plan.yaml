@@ -529,7 +529,7 @@ topics:
         status: seeded
         test_status: covered
         surface: typescript
-        focus: TypeScript 分析副本拒绝 unknown，包括已有运行时检查、别名和局部类型
+        focus: TypeScript 宽类型入参经源码类型判断收窄，保留非文本的失败分支
       - id: entry-async-await
         status: seeded
         test_status: covered

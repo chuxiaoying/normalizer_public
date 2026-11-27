@@ -1,8 +1,8 @@
-# TypeScript：有运行时检查也不接受 unknown
+# TypeScript：unknown 按源码类型判断收窄
 
 ## 设计意图
 
-验收分析副本的强类型边界。能通过 TypeScript strict 检查，不代表能交给 Normalizer。检查分支只在执行中提供局部类型证据，不能使带 `unknown` 的交付合同通过准入。依据见 [AI救赎](../../../chapters/04-AI救赎.md#只支持强类型)。
+验收宽类型入参在运行时检查后只在成功路径收窄，并保留失败路径及其异常载荷。依据见[符号执行](../../../chapters/01-符号执行.md#se-03-宽类型值按源码语义执行)。
 
 ## 输入原始代码
 
@@ -15,8 +15,22 @@ export function read(value: unknown): string {
 
 ## AI 预处理结果
 
-**不能原样通过。** 本例观察的入口包含检查和失败。没有证据表明调用者已完成校验，不能改成 `value: string`，也不能插入断言、转换或新入参。如果误将原件交给 Normalizer，在第一处 `unknown` 拒绝。
+原样交付。这个入口包含检查和失败，不能把 `value` 改成 `string` 或把检查挪到入口之外。
 
 ## 归一化最终结果
 
-`Panic: not-support`，诊断指向源码中的 `unknown`，无 PERS。检查写成肯定分支、调换 `typeof` 比较两端、改变失败消息、或通过断言和转换使用该值，都不改变准入结论。把它写进类型别名、对象字段或局部变量，也不能绕过准入；例如辅助模块的 catch 变量由 TypeScript 推断为 unknown 时，同样在类型预检拒绝。
+```yaml
+schema: normalizer.pers/1
+entry: { function: src/value.ts#read, returns: text }
+P:
+  parameters:
+    value: { position: 0, type: unknown }
+R: value
+throws:
+  - type: TypeError
+    when: 'typeof(value) != "string"'
+    payload: '"Expected text"'
+    payload_type: text
+```
+
+`R` 仅在正常完成路径成立：检查命中时，返回收窄为文本的原值。非文本路径保留 `TypeError` 和原消息，不产生正常返回。不访问环境、不产生外部动作。若删掉检查并直接从这个声明返回 `string` 的入口返回 `value`，应在 TypeScript 类型检查时报错；原因是返回类型不匹配，而不是参数声明了 `unknown`。
