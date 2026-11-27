@@ -248,6 +248,11 @@ pub fn normalize_with(expr: Expr, ctx: &dyn crate::sort_context::SortContext) ->
     try_normalize_with(expr, ctx).unwrap_or_else(|error| panic!("{error}"))
 }
 
+pub(crate) fn exact_acquired_arithmetic(value: &Expr, ctx: &dyn crate::SortContext) -> bool {
+    integer_ac::exact_business_integer(value, ctx)
+        && crate::canonical_order::comparison_operands_are_bound(value, ctx)
+}
+
 /// Reapply exact integer laws after lexical member binding. Branches and
 /// relation rows are separate scopes; their callers supply their own domains.
 pub fn canonicalize_bound_integer_ops(value: &Expr, ctx: &dyn crate::SortContext) -> Expr {

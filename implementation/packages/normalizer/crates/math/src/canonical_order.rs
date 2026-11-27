@@ -495,6 +495,7 @@ pub fn let_eager_children(expr: &Expr) -> Vec<&Expr> {
 
 fn value_key_with_lets(
     expression: &Expr, inline: &Rc<CanonicalKey>, bindings: &[Expr], uses: &mut [usize],
+    ctx: &dyn SortContext,
 ) -> Rc<CanonicalKey> {
     if let Some(slot) = bindings.iter().position(|definition| definition == expression) {
         uses[slot] += 1;
@@ -506,14 +507,31 @@ fn value_key_with_lets(
     let mut key = inline.as_ref().clone();
     for (index, expr) in children.into_iter().enumerate() {
         let old = inline.children[index].as_ref().expect("eager key slot");
-        let new = value_key_with_lets(expr, old, bindings, uses);
+        let new = value_key_with_lets(expr, old, bindings, uses, ctx);
         key.arms -= &old.arms;
         key.arms += &new.arms;
         key.operations -= &old.operations;
         key.operations += &new.operations;
         key.children[index] = Some(new);
     }
+    if matches!(expression.as_binop(), Some((BinOpKind::Add | BinOpKind::Mul, ..)))
+        && crate::normalize::exact_acquired_arithmetic(expression, ctx)
+        && key.children[0] > key.children[1]
+    {
+        key.children.swap(0, 1);
+    }
     Rc::new(key)
+}
+
+/// Reorder the two strictly evaluated, exact operands by their actual
+/// output structure, which now contains lexical LET references.
+pub fn let_arithmetic_needs_swap(expression: &Expr, bindings: &[Expr], ctx: &dyn SortContext) -> bool {
+    let Some((BinOpKind::Add | BinOpKind::Mul, left, right)) = expression.as_binop() else { return false; };
+    if bindings.is_empty() || !crate::normalize::exact_acquired_arithmetic(expression, ctx) { return false; }
+    let mut uses = vec![0; bindings.len()];
+    let left = value_key_with_lets(left, &canonical_order_key(left, ctx), bindings, &mut uses, ctx);
+    let right = value_key_with_lets(right, &canonical_order_key(right, ctx), bindings, &mut uses, ctx);
+    left > right
 }
 
 /// A scoped RA-09 choice has two outer operands. The last child is
@@ -534,6 +552,7 @@ pub fn wrap_choices(mut value: Rc<CanonicalKey>, prefix: &[ChoiceOperands]) -> R
 
 struct LetSearch<'a> {
     value: &'a Expr,
+    ctx: &'a dyn SortContext,
     inline: Rc<CanonicalKey>,
     inline_full: Rc<CanonicalKey>,
     choices: &'a [ChoiceOperands],
@@ -554,7 +573,7 @@ impl LetSearch<'_> {
             .ok_or("LET candidate budget exhausted; no canonical result was produced")?;
         if !bindings.is_empty() {
             let mut uses = definition_uses.clone();
-            let value = value_key_with_lets(self.value, &self.inline, bindings, &mut uses);
+            let value = value_key_with_lets(self.value, &self.inline, bindings, &mut uses, self.ctx);
             let value = wrap_choices(value, self.choices);
             if uses.iter().all(|&count| count >= 2) {
                 let declarations = definition_keys.iter().cloned().map(Some).collect();
@@ -577,7 +596,7 @@ impl LetSearch<'_> {
             if selected[index] { continue; }
             let (expression, inline) = &self.candidates[index];
             let mut uses = definition_uses.clone();
-            let body = value_key_with_lets(expression, inline, bindings, &mut uses);
+            let body = value_key_with_lets(expression, inline, bindings, &mut uses, self.ctx);
             if body.arms == BigUint::default() { continue; } // a LET reference does not own a CASE
             let binding = node(Class::Construct, named("let_binding"), body.types.clone(), body.contract.clone(),
                 vec![], vec![Some(body)], None, 0, 1);
@@ -637,7 +656,7 @@ pub fn canonical_let_plan(
     let mut selected = vec![false; candidates.len()];
     let budget = std::env::var("NORMALIZER_MATH_MAX_CANDIDATE_NODES").ok()
         .and_then(|raw| raw.parse().ok()).unwrap_or(4_000_000);
-    let mut search = LetSearch { value, inline, inline_full: inline_full.clone(), choices,
+    let mut search = LetSearch { value, ctx, inline, inline_full: inline_full.clone(), choices,
         candidates, best: (inline_full, vec![]), budget };
     search.search(&mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut selected)?;
     let (key, definitions) = search.best;

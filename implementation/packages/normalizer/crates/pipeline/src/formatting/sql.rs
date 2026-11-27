@@ -535,7 +535,8 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         }
         let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
         let external = ctx.scoped_plans.as_ref().map_or(ctx.observation_identities(), |plans| &plans.external);
-        let keys = if op.swapped_comparison().is_some() {
+        let let_arithmetic = !ctx.business_projections.is_empty() && matches!(op, BinOpKind::Add | BinOpKind::Mul);
+        let keys = if op.swapped_comparison().is_some() || let_arithmetic {
             ctx.prepare_value_keys(expr, external, &domain, &ctx.relation_scope.member_order, false)
         } else {
             scoped_relation::ValueKeys::default()
@@ -548,8 +549,12 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         }, slots: &keys.lexical, cases: &keys.cases, in_reduce_body: ctx.relation_scope.in_reduce_yield };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.
+        let let_bindings = if let_arithmetic {
+            ctx.business_projections.iter().map(|(expr, _)| expr.clone()).collect()
+        } else { Vec::new() };
         let (op, left, right) = match math::canonical_order_ordered_comparison(op, left, right, &public) {
             Some((reversed, true)) => (reversed, right, left),
+            _ if math::let_arithmetic_needs_swap(expr, &let_bindings, &public) => (op, right, left),
             _ => (op, left, right),
         };
         let l = format_binop_child_with_precedence(op, left, false, ctx);

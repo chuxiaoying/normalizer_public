@@ -43,7 +43,7 @@ pub(super) fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool 
 
 /// Strict numeric operators preserve the domain of both operands when swapped;
 /// a guarded external result does not justify eliminating or duplicating it.
-fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
+pub(super) fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> bool {
     if value.as_lit().and_then(Lit::as_integer).is_some() {
         return true;
     }
