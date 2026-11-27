@@ -2,7 +2,7 @@
 //! prove equivalence or normalize a child. Callers prove movement separately.
 use crate::domains::{decimal, primitive::registry, relation::{RelationExpr, TableSource}};
 use crate::expr::{BinOpKind, Expr, ExprKind, RelationAggregateKind, UnaryOpKind};
-use crate::sort_context::SortContext;
+use crate::sort_context::{ObservationIdentity, SortContext};
 use crate::symvar::SymVarOrigin;
 use num_bigint::{BigInt, BigUint, Sign};
 use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
@@ -24,10 +24,7 @@ enum Payload {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct TableKey { path: Vec<String>, snapshot: Option<Observation> }
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Observation { Entry(Vec<String>), Receipt(u64), Runtime(u64), Unnamed(u64) }
+struct TableKey { path: Vec<String>, snapshot: Option<ObservationIdentity> }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Identity {
@@ -36,8 +33,8 @@ enum Identity {
     EntrySnapshot(Vec<String>),
     Local(usize),
     Parameter(Vec<String>),
-    Receipt(u64, Vec<String>),
-    RuntimeObservation(u64, Vec<String>),
+    Receipt(usize, Vec<String>),
+    RuntimeObservation(usize, Vec<String>),
     // These distinguish in-flight execution values until the result builder
     // supplies their business identity. They are not published reference names.
     InternalExternal(u64, Vec<String>),
@@ -119,16 +116,9 @@ fn aggregate(kind: RelationAggregateKind) -> (&'static str, &'static str) {
     }
 }
 
-fn observation(ctx: &dyn SortContext, id: u64) -> Observation {
-    match ctx.external_names().and_then(|names| names.get(&id)) {
-        Some(name) => {
-            let suffix = |prefix| name.strip_prefix(prefix).and_then(|value| value.parse::<u64>().ok());
-            if let Some(slot) = suffix("$e_") { Observation::Receipt(slot) }
-            else if let Some(slot) = suffix("$a_") { Observation::Runtime(slot) }
-            else { Observation::Entry(path(name)) }
-        }
-        None => Observation::Unnamed(id),
-    }
+fn observation(ctx: &dyn SortContext, id: u64) -> ObservationIdentity {
+    ctx.observation_identities().and_then(|identities| identities.get(&id)).cloned()
+        .unwrap_or(ObservationIdentity::Internal(id))
 }
 
 fn physical(table: &TableSource, ctx: &dyn SortContext) -> TableKey {
@@ -181,10 +171,10 @@ impl Keys<'_> {
                     },
                     SymVarOrigin::External { binding_id, path: parts, primitive_type: _ } => {
                         let id = match observation(ctx, *binding_id) {
-                            Observation::Entry(mut root) => { root.extend(parts.iter().cloned()); Identity::EntrySnapshot(root) }
-                            Observation::Receipt(slot) => Identity::Receipt(slot, parts.clone()),
-                            Observation::Runtime(slot) => Identity::RuntimeObservation(slot, parts.clone()),
-                            Observation::Unnamed(id) => Identity::InternalExternal(id, parts.clone()),
+                            ObservationIdentity::EntrySnapshot(mut root) => { root.extend(parts.iter().cloned()); Identity::EntrySnapshot(root) }
+                            ObservationIdentity::Receipt(slot) => Identity::Receipt(slot, parts.clone()),
+                            ObservationIdentity::RuntimeObservation(slot) => Identity::RuntimeObservation(slot, parts.clone()),
+                            ObservationIdentity::Internal(id) => Identity::InternalExternal(id, parts.clone()),
                         };
                         (if parts.is_empty() { Class::Reference } else { Class::Read }, id)
                     }
@@ -320,7 +310,7 @@ thread_local! {
 
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
     let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
-    if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.external_names().is_some()
+    if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.observation_identities().is_some()
         || ctx.in_reduce_body() || ctx.has_case_arm_keys() || ctx.choice_slots().is_some() || ctx.has_reduce_shapes()
     {
         return keys.expr(expr);

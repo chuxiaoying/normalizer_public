@@ -17,6 +17,16 @@ pub struct ReduceShape {
 /// omitted from the actual structure when its result is the ELSE.
 pub type CaseArmKeys = Vec<(std::rc::Rc<crate::CanonicalKey>, std::rc::Rc<crate::CanonicalKey>)>;
 
+/// Bound environment identity in one entry's comparison context. Dynamic
+/// slots index the settled event ledger, not its separately numbered outputs.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ObservationIdentity {
+    EntrySnapshot(Vec<String>),
+    Receipt(usize),
+    RuntimeObservation(usize),
+    Internal(u64),
+}
+
 /// 排序上下文 trait — 提供 HeapRef display_name 查询能力
 pub trait SortContext {
     /// 查询 HeapRef 的 display_name（入口参数或命名状态的公开路径）
@@ -25,8 +35,8 @@ pub trait SortContext {
     /// - 无 display_name → 返回 None，由排序规则使用 id 稳定字符串
     fn heap_display_name(&self, heap_id: i64) -> Option<String>;
 
-    /// Public paths of already acquired, named environment observations.
-    fn external_names(&self) -> Option<&std::collections::BTreeMap<u64, String>> {
+    /// Stable identities of already acquired environment observations.
+    fn observation_identities(&self) -> Option<&std::collections::BTreeMap<u64, ObservationIdentity>> {
         None
     }
 

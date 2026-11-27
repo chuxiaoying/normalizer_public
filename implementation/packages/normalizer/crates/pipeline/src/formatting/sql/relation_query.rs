@@ -19,10 +19,10 @@ fn predicate_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
 }
 
 fn sort_predicates(predicates: &mut Vec<&Expr>, ctx: &crate::FormatCtx) {
-    let external = ctx.published_external_names();
+    let external = ctx.observation_identities();
     let public = crate::canonical_names::CanonicalNames {
         heap: &ctx.business_identities,
-        external: (!external.is_empty()).then_some(&external),
+        external: (!external.is_empty()).then_some(external),
         total_temporals: None,
         reductions: Some(&ctx.reductions),
         temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),

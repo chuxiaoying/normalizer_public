@@ -39,7 +39,7 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&Expr,
     if ctx.business_inputs.is_none() || (!value.has_case_when() && ctx.relation_scope.slots.is_empty()) {
         return render(value, ctx);
     }
-    let external = ctx.published_external_names();
+    let external = ctx.observation_identities().clone();
     let first = ctx.scoped_plans.is_none();
     if first {
         ctx.scoped_plans = Some(super::scoped_relation::ScopedPlans {

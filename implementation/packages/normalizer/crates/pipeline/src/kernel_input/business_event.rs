@@ -40,13 +40,14 @@ pub(super) fn condition_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String 
 fn bind_receipt<'a>(
     receipt: &'a EffectReceipt,
     guard: &Expr,
+    event_slot: usize,
     issued: &mut BTreeSet<u64>,
     ctx: &mut crate::FormatCtx,
 ) -> Result<(&'a Expr, u64, String)> {
     let binding_id = receipt.binding_id();
     let position = ctx.receipt_count();
     need(issued.insert(binding_id), "duplicate operation receipt")?;
-    ctx.bind_business_event(binding_id, position, guard.clone());
+    ctx.bind_business_event(binding_id, position, event_slot, guard.clone());
     Ok((receipt.response(), binding_id, format!("$e_{position}")))
 }
 
@@ -156,7 +157,7 @@ pub(super) fn observations(
         need(closed && heap_operands.values().all(|(actual, allowed)| actual == allowed),
             "unbound local or external value in settled output")
     };
-    for event in result.realtime_effects.events() {
+    for (event_slot, event) in result.realtime_effects.events().iter().enumerate() {
         validate_ids(&event.guard, &issued, None)?;
         for arg in event.arguments() {
             validate_ids(arg, &issued, None)?;
@@ -192,12 +193,12 @@ pub(super) fn observations(
                 };
                 if let Some(guard) = condition { item["when"] = json!(guard); }
                 need(issued.insert(*binding_id), "duplicate environment acquisition identity")?;
-                ctx.bind_acquisition(*binding_id, label.clone(), event.guard.clone());
+                ctx.bind_acquisition(*binding_id, label.clone(), event_slot, event.guard.clone());
                 acquisitions.insert(label, item);
                 continue;
             }
             EffectOperation::Sql { statement: sql, receipt } => {
-                let (response, _, receipt) = bind_receipt(receipt, &event.guard, &mut issued, &mut ctx)?;
+                let (response, _, receipt) = bind_receipt(receipt, &event.guard, event_slot, &mut issued, &mut ctx)?;
                 let mut item = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                     sql.project(event.arguments(), &receipt, &mut tables, ctx)
                 })?;
@@ -222,7 +223,7 @@ pub(super) fn observations(
                     spec.returns == ty,
                     "external business result disagrees with port type",
                 )?;
-                let (response, binding_id, output) = bind_receipt(receipt, &event.guard, &mut issued, &mut ctx)?;
+                let (response, binding_id, output) = bind_receipt(receipt, &event.guard, event_slot, &mut issued, &mut ctx)?;
                 let variants = spec.throw_variants(response);
                 if variants.len() > 1 {
                     // Only declared tags of this issued occurrence share a partition.
@@ -370,10 +371,10 @@ pub(super) fn observations(
         })
     });
     if reorderable {
-        let public_names = ctx.published_external_names();
+        let identities = ctx.observation_identities();
         let public = crate::canonical_names::CanonicalNames {
             heap: &BTreeMap::new(),
-            external: Some(&public_names),
+            external: Some(identities),
             total_temporals: None, reductions: None, temporals: None,
         };
         exceptions.sort_by_cached_key(|(name, payload, cond)| (
@@ -402,28 +403,28 @@ pub(super) fn observations(
         .collect();
     let returned = if let Some(returned) = returned {
         validate_ids(&returned, &issued, Some(temporal_names))?;
-        // Only the settled event ledger owns public receipt ordinals. Pass
-        // those same names into a context-aware normalization when needed.
+        // Supply settled observation identities to normalization, without
+        // using the renderer's receipt ordinals as ordering keys.
         let mut reads_total_integer_field = false;
-        let mut reads_renumbered_receipt = false;
+        let mut reads_rebound_receipt = false;
         if temporal_names.is_empty() {
             returned.walk(&mut |value| {
                 if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
                     reads_total_integer_field |= primitive_type == "integer" && !path.is_empty()
                         && total_port_receipts.contains(binding_id);
-                    reads_renumbered_receipt |= ctx.e_slot(*binding_id)
-                        .is_some_and(|slot| slot as u64 != *binding_id);
+                    reads_rebound_receipt |= matches!(ctx.observation_identities().get(binding_id),
+                        Some(math::ObservationIdentity::Receipt(slot)) if u64::try_from(*slot).ok() != Some(*binding_id));
                 }
             });
         }
-        let returned = if temporal_names.is_empty() && !(reads_total_integer_field && reads_renumbered_receipt) {
+        let returned = if temporal_names.is_empty() && !(reads_total_integer_field && reads_rebound_receipt) {
             returned
         } else {
-            let external_names = ctx.published_external_names();
+            let observation_identities = ctx.observation_identities();
             super::temporal_graph::validate_reads(&returned, &result.temporal_definitions)?;
             let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
                 heap: &BTreeMap::new(),
-                external: Some(&external_names),
+                external: Some(observation_identities),
                 total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: Some(temporal_names),
             }).map_err(|error| fail(error.to_string()))?;
             super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;

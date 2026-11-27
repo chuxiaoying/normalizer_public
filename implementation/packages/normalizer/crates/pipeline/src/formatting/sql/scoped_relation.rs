@@ -40,7 +40,7 @@ pub(crate) struct ChoiceShape {
 
 /// A rendering uses one fixed set of named inputs and external observations.
 pub(super) struct ScopedPlans {
-    pub(super) external: BTreeMap<u64, String>,
+    pub(super) external: BTreeMap<u64, math::ObservationIdentity>,
     pub(super) plans: std::cell::RefCell<HashMap<ValueLocation, math::ValuePlan>>,
 }
 

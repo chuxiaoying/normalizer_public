@@ -528,11 +528,12 @@ impl EntryContext {
             });
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
             // The boundary checks both identity and definition references
-            // before passing their public names to the typed math normalizer.
+            // before passing their stable identities to the typed normalizer.
+            let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             let expression = if expression.has_heap_ref() || !definition_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &identities,
-                    external: (!states.is_empty()).then_some(&states),
+                    external: (!states.is_empty()).then_some(ctx.observation_identities()),
                     total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
@@ -543,7 +544,6 @@ impl EntryContext {
             if !result.temporal_definitions.is_empty() {
                 super::temporal_graph::validate_reads(&expression, &result.temporal_definitions)?;
             }
-            let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_temporal_names(definition_names.clone());
             ctx.set_relation_slots(publication.slots.clone());
             ctx.set_reductions(publication.reductions.clone());

@@ -33,6 +33,7 @@ pub struct FormatCtx {
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
+    observation_identities: std::collections::BTreeMap<u64, math::ObservationIdentity>,
     business_acquisitions: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_evaluation_guard: Option<Expr>,
@@ -56,6 +57,7 @@ impl Default for FormatCtx {
             business_identities: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
+            observation_identities: Default::default(),
             business_acquisitions: Default::default(),
             business_receipt_guards: Default::default(),
             business_evaluation_guard: None,
@@ -72,15 +74,17 @@ impl FormatCtx {
         self.business_projections.push((value,label));
     }
     pub(crate) fn forget_business_value(&mut self) { self.business_projections.pop(); }
-    pub(crate) fn bind_business_event(&mut self, id: u64, position: usize, guard: Expr) {
+    pub(crate) fn bind_business_event(&mut self, id: u64, position: usize, event_slot: usize, guard: Expr) {
         self.e_renumber.insert(id, position);
+        self.observation_identities.insert(id, math::ObservationIdentity::Receipt(event_slot));
         if guard.as_bool() != Some(true) {
             self.business_receipt_guards.insert(id, guard);
         }
     }
 
-    pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, guard: Expr) {
+    pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, event_slot: usize, guard: Expr) {
         self.business_acquisitions.insert(id, label);
+        self.observation_identities.insert(id, math::ObservationIdentity::RuntimeObservation(event_slot));
         if guard.as_bool() != Some(true) {
             self.business_receipt_guards.insert(id, guard);
         }
@@ -98,11 +102,8 @@ impl FormatCtx {
         self.e_renumber.len()
     }
 
-    pub(crate) fn published_external_names(&self) -> std::collections::BTreeMap<u64, String> {
-        let mut names = self.business_states.clone();
-        names.extend(self.business_acquisitions.clone());
-        names.extend(self.e_renumber.iter().map(|(&id, position)| (id, format!("$e_{position}"))));
-        names
+    pub(crate) fn observation_identities(&self) -> &std::collections::BTreeMap<u64, math::ObservationIdentity> {
+        &self.observation_identities
     }
 
     pub(crate) fn set_temporal_names(&mut self, names: std::collections::BTreeMap<u64, usize>) {
@@ -180,7 +181,7 @@ impl FormatCtx {
     }
 
     fn canonical_value_plan(
-        &self, value: &Expr, external: &std::collections::BTreeMap<u64, String>, active: &Expr, bound: &[usize],
+        &self, value: &Expr, external: &std::collections::BTreeMap<u64, math::ObservationIdentity>, active: &Expr, bound: &[usize],
     ) -> math::ValuePlan {
         let location = scoped_relation::ValueLocation {
             value: value.clone(), domain: active.clone(), members: bound.to_vec(),
@@ -204,7 +205,7 @@ impl FormatCtx {
     }
 
     fn prepare_value_keys(
-        &self, expression: &Expr, external: &std::collections::BTreeMap<u64, String>,
+        &self, expression: &Expr, external: &std::collections::BTreeMap<u64, math::ObservationIdentity>,
         active: &Expr, bound: &[usize], enter: bool,
     ) -> scoped_relation::ValueKeys {
         use scoped_relation::{Slot, ValueKeys};
@@ -315,7 +316,10 @@ impl FormatCtx {
     }
 
     pub(crate) fn for_business(inputs: std::collections::BTreeMap<String, String>, business_states: std::collections::BTreeMap<u64,String>) -> Self {
-        Self { business_inputs: Some(inputs), business_states, ..Self::default() }
+        let observation_identities = business_states.iter().map(|(&id, name)| {
+            (id, math::ObservationIdentity::EntrySnapshot(name.split('.').map(str::to_owned).collect()))
+        }).collect();
+        Self { business_inputs: Some(inputs), business_states, observation_identities, ..Self::default() }
     }
     pub fn new() -> Self {
         Self::default()
@@ -431,7 +435,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             return rendered;
         }
         let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
-        let external = ctx.scoped_plans.as_ref().map_or(&ctx.business_states, |plans| &plans.external);
+        let external = ctx.scoped_plans.as_ref().map_or(ctx.observation_identities(), |plans| &plans.external);
         let keys = if op.swapped_comparison().is_some() {
             ctx.prepare_value_keys(expr, external, &domain, &ctx.relation_scope.member_order, false)
         } else {
