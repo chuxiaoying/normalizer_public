@@ -426,8 +426,14 @@ fn simplify_once_memo(
         let mut remaining = parent.cloned();
         let mut rewritten = Vec::with_capacity(arms.len());
         for (guard, value) in arms {
+            if !rewritten.is_empty() && remaining.as_ref().and_then(Expr::as_bool) == Some(false) {
+                break;
+            }
             let guard = recurse(guard, remaining.as_ref());
-            let (selected, later) = if boolean_domains::is_closed_boolean(&guard) || crate::case_orientation::is_exact_input_equality(&guard) {
+            let (selected, later) = if boolean_domains::is_closed_boolean(&guard)
+                || integer_ranges::is_closed_integer_guard(&guard)
+                || crate::case_orientation::is_exact_input_equality(&guard)
+            {
                 if guard.as_bool() == Some(true) {
                     (remaining.clone(), Some(b::lit_bool(false)))
                 } else if guard.as_bool() == Some(false) {

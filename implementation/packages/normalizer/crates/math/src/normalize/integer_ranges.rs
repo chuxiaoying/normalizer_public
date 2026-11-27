@@ -79,6 +79,12 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
     Some(Guard::Compare(test, n))
 }
 
+/// A source guard over one acquired, exact integer parameter is total.
+pub(super) fn is_closed_integer_guard(expr: &Expr) -> bool {
+    let mut subject = None;
+    guard(expr, &mut subject, &mut Vec::new()).is_some() && subject.is_some()
+}
+
 fn cells(mut cuts: Vec<BigInt>) -> impl Iterator<Item = (Endpoint, Endpoint)> {
     cuts.sort();
     cuts.dedup();
