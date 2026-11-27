@@ -252,10 +252,14 @@ impl Keys<'_> {
                 Some(HeapBindingIdentity::EntrySnapshot(path)) => Identity::EntrySnapshot(path.clone()),
                 None => Identity::InternalHeap(*id),
             }),
-            RowValue { sql: Some(column), .. } =>
-                node(Class::Reference, named("binding"), vec![column.scalar_type.into()], vec!["sql".into()],
-                    vec![], vec![], Some(Identity::SqlColumn(physical(&column.table, ctx),
-                        column.row_slot, column.column.clone())), 0, 0),
+            RowValue { sql: Some(column), .. } => {
+                // Physical column ownership belongs to stable identity, not
+                // to the comparison type or operation contract. The current
+                // numeric column carrier admits exact integers only.
+                let ty = if column.scalar_type == "number" { "integer" } else { column.scalar_type };
+                binding(Class::Reference, ty,
+                    Identity::SqlColumn(physical(&column.table, ctx), column.row_slot, column.column.clone()))
+            }
             RowValue { alias, acquired_integer, sql: None } => binding(if alias.contains('.') { Class::Read } else { Class::Reference },
                 if *acquired_integer { "integer" } else { "row_value" }, Identity::Column(path(alias))),
             Call { key, args } => {
@@ -296,7 +300,9 @@ impl Keys<'_> {
                     BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul => vec![],
                 };
                 let (left, right) = (self.expr(left), self.expr(right));
-                let contract = equality_contract(*op, &left, &right);
+                let contract = if expression.may_observe_sql_unknown() {
+                    vec!["sql_three_valued".into()]
+                } else { equality_contract(*op, &left, &right) };
                 node(Class::Scalar, bin_op(*op), types, contract, vec![],
                     vec![Some(left), Some(right)], None, 0, 1)
             }

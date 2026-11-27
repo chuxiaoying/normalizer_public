@@ -23,6 +23,7 @@ pub(super) fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool 
                     .is_some_and(|identity| matches!(identity, crate::ObservationIdentity::EntrySnapshot(_))),
         ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_))
         | ExprKind::RowValue { acquired_integer: true, .. } => true,
+        ExprKind::RowValue { sql: Some(column), .. } => column.scalar_type == "number",
         ExprKind::SymVar {
             // The typed origin, not its display spelling, establishes input
             // availability. Actual E and temporal values have other origins.
