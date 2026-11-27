@@ -14,9 +14,7 @@
 //! - 多元吸收元：and 遇到 false → false，or 遇到 true → true
 //! - 多元互补检测：conjuncts 包含 x 和 NOT(x) → false；disjuncts 类似 → true
 //!
-//! 用户明令（20260428180545）："等价逻辑下越简单越正确"。多元 flatten+dedupe
-//! 是归一化 equals 的基础前提——语法结构 `((A && A) && B) && A` 通过二元 `x && x`
-//! 规则无法完全 dedupe，必须 flatten 到扁平 conjuncts 列表后统一去重。
+//! 先展开同族连接，再按有效域消去冗余，最后用共享结构键固定次序。
 
 use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
 use crate::{builder, domains::completion::different_throw_tags};
@@ -24,6 +22,22 @@ use crate::expr::{BinOpKind, Expr, ExprKind, Lit, RelationAggregateKind, UnaryOp
 use implication::*;
 
 pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
+    if let Some((op @ (BinOpKind::And | BinOpKind::Or), _, _)) = expr.as_binop() {
+        if expr.may_observe_sql_unknown() {
+            // Only use the identities that are valid under SQL's three
+            // values. IS NULL does not imply that inequality with text
+            // is true: the conjunction can still evaluate to UNKNOWN.
+            let (absorber, terms, rebuild): (bool, _, fn(&[Expr]) -> Expr) =
+                if op == BinOpKind::And { (false, flatten_and(expr), rebuild_and) }
+                else { (true, flatten_or(expr), rebuild_or) };
+            if terms.iter().any(|term| term.as_bool() == Some(absorber)) {
+                return builder::lit_bool(absorber);
+            }
+            let len = terms.len();
+            let remaining: Vec<_> = terms.into_iter().filter(|term| term.as_bool().is_none()).collect();
+            return if remaining.len() < len { rebuild(&remaining) } else { expr.clone() };
+        }
+    }
     match expr.kind() {
         ExprKind::BinOp {
             op: BinOpKind::And, ..
