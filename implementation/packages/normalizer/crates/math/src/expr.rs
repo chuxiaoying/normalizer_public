@@ -506,11 +506,28 @@ impl Expr {
         }
     }
 
-    /// A complement preserves the operands; it is not an operand swap.
+    /// A nullable physical column can produce SQL UNKNOWN. Stop at
+    /// aggregate/relationship boundaries: an acquired COUNT is not a row value.
+    pub(crate) fn may_observe_sql_unknown(&self) -> bool {
+        let mut nullable = false;
+        self.walk_pruned(&mut |node| match node.kind() {
+            ExprKind::RelationAggregate { .. } | ExprKind::Relation(_) => false,
+            ExprKind::RowValue { sql: Some(column), .. } => {
+                nullable |= column.scalar_type.ends_with('?');
+                false
+            }
+            _ => !nullable,
+        });
+        nullable
+    }
+
+    /// Complementary tokens are not an exhaustive Boolean partition when
+    /// comparison of the same operands can produce SQL UNKNOWN.
     pub(crate) fn is_comparison_complement(&self, other: &Expr) -> bool {
         let Some((_, left, right)) = self.as_binop() else { return false; };
         let Some((b, other_left, other_right)) = other.as_binop() else { return false; };
         left == other_left && right == other_right && self.comparison_complement_operator() == Some(b)
+            && !self.may_observe_sql_unknown()
     }
 
     /// 查询器：若本 Expr 是 BinOp，返回 (op, left, right)

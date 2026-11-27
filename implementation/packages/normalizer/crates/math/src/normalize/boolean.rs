@@ -985,14 +985,15 @@ fn absorb_two_ordered_comparisons(a: &Expr, b: &Expr) -> Option<Expr> {
 }
 
 fn is_complement(a: &Expr, b: &Expr) -> bool {
-    // 1. 语法级
+    // SQL UNKNOWN survives negation, so a syntactic NOT does not prove
+    // excluded middle or contradiction for a nullable row predicate.
     if let ExprKind::UnaryOp {
         op: UnaryOpKind::Not,
         operand,
     } = a.kind()
     {
         if operand == b {
-            return true;
+            return !operand.may_observe_sql_unknown();
         }
     }
     if let ExprKind::UnaryOp {
@@ -1001,7 +1002,7 @@ fn is_complement(a: &Expr, b: &Expr) -> bool {
     } = b.kind()
     {
         if operand == a {
-            return true;
+            return !operand.may_observe_sql_unknown();
         }
     }
     // 2. 比较级：`a < b` 与 `a >= b`、`x == null` 与 `x != null` 是互补。
