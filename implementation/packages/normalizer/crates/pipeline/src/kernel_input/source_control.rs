@@ -145,8 +145,9 @@ impl Engine<'_> {
         let first = std::cmp::max(lower, skip_before);
         if stop_after < first { return Ok(()); }
         let span: math::Integer = stop_after - first + 1;
-        let span: usize = span.try_into().map_err(|_| fail("indexed fold prefix is too large"))?;
-        need(span <= 256, "indexed fold prefix is too large; preserve a closed symbolic recurrence")?;
+        let budget_error = || fail("[NORM-ANALYSIS-INCOMPLETE] indexed fold prefix exceeds its analysis budget");
+        let span: usize = span.try_into().map_err(|_| budget_error())?;
+        if span > 256 { return Err(budget_error()); }
         // The break guard prevents any further committed update. Compute
         // one result for each possible prefix of the remaining indices.
         let mut branches = Vec::with_capacity(span + 1);

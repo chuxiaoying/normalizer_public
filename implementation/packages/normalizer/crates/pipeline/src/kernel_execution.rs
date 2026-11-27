@@ -1677,6 +1677,13 @@ impl Engine<'_> {
         })
     }
     pub(super) fn budget(&mut self) -> Result<()> {
+        // A finite source induction can still exceed the work budget. Never
+        // publish a partial execution or treat the limit as a business exit.
+        const MAX_EXECUTION_STEPS: usize = 1_000_000;
+        if self.steps >= MAX_EXECUTION_STEPS {
+            return Err(format!("[NORM-ANALYSIS-INCOMPLETE] execution step budget exhausted at {}",
+                self.diagnostic_entry()).into());
+        }
         self.steps += 1;
         Ok(())
     }

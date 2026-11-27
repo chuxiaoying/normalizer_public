@@ -281,6 +281,7 @@ impl Engine<'_> {
             let positions = self.source_local_array_positions(array, &reference);
             let mut arms = Vec::new();
             for position in positions {
+                self.budget()?;
                 let selected = b::eq(index.clone(), b::lit_int(position));
                 let domain = math::normalize(b::and(live.clone(), selected.clone()));
                 if domain.as_bool() == Some(false) { continue; }
@@ -356,6 +357,7 @@ impl Engine<'_> {
             let adjustment = math::Integer::from(offset) * local.length();
             let mut total = b::add(start, b::lit_integer(adjustment));
             for slot in self.source_local_array_positions(&local, &reference) {
+                self.budget()?;
                 total = b::add(total, self.read_local_array_slot(&local, &reference, slot, &path)?);
             }
             return Ok(Value::Term(Ty::Integer, self.normalize_execution_value(total)));
