@@ -1054,7 +1054,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 target: E::FieldAccess { target, .. },
                 value,
                 ..
-            } if matches!(target.as_ref(), E::Ident(_)) => {
+            } => {
                 expr(target, at, calls)?;
                 expr(value, at, calls)?;
             }

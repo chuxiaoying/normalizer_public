@@ -12,7 +12,7 @@ pub(super) struct ExecutionResult {
     pub(super) source_record_return: Option<Vec<(String, Expr)>>,
     pub(super) source_state_bindings: BTreeMap<u64, String>,
     pub(super) source_identity_parameters: BTreeMap<i64, String>,
-    pub(super) source_identity_states: BTreeMap<i64, u64>,
+    pub(super) source_identity_states: BTreeMap<i64, (u64, Vec<String>)>,
     pub(super) realtime_effects: EffectSequence,
     pub(super) terminal: TerminalAlternatives,
 }

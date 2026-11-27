@@ -6,20 +6,20 @@ use super::*;
 #[derive(Clone)]
 enum Origin {
     Parameter { path: String, nullable: bool },
-    State { binding: u64, path: Vec<String> },
+    State { binding: u64, path: Vec<String>, nullable: bool },
     Allocation,
     EntryReceiver,
 }
 
 enum BorrowedRoot<'a> {
     Parameter(&'a str),
-    State(u64),
+    State(u64, &'a [String]),
 }
 
 fn borrowed_root(origin: &Origin) -> Option<BorrowedRoot<'_>> {
     match origin {
-        Origin::Parameter { path, .. } if !path.contains('.') => Some(BorrowedRoot::Parameter(path)),
-        Origin::State { binding, path } if path.is_empty() => Some(BorrowedRoot::State(*binding)),
+        Origin::Parameter { path, .. } => Some(BorrowedRoot::Parameter(path)),
+        Origin::State { binding, path, .. } => Some(BorrowedRoot::State(*binding, path)),
         _ => None,
     }
 }
@@ -33,7 +33,7 @@ pub(super) struct SourceObjects {
     borrowed_fields: BTreeMap<(i64, String), i64>,
     pub(super) state_bindings: BTreeMap<u64, String>,
     pub(super) compared_parameters: BTreeMap<i64, String>,
-    pub(super) compared_states: BTreeMap<i64, u64>,
+    pub(super) compared_states: BTreeMap<i64, (u64, Vec<String>)>,
 }
 impl SourceObjects {
     pub(super) fn allocation_owner(&self, reference: &Expr) -> Option<&str> {
@@ -70,7 +70,7 @@ impl SourceObjects {
                 Origin::Parameter { path, .. } => math::HeapBindingIdentity::Parameter(
                     path.split('.').map(str::to_owned).collect(),
                 ),
-                Origin::State { binding, path } => {
+                Origin::State { binding, path, .. } => {
                     let mut fields = vec![self.state_bindings.get(binding)?.clone()];
                     fields.extend(path.iter().cloned());
                     math::HeapBindingIdentity::EntrySnapshot(fields)
@@ -181,7 +181,7 @@ impl Engine<'_> {
                 .new_path_object();
             self.source_objects
                 .objects
-                .insert(reference.id(), (target.into(), Origin::State { binding: bind, path: Vec::new() }));
+                .insert(reference.id(), (target.into(), Origin::State { binding: bind, path: Vec::new(), nullable: false }));
             self.state_roots.insert(format!("{owner}.{name}"), reference.id());
             b::heap_ref(reference.id())
         } else {
@@ -324,8 +324,6 @@ impl Engine<'_> {
                 .and_then(|field| self.project.source_owner(field.java_type()).map(|child| (class, field, child))))
         else { return self.read_guarded_source_scalar(reference, name, path); };
         let nullable = crate::normalized::source_nullable_field(class, field);
-        need(!nullable || matches!(origin, Origin::Parameter { .. }),
-            "nullable object member requires a borrowed parameter path")?;
         let child = match origin {
             Origin::Allocation => return self.read_source_field_on_path(reference, name, path),
             Origin::EntryReceiver => unreachable!("live receiver dispatched to entry state"),
@@ -333,10 +331,10 @@ impl Engine<'_> {
                 path: format!("{root}.{name}"),
                 nullable,
             },
-            Origin::State { binding, path } => {
+            Origin::State { binding, path, .. } => {
                 let mut path = path.clone();
                 path.push(name.to_owned());
-                Origin::State { binding: *binding, path }
+                Origin::State { binding: *binding, path, nullable }
             }
         };
         let key = (id, name.to_owned());
@@ -393,12 +391,16 @@ impl Engine<'_> {
         let origin = reference.as_heap_ref().and_then(|id| {
             self.source_objects.objects.get(&id).map(|(_, origin)| (id, origin))
         });
-        if let Some((id, Origin::Parameter { path, nullable: true })) = origin {
-            self.source_objects.compared_parameters.insert(id, path.clone());
-            b::eq(reference.clone(), b::lit_null())
-        } else {
-            b::lit_bool(false)
+        match origin {
+            Some((id, Origin::Parameter { path, nullable: true })) => {
+                self.source_objects.compared_parameters.insert(id, path.clone());
+            }
+            Some((id, Origin::State { binding, path, nullable: true })) => {
+                self.source_objects.compared_states.insert(id, (*binding, path.clone()));
+            }
+            _ => return b::lit_bool(false),
         }
+        b::eq(reference.clone(), b::lit_null())
     }
 
     fn read_guarded_source_scalar(&mut self, reference: &Expr, field: &str, path: &Expr) -> Result<Value> {
@@ -459,7 +461,7 @@ impl Engine<'_> {
                 .read_on_path(reference, name, path)
                 .ok_or_else(|| fail("uninitialized source field"))?,
             Origin::Parameter { path: root, .. } => b::param(format!("{root}.{name}"), primitive()?),
-            Origin::State { binding, path } => {
+            Origin::State { binding, path, .. } => {
                 let primitive = primitive()?;
                 let mut field_path = path.clone();
                 field_path.push(name.to_owned());
@@ -519,13 +521,16 @@ impl Engine<'_> {
         use super::realtime_state::FieldWriteTarget;
         let target = match origin {
             Origin::Allocation => None,
-            Origin::State { binding, path } if path.is_empty() => {
-                Some(FieldWriteTarget::EntryState(vec![self.source_objects.state_bindings[binding].clone(), field.into()]))
+            Origin::State { binding, path, .. } => {
+                let mut target = vec![self.source_objects.state_bindings[binding].clone()];
+                target.extend(path.iter().cloned());
+                target.push(field.into());
+                Some(FieldWriteTarget::EntryState(target))
             }
-            Origin::Parameter { path, .. } if !path.contains('.') => {
+            Origin::Parameter { path, .. } => {
                 Some(FieldWriteTarget::Parameter(format!("{path}.{field}")))
             }
-            _ => return Err(fail("observable mutation requires a supported borrowed root")),
+            Origin::EntryReceiver => unreachable!("entry receiver dispatched to declared state"),
         };
         let declaration = self
             .program
@@ -607,6 +612,11 @@ impl Engine<'_> {
             let is_null = self.source_object_null(peer);
             return Ok(if different { b::not(is_null) } else { is_null });
         }
+        if self.source_objects.allocation_owner(&left).is_some()
+            && self.source_objects.allocation_owner(&right).is_some()
+        {
+            return Ok(b::lit_bool((left == right) != different));
+        }
         if self.source_objects.fresh_and_acquired(&left, &right) { return Ok(b::lit_bool(different)); }
         self.check_borrowed_identity(&left, &right)?;
         let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };
@@ -638,7 +648,7 @@ impl Engine<'_> {
         for (id, origin) in roots {
             match origin {
                 BorrowedRoot::Parameter(path) => { self.source_objects.compared_parameters.insert(id, path.to_owned()); }
-                BorrowedRoot::State(binding) => { self.source_objects.compared_states.insert(id, binding); }
+                BorrowedRoot::State(binding, path) => { self.source_objects.compared_states.insert(id, (binding, path.to_vec())); }
             }
         }
         Ok(())

@@ -370,11 +370,13 @@ impl EntryContext {
             let public_root = self.qualified("P", parameter);
             let display = fields.map_or_else(|| public_root.clone(), |tail| format!("{public_root}.{tail}"));
             Some((*id, display))
-        }).chain(result.source_identity_states.iter().filter_map(|(id, binding)| {
+        }).chain(result.source_identity_states.iter().filter_map(|(id, (binding, path))| {
             let root = result.source_state_bindings.get(binding)?;
-            let state = self.environment.get(root)?;
-            (!state.fields.is_empty() || state.ty.as_deref().is_some_and(|ty| self.types.contains_key(ty.trim_end_matches('?'))))
-                .then(|| (*id, self.qualified("E", root)))
+            let layout = self.state_shape_at(root, path).ok()?;
+            if layout.is_some_and(|ty| !self.types.contains_key(ty.trim_end_matches('?'))) { return None; }
+            let public = self.qualified("E", root);
+            let display = if path.is_empty() { public } else { format!("{public}.{}", path.join(".")) };
+            Some((*id, display))
         })).collect()
     }
 
@@ -382,8 +384,10 @@ impl EntryContext {
         &self, result: &ExecutionResult, names: &BTreeMap<i64, String>,
     ) -> BTreeMap<i64, math::HeapBindingIdentity> {
         names.keys().map(|&id| {
-            let identity = if let Some(&binding) = result.source_identity_states.get(&id) {
-                math::HeapBindingIdentity::EntrySnapshot(vec![result.source_state_bindings[&binding].clone()])
+            let identity = if let Some((binding, path)) = result.source_identity_states.get(&id) {
+                let mut fields = vec![result.source_state_bindings[binding].clone()];
+                fields.extend(path.iter().cloned());
+                math::HeapBindingIdentity::EntrySnapshot(fields)
             } else {
                 math::HeapBindingIdentity::Parameter(
                     result.source_identity_parameters[&id].split('.').map(str::to_owned).collect())
