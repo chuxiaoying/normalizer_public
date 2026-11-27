@@ -260,6 +260,15 @@ impl Keys<'_> {
                 let (name, parameters, result) = registry::func_signature(*key);
                 let ty = result.map(|result| result.algebra_name().into()).into_iter().collect();
                 let signature = parameters.iter().map(|p| value_type_tag(p.algebra_name().into())).collect();
+                if matches!(crate::domains::completion::output_name(&name), "completion.is_throw" | "completion.payload") {
+                    let (operation, receipt, exception) = crate::domains::completion::class_observation(&name, args)
+                        .expect("completion class must be a resolved declaration label");
+                    // PERS-07: the receipt is the only evaluated operand.
+                    // The class label describes the contract of the operation.
+                    let children = vec![Some(self.expr(receipt))];
+                    return node(Class::Scalar, named(operation), ty, signature,
+                        vec![Payload::Text(exception.into())], children, None, 0, 1);
+                }
                 let class = if crate::domains::composite::field_intrinsic_result(*key).is_some()
                     || crate::domains::composite::vector_length_input(expression).is_some()
                 {
