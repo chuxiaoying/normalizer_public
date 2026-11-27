@@ -11,6 +11,19 @@ const LITERAL: &str = "decimal.literal";
 const PRODUCT: &str = "decimal.multiply";
 const ROUND: &str = "decimal.round";
 
+// This caps work for expansion, not the business value or its scale.
+const MAX_RADIX_EXPANSION: u32 = 1_000_000;
+
+fn check_expansion(digits: u32) {
+    assert!(digits <= MAX_RADIX_EXPANSION,
+        "[NORM-ANALYSIS-INCOMPLETE] exact decimal expansion exceeded the digit budget");
+}
+
+fn combined_scale(left: u32, right: u32) -> u32 {
+    left.checked_add(right)
+        .expect("[NORM-ANALYSIS-INCOMPLETE] exact decimal scale exceeds its representation")
+}
+
 #[derive(Clone, Copy)]
 pub enum Mode { HalfUp, HalfEven }
 
@@ -78,6 +91,7 @@ pub fn literal(mut value: BigInt, mut scale: u32) -> Expr {
 pub fn from_radix_digits(digits: &str, radix: u32, power: i32) -> Option<Expr> {
     let coefficient = BigInt::parse_bytes(digits.as_bytes(), radix)?;
     let scale = power.unsigned_abs();
+    check_expansion(scale);
     Some(if power >= 0 {
         let base = if radix == 16 { 2 } else { 10 };
         literal(coefficient * BigInt::from(base).pow(scale), 0)
@@ -132,7 +146,10 @@ pub fn binary(op: Operator, left: Expr, right: Expr) -> Expr {
     }
     if let (Some((a, s)), Some((b, t))) = (coefficient(&left), coefficient(&right)) {
         let scale = s.max(t);
-        let align = || (&a * BigInt::from(10).pow(scale - s), &b * BigInt::from(10).pow(scale - t));
+        let align = || {
+            check_expansion(scale - s.min(t));
+            (&a * BigInt::from(10).pow(scale - s), &b * BigInt::from(10).pow(scale - t))
+        };
         let compare = || {
             let (left, right) = align();
             left.cmp(&right)
@@ -140,7 +157,7 @@ pub fn binary(op: Operator, left: Expr, right: Expr) -> Expr {
         return match op {
             Add => { let (a, b) = align(); literal(a + b, scale) }
             Sub => { let (a, b) = align(); literal(a - b, scale) }
-            Mul => literal(&a * &b, s.checked_add(t).expect("decimal scale overflow")),
+            Mul => literal(&a * &b, combined_scale(s, t)),
             Eq => b::lit_bool(compare() == Ordering::Equal),
             Ne => b::lit_bool(compare() != Ordering::Equal),
             Lt => b::lit_bool(compare() == Ordering::Less),
@@ -154,7 +171,7 @@ pub fn binary(op: Operator, left: Expr, right: Expr) -> Expr {
 
 pub fn multiply(a: Expr, b: Expr) -> Expr {
     if let (Some((x, s)), Some((y, t))) = (coefficient(&a), coefficient(&b)) {
-        return literal(x*y, s.checked_add(t).expect("decimal scale overflow"));
+        return literal(x*y, combined_scale(s, t));
     }
     apply(PRODUCT, vec![a, b], vec![Primitive::Composite, Primitive::Composite])
 }
@@ -164,6 +181,7 @@ pub fn round(value: Expr, scale: u32, mode: Mode) -> Expr {
         if scale >= digits {
             return literal(coefficient, digits);
         }
+        check_expansion(digits - scale);
         let divisor = BigInt::from(10).pow(digits - scale);
         let negative = coefficient.sign() == Sign::Minus;
         let absolute = if negative { -coefficient } else { coefficient };
@@ -187,6 +205,7 @@ pub fn display_literal(value: BigInt, scale: u32) -> String {
     let mut digits = value.magnitude().to_string();
     let width = scale as usize;
     if digits.len() <= width {
+        check_expansion(scale);
         digits.insert_str(0, &"0".repeat(width+1-digits.len()));
     }
     digits.insert(digits.len()-width, '.');
