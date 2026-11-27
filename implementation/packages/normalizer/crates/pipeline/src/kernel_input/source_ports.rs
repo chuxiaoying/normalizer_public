@@ -53,11 +53,14 @@ pub(super) fn contracts(
             let params = p
                 .params
                 .iter()
-                .map(|(ty, name)| {
-                    let ty = domain(ty, program)?;
+                .map(|(source_type, name)| {
+                    let ty = domain(source_type, program)?;
+                    let immutable_value = matches!(source_type, JavaType::Class(name)
+                        if program.find_class(name).is_some_and(|class| class.is_record()));
                     need(
-                        matches!(ty, Ty::Integer | Ty::Bool | Ty::Text | Ty::Record(_)),
-                        "source port arguments must be a declared scalar or data record",
+                        matches!(ty, Ty::Integer | Ty::Bool | Ty::Text)
+                            || matches!(ty, Ty::Record(_)) && immutable_value,
+                        "source port arguments must be immutable scalars or immutable records; a mutable object does not declare when its request fields are read",
                     )?;
                     Ok(Parameter {
                         name: name.clone(),
