@@ -2,4 +2,4 @@ entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
     - "SCENARIO_MODULE_INPUT:"
-    - awaited external port requires a closed Promise<Element> and named rejection types
+    - "@N rejects requires a Promise return contract"

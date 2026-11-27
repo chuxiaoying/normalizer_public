@@ -2,4 +2,4 @@ entry: src/Caption.java#Caption.select
 reject:
   fragments:
     - "[NORM-PROJECT]"
-    - local map binding cannot be reassigned as a Java alias
+    - local map carrier can only be used through declared map operators
