@@ -12,6 +12,7 @@ pub enum ScalarSymbolType {
     Text,
     NullableText,
     UntrustedSourceValue,
+    OpenJavaReference,
 }
 
 impl ScalarSymbolType {
@@ -23,6 +24,7 @@ impl ScalarSymbolType {
             Self::Text => "text",
             Self::NullableText => "text?",
             Self::UntrustedSourceValue => "ts_unknown",
+            Self::OpenJavaReference => "java_reference",
             Self::CalendarDate => "date",
         }
     }

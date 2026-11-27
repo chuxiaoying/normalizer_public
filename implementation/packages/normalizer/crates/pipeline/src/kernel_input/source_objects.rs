@@ -83,7 +83,12 @@ impl SourceObjects {
     }
 
     fn knows_identity(&self, value: &Expr) -> bool {
-        value.is_null() || self.owns(value)
+        value.is_null() || self.owns(value) || Self::is_open_parameter(value)
+    }
+
+    fn is_open_parameter(value: &Expr) -> bool {
+        matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { primitive_type, .. })
+            if primitive_type == "java_reference")
     }
 
     pub(super) fn has_complete_identity_partition(&self, value: &Expr) -> bool {
@@ -111,6 +116,9 @@ impl Engine<'_> {
             if let Some(owner) = self.project.source_owner(item) {
                 self.source_relations.record_inputs.insert(name.into(), owner.into());
             }
+        }
+        if self.project.direct_source && crate::normalized::root_object_type(self.program, declared) {
+            return Ok(Value::Term(Ty::Ref, b::param(name, ScalarSymbolType::OpenJavaReference)));
         }
         if let Some(owner) = self.project.source_owner(declared) {
             let reference = self.heap.new_path_object();
@@ -617,7 +625,12 @@ impl Engine<'_> {
         {
             return Ok(b::lit_bool((left == right) != different));
         }
-        if self.source_objects.fresh_and_acquired(&left, &right) { return Ok(b::lit_bool(different)); }
+        if self.source_objects.fresh_and_acquired(&left, &right)
+            || (SourceObjects::is_open_parameter(&left) && self.source_objects.allocation_owner(&right).is_some())
+            || (SourceObjects::is_open_parameter(&right) && self.source_objects.allocation_owner(&left).is_some())
+        {
+            return Ok(b::lit_bool(different));
+        }
         self.check_borrowed_identity(&left, &right)?;
         let kind = if different { math::BinOpKind::Ne } else { math::BinOpKind::Eq };
         let names = self.execution_order(true);

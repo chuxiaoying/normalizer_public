@@ -87,6 +87,15 @@ pub(crate) fn calendar_date_type(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Class(name) if name == "java.time.LocalDate")
 }
 
+// The wide carrier is the Java platform Object, not an application
+// declaration that happens to use the same short name.
+pub(crate) fn root_object_type(program: &JavaProgram, ty: &JavaType) -> bool {
+    let JavaType::Class(name) = ty else { return false };
+    name == "java.lang.Object" || (name == "Object"
+        && !program.classes().iter().any(|class|
+            class.full_name().rsplit('.').next() == Some("Object")))
+}
+
 pub(crate) fn numeric_array(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Array(item) if integral(item))
 }

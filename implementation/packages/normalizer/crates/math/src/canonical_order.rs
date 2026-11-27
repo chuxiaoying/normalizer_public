@@ -65,7 +65,7 @@ impl CanonicalKey {
         match self.types.first().map(String::as_str) {
             Some("bool" | "boolean") if self.contract.first().is_none_or(|tag| tag != "sql") =>
                 OperandKind::Boolean,
-            Some("reference") => OperandKind::Reference,
+            Some("reference" | "java_reference") => OperandKind::Reference,
             Some("null") => OperandKind::Null,
             None if self.operation == Operation::Not => OperandKind::Boolean,
             None if self.class == Class::Construct && self.operation == named("case") => {

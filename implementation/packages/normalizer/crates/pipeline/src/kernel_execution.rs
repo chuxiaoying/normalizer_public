@@ -1033,7 +1033,17 @@ impl<'a> Engine<'a> {
                 Err(fail(format!("undefined Java variable {n}")))
             }
             J::InstanceOf { value, target } => {
-                let value = self.java_expr(value, id, env, path)?.scalar()?;
+                let value = self.java_expr(value, id, env, path.clone())?.scalar()?;
+                if self.normal_path(path).as_bool() == Some(false) {
+                    return Ok(Value::Term(Ty::Bool, b::lit_null()));
+                }
+                if crate::normalized::root_object_type(self.program, target)
+                    && matches!(value.as_sym_var(), Some(math::SymVarOrigin::Parameter { primitive_type, .. })
+                        if primitive_type == "java_reference")
+                {
+                    let present = self.source_reference_equality(value, b::lit_null(), true)?;
+                    return Ok(Value::Term(Ty::Bool, present));
+                }
                 let JavaType::Class(target) = target else { return Err(fail("instanceof target is not nominal")); };
                 let present = if value.is_null() {
                     false

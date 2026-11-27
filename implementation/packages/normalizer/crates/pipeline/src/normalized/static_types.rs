@@ -242,10 +242,7 @@ impl Admission<'_> {
     }
 
     fn root_object_target(&self, ty: &JavaType) -> bool {
-        let JavaType::Class(name) = ty else { return false };
-        name == "java.lang.Object" || (name == "Object"
-            && !self.program.classes().iter().any(|class|
-                class.full_name().rsplit('.').next() == Some("Object")))
+        super::root_object_type(self.program, ty)
     }
 
     fn expression(&self, expr: &E, scope: &Scope) -> Result<Kind, String> {

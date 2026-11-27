@@ -3,7 +3,7 @@ use super::{identifier, Loaded, ExecutionResult, Result};
 use math::{Expr, SymVarOrigin};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use simulator_parser::{JavaMethod, JavaType};
+use simulator_parser::{JavaMethod, JavaProgram, JavaType};
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) struct BusinessObservations {
@@ -86,12 +86,13 @@ enum Field {
     Record(BTreeMap<String, Field>),
 }
 
-fn source_type(ty: &JavaType) -> Result<String> {
+fn source_type(program: &JavaProgram, ty: &JavaType) -> Result<String> {
     match ty {
         JavaType::Void => Ok("void".into()),
+        t if crate::normalized::root_object_type(program, t) => Ok("unknown".into()),
         t if crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t) => Ok("number".into()),
         t if crate::normalized::calendar_date_type(t) => Ok("date".into()),
-        JavaType::Array(item) => Ok(format!("{}[]", source_type(item)?)),
+        JavaType::Array(item) => Ok(format!("{}[]", source_type(program, item)?)),
         t if crate::normalized::integral(t) => Ok("number".into()),
         JavaType::Primitive(t) if t == "boolean" => Ok("bool".into()),
         JavaType::Class(t) if matches!(t.as_str(), "String" | "java.lang.String") => Ok("text".into()),
@@ -131,15 +132,15 @@ impl Loaded {
         for event in result.realtime_effects.events() {
             if let super::realtime_state::EffectOperation::Port { id, .. } = &event.operation {
                 let port = self.project.source_ports.get(id).ok_or("missing source port declaration")?;
-                external_results.insert(id.clone(), source_type(&port.returns)?.to_owned());
+                external_results.insert(id.clone(), source_type(&self.program, &port.returns)?.to_owned());
                 pending.push(&port.returns);
             }
         }
         for name in result.source_state_bindings.values() {
             let field = class.fields().iter().find(|f| f.name() == name && crate::normalized::entry_state(class, f))
                 .ok_or("unresolved source state declaration")?;
-            let mut ty = source_type(field.java_type())?.to_owned();
-            if crate::normalized::source_nullable_field(class, field) { ty.push('?'); }
+            let mut ty = source_type(&self.program, field.java_type())?.to_owned();
+            if ty != "unknown" && crate::normalized::source_nullable_field(class, field) { ty.push('?'); }
             pending.push(field.java_type());
             let identity = selected.and_then(|source| source.receiver.as_ref().map(|receiver| {
                 let file = source.locator.split_once('#').expect("validated entry locator").0;
@@ -153,12 +154,12 @@ impl Loaded {
         while let Some(ty) = pending.pop() {
             if let JavaType::Array(item) = ty { pending.push(item); continue; }
             let JavaType::Class(name) = ty else { continue };
-            if source_type(ty)? == "text" || crate::normalized::exact_decimal_type(ty) || crate::normalized::calendar_date_type(ty) || types.contains_key(name) { continue; }
+            if matches!(source_type(&self.program, ty)?.as_str(), "text" | "unknown") || crate::normalized::exact_decimal_type(ty) || crate::normalized::calendar_date_type(ty) || types.contains_key(name) { continue; }
             let declaration = self.program.find_class(name).ok_or("missing named business type")?;
             let mut fields = BTreeMap::new();
             for field in declaration.fields().iter().filter(|f| !f.is_static()) {
-                let mut domain = source_type(field.java_type())?.to_owned();
-                if crate::normalized::source_nullable_field(declaration, field) {
+                let mut domain = source_type(&self.program, field.java_type())?.to_owned();
+                if domain != "unknown" && crate::normalized::source_nullable_field(declaration, field) {
                     domain.push('?');
                 }
                 fields.insert(field.name().to_owned(), domain);
@@ -172,13 +173,13 @@ impl Loaded {
                 .unwrap_or_else(|| format!("{}#{entry}", path.display())),
             types,
             returns: {
-                let mut domain = source_type(method.return_type())?;
+                let mut domain = source_type(&self.program, method.return_type())?;
                 if crate::normalized::nullable_text_return(class, method) { domain.push('?'); }
                 domain
             },
             parameters: method.params().iter().enumerate().map(|(position, (ty, name))| {
-                let mut domain = source_type(ty)?.to_owned();
-                if self.project.source_nullable_entry_parameters.contains(name) {
+                let mut domain = source_type(&self.program, ty)?.to_owned();
+                if domain != "unknown" && self.project.source_nullable_entry_parameters.contains(name) {
                     domain.push('?');
                 }
                 Ok((name.clone(), Parameter { position, ty: domain }))
