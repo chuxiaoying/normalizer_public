@@ -514,7 +514,7 @@ fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent
     if let Some(canonical) = boolean_domains::simplify(&e, ctx, parent) {
         return canonical;
     }
-    let e = boolean_casewhen::simplify(&e);
+    let e = boolean_casewhen::simplify(&e, ctx);
     let e = relation::simplify(&e);
     let e = casewhen::simplify(&e, ctx, parent);
     e

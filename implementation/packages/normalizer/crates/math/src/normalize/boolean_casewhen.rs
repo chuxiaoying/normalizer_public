@@ -22,7 +22,7 @@ pub(super) fn total_value(expr: &Expr) -> bool {
     }
 }
 
-pub(crate) fn simplify(expr: &Expr) -> Expr {
+pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::SortContext) -> Expr {
     // Only a complete Boolean value can become a total OR expression. A
     // partial CASE must remain undefined outside its selected domain.
     let Some((arms, fallback)) = expr.as_total_case_when() else {
@@ -55,7 +55,14 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
         accumulated_negation.push(crate::builder::not(guard.clone()));
     }
 
-    rebuild_or(&or_terms)
+    let candidate = rebuild_or(&or_terms);
+    // Duplicated guards may themselves own CASE arms. Count the entire
+    // rebuilt tree; removing the outer CASE alone does not prove progress.
+    if crate::canonical_order_compare(&candidate, expr, ctx).is_lt() {
+        candidate
+    } else {
+        expr.clone()
+    }
 }
 
 pub(crate) fn is_boolean_expr(expr: &Expr) -> bool {
