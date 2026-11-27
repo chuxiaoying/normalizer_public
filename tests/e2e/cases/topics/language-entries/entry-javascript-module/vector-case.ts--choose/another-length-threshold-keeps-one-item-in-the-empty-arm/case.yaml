@@ -11,6 +11,6 @@ expected:
         type: number[]
   R: |-
     CASE
-      WHEN LENGTH(values) > 1 THEN 7
-      ELSE 11
+      WHEN 2 > LENGTH(values) THEN 11
+      ELSE 7
     END
