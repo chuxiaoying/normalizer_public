@@ -506,6 +506,23 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_type_declaration_name(&mut self, owner: Option<&str>) -> Result<String, ParseError> {
+        self.skip_ws();
+        let at = self.pos;
+        let name = self.read_ident().ok_or_else(|| self.err_at(at, if owner.is_some() {
+            "expected nested class name"
+        } else {
+            "expected class name"
+        }))?;
+        if is_reserved_identifier(&name) {
+            let qualified = owner.map_or_else(|| name.clone(), |owner| format!("{owner}.{name}"));
+            return Err(self.err_at(at, &format!(
+                "[JAVA-RESERVED-TYPE-NAME] {qualified}: reserved keyword used as a Java type name"
+            )));
+        }
+        Ok(name)
+    }
+
     fn parse_class(&mut self) -> Result<JavaClass, ParseError> {
         let annotations = self.read_annotations()?;
         let modifiers = [
@@ -517,9 +534,7 @@ impl<'a> Parser<'a> {
             self.take_class_kind()?.ok_or_else(|| self.err("expected class or interface declaration"))?
         };
 
-        let simple_name = self
-            .read_ident()
-            .ok_or_else(|| self.err("expected class name"))?;
+        let simple_name = self.parse_type_declaration_name(None)?;
 
         let type_parameters = self.parse_type_parameters()?;
 
@@ -585,7 +600,7 @@ fn parse_throws(p: &mut Parser<'_>) -> Result<Vec<String>, ParseError> {
 
 /// Whether a token cannot serve as an ordinary Java identifier. Contextual
 /// keywords are not blanket reserved; literals and the single underscore are.
-pub fn is_reserved_identifier(name: &str) -> bool {
+pub(super) fn is_reserved_identifier(name: &str) -> bool {
     matches!(name,
         "_" | "abstract" | "assert" | "boolean" | "break" | "byte" | "case" | "catch" |
         "char" | "class" | "const" | "continue" | "default" | "do" | "double" | "else" |
@@ -677,9 +692,7 @@ fn parse_class_body(
             if is_native {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] a nested type cannot be native"));
             }
-            let nested_simple = p
-                .read_ident()
-                .ok_or_else(|| p.err("expected nested class name"))?;
+            let nested_simple = p.parse_type_declaration_name(Some(class.simple_name()))?;
             let type_parameters = p.parse_type_parameters()?;
 
             let (nested_supertype, nested_interfaces, interface_arguments) =

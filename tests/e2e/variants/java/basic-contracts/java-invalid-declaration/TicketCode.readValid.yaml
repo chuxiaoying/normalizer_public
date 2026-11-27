@@ -491,3 +491,18 @@
           WHEN value < 0 THEN 1
           ELSE 2
         END
+- name: an-unused-top-level-class-cannot-have-a-reserved-name
+  edits:
+    - { from: 'class TicketCode {', to: 'class return {} class TicketCode {' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-TYPE-NAME]', 'return: reserved keyword used as a Java type name']
+- name: an-unused-nested-interface-cannot-have-a-reserved-name
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { interface while {}' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-TYPE-NAME]', 'TicketCode.while: reserved keyword used as a Java type name']
+- name: an-unused-record-cannot-have-a-reserved-name
+  edits:
+    - { from: 'class TicketCode {', to: 'record null(int code) {} class TicketCode {' }
+  reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-TYPE-NAME]', 'null: reserved keyword used as a Java type name']
+- name: an-unused-nested-class-can-start-with-a-keyword
+  edits:
+    - { from: 'class TicketCode {', to: 'class TicketCode { static class returnValue {}' }

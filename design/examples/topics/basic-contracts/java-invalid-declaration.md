@@ -68,6 +68,8 @@ P: { parameters: { value: { position: 0, type: number } } }
 R: value + 1
 ```
 
+保留字也不能做类型名。即使选中的 `TicketCode.readValid` 合法且没引用旁边的声明，源码入口仍应在解析阶段拒绝顶层 `class return`、内部 `interface while` 或 `record null`，不生成 PERS。完整名字 `returnValue` 并不是保留字，作为未调用的内部类不改变原来的 `R: value`。
+
 ## 构造表达式的类型参数不能被丢弃
 
 `new java.util.ArrayList<String>()` 和 `new java.util.ArrayList<>()` 都有完整的类型语法；`<>` 是构造调用的类型推断写法，不是声明类型的一部分（[JLS 15.9](https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.9)）。这不表示直接源码入口已经支持通用集合构造。如果所选入口确实依赖该宿主库，就应按关系操作的业务含义交付，而非让内核执行 JDK 集合实现。

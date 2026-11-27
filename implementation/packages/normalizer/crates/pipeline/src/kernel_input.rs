@@ -639,10 +639,6 @@ impl Loaded {
             Ok(Some(value))
         };
         for c in self.program.classes() {
-            need(
-                !simulator_parser::is_reserved_identifier(c.simple_name()),
-                "reserved Java class name; rename during preprocessing",
-            )?;
             if !self.project.direct_source {
                 // Generated carriers do not have the source admission proof.
                 need(classes.insert(c.full_name()), "duplicate class")?;
