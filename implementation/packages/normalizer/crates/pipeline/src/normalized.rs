@@ -321,18 +321,9 @@ pub(crate) fn source_layouts(
     }
     Ok(layouts)
 }
-const ENTRY_STATE: &str = "normalizer.annotations.EntryState";
-const NULLABLE: &str = "normalizer.annotations.Nullable";
+const ENTRY_STATE: &str = "normalizer.intrinsics.N.EntryState";
+const NULLABLE: &str = "normalizer.intrinsics.N.Nullable";
 use simulator_parser::NORMALIZER_INTRINSICS_IMPORT as N_IMPORT;
-
-fn official_member(marker: &str) -> Option<(&'static str, &'static str)> {
-    match marker {
-        ENTRY_STATE => Some(("N.EntryState", "normalizer.intrinsics.N.EntryState")),
-        NULLABLE => Some(("N.Nullable", "normalizer.intrinsics.N.Nullable")),
-        source_ports::IMPORT => Some(("N.External", "normalizer.intrinsics.N.External")),
-        _ => None,
-    }
-}
 
 /// The closed Java profile admits no package declarations. Refuse an ambiguous
 /// local type rather than treating its nested markers as Normalizer markers.
@@ -363,36 +354,19 @@ fn bare_annotation(annotations: &[AnnotationRef]) -> Option<&str> {
 }
 
 fn official_marker_name(class: &simulator_parser::JavaClass, name: &str, qualified: &str) -> bool {
-    official_member(qualified).is_some_and(|(short, full)| {
-        name == full || (name == short && class.imports_normalizer_intrinsics())
-    })
+    name == qualified || (qualified.strip_prefix("normalizer.intrinsics.") == Some(name)
+        && class.imports_normalizer_intrinsics())
 }
 
 fn official_marker(class: &simulator_parser::JavaClass, annotations: &[AnnotationRef], qualified: &str) -> bool {
     bare_annotation(annotations).is_some_and(|name| official_marker_name(class, name, qualified))
 }
 
-fn source_marker(
-    class: &simulator_parser::JavaClass,
-    annotations: &[AnnotationRef],
-    qualified: &str,
-) -> bool {
-    let Some(name) = bare_annotation(annotations) else { return false; };
-    if official_marker_name(class, name, qualified) {
-        return true;
-    }
-    // Continue decoding explicitly bound legacy annotations in existing
-    // adapters; an application marker with only a matching suffix is not one.
-    name == qualified
-        || (qualified.rsplit('.').next() == Some(name)
-            && class.imports().iter().any(|name| name == qualified))
-}
-
 pub(crate) fn entry_state(
     class: &simulator_parser::JavaClass,
     field: &simulator_parser::JavaField,
 ) -> bool {
-    source_marker(class, field.annotations(), ENTRY_STATE)
+    official_marker(class, field.annotations(), ENTRY_STATE)
 }
 pub(crate) fn source_nullable_parameter(
     class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod, name: &str, ty: &JavaType,
@@ -400,7 +374,7 @@ pub(crate) fn source_nullable_parameter(
     match method.param_annotations(name) {
         [] => Ok(false),
         annotations @ [_] if matches!(ty, JavaType::Class(_))
-            && source_marker(class, annotations, NULLABLE) => Ok(true),
+            && official_marker(class, annotations, NULLABLE) => Ok(true),
         [annotation] => Err(format!("unsupported source parameter annotation {}", annotation.name())),
         _ => Err("multiple source parameter annotations cannot define nullability".into()),
     }
@@ -410,7 +384,7 @@ pub(crate) fn source_nullable_field(
     class: &simulator_parser::JavaClass, field: &simulator_parser::JavaField,
 ) -> bool {
     matches!(field.java_type(), JavaType::Class(_))
-        && source_marker(class, field.annotations(), NULLABLE)
+        && official_marker(class, field.annotations(), NULLABLE)
 }
 
 pub(crate) fn nullable_text_field(
@@ -421,14 +395,14 @@ pub(crate) fn nullable_text_field(
 }
 pub(crate) fn nullable_text_return(class: &simulator_parser::JavaClass, method: &simulator_parser::JavaMethod) -> bool {
     matches!(method.return_type(), JavaType::Class(name) if name == "String" || name == "java.lang.String")
-        && source_marker(class, method.annotations(), NULLABLE)
+        && official_marker(class, method.annotations(), NULLABLE)
 }
 
 pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> bool {
     class.imports().iter().all(|name| {
         matches!(
             name.as_str(),
-            source_ports::IMPORT | ENTRY_STATE | NULLABLE | N_IMPORT | "java.util.List" | "java.math.BigDecimal" | "java.time.LocalDate" | crate::normalized_text::SOURCE_IMPORT
+            N_IMPORT | "java.util.List" | "java.math.BigDecimal" | "java.time.LocalDate"
         )
     })
 }

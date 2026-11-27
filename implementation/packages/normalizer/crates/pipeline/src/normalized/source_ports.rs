@@ -3,10 +3,10 @@
 use super::*;
 use simulator_parser::{JavaClass, JavaField};
 
-pub(crate) const IMPORT: &str = "normalizer.annotations.External";
+pub(crate) const IMPORT: &str = "normalizer.intrinsics.N.External";
 
 pub(crate) fn marked(class: &JavaClass, field: &JavaField) -> bool {
-    source_marker(class, field.annotations(), IMPORT)
+    official_marker(class, field.annotations(), IMPORT)
 }
 
 pub(crate) fn receiver(expr: &E) -> Option<&str> {

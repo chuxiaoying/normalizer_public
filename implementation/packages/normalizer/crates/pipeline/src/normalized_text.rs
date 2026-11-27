@@ -9,7 +9,6 @@ pub(crate) fn clock_intrinsic(
     target == "N.currentTimeMillis" && arity == 0 && bound_receiver(program, class, "N")
 }
 
-pub(crate) const SOURCE_IMPORT: &str = "normalizer.intrinsics.NormalizedText";
 pub(crate) enum SourceIntrinsic {
     Trim,
     DefaultIfBlank,
@@ -37,11 +36,6 @@ pub(crate) fn bound_receiver(
     class: &simulator_parser::JavaClass,
     receiver: &str,
 ) -> bool {
-    let bound = match receiver {
-        "N" => class.imports_normalizer_intrinsics(),
-        "NormalizedText" => class.imports().iter().any(|import| import == SOURCE_IMPORT),
-        _ => false,
-    };
-    bound && !class.fields().iter().any(|field| field.name() == receiver)
+    receiver == "N" && class.imports_normalizer_intrinsics() && !class.fields().iter().any(|field| field.name() == receiver)
         && !program.classes().iter().any(|ty| ty.simple_name().rsplit('.').next() == Some(receiver))
 }
