@@ -543,6 +543,19 @@ impl EffectSequence {
         })
     }
 
+    pub(crate) fn total_single_failure_classes(&self) -> impl Iterator<Item = (u64, &str)> + '_ {
+        self.events.iter().filter_map(|event| {
+            if event.guard.as_bool() != Some(true) { return None; }
+            let EffectOperation::Port { receipt, completion, .. } = &event.operation else { return None; };
+            (completion.exceptions.len() == 1).then(||
+                (receipt.binding_id(), completion.exceptions.keys().next().expect("one declared failure").as_str()))
+        })
+    }
+
+    pub(crate) fn total_single_failure_class(&self, binding: u64) -> Option<&str> {
+        self.total_single_failure_classes().find_map(|(id, class)| (id == binding).then_some(class))
+    }
+
     pub(crate) fn events(&self) -> &[EffectEvent] {
         &self.events
     }

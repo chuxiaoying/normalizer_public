@@ -583,6 +583,9 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
     {
         return Some(inner.clone());
     }
+    if let Some(outcome) = crate::domains::completion::negative_singleton_return(operand) {
+        return Some(outcome);
+    }
     if let Some(inverse) = operand.comparison_complement_operator() {
         let (_, left, right) = operand.as_binop().expect("comparison contract");
         return Some(builder::binop_public(inverse, left.clone(), right.clone()));
@@ -985,6 +988,7 @@ fn absorb_two_ordered_comparisons(a: &Expr, b: &Expr) -> Option<Expr> {
 }
 
 fn is_complement(a: &Expr, b: &Expr) -> bool {
+    if crate::domains::completion::single_failure_complement(a, b) { return true; }
     // SQL UNKNOWN survives negation, so a syntactic NOT does not prove
     // excluded middle or contradiction for a nullable row predicate.
     if let ExprKind::UnaryOp {

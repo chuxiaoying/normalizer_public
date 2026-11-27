@@ -22,6 +22,7 @@ pub fn output_name(name: &str) -> &str {
 pub fn class_observation<'a>(registered_name: &str, args: &'a [Expr]) -> Option<(&'static str, &'a Expr, &'a str)> {
     let operation = match output_name(registered_name) {
         "completion.is_throw" => "completion.is_throw",
+        "completion.is_return" => "completion.is_return",
         "completion.payload" => "completion.payload",
         _ => return None,
     };
@@ -92,6 +93,35 @@ pub fn is_throw(value: Expr, class: &str) -> Expr {
     );
     crate::normalize(b::call(key, vec![value, b::lit_str(class)]))
 }
+/// Caller must have proved a total acquired completion with exactly this
+/// one failure class. The second slot carries that declaration, not a value read.
+pub(crate) fn singleton_return(receipt: Expr, exception: &str) -> Expr {
+    let key = crate::register_func(
+        "completion.is_return",
+        vec![Primitive::Composite, Primitive::String],
+        Some(Primitive::Boolean),
+        FuncSemantics::pure_function(),
+    );
+    b::call(key, vec![receipt, b::lit_str(exception)])
+}
+
+fn singleton_return_tag(test: &Expr) -> Option<(&Expr, &str)> {
+    let (key, args) = test.as_call()?;
+    let (operation, receipt, class) = class_observation(&crate::func_name(key), args)?;
+    (operation == "completion.is_return").then_some((receipt, class))
+}
+
+pub(crate) fn single_failure_complement(a: &Expr, b: &Expr) -> bool {
+    [(a, b), (b, a)].into_iter().any(|(success, failure)|
+        singleton_return_tag(success).zip(throw_tag(failure))
+            .is_some_and(|(a, b)| a == b))
+}
+
+pub(crate) fn negative_singleton_return(expr: &Expr) -> Option<Expr> {
+    let (receipt, class) = singleton_return_tag(expr)?;
+    Some(is_throw(receipt.clone(), class))
+}
+
 pub fn value(completion: Expr, ty: Primitive) -> Expr {
     typed(
         "completion.value",

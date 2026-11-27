@@ -42,6 +42,10 @@ pub trait SortContext {
         None
     }
 
+    /// Declared sole failure of a completion acquired on every path.
+    /// The caller may not infer this from a catch type or from a label.
+    fn total_single_failure_class(&self, _receipt: u64) -> Option<&str> { None }
+
     /// Published ordinals, which do not by themselves prove availability.
     fn temporal_aliases(&self) -> Option<&std::collections::BTreeMap<u64, usize>> {
         None

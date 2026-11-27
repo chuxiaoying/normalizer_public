@@ -193,7 +193,7 @@ impl FormatCtx {
         if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
         let keys = self.prepare_value_keys(value, external, active, bound, true);
         let compare = crate::canonical_names::ScopedValueKeys {
-            base: CanonicalNames { heap: &self.heap_bindings,
+            base: CanonicalNames { heap: &self.heap_bindings, completion_classes: None,
                 external: (!external.is_empty()).then_some(external), total_temporals: None,
                 reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
             slots: &keys.lexical, cases: &keys.cases, in_reduce_body: self.relation_scope.in_reduce_yield,
@@ -214,7 +214,7 @@ impl FormatCtx {
         let mut order = bound.to_vec();
         let mut prepared = ValueKeys { lexical: self.choice_keys(&order), ..ValueKeys::default() };
         let empty_cases = HashMap::new();
-        let base = || CanonicalNames { heap: &self.heap_bindings,
+        let base = || CanonicalNames { heap: &self.heap_bindings, completion_classes: None,
             external: (!external.is_empty()).then_some(external), total_temporals: None,
             reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) };
         if enter {
@@ -452,7 +452,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             scoped_relation::ValueKeys::default()
         };
         let public = crate::canonical_names::ScopedValueKeys { base: CanonicalNames {
-            heap: &ctx.heap_bindings,
+            heap: &ctx.heap_bindings, completion_classes: None,
             external: (!external.is_empty()).then_some(external),
             total_temporals: None, reductions: Some(&ctx.reductions),
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
@@ -501,7 +501,10 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             return format!("{}[{position}].{field}", array_name(root, ctx));
         }
         if let Some((operation, response, class)) = math::domains::completion::class_observation(&registered_name, args) {
-            return format!("{operation}({}, {class})", format_expr_with_ctx(response, ctx));
+            let response = format_expr_with_ctx(response, ctx);
+            return if operation == "completion.is_return" {
+                format!("{operation}({response})")
+            } else { format!("{operation}({response}, {class})") };
         }
         match (registered_name.as_str(), args) {
             (crate::normalized_text::TRIM_KEY, [value]) => {

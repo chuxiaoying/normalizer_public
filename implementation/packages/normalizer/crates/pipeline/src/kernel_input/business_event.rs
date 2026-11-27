@@ -389,7 +389,7 @@ pub(super) fn observations(
     if reorderable {
         let identities = ctx.observation_identities();
         let public = crate::canonical_names::CanonicalNames {
-            heap: &heap_keys,
+            heap: &heap_keys, completion_classes: None,
             external: Some(identities),
             total_temporals: None, reductions: None, temporals: None,
         };
@@ -438,13 +438,14 @@ pub(super) fn observations(
                 }
             });
         }
-        let returned = if temporal_names.is_empty() && !(reads_total_integer_field && reads_rebound_receipt) {
+        let completion_classes = result.realtime_effects.total_single_failure_classes().collect::<BTreeMap<_, _>>();
+        let returned = if completion_classes.is_empty() && temporal_names.is_empty() && !(reads_total_integer_field && reads_rebound_receipt) {
             returned
         } else {
             let observation_identities = ctx.observation_identities();
             super::temporal_graph::validate_reads(&returned, &result.temporal_definitions)?;
             let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
-                heap: &heap_keys,
+                heap: &heap_keys, completion_classes: Some(&completion_classes),
                 external: Some(observation_identities),
                 total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: Some(temporal_names),
             }).map_err(|error| fail(error.to_string()))?;

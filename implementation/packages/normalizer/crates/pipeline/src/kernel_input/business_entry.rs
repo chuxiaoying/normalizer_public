@@ -580,7 +580,7 @@ impl EntryContext {
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone(), &result.source_state_bindings);
             let expression = if expression.has_heap_ref() || !definition_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
-                    heap: &heap_keys,
+                    heap: &heap_keys, completion_classes: None,
                     external: (!states.is_empty()).then_some(ctx.observation_identities()),
                     total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };

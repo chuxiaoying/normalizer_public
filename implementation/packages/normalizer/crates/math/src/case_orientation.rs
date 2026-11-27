@@ -121,6 +121,25 @@ pub(crate) fn canonicalize_binary_case(
     let ([(condition, yes)], no) = expression.as_total_case_when()? else {
         return None;
     };
+    use crate::domains::completion;
+    // The issued receipt is total and has exactly one declared failure.
+    // Both positive predicates cost one operation; compare the whole CASE
+    // with the acquired success predicate, not the rendered spelling of NOT.
+    let failed = condition.as_not().unwrap_or(condition);
+    if let Some((receipt, class)) = completion::throw_tag(failed) {
+        if let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() {
+            if context.total_single_failure_class(*binding_id) == Some(class) {
+                let (success, failure) = if condition.as_not().is_some() { (yes, no) } else { (no, yes) };
+                let candidate = crate::builder::case_when(
+                    vec![(completion::singleton_return(receipt.clone(), class), success.clone())],
+                    failure.clone(),
+                );
+                if crate::canonical_order_compare(&candidate, expression, context).is_lt() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
     if yes.as_case_when().is_some() || no.as_case_when().is_some() {
         return None;
     }

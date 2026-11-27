@@ -109,6 +109,7 @@ pub(super) struct ExecutionOrder<'a> {
     definitions: &'a [super::temporal_graph::Definition],
     observations: BTreeMap<u64, math::ObservationIdentity>,
     heap_bindings: BTreeMap<i64, math::HeapBindingIdentity>,
+    effects: &'a realtime_state::EffectSequence,
 }
 
 impl math::SortContext for ExecutionOrder<'_> {
@@ -118,6 +119,10 @@ impl math::SortContext for ExecutionOrder<'_> {
 
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> {
         (!self.observations.is_empty()).then_some(&self.observations)
+    }
+
+    fn total_single_failure_class(&self, receipt: u64) -> Option<&str> {
+        self.effects.total_single_failure_class(receipt)
     }
 
     fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> {
@@ -144,7 +149,7 @@ impl<'a> Engine<'a> {
         }).collect::<BTreeMap<_, _>>();
         observations.extend(self.realtime_effects.observation_identities());
         let heap_bindings = if include_heap { self.source_objects.heap_binding_keys() } else { BTreeMap::new() };
-        ExecutionOrder { definitions: &self.temporal_definitions, observations, heap_bindings }
+        ExecutionOrder { definitions: &self.temporal_definitions, observations, heap_bindings, effects: &self.realtime_effects }
     }
 
     pub(super) fn normalize_execution_value(&self, value: Expr) -> Expr {
@@ -444,7 +449,7 @@ impl<'a> Engine<'a> {
         self.source_steps(body, id, env, path)?;
         let terminal = self.realtime_completion.terminal_alternatives();
         if let Some(result) = terminal.as_ref().and_then(|exits| exits.normal_return_value()) {
-            return Ok(Value::Term(self.methods[id].returns.clone(),result));
+            return Ok(Value::Term(self.methods[id].returns.clone(), self.normalize_execution_value(result)));
         }
         if self.methods[id].syntax.is_constructor() { return Ok(Value::Term(Ty::Unit,b::lit_null())); }
         if self.methods[id].returns == Ty::Unit {
