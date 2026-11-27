@@ -26,6 +26,7 @@ pub(super) struct OrderedRows {
 #[derive(Default)]
 pub(super) struct Relations {
     pub(super) tables: BTreeMap<String, BTreeMap<String, String>>,
+    physically_read: BTreeSet<String>,
     pub(super) record_inputs: BTreeMap<String, String>,
     pub(super) first_rows: BTreeMap<i64, OrderedRows>,
 }
@@ -190,9 +191,11 @@ impl<'a> Engine<'a> {
             let relative = if b::path_implies(&guard, &when) { b::lit_bool(true) } else { when };
             Some((receipt.binding_id(), relative))
         }).collect();
-        if after.is_empty() || guard.as_bool() == Some(false) {
-            return RelationExpr::base(table, table);
-        }
+        if guard.as_bool() == Some(false) { return RelationExpr::base(table, table); }
+        // The base table denotes the initial snapshot. A second physical
+        // read is its own observation even without a known preceding write.
+        let first = self.source_relations.physically_read.insert(table.into());
+        if first && after.is_empty() { return RelationExpr::base(table, table); }
         let id = self.fresh_binding();
         self.realtime_effects.acquire(guard, Acquisition::Sql { source: table.into(), after }, id);
         RelationExpr::acquired_table(table, id)

@@ -224,7 +224,7 @@ $defs:
   table-acquisition:
     type: object
     additionalProperties: false
-    required: [kind, source, after]
+    required: [kind, source]
     properties:
       kind: { const: acquisition }
       source: { $ref: '#/$defs/identifier' }
@@ -255,7 +255,7 @@ $defs:
     pattern: '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*|\[(0|[1-9][0-9]*)\])*$'
   result-binding:
     type: string
-    pattern: '^\$e_[0-9]+$'
+    pattern: '^\$e_(0|[1-9][0-9]*)$'
   exception-type:
     type: string
     pattern: '^[A-Za-z_][A-Za-z0-9_.]*$'

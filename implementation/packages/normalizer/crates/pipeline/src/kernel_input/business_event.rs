@@ -190,7 +190,9 @@ pub(super) fn observations(
                             }
                             Ok(dependency)
                         }).collect::<Result<Vec<_>>>()?;
-                        json!({"kind": "acquisition", "source": source, "after": after})
+                        let mut acquisition = json!({"kind": "acquisition", "source": source});
+                        if !after.is_empty() { acquisition["after"] = json!(after); }
+                        acquisition
                     }
                 };
                 if let Some(guard) = condition { item["when"] = json!(guard); }
