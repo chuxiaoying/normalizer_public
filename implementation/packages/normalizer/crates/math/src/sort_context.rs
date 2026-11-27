@@ -35,6 +35,10 @@ pub enum HeapBindingIdentity {
 
 /// Supplies the bound identities used to compare an expression.
 pub trait SortContext {
+    /// Checked adapter aliases for immutable entry parameters. An alias is
+    /// a direct read of the same P binding, not a field access on its name.
+    fn captured_parameters(&self) -> Option<&std::collections::BTreeMap<String, String>> { None }
+
     fn heap_binding_identity(&self, _id: i64) -> Option<&HeapBindingIdentity> { None }
 
     /// Stable identities of already acquired environment observations.

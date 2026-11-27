@@ -351,6 +351,10 @@ impl EntryContext {
         Ok((name, resolve(self,name,&mut Default::default())?))
     }
 
+    pub(super) fn captured_parameters(&self) -> BTreeMap<String, String> {
+        self.parameters.keys().map(|name| (super::host_input_symbol(name), name.clone())).collect()
+    }
+
     pub(super) fn host_names(&self) -> BTreeMap<String,String> {
         self.parameters.keys().map(|name| (super::host_input_symbol(name), self.qualified("P",name))).collect()
     }
@@ -473,7 +477,7 @@ impl EntryContext {
         };
         if events.is_empty() {
             if let Some(returned) = total_return {
-                return self.render_output(BusinessOutput::Pure(returned.clone()), result, method, certified_composite_return);
+                return self.render_output(BusinessOutput::Pure(returned.clone()), result, method, certified_composite_return, !project.direct_source);
             }
         }
         let mut names = self.host_names();
@@ -482,10 +486,10 @@ impl EntryContext {
             names.insert(name.clone(), self.binding(name)?.0);
         }
         let observations = super::business_event::observations(project, self, result, names)?;
-        self.render_output(BusinessOutput::Observed(observations), result, method, certified_composite_return)
+        self.render_output(BusinessOutput::Observed(observations), result, method, certified_composite_return, !project.direct_source)
     }
 
-    fn render_output(&self, output: BusinessOutput, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool) -> Result<String> {
+    fn render_output(&self, output: BusinessOutput, result: &ExecutionResult, method: &JavaMethod, certified_composite_return: bool, adapter: bool) -> Result<String> {
         let mut names = BTreeMap::new();
         for (_, name) in method.params() {
             names.insert(name.clone(), self.binding(name)?.0);
@@ -589,9 +593,10 @@ impl EntryContext {
             // The boundary checks both identity and definition references
             // before passing their stable identities to the typed normalizer.
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone(), &result.source_state_bindings);
+            if adapter { ctx.set_captured_parameters(self.captured_parameters()); }
             let expression = if expression.has_heap_ref() || !definition_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
-                    heap: &heap_keys, completion_classes: None,
+                    heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: None,
                     external: (!states.is_empty()).then_some(ctx.observation_identities()),
                     total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };

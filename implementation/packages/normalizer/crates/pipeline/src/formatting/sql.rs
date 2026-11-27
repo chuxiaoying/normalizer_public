@@ -22,6 +22,7 @@ use math::{BinOpKind, Expr, Lit, RelationAggregateKind, SymVarOrigin, UnaryOpKin
 /// Formatting context shared by one business result and its boundary events.
 pub struct FormatCtx {
     business_inputs: Option<std::collections::BTreeMap<String, String>>,
+    captured_parameters: std::collections::BTreeMap<String, String>,
     nullable_columns: std::collections::BTreeSet<String>,
     scalar_arrays: std::collections::BTreeSet<String>,
     nested_arrays: std::collections::BTreeSet<String>,
@@ -50,6 +51,7 @@ impl Default for FormatCtx {
     fn default() -> Self {
         FormatCtx {
             business_inputs: None,
+            captured_parameters: Default::default(),
             nullable_columns: Default::default(),
             scalar_arrays: Default::default(),
             nested_arrays: Default::default(),
@@ -121,10 +123,17 @@ impl FormatCtx {
         &self.observation_identities
     }
 
+    pub(crate) fn set_captured_parameters(&mut self, parameters: std::collections::BTreeMap<String, String>) {
+        self.captured_parameters = parameters;
+    }
+    pub(crate) fn captured_parameters(&self) -> Option<&std::collections::BTreeMap<String, String>> {
+        (!self.captured_parameters.is_empty()).then_some(&self.captured_parameters)
+    }
+
     pub(crate) fn bound_order(&self) -> CanonicalNames<'_> {
         let external = self.observation_identities();
         CanonicalNames {
-            heap: &self.heap_bindings, completion_classes: None,
+            heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
             external: (!external.is_empty()).then_some(external),
             total_temporals: None, reductions: Some(&self.reductions),
             temporals: (!self.temporal_names.is_empty()).then_some(&self.temporal_names),
@@ -240,7 +249,7 @@ impl FormatCtx {
         if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
         let keys = self.prepare_value_keys(value, external, active, bound, true);
         let compare = crate::canonical_names::ScopedValueKeys {
-            base: CanonicalNames { heap: &self.heap_bindings, completion_classes: None,
+            base: CanonicalNames { heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
                 external: (!external.is_empty()).then_some(external), total_temporals: Some(&self.total_temporals),
                 reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
             slots: &keys.lexical, cases: &keys.cases, in_reduce_body: self.relation_scope.in_reduce_yield,
@@ -261,7 +270,7 @@ impl FormatCtx {
         let mut order = bound.to_vec();
         let mut prepared = ValueKeys { lexical: self.choice_keys(&order), ..ValueKeys::default() };
         let empty_cases = HashMap::new();
-        let base = || CanonicalNames { heap: &self.heap_bindings, completion_classes: None,
+        let base = || CanonicalNames { heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
             external: (!external.is_empty()).then_some(external), total_temporals: None,
             reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) };
         if enter {
@@ -520,7 +529,7 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
             scoped_relation::ValueKeys::default()
         };
         let public = crate::canonical_names::ScopedValueKeys { base: CanonicalNames {
-            heap: &ctx.heap_bindings, completion_classes: None,
+            heap: &ctx.heap_bindings, captured: ctx.captured_parameters(), completion_classes: None,
             external: (!external.is_empty()).then_some(external),
             total_temporals: None, reductions: Some(&ctx.reductions),
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),

@@ -217,7 +217,11 @@ impl Keys<'_> {
                 let (class, id) = match origin {
                     SymVarOrigin::Parameter { name, primitive_type: _ } => {
                         let local = self.in_reduce_body.then(|| crate::ReduceBodyContext::resolve(name)).flatten();
-                        let class = if local.is_none() && name.contains('.') { Class::Read } else { Class::Reference };
+                        let captured = ctx.captured_parameters().and_then(|parameters| parameters.get(name));
+                        let class = if local.is_none() && captured.is_none() && name.contains('.') {
+                            Class::Read
+                        } else { Class::Reference };
+                        let name = captured.map_or(name.as_str(), String::as_str);
                         (class, local.map_or_else(|| Identity::Parameter(path(name)), |(slot, _)| Identity::Local(slot)))
                     },
                     SymVarOrigin::External { binding_id, path: parts, primitive_type: _ } => {
@@ -395,6 +399,7 @@ pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKe
     let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
     if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.observation_identities().is_some()
         || ctx.in_reduce_body() || ctx.has_case_arm_keys() || ctx.choice_slots().is_some() || ctx.has_reduce_shapes()
+        || ctx.captured_parameters().is_some()
     {
         return keys.expr(expr);
     }

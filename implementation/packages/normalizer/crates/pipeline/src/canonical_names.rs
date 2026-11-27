@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct CanonicalNames<'a> {
     pub(crate) heap: &'a BTreeMap<i64, math::HeapBindingIdentity>,
+    pub(crate) captured: Option<&'a BTreeMap<String, String>>,
     pub(crate) external: Option<&'a BTreeMap<u64, math::ObservationIdentity>>,
     pub(crate) completion_classes: Option<&'a BTreeMap<u64, &'a str>>,
     pub(crate) total_temporals: Option<&'a BTreeSet<u64>>,
@@ -12,6 +13,7 @@ pub(crate) struct CanonicalNames<'a> {
 }
 
 impl math::SortContext for CanonicalNames<'_> {
+    fn captured_parameters(&self) -> Option<&BTreeMap<String, String>> { self.captured }
     fn heap_binding_identity(&self, heap_id: i64) -> Option<&math::HeapBindingIdentity> {
         self.heap.get(&heap_id)
     }
@@ -42,6 +44,7 @@ pub(crate) struct ScopedValueKeys<'a> {
 }
 
 impl math::SortContext for ScopedValueKeys<'_> {
+    fn captured_parameters(&self) -> Option<&BTreeMap<String, String>> { self.base.captured_parameters() }
     fn heap_binding_identity(&self, id: i64) -> Option<&math::HeapBindingIdentity> { self.base.heap_binding_identity(id) }
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> { self.base.observation_identities() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }

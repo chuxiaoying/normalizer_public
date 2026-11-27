@@ -107,12 +107,16 @@ pub(super) struct Engine<'a> {
 // integer handle that happens to identify it in the execution ledger.
 pub(super) struct ExecutionOrder<'a> {
     definitions: &'a [super::temporal_graph::Definition],
+    captured: BTreeMap<String, String>,
     observations: BTreeMap<u64, math::ObservationIdentity>,
     heap_bindings: BTreeMap<i64, math::HeapBindingIdentity>,
     effects: &'a realtime_state::EffectSequence,
 }
 
 impl math::SortContext for ExecutionOrder<'_> {
+    fn captured_parameters(&self) -> Option<&BTreeMap<String, String>> {
+        (!self.captured.is_empty()).then_some(&self.captured)
+    }
     fn heap_binding_identity(&self, id: i64) -> Option<&math::HeapBindingIdentity> {
         self.heap_bindings.get(&id)
     }
@@ -149,12 +153,14 @@ impl<'a> Engine<'a> {
         }).collect::<BTreeMap<_, _>>();
         observations.extend(self.realtime_effects.observation_identities());
         let heap_bindings = if include_heap { self.source_objects.heap_binding_keys() } else { BTreeMap::new() };
-        ExecutionOrder { definitions: &self.temporal_definitions, observations, heap_bindings, effects: &self.realtime_effects }
+        let captured = self.entry_context.map_or_else(BTreeMap::new, business_entry::EntryContext::captured_parameters);
+        ExecutionOrder { definitions: &self.temporal_definitions, captured, observations, heap_bindings, effects: &self.realtime_effects }
     }
 
     pub(super) fn normalize_execution_value(&self, value: Expr) -> Expr {
         let order = self.execution_order(value.has_heap_ref());
-        if order.definitions.is_empty() && order.observations.is_empty() && order.heap_bindings.is_empty() {
+        if order.definitions.is_empty() && order.captured.is_empty()
+            && order.observations.is_empty() && order.heap_bindings.is_empty() {
             math::normalize(value)
         } else {
             math::normalize_with(value, &order)
