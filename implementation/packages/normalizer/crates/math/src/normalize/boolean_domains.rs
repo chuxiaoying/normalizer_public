@@ -153,10 +153,21 @@ fn least_chain(
 pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext, parent: Option<&Expr>) -> Option<Expr> {
     let (arms, fallback) = expr.as_total_case_when()?;
     if !arms.iter().all(|(_, value)| closed_result(value)) || !closed_result(fallback) { return None; }
-    let mut names = BTreeSet::new();
-    for (guard, _) in arms {
-        boolean(guard, &mut |name| { names.insert(name.to_owned()); Truth::zero() }, &Truth::zero())?;
+    fn inspectable(value: &Expr) -> Option<(&[(Expr, Expr)], &Expr)> {
+        value.as_total_case_when().filter(|(arms, _)| arms.iter().all(|(guard, _)| is_closed_boolean(guard)))
     }
+    fn collect_names(value: &Expr, names: &mut BTreeSet<String>) {
+        let Some((arms, fallback)) = inspectable(value) else { return; };
+        for (guard, result) in arms {
+            boolean(guard, &mut |name| { names.insert(name.to_owned()); Truth::zero() }, &Truth::zero())
+                .expect("closed Boolean guard");
+            collect_names(result, names);
+        }
+        collect_names(fallback, names);
+    }
+    inspectable(expr)?;
+    let mut names = BTreeSet::new();
+    collect_names(expr, &mut names);
     if let Some(parent) = parent {
         boolean(parent, &mut |name| { names.insert(name.to_owned()); Truth::zero() }, &Truth::zero())?;
     }
@@ -182,18 +193,29 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext, parent: Option<&Expr>
         return Some(expr.clone());
     }
     let mut groups = Vec::<(Truth, Expr)>::new();
-    let mut occupied = Truth::zero();
-    let mut add = |truth: Truth, value: &Expr| {
-        if truth.is_zero() { return; }
-        if let Some((mask, _)) = groups.iter_mut().find(|(_, old)| old == value) { *mask |= truth; }
-        else { groups.push((truth, value.clone())); }
-    };
-    for (guard, value) in arms {
-        let truth = boolean(guard, &mut |name| vars[name].clone(), &all)?;
-        add(&active & &truth & (&all ^ &occupied), value);
-        occupied |= truth;
+    fn collect_domains(
+        value: &Expr, active: Truth, all: &Truth, vars: &BTreeMap<String, Truth>,
+        groups: &mut Vec<(Truth, Expr)>,
+    ) -> Option<()> {
+        if active.is_zero() { return Some(()); }
+        if let Some((arms, fallback)) = inspectable(value) {
+            let mut remaining = active;
+            for (guard, result) in arms {
+                let truth = boolean(guard, &mut |name| vars[name].clone(), all)?;
+                collect_domains(result, &remaining & &truth, all, vars, groups)?;
+                remaining &= all ^ truth;
+            }
+            collect_domains(fallback, remaining, all, vars, groups)?;
+        } else if let Some((mask, _)) = groups.iter_mut().find(|(_, old)| old == value) {
+            *mask |= active;
+        } else {
+            groups.push((active, value.clone()));
+        }
+        Some(())
     }
-    add(&active & (&all ^ &occupied), fallback);
+    // Native execution may build a tree of local CASEs. Derive each leaf's
+    // actual result domain instead of taking one nested spelling as a leaf.
+    collect_domains(expr, active.clone(), &all, &vars, &mut groups)?;
     if groups.len() == 1 { return Some(groups.pop()?.1); }
     let mut known = BTreeMap::from([(Truth::zero(), b::lit_bool(false)), (all.clone(), b::lit_bool(true))]);
     known.extend(vars.into_iter().map(|(name, truth)| (truth, b::param(name, crate::ScalarSymbolType::Boolean))));
