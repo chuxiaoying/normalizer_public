@@ -120,7 +120,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
             return Some(format!("FIRST(value FROM {array})"));
         }
         let empty = crate::format_expr_with_ctx(default, ctx);
-        return Some(format!("CASE WHEN LENGTH({array}) == 0 THEN {empty} ELSE {array}[0] END"));
+        return Some(format!("CASE WHEN 0 == LENGTH({array}) THEN {empty} ELSE FIRST(value FROM {array}) END"));
     }
     let record_array = matches!(input, RelationExpr::Base { name, .. } if ctx.record_arrays.contains(name));
     let nested = matches!(input, RelationExpr::Base {name, ..} if ctx.nested_arrays.contains(name));
@@ -194,14 +194,18 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         }
         return Some(first);
     }
-    let (lead, default) = match kind {
-        math::RelationAggregateKind::Sum => ("SUM(", "0".into()),
-        math::RelationAggregateKind::FirstValue => {
-            clauses.push("LIMIT 1".into());
-            ("(", fmt(default?, ctx))
+    if kind == math::RelationAggregateKind::FirstValue {
+        // With a certified non-null selected value, only absence can
+        // trigger this fallback. Use the same FIRST observation as a
+        // zero index; do not render a second SELECT/LIMIT convention.
+        let fallback = fmt(default?, ctx);
+        if scalar_array.is_some() || record_array || nested || correlated {
+            return Some(format!("COALESCE(FIRST({projection} {}), {fallback})", inline_body(&clauses)));
         }
-        _ => return None,
-    };
+        return Some(format!("COALESCE(\n  FIRST({projection}\n    {}\n  ),\n  {fallback}\n)", clauses.join("\n    ")));
+    }
+    if kind != math::RelationAggregateKind::Sum { return None; }
+    let (lead, default) = ("SUM(", "0");
     if scalar_array.is_some() || record_array || nested || correlated {
         return Some(format!("COALESCE({lead}SELECT {projection} {}), {default})", inline_body(&clauses)));
     }
