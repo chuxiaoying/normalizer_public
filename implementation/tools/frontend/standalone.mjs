@@ -53,7 +53,6 @@ function namedParameters(parameters) {
   for (const param of parameters) {
     if (!ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken || param.questionToken)
       return {error: 'expected named required parameters'};
-    if (names.has(param.name.text)) return {error: 'duplicate parameter ' + param.name.text};
     names.add(param.name.text);
   }
   return {names};

@@ -84,3 +84,26 @@
         // @ts-nocheck
         export function total
   reject: ['[NORM-TS-MODULE]', 'cannot disable or suppress the strict preflight']
+
+- name: the-typescript-compiler-rejects-duplicate-entry-parameters
+  edits:
+    - {from: 'base: number', to: 'value: number'}
+    - {from: 'value + base', to: 'value + value'}
+  reject: ['[NORM-TS-MODULE]', "Duplicate identifier 'value'"]
+- name: an-invocation-must-not-invent-a-generators-completion-contract
+  edits:
+    - from: 'export function total(value: number, base: number): number { return value + base; }'
+      to: 'export function* total(value: number, base: number): Generator<number, number, unknown> { yield value; return value + base; }'
+  reject: ['[NORM-TS-MODULE]', 'generator entry requires a closed completion contract']
+- name: a-module-mutable-value-is-not-a-closed-scalar-input
+  edits:
+    - from: 'export function total'
+      to: |-
+        let state = 1;
+        export function total
+    - {from: 'value + base', to: 'value + base + state'}
+  reject: ['[NORM-TS-MODULE]', 'standalone scalar modules require closed function declarations']
+- name: negation-does-not-coerce-an-exact-business-number-to-boolean
+  edits:
+    - {from: '): number { return value + base; }', to: '): boolean { return !value; }'}
+  reject: ['[NORM-TS-MODULE]', 'logical negation in a standalone value requires a Boolean']
