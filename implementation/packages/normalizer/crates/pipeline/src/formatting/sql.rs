@@ -38,6 +38,7 @@ pub struct FormatCtx {
     business_acquisitions: std::collections::BTreeMap<u64,String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_normal_completions: std::collections::BTreeMap<u64, Expr>,
+    business_observation_projections: Vec<(Expr, String)>,
     business_evaluation_guard: Option<Expr>,
     /// Public receipt ordinal; the raw binding ID remains an internal identity.
     e_renumber: HashMap<u64, usize>,
@@ -64,6 +65,7 @@ impl Default for FormatCtx {
             business_acquisitions: Default::default(),
             business_receipt_guards: Default::default(),
             business_normal_completions: Default::default(),
+            business_observation_projections: Vec::new(),
             business_evaluation_guard: None,
             e_renumber: HashMap::new(),
         }
@@ -78,6 +80,9 @@ impl FormatCtx {
         self.business_projections.push((value,label));
     }
     pub(crate) fn forget_business_value(&mut self) { self.business_projections.pop(); }
+    pub(crate) fn display_business_observation(&mut self, value: Expr, label: String) {
+        self.business_observation_projections.push((value, label));
+    }
     pub(crate) fn bind_business_event(&mut self, id: u64, position: usize, identity: math::ObservationIdentity, guard: Expr) {
         self.e_renumber.insert(id, position);
         self.observation_identities.insert(id, identity);
@@ -368,6 +373,14 @@ pub fn format_expr_sql(expr: &Expr) -> String {
 /// Expr → 类 SQL 字符串（带 ctx，外部复用编号/heap）
 pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if let Some((_, label)) = ctx.business_projections.iter().rev().find(|(value, _)| value == expr) {
+        return label.clone();
+    }
+    // Observation aliases remain visible in a selected arm. Unlike a
+    // lexical LET alias they do not enlarge the value's acquisition domain.
+    if let Some((_, label)) = ctx.business_observation_projections.iter().rev()
+        .find(|(value, _)| value == expr
+            && business_value::receipts_available(value, ctx.business_evaluation_guard.as_ref(), ctx))
+    {
         return label.clone();
     }
     if ctx.business_projections.is_empty() || !math::let_eager_children(expr).is_empty() {

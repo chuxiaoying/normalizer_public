@@ -214,7 +214,7 @@ pub(super) fn observations(
                 // Atomic SQL writes have one declared failure type, so its
                 // complement names this exact receipt's normal completion.
                 let failed = math::domains::completion::is_throw(response.clone(), sql.exception());
-                ctx.display_business_value(math::normalize(b::not(failed)), format!("completion.is_return({receipt})"));
+                ctx.display_business_observation(math::normalize(b::not(failed)), format!("completion.is_return({receipt})"));
                 sql_exceptions.insert(sql.exception());
                 effects.push(item);
                 continue;
@@ -251,12 +251,12 @@ pub(super) fn observations(
                 }
                 if spec.returns != Ty::Unit {
                     let value = spec.tagged_value(response)?;
-                    ctx.display_business_value(value, output.clone());
+                    ctx.display_business_observation(value, output.clone());
                 }
                 let normal = spec.normal_condition(response);
                 if normal.as_bool().is_none() {
                     ctx.bind_normal_completion(binding_id, normal.clone());
-                    ctx.display_business_value(normal, format!("completion.is_return({output})"));
+                    ctx.display_business_observation(normal, format!("completion.is_return({output})"));
                 }
                 let args = ctx.with_business_evaluation_guard(&event.guard, |ctx| {
                     event.arguments().iter().enumerate().map(|(position, arg)| {
@@ -465,16 +465,21 @@ pub(super) fn observations(
         ctx.set_temporal_names(publication.aliases);
         ctx.set_relation_slots(publication.slots);
         ctx.set_reductions(publication.reductions);
-        Some(if let Some(fields) = projected_record {
-            need(returned.as_array_lit().is_some_and(|values| values.len() == fields.len()),
-                "projected record lost its declared fields")?;
-            crate::formatting::sql::business_value::format_record(&returned, &fields, &mut ctx)
-        } else if entry.return_type() == "void" {
-            need(returned.is_null(), "non-void return in void event")?;
-            "void".into()
-        } else {
-            crate::formatting::sql::business_value::format_value(&returned, &mut ctx)
-        })
+        let normal_domain = math::normalize(alternatives.as_slice().iter()
+            .filter(|alternative| matches!(&alternative.outcome, TerminalOutcome::Return(_)))
+            .fold(b::lit_bool(false), |domain, alternative| b::or(domain, alternative.guard.clone())));
+        Some(ctx.with_business_evaluation_guard(&normal_domain, |ctx| -> Result<_> {
+            Ok(if let Some(fields) = projected_record {
+                need(returned.as_array_lit().is_some_and(|values| values.len() == fields.len()),
+                    "projected record lost its declared fields")?;
+                crate::formatting::sql::business_value::format_record(&returned, fields, ctx)
+            } else if entry.return_type() == "void" {
+                need(returned.is_null(), "non-void return in void event")?;
+                "void".into()
+            } else {
+                crate::formatting::sql::business_value::format_value(&returned, ctx)
+            })
+        })?)
     } else {
         // The terminal alternatives were proved exhaustive; without a
         // return, every alternative is an observed business throw.

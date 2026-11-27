@@ -69,7 +69,7 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
 
 /// A short-circuit candidate must be safe to observe, not merely algebraically
 /// equivalent on total Boolean values.
-fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
+pub(super) fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
     use math::domains::completion;
     let proves = |requirement: &Expr| requirement.as_bool() == Some(true)
         || domain.is_some_and(|active| b::path_implies(active, requirement));
