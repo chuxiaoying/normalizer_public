@@ -12,4 +12,4 @@ expected:
       alternate:
         position: 1
         type: number
-  R: alternate == 0 OR score < 0 OR score > 0
+  R: alternate == 0 OR score != 0
