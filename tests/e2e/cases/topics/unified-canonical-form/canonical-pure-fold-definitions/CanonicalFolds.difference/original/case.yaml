@@ -16,5 +16,4 @@ expected:
         position: 2
         type: number
   R: |-
-    REDUCE(left FROM initial AS (acc, item) YIELD item + acc * 2)
-    - REDUCE(right FROM initial AS (acc, item) YIELD item + acc * 2)
+    REDUCE(left FROM initial AS (acc, item) YIELD item + acc * 2) - REDUCE(right FROM initial AS (acc, item) YIELD item + acc * 2)

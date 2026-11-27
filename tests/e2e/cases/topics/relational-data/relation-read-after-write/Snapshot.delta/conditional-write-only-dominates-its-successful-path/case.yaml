@@ -16,11 +16,7 @@ expected:
     $a_0:
       kind: acquisition
       source: bill
-      when: |-
-        CASE
-          WHEN remove THEN completion.is_return($e_0)
-          ELSE true
-        END
+      when: CASE WHEN remove THEN completion.is_return($e_0) ELSE true END
       after:
         - result: $e_0
           when: CASE WHEN remove THEN completion.is_return($e_0) ELSE false END
