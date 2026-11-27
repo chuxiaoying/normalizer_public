@@ -179,6 +179,30 @@ pub(crate) fn format_guarded_boolean(
         return None;
     }
     let (guard, value, selected) = lazy_operands(op, left, right, domain, ctx)?;
+    let (yes, no) = match op {
+        ShortCircuit::And => (value.clone(), b::lit_bool(false)),
+        ShortCircuit::Or => (b::lit_bool(true), value.clone()),
+    };
+    let lazy = b::case_when(vec![(guard.clone(), yes)], no);
+    let ready = {
+        // The guard proof above determines the lazy region. Let the same
+        // CASE selector used by the kernel choose its representation, not a
+        // second polarity rule tied to the rendered truth token.
+        let completions = ctx.business_normal_completions.iter().filter_map(|(&id, normal)| {
+            if ctx.business_receipt_guards.contains_key(&id) { return None; }
+            let (math::UnaryOpKind::Not, failure) = normal.as_unary_op()? else { return None; };
+            let (_, class) = math::domains::completion::throw_tag(failure)?;
+            Some((id, class))
+        }).collect();
+        let mut order = ctx.bound_order();
+        order.completion_classes = Some(&completions);
+        math::normalize_with(lazy, &order)
+    };
+    if ready.as_case_when().is_some() {
+        return Some(super::format_expr_with_ctx(&ready, ctx));
+    }
+    // A non-CASE rewrite would reenter Boolean rendering without the
+    // acquisition proof above. Retain the guarded expression instead.
     let guard_text = super::format_expr_with_ctx(guard, ctx);
     let value_text = ctx.with_business_evaluation_guard(&selected, |ctx| {
         super::format_expr_with_ctx(value, ctx)
