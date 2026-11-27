@@ -1043,7 +1043,12 @@ fn comparison_or_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
         changed = false;
         'outer: for i in 0..out.len() {
             for j in (i + 1)..out.len() {
-                let Some(absorbed) = absorb_two_ordered_comparisons(&out[i], &out[j]) else {
+                let contained = if empty_relation_is_within_count(&out[i], &out[j]) {
+                    Some(out[j].clone())
+                } else if empty_relation_is_within_count(&out[j], &out[i]) {
+                    Some(out[i].clone())
+                } else { None };
+                let Some(absorbed) = contained.or_else(|| absorb_two_ordered_comparisons(&out[i], &out[j])) else {
                     continue;
                 };
                 out[i] = absorbed;

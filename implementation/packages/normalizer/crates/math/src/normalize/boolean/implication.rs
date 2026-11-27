@@ -31,6 +31,20 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     left_relation == right_relation
 }
 
+/// The empty member of an exact cardinality interval is the length-zero
+/// observation of the same acquired relation, not an independent failure.
+pub(super) fn empty_relation_is_within_count(empty: &Expr, count: &Expr) -> bool {
+    let Some(exists) = empty.as_not() else { return false; };
+    let (Some(empty), Some((op, relation, bound))) =
+        (relation_exists_true_relation(exists), relation_count_bound(count))
+    else { return false; };
+    empty == relation && match op {
+        BinOpKind::Lt => bound > 0,
+        BinOpKind::Le => bound >= 0,
+        _ => false,
+    }
+}
+
 /// A selection of an empty input is empty.
 pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> bool {
     fn empty_relation(expr: &Expr) -> Option<&RelationExpr> {
@@ -48,10 +62,7 @@ pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> 
 pub(super) fn relation_exists_true_relation(
     expr: &Expr,
 ) -> Option<&RelationExpr> {
-    let Some((RelationAggregateKind::Exists, relation, _, _)) =
-        expr.as_relation_aggregate()
-    else {
-        return None;
-    };
-    Some(relation)
+    let (RelationAggregateKind::Exists, relation, Some(value), None) =
+        expr.as_relation_aggregate()? else { return None; };
+    (value.as_bool() == Some(true)).then_some(relation)
 }
