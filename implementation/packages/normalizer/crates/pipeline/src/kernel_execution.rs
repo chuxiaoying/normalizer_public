@@ -137,11 +137,6 @@ impl<'a> Engine<'a> {
     }
 
     fn order_execution_comparison(&self, op: BinOpKind, left: Expr, right: Expr) -> Expr {
-        // CHOOSE still needs its lexical binder; an execution handle must
-        // not determine operand orientation before that binder exists.
-        if self.temporal_definitions.iter().any(|node| matches!(node, super::temporal_graph::Definition::Choice(_))) {
-            return b::binop_public(op, left, right);
-        }
         let order = ExecutionOrder(&self.temporal_definitions);
         if let Some((reverse, true)) = math::canonical_order_ordered_comparison(op, &left, &right, &order) {
             b::binop_public(reverse, right, left)

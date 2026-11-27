@@ -41,7 +41,7 @@ enum Identity {
     // supplies their business identity. They are not published reference names.
     InternalExternal(u64, Vec<String>),
     InternalHeap(i64),
-    InternalTemporal(usize),
+    InternalTemporal(u64),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -200,9 +200,7 @@ impl Keys<'_> {
                         if let Some(&slot) = ctx.choice_slots().and_then(|slots| slots.get(binding_id)) {
                             return binding(Class::Reference, origin.primitive_type(), Identity::Local(slot));
                         }
-                        let slot = ctx.temporal_aliases().and_then(|aliases| aliases.get(binding_id)).copied()
-                            .unwrap_or_else(|| usize::try_from(*binding_id).expect("local identity does not fit its slot"));
-                        (Class::Reference, Identity::InternalTemporal(slot))
+                        (Class::Reference, Identity::InternalTemporal(*binding_id))
                     }
                 };
                 binding(class, origin.primitive_type(), id)
@@ -335,12 +333,34 @@ pub fn canonical_order_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext)
     canonical_order_key(left, ctx).cmp(&canonical_order_key(right, ctx))
 }
 
+/// Construction of provisional execution keys still needs to distinguish
+/// handles. They are not eligible to decide a canonical operand direction.
+fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) -> bool {
+    let mut bound = true;
+    expr.walk_pruned(&mut |part| {
+        if !bound || ctx.case_arm_keys(part).is_some() { return false; }
+        if let Some(SymVarOrigin::Temporal { binding_id, .. }) = part.as_sym_var() {
+            bound = if let Some(reduce) = ctx.reduce_shape(*binding_id) {
+                comparison_operands_are_bound(&reduce.initial, ctx)
+                    && comparison_operands_are_bound(&reduce.body, ctx)
+            } else {
+                ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
+            };
+        }
+        bound
+    });
+    bound
+}
+
 /// CF-08: fix operands using the shared key and reverse the comparison token
 /// only if the caller has already established this as a value comparison.
 pub fn canonical_order_ordered_comparison(
     op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortContext,
 ) -> Option<(BinOpKind, bool)> {
     let opposite = op.swapped_comparison()?;
+    if !comparison_operands_are_bound(left, ctx) || !comparison_operands_are_bound(right, ctx) {
+        return None;
+    }
     canonical_order_compare(left, right, ctx).is_gt().then_some((opposite, true))
 }
 
