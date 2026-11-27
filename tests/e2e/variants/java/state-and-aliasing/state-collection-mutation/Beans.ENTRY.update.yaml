@@ -152,3 +152,27 @@
   edits:
   - from: class StateList {
     to: class StateList { int audit;
+
+- name: implicit-receiver-state-array-length-observes-the-existing-e-root
+  edits:
+    - {from: 'int[] alias = values;', to: ''}
+    - {from: 'values[0] = next;', to: ''}
+    - {from: 'return alias[0];', to: 'return values.length;'}
+  expect:
+    - {path: [R], value: 'LENGTH(values)'}
+    - {path: [S], absent: true}
+    - {path: [throws], absent: true}
+
+- name: parameter-shadowing-state-array-observes-only-the-p-root
+  edits:
+    - {from: 'update(int next)', to: 'update(int[] values)'}
+    - {from: 'int[] alias = values;', to: ''}
+    - {from: 'values[0] = next;', to: ''}
+    - {from: 'return alias[0];', to: 'return values.length;'}
+  expect:
+    - path: [P, parameters]
+      value: {values: {position: 0, type: 'number[]'}}
+    - {path: [E], absent: true}
+    - {path: [R], value: 'LENGTH(values)'}
+    - {path: [S], absent: true}
+    - {path: [throws], absent: true}
