@@ -158,13 +158,6 @@ function compile(source, file, entry, physicalPath, linked) {
   const {sf, fn} = typedModuleAst(source, physicalPath, entry);
   const formals = namedParameters(fn.parameters);
   if (formals.error) fail(formals.error);
-  if (fn.parameters.some(param => param.type?.kind === ts.SyntaxKind.UnknownKeyword)) {
-    const checker = checkedTypeScript(physicalPath, sf, fail);
-    const proof = guardedUnknownText(sf, fn, checker, fail);
-    const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
-    return projectInput(file, entry, params, 'string', false, 'text',
-      {op: 'source.guard_unknown_text', ...proof}, fn.getText(sf), {exceptions: {TypeError: 'text'}});
-  }
   const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
   const isStateEvent = isListener && fn.body.statements.some(st => ts.isExpressionStatement(st)
     && ts.isBinaryExpression(st.expression) && st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
@@ -173,9 +166,17 @@ function compile(source, file, entry, physicalPath, linked) {
     const project = eventContract(file, source, entry, physicalPath, {synchronous: true});
     return {carrier: project.source_text, carrierFile: project.source, binding: project.entries[0], project, moduleFile: 'Prepared.ts'};
   }
+  const usesStandard = sf.statements.some(isOfficialNamespaceImport);
+  const checker = checkedTypeScript(physicalPath, sf, fail, {allowOfficial: usesStandard});
+  if (fn.parameters.some(param => checker.getTypeAtLocation(param.name).flags & ts.TypeFlags.Unknown)) {
+    const proof = guardedUnknownText(sf, fn, checker, fail);
+    const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
+    return projectInput(file, entry, params, 'string', false, 'text',
+      {op: 'source.guard_unknown_text', ...proof}, fn.getText(sf), {exceptions: {TypeError: 'text'}});
+  }
   const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
   if (isListener || isTuple) {
-    const checker = checkedTypeScript(physicalPath, sf, fail);
+    if (usesStandard) fail('typed listener and tuple modules do not use the official text namespace');
     if (fn.parameters.some(p => p.type?.kind !== ts.SyntaxKind.BooleanKeyword)) {
       fail('this typed statement adapter requires explicit Boolean entry parameters');
     }
@@ -185,11 +186,7 @@ function compile(source, file, entry, physicalPath, linked) {
     const returns = isListener ? 'void' : 'number';
     return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
   }
-  const usesStandard = sf.statements.some(isOfficialNamespaceImport);
-  const checker = usesStandard ? checkedTypeScript(physicalPath, sf, fail, {allowOfficial: true}) : undefined;
-  const compiled = compileScalar(sf, fn, file, entry, formals.names, {officialChecker: checker});
-  if (!usesStandard) checkedTypeScript(physicalPath, sf, fail);
-  return compiled;
+  return compileScalar(sf, fn, file, entry, formals.names, {officialChecker: usesStandard ? checker : undefined});
 }
 
 function compileScalar(sf, fn, file, entry, formals, {receiverFields, linked, officialChecker} = {}) {

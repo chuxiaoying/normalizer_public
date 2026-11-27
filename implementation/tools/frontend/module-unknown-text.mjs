@@ -8,8 +8,10 @@ function oneStatement(node) {
 }
 
 export function guardedUnknownText(sf, fn, checker, fail) {
-  if (sf.statements.length !== 1 || sf.statements[0] !== fn || fn.parameters.length !== 1 ||
-      fn.parameters[0].type?.kind !== ts.SyntaxKind.UnknownKeyword ||
+  const declarationsOnly = sf.statements.every(statement => statement === fn
+    || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement));
+  if (!declarationsOnly || fn.parameters.length !== 1 ||
+      !(checker.getTypeAtLocation(fn.parameters[0].name).flags & ts.TypeFlags.Unknown) ||
       fn.type?.kind !== ts.SyntaxKind.StringKeyword || fn.asteriskToken ||
       fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('unknown input requires a checked standalone string guard with the original TypeError branch');
