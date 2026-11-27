@@ -529,7 +529,7 @@ topics:
         status: seeded
         test_status: covered
         surface: typescript
-        focus: TypeScript 函数保留 unknown 输入的检查、有效类型收窄及原异常
+        focus: TypeScript 分析副本拒绝 unknown，包括已有运行时检查、别名和局部类型
       - id: entry-async-await
         status: seeded
         test_status: covered

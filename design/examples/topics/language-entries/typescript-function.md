@@ -1,8 +1,8 @@
-# TypeScript：对 unknown 做真实检查再返回
+# TypeScript：有运行时检查也不接受 unknown
 
 ## 设计意图
 
-`unknown` 是入口在收到未检查值时的类型，不是可用于业务运算的弱类型。运行到原有的 `typeof` 检查时才区分成功和失败；成功分支返回同一个字符串值，失败分支传播原错误及其消息。不把「已经是字符串」提前写成调用方保证。
+验收分析副本的强类型边界。能通过 TypeScript strict 检查，不代表能交给 Normalizer。检查分支只在执行中提供局部类型证据，不能使带 `unknown` 的交付合同通过准入。依据见 [AI救赎](../../../chapters/04-AI救赎.md#只支持强类型)。
 
 ## 输入原始代码
 
@@ -15,28 +15,8 @@ export function read(value: unknown): string {
 
 ## AI 预处理结果
 
-**原样通过。** TypeScript 检查器证明，只有 `typeof value === "string"` 的路径走到返回语句。类型断言和 `String(value)` 都不是这条检查：前者没有运行时判断，后者可能转换值，不能替换本例。
+**不能原样通过。** 本例观察的入口包含检查和失败。没有证据表明调用者已完成校验，不能改成 `value: string`，也不能插入断言、转换或新入参。如果误将原件交给 Normalizer，在第一处 `unknown` 拒绝。
 
 ## 归一化最终结果
 
-```yaml
-schema: normalizer.pers/1
-entry: { function: src/value.ts#read, returns: text }
-P:
-  parameters:
-    value: { position: 0, type: unknown }
-R: value
-throws:
-  - type: TypeError
-    when: 'typeof(value) != "string"'
-    payload: '"Expected text"'
-    payload_type: text
-```
-
-`R` 只在正常完成域有定义，此时 `value` 就是原字符串。空串是有效字符串；数字、null、undefined 和 `new String(...)` 不是。错误分支不发布 R 的替代值，不制造 E、S 或额外布尔 P。
-
-| 对照 | 预期 |
-| --- | --- |
-| 交换比较两端且把正常返回放进肯定分支 | 同一 PERS。 |
-| 改错误消息 | 只改变异常载荷。 |
-| 直接返回 unknown、用断言、以真值或转换代替检查 | 不按这个合同产生 PERS。 |
+`Panic: not-support`，诊断指向源码中的 `unknown`，无 PERS。检查写成肯定分支、调换 `typeof` 比较两端、改变失败消息、或通过断言和转换使用该值，都不改变准入结论。把它写进类型别名、对象字段或局部变量，也不能绕过准入；例如辅助模块的 catch 变量由 TypeScript 推断为 unknown 时，同样在类型预检拒绝。
