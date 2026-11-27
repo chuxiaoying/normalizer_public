@@ -1,0 +1,18 @@
+entry: src/NestedValues.java#NestedValues.total
+input:
+  src/NestedValues.java: |
+    class NestedValues {
+        static int total(int[][] groups) {
+            int total;
+            /* @normalizer-ir
+               total = sum from groups as group
+                   yield sum from groups as value yield value
+            */
+            return total;
+        }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - nested sum requires a scalar sum from the outer row

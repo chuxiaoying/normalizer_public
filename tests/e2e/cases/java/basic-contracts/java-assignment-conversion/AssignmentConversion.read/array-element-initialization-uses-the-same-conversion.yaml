@@ -1,0 +1,14 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+input:
+  src/AssignmentConversion.java: |
+    class AssignmentConversion {
+        static int read() {
+            int value = 99;
+            int[] slots = new int[] { 99L };
+            return value;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - array initializer cannot implicitly narrow

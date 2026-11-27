@@ -1,0 +1,43 @@
+entry: src/QuotaService.java#QuotaService.INSTANCE.difference
+input:
+  src/QuotaService.java: |
+    import normalizer.intrinsics.N;
+
+    class Quota {
+        short units;
+    }
+
+    class QuotaService {
+        static final QuotaService INSTANCE = new QuotaService();
+
+        @N.EntryState
+        Quota quota = new Quota();
+
+        int difference(Quota quota, short adjustment) {
+            return this.quota.units - quota.units + adjustment;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quota:
+      fields:
+        units: number
+  entry:
+    function: src/QuotaService.java#QuotaService.INSTANCE.difference
+    returns: number
+  P:
+    parameters:
+      quota:
+        position: 0
+        type: Quota
+      adjustment:
+        position: 1
+        type: number
+  E:
+    quota:
+      kind: state
+      source: src/QuotaService.java#QuotaService.INSTANCE.quota
+      fields:
+        units: number
+  R: adjustment + (E.quota.units - P.quota.units)

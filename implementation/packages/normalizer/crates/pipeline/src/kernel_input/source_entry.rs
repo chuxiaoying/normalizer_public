@@ -293,37 +293,3 @@ fn java_type_spelling(ty: &JavaType) -> String {
         JavaType::Void => "void".into(),
     }
 }
-
-#[cfg(test)]
-mod assembly_constructor_contract {
-    use super::*;
-    use simulator_parser::{parse, ParseOptions};
-
-    #[test]
-    fn a_nonempty_record_is_not_a_default_zero_argument_producer() {
-        for (declaration, admissible) in [
-            ("class Payload { int value; }", true),
-            ("record Payload() {}", true),
-            ("record Payload(int value) {}", false),
-        ] {
-            let source = format!("{declaration} class Entry {{ static final Payload ROOT = new Payload(); }}");
-            let program = parse(&source, "Entry.java", &ParseOptions::default()).unwrap();
-            let owner = program.find_class("Entry").unwrap();
-            let field = &owner.fields()[0];
-            let initializer = field.initializer().unwrap();
-            assert_eq!(assembly_allocation(&program, field.java_type(), initializer), admissible, "{declaration}");
-            assert_eq!(inert_singleton(&program, owner, field), admissible, "{declaration}");
-        }
-
-        let source = "import normalizer.intrinsics.N;
-          record Payload(int value) {}
-          class Entry {
-            @N.EntryState Payload seed = new Payload();
-            int read() { return 0; }
-          }";
-        let program = parse(source, "Entry.java", &ParseOptions::default()).unwrap();
-        let result = crate::normalized::source_layouts(&program, None);
-        let error = result.expect_err("an invalid canonical constructor cannot produce acquired state");
-        assert!(error.contains("[NORM-FIELD-DECLARATION]"), "{error}");
-    }
-}

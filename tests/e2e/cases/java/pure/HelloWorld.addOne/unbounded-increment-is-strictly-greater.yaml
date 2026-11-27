@@ -1,0 +1,23 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+input:
+  src/HelloWorld.java: |
+    class HelloWorld {
+        static int addOne(int value) {
+            int next = value + 1;
+            if (next <= value) {
+                return 99;
+            }
+            return next;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/HelloWorld.java#HelloWorld.addOne
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: value + 1

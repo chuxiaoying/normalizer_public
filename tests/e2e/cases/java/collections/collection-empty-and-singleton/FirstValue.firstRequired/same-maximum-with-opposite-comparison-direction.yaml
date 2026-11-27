@@ -1,0 +1,29 @@
+entry: src/FirstValue.java#FirstValue.firstRequired
+input:
+  src/FirstValue.java: |
+    class FirstValue {
+        static int firstRequired(int[] values, int threshold) {
+            int first = values[0]; return threshold > first ? threshold : first;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstRequired
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      threshold:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN threshold > FIRST(value FROM values) THEN threshold
+      ELSE FIRST(value FROM values)
+    END
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: LENGTH(values) == 0

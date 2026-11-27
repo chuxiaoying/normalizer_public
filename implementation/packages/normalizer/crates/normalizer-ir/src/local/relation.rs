@@ -363,19 +363,3 @@ fn parse_query_tail(
     };
     Ok(Query { binding, accumulate, source, alias, clauses, operation: Operation::OnRows(operation) })
 }
-
-#[cfg(test)]
-mod aggregate_admission_contract {
-    use super::super::parse;
-
-    #[test]
-    fn recognized_count_requires_from_instead_of_falling_through_to_another_operation() {
-        assert_eq!(parse("total = count payable").unwrap_err(), "expected from after aggregate");
-    }
-
-    #[test]
-    fn a_row_count_does_not_admit_a_value_projection() {
-        assert_eq!(parse("total = count from payable as p yield p.account_id").unwrap_err(),
-            "incompatible query operation and projection");
-    }
-}

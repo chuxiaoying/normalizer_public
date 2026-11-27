@@ -1,3 +1,0 @@
-- name: above-word-size-intermediate-is-divided-exactly
-  edits:
-    - { from: 'return -9223372036854775808L / -1L;', to: 'return (9223372036854775807L * 2L + 2L) / 2L;' }

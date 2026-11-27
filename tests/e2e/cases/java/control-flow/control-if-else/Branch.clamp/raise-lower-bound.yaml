@@ -1,0 +1,29 @@
+entry: src/Branch.java#Branch.clamp
+input:
+  src/Branch.java: |
+    class Branch {
+        static int clamp(int value, int limit) {
+            if (value < 10) return 10;
+            if (value > limit) return limit;
+            return value;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Branch.java#Branch.clamp
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      limit:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN value < 10 THEN 10
+      WHEN limit < value THEN limit
+      ELSE value
+    END

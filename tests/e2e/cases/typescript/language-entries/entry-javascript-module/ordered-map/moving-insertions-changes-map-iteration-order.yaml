@@ -1,0 +1,32 @@
+entry: src/ordered-map.ts#labels
+input:
+  src/ordered-map.ts: |
+    export function labels(a: string | null, b: string | null, c: string | null): ReadonlyMap<string, string> {
+      return new Map<string, string>([
+        ...(b === null ? [] : [['10', b] as const]),
+        ...(a === null ? [] : [['2', a] as const]),
+      ]);
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ordered-map.ts#labels
+    returns: map<text,text>
+  P:
+    parameters:
+      a:
+        position: 0
+        type: text?
+      b:
+        position: 1
+        type: text?
+      c:
+        position: 2
+        type: text?
+  R: |-
+    CASE
+      WHEN a == null AND b == null THEN MAP([])
+      WHEN a == null THEN MAP([["10", b]])
+      WHEN b == null THEN MAP([["2", a]])
+      ELSE MAP([["10", b], ["2", a]])
+    END

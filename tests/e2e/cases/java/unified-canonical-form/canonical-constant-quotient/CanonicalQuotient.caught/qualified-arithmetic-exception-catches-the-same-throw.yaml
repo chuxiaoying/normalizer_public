@@ -1,0 +1,17 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.caught
+input:
+  src/CanonicalQuotient.java: |
+    class CanonicalQuotient {
+        static int caught() {
+            try { return 7 % 0; }
+            catch (java.lang.ArithmeticException ignored) { return 11; }
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuotient.java#CanonicalQuotient.caught
+    returns: number
+  P:
+    parameters: {}
+  R: "11"

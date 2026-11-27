@@ -1,0 +1,18 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+input:
+  src/AssignmentConversion.java: |
+    class AssignmentConversion {
+        static int read() {
+            byte value = 'A';
+            
+            return value;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/AssignmentConversion.java#AssignmentConversion.read
+    returns: number
+  P:
+    parameters: {}
+  R: "65"

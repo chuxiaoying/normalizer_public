@@ -1,0 +1,32 @@
+entry: src/MixedTemporal.java#MixedTemporal.settle
+input:
+  src/MixedTemporal.java: |
+    class MixedTemporal {
+        static int settle(int[] values, int backup) {
+            int picked;
+            /* @normalizer-ir picked = choose from values else backup */
+            int total;
+            /* @normalizer-ir total = reduce values from picked as (acc, item) yield acc * 2 + item */
+            return picked;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/MixedTemporal.java#MixedTemporal.settle
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      backup:
+        position: 1
+        type: number
+  T:
+    - id: $t_0
+      op: member_choice
+      when: "true"
+      members: values
+      empty: backup
+  R: $t_0

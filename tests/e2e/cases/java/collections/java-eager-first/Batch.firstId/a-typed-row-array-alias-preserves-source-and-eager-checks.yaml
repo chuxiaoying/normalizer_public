@@ -1,0 +1,39 @@
+entry: src/Batch.java#Batch.firstId
+input:
+  src/Batch.java: |
+    import normalizer.intrinsics.N;
+
+    class Ticket { int id; }
+    class Row { @N.Nullable Ticket ticket; }
+    class Batch {
+        static int firstId(Row[] rows) {
+            Row[] same = rows; int[] ids;
+            /* @normalizer-ir
+               ids = from same as row yield row.ticket.id
+            */
+            return ids[0];
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Ticket:
+      fields:
+        id: number
+    Row:
+      fields:
+        ticket: Ticket?
+  entry:
+    function: src/Batch.java#Batch.firstId
+    returns: number
+  P:
+    parameters:
+      rows:
+        position: 0
+        type: Row[]
+  R: FIRST(r.ticket.id FROM rows AS r)
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: LENGTH(rows) == 0
+    - type: java.lang.NullPointerException
+      when: EXISTS (SELECT 1 FROM rows AS r WHERE r.ticket IS NULL)

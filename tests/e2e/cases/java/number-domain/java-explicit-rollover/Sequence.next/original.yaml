@@ -1,0 +1,24 @@
+entry: src/Sequence.java#Sequence.next
+input:
+  src/Sequence.java: |
+    class Sequence {
+        static int next(int current) {
+            if (current == 2147483647) return -2147483648;
+            return current + 1;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Sequence.java#Sequence.next
+    returns: number
+  P:
+    parameters:
+      current:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN current == 2147483647 THEN -2147483648
+      ELSE current + 1
+    END

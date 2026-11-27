@@ -1,0 +1,30 @@
+entry: src/OptionalField.java#OptionalField.hasLabel
+input:
+  src/OptionalField.java: |
+    import normalizer.intrinsics.N;
+
+    class Profile {
+        @N.Nullable
+        String label;
+    }
+
+    class OptionalField {
+        static int hasLabel(Profile profile) {
+            Profile fresh = new Profile(); return fresh.label == null ? 0 : 1;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        label: text?
+  entry:
+    function: src/OptionalField.java#OptionalField.hasLabel
+    returns: number
+  P:
+    parameters:
+      profile:
+        position: 0
+        type: Profile
+  R: "0"

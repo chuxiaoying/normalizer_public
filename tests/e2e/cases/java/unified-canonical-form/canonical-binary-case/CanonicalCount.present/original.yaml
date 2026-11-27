@@ -1,0 +1,26 @@
+entry: src/CanonicalCount.java#CanonicalCount.present
+input:
+  src/CanonicalCount.java: |
+    import normalizer.intrinsics.N;
+
+    class CanonicalCount {
+        static int present(@N.Nullable String label) {
+            if (label == null) return 0;
+            return 1;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalCount.java#CanonicalCount.present
+    returns: number
+  P:
+    parameters:
+      label:
+        position: 0
+        type: text?
+  R: |-
+    CASE
+      WHEN label == null THEN 0
+      ELSE 1
+    END

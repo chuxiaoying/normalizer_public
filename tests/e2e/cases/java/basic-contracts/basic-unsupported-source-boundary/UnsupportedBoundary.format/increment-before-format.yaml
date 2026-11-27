@@ -1,0 +1,16 @@
+entry: src/UnsupportedBoundary.java#UnsupportedBoundary.format
+input:
+  src/UnsupportedBoundary.java: |
+    class UnsupportedBoundary {
+        static String format(int value) {
+            return runtimeFormat(value + 1);
+        }
+
+        static native String runtimeFormat(int value);
+    }
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - kind=ABORT
+    - UnsupportedBoundary.runtimeFormat
+    - not-support

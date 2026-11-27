@@ -1,0 +1,15 @@
+entry: src/TicketCode.java#TicketCode.read
+input:
+  src/TicketCode.java: |
+    class TicketCode {
+        static int read(int value) { return value; }
+        static int return() { return 5; }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-RESERVED-METHOD-NAME]"
+    - TicketCode.return
+    - reserved keyword used as a Java method name
+  kind: PREPROCESS_REQUIRED
+  location: src/TicketCode.java

@@ -1,0 +1,22 @@
+entry: src/Guard.java#Guard.allowed
+input:
+  src/Guard.java: |
+    class Guard {
+        static boolean allowed(boolean active, int value) {
+            return active && value >= 0;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Guard.java#Guard.allowed
+    returns: bool
+  P:
+    parameters:
+      active:
+        position: 0
+        type: bool
+      value:
+        position: 1
+        type: number
+  R: active AND value >= 0

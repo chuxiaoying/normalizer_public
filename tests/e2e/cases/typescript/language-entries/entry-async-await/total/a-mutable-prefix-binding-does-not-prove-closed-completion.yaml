@@ -1,0 +1,11 @@
+entry: src/total.ts#total
+input:
+  src/total.ts: |
+    export async function total(source: { read: () => Promise<number> }): Promise<number> {
+        let value = await source.read();
+        return value + 1;
+    }
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - async entry requires a closed completion contract

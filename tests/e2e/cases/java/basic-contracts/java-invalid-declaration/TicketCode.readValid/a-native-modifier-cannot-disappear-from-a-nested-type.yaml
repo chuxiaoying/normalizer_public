@@ -1,0 +1,12 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode { native static class Extra {}
+        static int readValid(int value) { return value; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-NATIVE-DECLARATION]"
+    - a nested type cannot be native

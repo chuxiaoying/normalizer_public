@@ -1,0 +1,14 @@
+entry: src/total.ts#total
+input:
+  src/total.ts: |
+    export async function total(ports: { read: () => Promise<number> }): Promise<number> {
+        const value = await ports.read();
+        return value + 1;
+    }
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - kind=ABORT
+    - "[NORM-ENGINE-FAILURE]"
+    - total
+    - ports.read

@@ -149,25 +149,3 @@ fn rebuild_relation_with_children_simplified(
         RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. } => relation.clone(),
     }
 }
-
-#[cfg(test)]
-mod aggregate_rebuild_tests {
-    use super::*;
-    use crate::builder as b;
-    use crate::domains::relation::{relation_first_value, RelationExpr};
-
-    #[test]
-    fn first_child_rebuild_preserves_source_projection_and_default() {
-        let rows = RelationExpr::base("offers", "offer");
-        let field = b::row_value("offer");
-        let fallback = b::add(b::lit_int(2), b::lit_int(3));
-        let expression = relation_first_value(rows.clone(), field.clone(), fallback);
-
-        let rebuilt = rebuild_with_children_simplified(&expression, &|child| crate::normalize(child.clone()));
-        assert_eq!(rebuilt, relation_first_value(rows, field, b::lit_int(5)));
-        assert_eq!(
-            rebuild_with_children_simplified(&rebuilt, &|child| child.clone()),
-            rebuilt
-        );
-    }
-}

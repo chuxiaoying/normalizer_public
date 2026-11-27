@@ -1,0 +1,10 @@
+entry: src/vector-construction.ts#pair
+input:
+  src/vector-construction.ts: |
+    export function pair(enabled: boolean, left: number, right: number, fixed: number): readonly number[] {
+      return [enabled ? left : right, null];
+    }
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - unsupported standalone scalar operation literal

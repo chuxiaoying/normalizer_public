@@ -1,0 +1,18 @@
+entry: src/LocalCycle.java#LocalCycle.exportSelf
+input:
+  src/LocalCycle.java: |
+    class Node { Node next; int value; }
+    class LocalCycle {
+        static Node exportSelf() {
+            Node root = new Node();
+            root.value = 8;
+            root.next = root;
+            return root;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-CYCLIC-CONTENT-EXIT]"
+    - kind=ABORT
+    - LocalCycle.exportSelf
+  kind: ABORT

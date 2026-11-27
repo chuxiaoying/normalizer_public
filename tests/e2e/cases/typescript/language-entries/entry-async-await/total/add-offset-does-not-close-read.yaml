@@ -1,0 +1,16 @@
+entry: src/total.ts#total
+input:
+  src/total.ts: |
+    export async function total(source: { read: () => Promise<number> }): Promise<number> {
+        const value = await source.read();
+        return value + 2;
+    }
+reject:
+  fragments:
+    - "[NORM-OUT-OF-SOURCE]"
+    - kind=ABORT
+    - "[NORM-ENGINE-FAILURE]"
+    - total
+    - source.read
+    - unsupported
+  kind: ABORT

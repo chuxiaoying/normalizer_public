@@ -1,0 +1,34 @@
+entry: src/StoreRoute.java#StoreRoute.local
+input:
+  src/StoreRoute.java: |
+    class RouteBox { int amount; }
+    class StoreRoute {
+        static int local(int amount, boolean replace) {
+            RouteBox box = new RouteBox(); RouteBox alias = box;
+            if (replace) {
+                if (amount > 0) { alias.amount = amount; return box.amount + 1; }
+            } else {
+                box.amount = 2;
+            }
+            return alias.amount;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/StoreRoute.java#StoreRoute.local
+    returns: number
+  P:
+    parameters:
+      amount:
+        position: 0
+        type: number
+      replace:
+        position: 1
+        type: bool
+  R: |-
+    CASE
+      WHEN amount > 0 AND replace THEN amount + 1
+      WHEN replace THEN 0
+      ELSE 2
+    END

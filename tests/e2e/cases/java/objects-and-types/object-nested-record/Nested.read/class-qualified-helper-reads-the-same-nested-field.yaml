@@ -1,0 +1,35 @@
+entry: src/Nested.java#Nested.read
+input:
+  src/Nested.java: |
+    class Inner {
+        int value;
+    }
+
+    class Outer {
+        Inner inner;
+    }
+
+    class Nested {
+        static int project(Outer row) { return row.inner.value; }
+        static int read(Outer outer) {
+            return Nested.project(outer);
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Inner:
+      fields:
+        value: number
+    Outer:
+      fields:
+        inner: Inner
+  entry:
+    function: src/Nested.java#Nested.read
+    returns: number
+  P:
+    parameters:
+      outer:
+        position: 0
+        type: Outer
+  R: outer.inner.value

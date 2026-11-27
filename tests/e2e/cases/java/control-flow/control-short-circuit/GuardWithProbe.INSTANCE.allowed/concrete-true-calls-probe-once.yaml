@@ -1,0 +1,40 @@
+entry: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.allowed
+input:
+  src/GuardWithProbe.java: |
+    import normalizer.intrinsics.N;
+
+    class GuardWithProbe {
+        static final GuardWithProbe INSTANCE = new GuardWithProbe(new Probe());
+
+        @N.External
+        private final Probe probe;
+
+        GuardWithProbe(Probe probe) { this.probe = probe; }
+
+        boolean allowed(boolean active, int value) {
+            return true && probe.read(value) > 0;
+        }
+    }
+
+    class Probe { native int read(int value); }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.allowed
+    returns: bool
+  P:
+    parameters:
+      active:
+        position: 0
+        type: bool
+      value:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/GuardWithProbe.java#GuardWithProbe.INSTANCE.probe.read
+        args:
+          - value
+        returns: number
+        result: $e_0
+  R: $e_0 > 0

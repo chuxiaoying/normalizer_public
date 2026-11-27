@@ -1,0 +1,13 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+input:
+  src/HelloWorld.java: |
+    class HelloWorld {
+        static int addOne(int value) {
+            return '🙂' + 1;
+        }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - Java character literal must contain one UTF-16 code unit

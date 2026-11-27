@@ -1,0 +1,18 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode {
+        static int readValid(int value) { return value; }
+        static synchronized native int booleanValue();
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/TicketCode.java#TicketCode.readValid
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: value

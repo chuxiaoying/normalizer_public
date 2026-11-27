@@ -1,0 +1,23 @@
+entry: src/MapValues.java#MapValues.sumPlusOne
+input:
+  src/MapValues.java: |
+    class MapValues {
+        static int sumPlusOne(int[] values) {
+            int total;
+            /* @normalizer-ir
+               total = sum from values as value yield value * 2
+            */
+            return total;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/MapValues.java#MapValues.sumPlusOne
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: COALESCE(SUM(SELECT value * 2 FROM values), 0)

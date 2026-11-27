@@ -1,0 +1,20 @@
+entry: src/LocalCycle.java#LocalCycle.readSelf
+input:
+  src/LocalCycle.java: |
+    class Node { Node next; int value; }
+    class LocalCycle {
+        static int readSelf() {
+            Node root = new Node();
+            root.value = 7;
+            root.next = root;
+            return root.next.value;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/LocalCycle.java#LocalCycle.readSelf
+    returns: number
+  P:
+    parameters: {}
+  R: "7"

@@ -1,0 +1,19 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+input:
+  src/HelloWorld.java: |
+    class HelloWorld {
+        static int addOne(int value) {
+            return 0x8000_0000;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/HelloWorld.java#HelloWorld.addOne
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: "-2147483648"

@@ -1,0 +1,26 @@
+entry: src/RowArithmetic.java#RowArithmetic.sum
+input:
+  src/RowArithmetic.java: |
+    class RowArithmetic {
+        static int sum(int[] values, int extra) {
+            int total;
+            /* @normalizer-ir
+               total = sum from values as value yield (value + 1) - 1
+            */
+            return total;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/RowArithmetic.java#RowArithmetic.sum
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      extra:
+        position: 1
+        type: number
+  R: COALESCE(SUM(SELECT value FROM values), 0)

@@ -1,0 +1,26 @@
+entry: src/Balance.java#Balance.addFee
+input:
+  src/Balance.java: |
+    class Balance {
+        static int addFee(int balance, int fee) {
+            int adjusted = balance > 0 ? balance : balance + 2; return adjusted - balance;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Balance.java#Balance.addFee
+    returns: number
+  P:
+    parameters:
+      balance:
+        position: 0
+        type: number
+      fee:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN balance > 0 THEN 0
+      ELSE 2
+    END

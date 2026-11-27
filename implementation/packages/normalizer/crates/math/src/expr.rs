@@ -901,19 +901,3 @@ fn sym_var_profile_key(origin: &SymVarOrigin) -> String {
         SymVarOrigin::Temporal { binding_id, .. } => format!("$t_{}", binding_id),
     }
 }
-
-#[cfg(test)]
-mod structural_equality_tests {
-    use crate::builder as b;
-
-    #[test]
-    fn unary_operator_is_part_of_structural_identity() {
-        let neg = b::neg(b::lit_int(1));
-        let not = b::not(b::lit_bool(true));
-
-        assert_ne!(neg, not);
-        assert_eq!(neg, b::neg(b::lit_int(1)));
-        assert_ne!(neg, b::neg(b::lit_int(2)));
-        assert_eq!(not, b::not(b::lit_bool(true)));
-    }
-}

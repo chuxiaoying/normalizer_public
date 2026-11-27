@@ -1,0 +1,100 @@
+entry: src/NumberService.java#Beans.ENTRY.doubled
+input:
+  src/NumberService.java: |
+    import normalizer.intrinsics.N;
+
+    class NumberService {
+        @N.External
+        private final TicketIssuer issuer;
+
+        NumberService(TicketIssuer issuer) {
+            this.issuer = issuer;
+        }
+
+        int doubled() {
+            int reading0 = issuer.issue();
+            int reading1 = issuer.issue();
+            int reading2 = issuer.issue();
+            int reading3 = issuer.issue();
+            int reading4 = issuer.issue();
+            int reading5 = issuer.issue();
+            int reading6 = issuer.issue();
+            int reading7 = issuer.issue();
+            int reading8 = issuer.issue();
+            int reading9 = issuer.issue();
+            int reading10 = issuer.issue();
+            return reading10 + reading2;
+        }
+    }
+
+    class TicketIssuer {
+        native int issue();
+    }
+
+    class Beans {
+        static final NumberService ENTRY = new NumberService(new TicketIssuer());
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NumberService.java#Beans.ENTRY.doubled
+    returns: number
+  P:
+    parameters: {}
+  R: $e_2 + $e_10
+  S:
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_0
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_1
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_2
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_3
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_4
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_5
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_6
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_7
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_8
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_9
+    - call:
+        external: src/NumberService.java#Beans.ENTRY.issuer.issue
+        args: []
+        returns: number
+        result: $e_10

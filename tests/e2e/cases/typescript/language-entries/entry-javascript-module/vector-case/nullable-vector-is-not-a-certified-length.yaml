@@ -1,0 +1,10 @@
+entry: src/vector-case.ts#choose
+input:
+  src/vector-case.ts: |
+    export function choose(values: readonly number[] | null): number {
+      return values.length > 0 ? 7 : 11;
+    }
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - expected declared business scalar or non-null readonly Vector for values

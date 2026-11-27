@@ -1,0 +1,23 @@
+entry: src/FirstValue.java#FirstValue.firstOrZero
+input:
+  src/FirstValue.java: |
+    class FirstValue {
+        static int firstOrZero(int[] values) {
+            int result;
+            /* @normalizer-ir
+               result = first from values[18446744073709551616:] else 0
+            */
+            return result;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstOrZero
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: CASE WHEN LENGTH(values) > 18446744073709551616 THEN values[18446744073709551616] ELSE 0 END

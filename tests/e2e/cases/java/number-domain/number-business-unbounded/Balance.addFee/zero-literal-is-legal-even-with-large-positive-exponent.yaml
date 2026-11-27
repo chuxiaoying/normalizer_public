@@ -1,0 +1,22 @@
+entry: src/Balance.java#Balance.addFee
+input:
+  src/Balance.java: |
+    class Balance {
+        static double addFee(int balance, int fee) {
+            return 0e400;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Balance.java#Balance.addFee
+    returns: number
+  P:
+    parameters:
+      balance:
+        position: 0
+        type: number
+      fee:
+        position: 1
+        type: number
+  R: "0"

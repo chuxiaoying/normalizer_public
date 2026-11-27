@@ -1,0 +1,48 @@
+entry: src/RemotePayload.java#RemotePayload.INSTANCE.read
+input:
+  src/RemotePayload.java: |
+    import normalizer.intrinsics.N;
+
+    class AlphaFault extends RuntimeException {}
+    class LaterFault extends RuntimeException {}
+    class RemoteFault extends RuntimeException { @N.Nullable String payload; }
+    class ZuluFault extends RuntimeException { int payload; }
+    class Rates { native int read(int input) throws ZuluFault, LaterFault, RemoteFault, AlphaFault; }
+    class RemotePayload {
+        static final RemotePayload INSTANCE = new RemotePayload(new Rates());
+
+        @N.External private final Rates rates;
+        RemotePayload(Rates rates) { this.rates = rates; }
+        int read(int input) { return rates.read(input); }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/RemotePayload.java#RemotePayload.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      input:
+        position: 0
+        type: number
+  S:
+    - call:
+        external: src/RemotePayload.java#RemotePayload.INSTANCE.rates.read
+        args:
+          - input
+        returns: number
+        result: $e_0
+  R: $e_0
+  throws:
+    - type: AlphaFault
+      when: completion.is_throw($e_0, AlphaFault)
+    - type: LaterFault
+      when: completion.is_throw($e_0, LaterFault)
+    - type: RemoteFault
+      when: completion.is_throw($e_0, RemoteFault)
+      payload: completion.payload($e_0, RemoteFault)
+      payload_type: text?
+    - type: ZuluFault
+      when: completion.is_throw($e_0, ZuluFault)
+      payload: completion.payload($e_0, ZuluFault)
+      payload_type: number

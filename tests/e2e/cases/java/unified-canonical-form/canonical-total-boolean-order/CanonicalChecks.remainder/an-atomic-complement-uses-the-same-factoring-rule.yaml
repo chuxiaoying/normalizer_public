@@ -1,0 +1,28 @@
+entry: src/CanonicalChecks.java#CanonicalChecks.remainder
+input:
+  src/CanonicalChecks.java: |
+    class CanonicalChecks {
+        static boolean remainder(boolean common, boolean first, boolean second, boolean other) {
+            return (common && first) || (other || (common && !first));
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalChecks.java#CanonicalChecks.remainder
+    returns: bool
+  P:
+    parameters:
+      common:
+        position: 0
+        type: bool
+      first:
+        position: 1
+        type: bool
+      second:
+        position: 2
+        type: bool
+      other:
+        position: 3
+        type: bool
+  R: common OR other

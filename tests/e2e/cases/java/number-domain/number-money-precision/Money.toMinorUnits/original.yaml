@@ -1,0 +1,22 @@
+entry: src/Money.java#Money.toMinorUnits
+input:
+  src/Money.java: |
+    class Money {
+        static int toMinorUnits(int major, int minor) {
+            return major * 100 + minor;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Money.java#Money.toMinorUnits
+    returns: number
+  P:
+    parameters:
+      major:
+        position: 0
+        type: number
+      minor:
+        position: 1
+        type: number
+  R: major * 100 + minor

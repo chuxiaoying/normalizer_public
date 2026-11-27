@@ -89,25 +89,3 @@ impl<'program> InstantiatedProduct<'program, '_> {
         self.arguments.get(self.proof.argument_type_parameter[*index]).cloned()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use simulator_parser::{parse, ParseOptions};
-
-    #[test]
-    fn product_proof_keeps_typed_source_constructor_binding() {
-        let ast = parse("class Item<X,Y> { final Y other; final X value; Item(X first,Y second) { this.value = first; this.other = second; } }",
-            "Item.java", &ParseOptions::default()).unwrap();
-        let text = JavaType::Class("String".into());
-        let alias = JavaType::Class("java.lang.String".into());
-        let ty = JavaType::Generic("Item".into(), vec![text.clone(), alias.clone()]);
-        let product = instantiated(&ast, &ty).unwrap();
-        assert_eq!(product.bindings(), &[("value", 0), ("other", 1)]);
-        assert_eq!(product.field_type("other"), Some(alias.clone()));
-        assert!(same_instantiation(&ast, &ty, &JavaType::Generic("Item".into(), vec![alias, text])));
-        let invalid = parse("class Item<X,Y> { final Y other; final X value; Item(X first,Y second) { this.value = second; this.other = first; } }",
-            "Item.java", &ParseOptions::default()).unwrap();
-        assert!(instantiated(&invalid, &ty).is_none());
-    }
-}

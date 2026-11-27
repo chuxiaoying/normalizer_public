@@ -1,0 +1,14 @@
+entry: src/CanonicalLabel.java#CanonicalLabel.label
+input:
+  src/CanonicalLabel.java: |
+    class CanonicalLabel {
+        static String label() {
+            // invalid \u00G1
+            return "unreachable";
+        }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - "[JAVA-UNICODE-ESCAPE] expected four hexadecimal digits"

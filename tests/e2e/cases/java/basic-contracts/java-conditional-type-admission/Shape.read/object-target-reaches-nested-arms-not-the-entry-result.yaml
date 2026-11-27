@@ -1,0 +1,26 @@
+entry: src/Shape.java#Shape.read
+input:
+  src/Shape.java: |
+    class Shape {
+        static java.lang.Object unused(boolean b) { return b ? (b ? 1 : true) : null; }
+        static int read(boolean choose, int[] values, int value) {
+            return choose ? value : 1;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Shape.java#Shape.read
+    returns: number
+  P:
+    parameters:
+      choose:
+        position: 0
+        type: bool
+      values:
+        position: 1
+        type: number[]
+      value:
+        position: 2
+        type: number
+  R: CASE WHEN choose THEN value ELSE 1 END

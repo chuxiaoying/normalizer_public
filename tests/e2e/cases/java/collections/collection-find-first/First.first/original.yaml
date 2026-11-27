@@ -1,0 +1,57 @@
+entry: src/First.java#First.first
+input:
+  src/First.java: |
+    import normalizer.intrinsics.N;
+
+    class First {
+        static int first(int accountId) {
+            BillRow[] rows;
+            /* @normalizer-ir
+               rows = from bill as b
+                   where b.account_id == accountId
+                   yield { amount: b.amount }
+            */
+            @N.Nullable BillRow match;
+            /* @normalizer-ir
+               match = first from rows as row
+                   where row.amount > 0
+                   order by row.amount
+                   yield row else null
+            */
+            if (match != null) return match.amount;
+            return 0;
+        }
+    }
+
+    class BillRow {
+        int amount;
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/First.java#First.first
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      columns:
+        account_id: number
+        amount: number
+      kind: table
+      source: bill
+  R: |-
+    COALESCE(
+      (
+        SELECT bill.amount
+        FROM bill
+        WHERE bill.account_id == accountId
+          AND bill.amount > 0
+        ORDER BY bill.amount
+        LIMIT 1
+      ),
+      0
+    )

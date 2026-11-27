@@ -1,0 +1,51 @@
+entry: src/PositiveCount.java#PositiveCount.count
+input:
+  src/PositiveCount.java: |
+    class PositiveCount {
+        static int count(int accountId) {
+            int count = 0;
+            BillRow[] rows;
+            /* @normalizer-ir
+               rows = from bill as b
+                   where b.account_id == accountId
+                   yield { amount: b.amount }
+            */
+            /* @normalizer-ir
+               count += sum from rows as row
+                   where row.amount != 0
+                   yield 1
+            */
+            return count;
+        }
+    }
+
+    class BillRow {
+        int amount;
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/PositiveCount.java#PositiveCount.count
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      columns:
+        account_id: number
+        amount: number
+      kind: table
+      source: bill
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM bill
+        WHERE bill.account_id == accountId
+          AND bill.amount != 0
+      ),
+      0
+    )

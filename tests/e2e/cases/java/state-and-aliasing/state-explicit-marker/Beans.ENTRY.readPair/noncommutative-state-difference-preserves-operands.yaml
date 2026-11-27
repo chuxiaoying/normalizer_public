@@ -1,0 +1,40 @@
+entry: src/Counter.java#Beans.ENTRY.readPair
+input:
+  src/Counter.java: |
+    import normalizer.intrinsics.N;
+    class Quota { int units; }
+    class Counter {
+        @N.EntryState Quota zebra;
+        @N.EntryState Quota amber;
+
+        int readPair() {
+            return zebra.units - amber.units;
+        }
+    }
+
+    class Beans {
+        static final Counter ENTRY = new Counter();
+        static {
+            ENTRY.zebra = new Quota();
+            ENTRY.amber = new Quota();
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.readPair
+    returns: number
+  P:
+    parameters: {}
+  E:
+    zebra:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.zebra
+      fields:
+        units: number
+    amber:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.amber
+      fields:
+        units: number
+  R: zebra.units - amber.units

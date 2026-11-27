@@ -1,0 +1,30 @@
+entry: src/NestedLoop.java#NestedLoop.count
+input:
+  src/NestedLoop.java: |
+    class NestedLoop {
+        static int count(int rows, int columns) {
+            int total = 0;
+            for (int row = 0; row < rows; row++) {
+                for (int column = 0; column < columns; column++) total = total + 1;
+            }
+            return total * 2;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NestedLoop.java#NestedLoop.count
+    returns: number
+  P:
+    parameters:
+      rows:
+        position: 0
+        type: number
+      columns:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN columns > 0 AND rows > 0 THEN columns * rows
+      ELSE 0
+    END * 2

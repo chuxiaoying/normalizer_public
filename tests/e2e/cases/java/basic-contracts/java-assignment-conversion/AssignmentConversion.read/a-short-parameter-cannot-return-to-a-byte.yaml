@@ -1,0 +1,15 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+input:
+  src/AssignmentConversion.java: |
+    class AssignmentConversion {
+        static byte read(short input) {
+            int value = 99;
+            value += 99L;
+            return input;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - "return:"
+    - nonconstant short binding input cannot implicitly narrow to Java byte

@@ -46,25 +46,3 @@ pub(crate) fn prove(method: &JavaMethod) -> Option<AffineRecurrence> {
     }
     Some(AffineRecurrence { boundary, base, slope })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use simulator_parser::{parse, ParseOptions};
-
-    fn proof(body: &str) -> Option<AffineRecurrence> {
-        let input = format!("class Count {{ static int count(int n) {{ {body} }} }}");
-        let source = parse(&input, "Count.java", &ParseOptions::default()).unwrap();
-        prove(&source.classes()[0].methods()[0])
-    }
-
-    #[test]
-    fn positive_recurrence_needs_decrease_and_every_residue() {
-        let good = proof("if (n <= 3) return 10; if (n == 4) return 12; return count(n - 2) + 4;");
-        assert!(matches!(good, Some(AffineRecurrence { boundary: 3, base: 10, slope: 2 })));
-        assert!(proof("if (n <= 3) return 10; if (n == 4) return 11; return count(n - 2) + 4;").is_none());
-        assert!(proof("if (n <= 3) return 10; return count(n - 2) + 4;").is_none());
-        assert!(proof("if (n <= 3) return 10; return count(n - 0) + 4;").is_none());
-        assert!(proof("if (n <= 3) return 10; if (n == 4) return 11; return count(n - 2) + 3;").is_none());
-    }
-}

@@ -1,0 +1,39 @@
+entry: src/Adjustment.java#Adjustment.adjust
+input:
+  src/Adjustment.java: |
+    class Adjustment {
+        static int adjust(int base, int x, int y, boolean preferred) {
+            long sum = (long) x + y;
+            long difference = (long) x - y;
+            boolean eligible = sum <= 10 && sum >= 10 && difference == 2;
+
+            if ((eligible && preferred) || (eligible && !preferred)) {
+                return (base + x) - x;
+            }
+            return 0;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Adjustment.java#Adjustment.adjust
+    returns: number
+  P:
+    parameters:
+      base:
+        position: 0
+        type: number
+      x:
+        position: 1
+        type: number
+      y:
+        position: 2
+        type: number
+      preferred:
+        position: 3
+        type: bool
+  R: |-
+    CASE
+      WHEN x == 6 AND y == 4 THEN base
+      ELSE 0
+    END

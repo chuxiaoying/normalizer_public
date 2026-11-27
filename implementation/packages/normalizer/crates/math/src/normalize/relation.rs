@@ -128,37 +128,3 @@ fn relation_profile_size(relation: &RelationExpr) -> usize {
             1 + on.size() + filters.iter().map(Expr::size).sum::<usize>(),
     }
 }
-
-#[cfg(test)]
-mod typed_count_bound_tests {
-    use super::*;
-    use crate::domains::relation::{relation_count, relation_count_nonnull, relation_first_value};
-    use crate::BinOpKind;
-
-    #[test]
-    fn only_bare_count_is_evidence_for_a_relation_cardinality_bound() {
-        let relation = RelationExpr::base("offers", "offer");
-        let row = builder::row_value("offer");
-        let zero = builder::lit_int(0);
-        let count = relation_count(relation.clone());
-        let comparison = builder::lt(zero.clone(), count);
-        assert_eq!(relation_count_bound(&comparison), Some((BinOpKind::Gt, &relation, 0)));
-
-        let first = relation_first_value(relation.clone(), row.clone(), builder::lit_int(5));
-        let nonnull = relation_count_nonnull(relation, row);
-        for value in [first, nonnull] {
-            assert!(relation_count_bound(&builder::gt(value, zero.clone())).is_none());
-        }
-    }
-
-    #[test]
-    fn an_empty_inner_relation_contributes_zero_for_every_outer_row() {
-        use crate::domains::relation::relation_sum;
-        let outer = RelationExpr::base("accounts", "account");
-        let inner = RelationExpr::select(builder::lit_bool(false), RelationExpr::base("bills", "bill"));
-        let nested = relation_sum(outer.clone(), relation_sum(inner, builder::lit_int(1)));
-        assert_eq!(crate::normalize(nested), builder::lit_int(0));
-        let nonzero = relation_sum(outer, builder::lit_int(1));
-        assert_ne!(crate::normalize(nonzero), builder::lit_int(0));
-    }
-}

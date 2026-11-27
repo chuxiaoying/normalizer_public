@@ -1,0 +1,42 @@
+entry: src/NullMemoService.java#NullMemoService.missingMemoCount
+input:
+  src/NullMemoService.java: |
+    import normalizer.intrinsics.N;
+
+    class BillMemoRow {
+        int accountId;
+        @N.Nullable String memo;
+    }
+    class NullMemoService {
+        static int missingMemoCount(int accountId) {
+            BillMemoRow[] bills;
+            /* @normalizer-ir
+               bills = from bill as b
+                   where b.account_id == accountId
+                   yield { accountId: b.account_id, memo: b.memo }
+            */
+            int count;
+            /* @normalizer-ir
+               count = count from bills as row where row.memo IS NULL
+            */
+            return count != -1 ? 7 : 11;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NullMemoService.java#NullMemoService.missingMemoCount
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        memo: text?
+  R: "7"

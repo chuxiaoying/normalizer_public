@@ -1,0 +1,26 @@
+entry: src/Order.java#Order.total
+input:
+  src/Order.java: |
+    class Order {
+        static int total(int base, int value) {
+            return (value > 0 ? 3 : 7) - base;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Order.java#Order.total
+    returns: number
+  P:
+    parameters:
+      base:
+        position: 0
+        type: number
+      value:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN value > 0 THEN 3
+      ELSE 7
+    END - base

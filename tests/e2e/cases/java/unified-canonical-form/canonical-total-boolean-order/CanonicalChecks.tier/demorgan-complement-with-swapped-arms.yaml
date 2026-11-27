@@ -1,0 +1,27 @@
+entry: src/CanonicalChecks.java#CanonicalChecks.tier
+input:
+  src/CanonicalChecks.java: |
+    class CanonicalChecks {
+        static int tier(int a, int b) {
+            if (b != 0 || a != 0) return 20;
+            return 10;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalChecks.java#CanonicalChecks.tier
+    returns: number
+  P:
+    parameters:
+      a:
+        position: 0
+        type: number
+      b:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN a == 0 AND b == 0 THEN 10
+      ELSE 20
+    END

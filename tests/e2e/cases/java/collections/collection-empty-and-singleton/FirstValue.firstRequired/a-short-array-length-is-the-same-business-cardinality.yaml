@@ -1,0 +1,19 @@
+entry: src/FirstValue.java#FirstValue.firstRequired
+input:
+  src/FirstValue.java: |
+    class FirstValue {
+        static int firstRequired(short[] values) {
+            return values.length;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstRequired
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: LENGTH(values)

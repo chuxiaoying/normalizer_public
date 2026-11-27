@@ -1,0 +1,26 @@
+entry: src/ReduceValues.java#ReduceValues.sumFrom
+input:
+  src/ReduceValues.java: |
+    class ReduceValues {
+        static int sumFrom(int[] values, int initial) {
+            int total;
+            /* @normalizer-ir
+               total = reduce values from initial as (sum, value) yield sum + value
+            */
+            return total;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ReduceValues.java#ReduceValues.sumFrom
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      initial:
+        position: 1
+        type: number
+  R: initial + COALESCE(SUM(SELECT value FROM values), 0)

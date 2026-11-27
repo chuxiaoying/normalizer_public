@@ -1,6 +1,0 @@
-- name: left-operand-throw-stops-the-enclosing-division
-  edits:
-    - { from: 'return 5 / 0;', to: 'return (5 / 0) / (7 / 0);' }
-- name: right-operand-throw-prevents-an-outer-quotient
-  edits:
-    - { from: 'return 5 / 0;', to: 'return 5 / (7 / 0);' }

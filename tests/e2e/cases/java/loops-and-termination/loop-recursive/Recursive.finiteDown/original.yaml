@@ -1,0 +1,24 @@
+entry: src/Recursive.java#Recursive.finiteDown
+input:
+  src/Recursive.java: |
+    class Recursive {
+        static int finiteDown(int value) {
+            if (value <= 0) return 0;
+            return finiteDown(value - 1) + 1;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Recursive.java#Recursive.finiteDown
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN value > 0 THEN value
+      ELSE 0
+    END

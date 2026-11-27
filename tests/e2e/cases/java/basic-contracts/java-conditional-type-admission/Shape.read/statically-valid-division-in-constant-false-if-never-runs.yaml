@@ -1,0 +1,25 @@
+entry: src/Shape.java#Shape.read
+input:
+  src/Shape.java: |
+    class Shape {
+        static int read(boolean choose, int[] values, int value) {
+            if (false) return 3 / value; return 7;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Shape.java#Shape.read
+    returns: number
+  P:
+    parameters:
+      choose:
+        position: 0
+        type: bool
+      values:
+        position: 1
+        type: number[]
+      value:
+        position: 2
+        type: number
+  R: "7"

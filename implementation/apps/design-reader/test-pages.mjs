@@ -1,5 +1,4 @@
 import YAML from '../../tools/frontend/node_modules/yaml/dist/index.js';
-import { applyExpectedChanges } from '../../../tests/e2e/business_example_series.mjs';
 
 function escape(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -48,77 +47,28 @@ function yaml(value) {
   return YAML.stringify(value, { lineWidth: 0 });
 }
 
-function diffSnippet(before, after) {
-  const left = before ? before.split('\n') : [];
-  const right = after ? after.split('\n') : [];
-  let start = 0;
-  let end = 0;
-  const length = Math.min(left.length, right.length);
-  while (start < length && left[start] === right[start]) start++;
-  while (end < length - start && left.at(-end - 1) === right.at(-end - 1)) end++;
-  return [
-    ...left.slice(0, start).map(line => ' ' + line),
-    ...left.slice(start, left.length - end).map(line => '-' + line),
-    ...right.slice(start, right.length - end).map(line => '+' + line),
-    ...right.slice(right.length - end).map(line => ' ' + line),
-  ].join('\n');
-}
-
-function fieldName(path) {
-  return path.map((key, index) => typeof key === 'number' ? '[' + key + ']' : (index ? '.' : '') + key).join('');
-}
-
-function renderOutcome(test, original, entry, codeBlock) {
-  const isOriginal = test === original;
+function renderOutcome(test, codeBlock) {
   if (test.reject) {
-    const fragments = '<ul>' + test.reject.map(fragment => '<li><code>' + escape(fragment) + '</code></li>').join('') + '</ul>';
-    const outcome = test.inheritsRejection ? '沿用原例的拒绝预期。' : '预期拒绝。';
-    const explanation = outcome + 'CLI 非零退出，标准输出为空，首条诊断必须匹配下面的错误标记，标准错误还须包含具体原因。';
-    const identity = (isOriginal || test.inheritsRejection) && test.rejection ?
-      '<p>诊断还须包含入口 <code>' + escape(entry) + '</code>，并以独立词标明 <code>kind=' +
-        escape(test.rejection.split('\n', 1)[0]) + '</code>。</p>' : '';
-    const seedReason = isOriginal && test.rejection ? '<details class="test-expectation"><summary>种子中的拒绝说明</summary>' +
-      codeBlock(test.rejection, 'text') + '</details>' : '';
-    return '<p>' + explanation + '</p>' + fragments + identity + seedReason;
+    const { fragments, kind, location } = test.reject;
+    const list = fragments.map(fragment => '<li><code>' + escape(fragment) + '</code></li>').join('');
+    const identity = kind ? '<p>诊断位置 <code>' + escape(location ?? test.entry)
+      + '</code>，并标明 <code>kind=' + escape(kind) + '</code>。</p>' : '';
+    return '<h3>预期拒绝</h3><p>CLI 非零退出，标准输出为空，首条诊断和原因必须匹配。</p><ul>'
+      + list + '</ul>' + identity;
   }
-
-  let differences = '';
-  if (test.changes.length) {
-    let snapshot = original.expected;
-    const changes = test.changes.map(change => {
-      const { path, absent } = change;
-      const addition = Object.hasOwn(change, 'add');
-      const lookup = object => path.reduce((node, field) => node?.[field], object);
-      const before = addition ? '' : yaml(lookup(snapshot)).replace(/\n$/, '');
-      snapshot = applyExpectedChanges(snapshot, [change]);
-      const after = absent ? '' : yaml(lookup(snapshot)).replace(/\n$/, '');
-      const label = '<p><code>' + escape(fieldName(path)) + '</code>' +
-        (absent ? '：该字段不存在' : addition ? '：新增字段' : '') + '</p>';
-      return label + codeBlock(diffSnippet(before, after), 'diff');
-    });
-    differences = '<h3>预期 PERS 变更</h3>' + changes.join('');
-  } else if (!isOriginal) {
-    differences = '<p>完整预期 PERS 与原例相同。</p>';
-  }
-  return differences + '<details class="test-expectation"><summary>查看完整预期 PERS</summary>' +
-    codeBlock(yaml(test.expected), 'yaml') + '</details>';
+  return '<h3>完整预期 PERS</h3>' + codeBlock(yaml(test.expected), 'yaml');
 }
 
 function testPage(seed, {entry, seriesFile, tests}, codeBlock) {
-  const original = tests[0];
   const sections = tests.map(test => {
-    let edits = '';
-    if (test.edits.length) {
-      edits = '<h3>测试输入改动</h3>' + test.edits.map(({file, from, to, create}) => {
-        const change = create === undefined ? diffSnippet(from, to) :
-          '--- /dev/null\n+++ b/' + file + '\n' + create.trimEnd().split('\n').map(line => '+' + line).join('\n');
-        return '<p class="test-path"><code>' + escape(file) + '</code></p>' + codeBlock(change, 'diff');
-      }).join('');
-    } else {
-      edits = '<p>输入取自' + link(seed.path, '种子中的原始代码与 AI 预处理结果') + '。</p>';
-    }
+    const input = Object.entries(test.input).map(([file, source]) => {
+      const language = {java:'java', ts:'typescript', vue:'vue', mjs:'javascript', js:'javascript'}[file.split('.').at(-1)];
+      const role = file === test.vueSource ? '（Vue 原件，仅作来源标记）' : '';
+      return '<p class="test-path"><code>' + escape(file) + '</code>' + role + '</p>' + codeBlock(source, language);
+    }).join('');
     const heading = '<h2 id="case-' + escape(test.name) + '">' + escape(caseTitle(test.name)) + '</h2>';
-    return '<section class="test-case">' + heading + edits + renderOutcome(test, original, entry, codeBlock) + '</section>';
+    return '<section class="test-case">' + heading + '<p>CLI 入口：<code>' + escape(test.entry)
+      + '</code></p><h3>预处理后输入</h3>' + input + renderOutcome(test, codeBlock) + '</section>';
   });
   const back = '<p class="test-backlink">' + link(seed.path, '← ' + seed.title, 'seed-tests') + '</p>';
   return {

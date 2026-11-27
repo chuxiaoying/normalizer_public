@@ -1,0 +1,28 @@
+entry: src/handler.ts#handle
+input:
+  src/handler.ts: |
+    /** @N external */
+    declare const audit: { registered(): void }
+    /** @N external */
+    declare const notices: { notify(): void }
+
+    export function handle(deliver: boolean): void {
+        let pending: (() => string) | undefined
+        function listen(callback: () => string) {
+            pending = callback
+            
+        }
+        listen(() => { notices.notify(); return "callback-only" })
+        
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/handler.ts#handle
+    returns: void
+  P:
+    parameters:
+      deliver:
+        position: 0
+        type: bool
+  R: void

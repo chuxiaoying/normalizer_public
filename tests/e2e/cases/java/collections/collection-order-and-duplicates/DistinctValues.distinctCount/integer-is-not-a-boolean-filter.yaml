@@ -1,0 +1,17 @@
+entry: src/DistinctValues.java#DistinctValues.distinctCount
+input:
+  src/DistinctValues.java: |
+    class DistinctValues {
+        static int distinctCount(int[] values) {
+            int count;
+            /* @normalizer-ir
+               count = count distinct from values as value where 0
+            */
+            return count;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - kind=PREPROCESS_REQUIRED
+    - where requires bool

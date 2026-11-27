@@ -1,0 +1,18 @@
+entry: src/SmallLoop.java#SmallLoop.total
+input:
+  src/SmallLoop.java: |
+    class SmallLoop {
+        static long total() {
+            long i = 99L; long sum = 0L;
+            for (i = 0L; i < 3L; i++) sum += i;
+            return sum * 10L + i;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/SmallLoop.java#SmallLoop.total
+    returns: number
+  P:
+    parameters: {}
+  R: "33"

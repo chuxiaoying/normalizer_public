@@ -1,0 +1,54 @@
+entry: src/DueDateService.java#DueDateService.firstDueDate
+input:
+  src/DueDateService.java: |
+    class BillOrderRow {
+        int accountId;
+        int dueDate;
+        int id;
+    }
+    class DueDateService {
+        static int firstDueDate(int accountId) {
+            BillOrderRow[] bills;
+            /* @normalizer-ir
+               bills = from bill as b
+                   where accountId == b.account_id
+                   yield { accountId: b.account_id, dueDate: b.due_date, id: b.id }
+            */
+            int dueDate;
+            /* @normalizer-ir
+               dueDate = first from bills as row
+                   order by row.dueDate, row.id
+                   yield row.dueDate else 0
+            */
+            return dueDate;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/DueDateService.java#DueDateService.firstDueDate
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        due_date: number
+        id: number
+  R: |-
+    COALESCE(
+      (
+        SELECT bill.due_date
+        FROM bill
+        WHERE bill.account_id == accountId
+        ORDER BY bill.due_date, bill.id
+        LIMIT 1
+      ),
+      0
+    )

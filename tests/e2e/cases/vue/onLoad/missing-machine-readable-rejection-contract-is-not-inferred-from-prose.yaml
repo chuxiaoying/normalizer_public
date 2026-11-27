@@ -1,0 +1,171 @@
+entry: src/ArrearsPage.ts#onLoad
+vueSource: src/ArrearsPage.vue
+input:
+  src/ArrearsPage.ts: |
+    type BillRow = {
+      accountId: number
+      dueDate: number
+      amount: number
+      waivedAmount: number
+      priority: number
+    }
+
+    type Profile = {
+      accountId: number
+      minPriority: number
+      quota: number
+    }
+
+    class ProfileFetchError extends Error {}
+    class BillQueryError extends Error {}
+
+    /** @N entryState */
+    const arrears = {
+      loadedAccountId: 0,
+      status: {
+        loading: false,
+        ready: false,
+        failed: false,
+      },
+      summary: {
+        payable: 0,
+      },
+    }
+
+    interface ProfileClient {
+      /** rejects with ProfileFetchError */
+      fetchProfile(accountId: number): Promise<Profile>
+    }
+
+    interface ArrearsClient {
+      /** @N rejects BillQueryError */
+      queryOpenBills(accountId: number): Promise<BillRow[]>
+    }
+
+    /** @N external */
+    declare const profileClient: ProfileClient
+    /** @N external */
+    declare const arrearsClient: ArrearsClient
+
+    export async function onLoad(accountId: number, today: number): Promise<void> {
+      const todayAtEntry = today
+      arrears.loadedAccountId = accountId
+      arrears.status.loading = true
+
+      try {
+        const profile = await profileClient.fetchProfile(accountId)
+        const rows = await arrearsClient.queryOpenBills(profile.accountId)
+
+        let total: number
+        /* @normalizer-ir
+           total = sum from rows as row
+             where row.dueDate <= todayAtEntry
+               and row.priority >= profile.minPriority
+             let netAmount = row.amount - row.waivedAmount
+             where netAmount > 0
+             yield netAmount
+        */
+
+        arrears.status.loading = false
+        arrears.summary.payable = total > profile.quota ? profile.quota : total
+        arrears.status.ready = true
+      } catch (error) {
+        arrears.status.loading = false
+        arrears.status.failed = true
+        arrears.status.ready = false
+        throw error
+      }
+    }
+  src/ArrearsPage.vue: |
+    <template>
+      <section v-if="arrears.status.ready">
+        <strong>{{ arrears.summary.payable }}</strong>
+      </section>
+      <p v-else-if="arrears.status.loading">Loading</p>
+      <p v-else-if="arrears.status.failed">Failed</p>
+    </template>
+
+    <script setup lang="ts">
+    import { onMounted, reactive } from "vue"
+
+    type BillRow = {
+      accountId: number
+      dueDate: number
+      amount: number
+      waivedAmount: number
+      priority: number
+    }
+
+    type Profile = {
+      accountId: number
+      minPriority: number
+      quota: number
+    }
+
+    class ProfileFetchError extends Error {}
+    class BillQueryError extends Error {}
+
+    const arrears = reactive({
+      loadedAccountId: 0,
+      status: {
+        loading: false,
+        ready: false,
+        failed: false,
+      },
+      summary: {
+        payable: 0,
+      },
+    })
+
+    const props = defineProps<{
+      accountId: number
+      today: number
+    }>()
+
+    interface ProfileClient {
+      /** rejects with ProfileFetchError */
+      fetchProfile(accountId: number): Promise<Profile>
+    }
+
+    interface ArrearsClient {
+      /** rejects with BillQueryError */
+      queryOpenBills(accountId: number): Promise<BillRow[]>
+    }
+
+    declare const profileClient: ProfileClient
+    declare const arrearsClient: ArrearsClient
+
+    async function onLoad() {
+      const todayAtEntry = props.today
+      arrears.loadedAccountId = props.accountId
+      arrears.status.loading = true
+
+      try {
+        const profile = await profileClient.fetchProfile(props.accountId)
+        const rows = await arrearsClient.queryOpenBills(profile.accountId)
+
+        const total = rows
+          .filter(row => row.dueDate <= todayAtEntry)
+          .filter(row => row.priority >= profile.minPriority)
+          .map(row => row.amount - row.waivedAmount)
+          .filter(netAmount => netAmount > 0)
+          .reduce((sum, netAmount) => sum + netAmount, 0)
+
+        arrears.status.loading = false
+        arrears.summary.payable = total > profile.quota ? profile.quota : total
+        arrears.status.ready = true
+      } catch (error) {
+        arrears.status.loading = false
+        arrears.status.failed = true
+        arrears.status.ready = false
+        throw error
+      }
+    }
+
+    // onLoad is the scenario entry. This call is lifecycle wiring outside that entry.
+    onMounted(() => onLoad())
+    </script>
+reject:
+  fragments:
+    - "SCENARIO_MODULE_INPUT:"
+    - awaited external port requires a closed Promise<Element> and named rejection types

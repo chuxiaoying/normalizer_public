@@ -1,0 +1,28 @@
+entry: src/Ratio.java#Ratio.safeDivide
+input:
+  src/Ratio.java: |
+    class Ratio {
+        static int safeDivide(int divisor) {
+            if (divisor == 0) return -1;
+            return divisor / divisor;
+        }
+
+        static int unchecked(int divisor) {
+            return divisor / divisor;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Ratio.java#Ratio.safeDivide
+    returns: number
+  P:
+    parameters:
+      divisor:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN divisor == 0 THEN -1
+      ELSE 1
+    END

@@ -1,0 +1,26 @@
+entry: src/Early.java#Early.choose
+input:
+  src/Early.java: |
+    class Early {
+        static int choose(boolean useFallback, int value, int fallback) {
+            if (useFallback) return value;
+            return value;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Early.java#Early.choose
+    returns: number
+  P:
+    parameters:
+      useFallback:
+        position: 0
+        type: bool
+      value:
+        position: 1
+        type: number
+      fallback:
+        position: 2
+        type: number
+  R: value

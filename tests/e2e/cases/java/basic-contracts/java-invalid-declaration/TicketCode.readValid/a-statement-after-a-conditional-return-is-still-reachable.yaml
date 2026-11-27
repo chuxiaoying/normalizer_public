@@ -1,0 +1,22 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode {
+        static int readValid(int value) { if (value < 0) return 1; return 2; }
+        static native int booleanValue();
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/TicketCode.java#TicketCode.readValid
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN value < 0 THEN 1
+      ELSE 2
+    END

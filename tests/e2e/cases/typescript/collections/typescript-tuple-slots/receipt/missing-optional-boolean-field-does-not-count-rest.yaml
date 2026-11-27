@@ -1,0 +1,30 @@
+entry: src/receipt.ts#traceCount
+input:
+  src/receipt.ts: |
+    type Reply = { ok?: boolean }
+    type Receipt = [error: string | undefined, result?: Reply, ...trace: string[]]
+
+    function receipt(failed: boolean, detailed: boolean): Receipt {
+        if (failed) return ["offline"]
+        if (detailed) return [undefined, {}, "sent", "ack"]
+        return [undefined, { ok: true }]
+    }
+
+    export function traceCount(failed: boolean, detailed: boolean): number {
+        const [error, result, ...trace] = receipt(failed, detailed)
+        return error === undefined && result?.ok ? trace.length : 0
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/receipt.ts#traceCount
+    returns: number
+  P:
+    parameters:
+      failed:
+        position: 0
+        type: bool
+      detailed:
+        position: 1
+        type: bool
+  R: "0"

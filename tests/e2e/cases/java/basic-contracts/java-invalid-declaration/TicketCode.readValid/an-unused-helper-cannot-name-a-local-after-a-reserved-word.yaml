@@ -1,0 +1,12 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode { static int unused() { int return = 1; return 0; }
+        static int readValid(int value) { return value; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-RESERVED-LOCAL-NAME]"
+    - return cannot declare a local binding

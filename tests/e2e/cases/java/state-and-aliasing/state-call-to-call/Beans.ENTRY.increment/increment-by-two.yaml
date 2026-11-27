@@ -1,0 +1,44 @@
+entry: src/Counter.java#Beans.ENTRY.increment
+input:
+  src/Counter.java: |
+    import normalizer.intrinsics.N;
+
+    class Counter {
+        @N.EntryState
+        int value;
+
+        int increment() {
+            value = value + 2;
+            return value;
+        }
+
+        int read() {
+            return value;
+        }
+
+        int incrementThenRead() {
+            increment();
+            return read();
+        }
+    }
+
+    class Beans {
+        static final Counter ENTRY = new Counter();
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.increment
+    returns: number
+  P:
+    parameters: {}
+  E:
+    value:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.value
+      type: number
+  S:
+    - write:
+        target: value
+        value: value + 2
+  R: value + 2

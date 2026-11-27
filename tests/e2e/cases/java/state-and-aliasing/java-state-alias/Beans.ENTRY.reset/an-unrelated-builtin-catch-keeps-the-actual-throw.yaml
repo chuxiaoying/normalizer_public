@@ -1,0 +1,53 @@
+entry: src/Account.java#Beans.ENTRY.reset
+input:
+  src/Account.java: |
+    import normalizer.intrinsics.N;
+
+    class Quota { int units; }
+    class Account {
+        @N.EntryState
+        Quota quota;
+        int reset(@N.Nullable Quota observer) {
+            quota.units = 7;
+            try { return observer.units; } catch (IndexOutOfBoundsException ignored) { return 99; }
+        }
+    }
+
+    class Beans {
+        static final Account ENTRY = new Account();
+        static {
+            ENTRY.quota = new Quota();
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quota:
+      fields:
+        units: number
+  entry:
+    function: src/Account.java#Beans.ENTRY.reset
+    returns: number
+  P:
+    parameters:
+      observer:
+        position: 0
+        type: Quota?
+  E:
+    quota:
+      kind: state
+      source: src/Account.java#Beans.ENTRY.quota
+      fields:
+        units: number
+  S:
+    - write:
+        target: quota.units
+        value: "7"
+  R: |-
+    CASE
+      WHEN observer == quota THEN 7
+      ELSE observer.units
+    END
+  throws:
+    - type: java.lang.NullPointerException
+      when: observer == null

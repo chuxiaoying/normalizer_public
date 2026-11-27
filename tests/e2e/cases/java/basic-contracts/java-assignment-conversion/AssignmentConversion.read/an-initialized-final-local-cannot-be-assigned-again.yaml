@@ -1,0 +1,14 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+input:
+  src/AssignmentConversion.java: |
+    class AssignmentConversion {
+        static int read() {
+            final int value = 99;
+            value += 99L;
+            return value;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - cannot update final local value

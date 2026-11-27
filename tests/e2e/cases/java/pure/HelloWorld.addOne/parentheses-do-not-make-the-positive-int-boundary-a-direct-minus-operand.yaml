@@ -1,0 +1,12 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+input:
+  src/HelloWorld.java: |
+    class HelloWorld {
+        static int addOne(int value) {
+            return -(2147483648);
+        }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - decimal int literal exceeds its source range

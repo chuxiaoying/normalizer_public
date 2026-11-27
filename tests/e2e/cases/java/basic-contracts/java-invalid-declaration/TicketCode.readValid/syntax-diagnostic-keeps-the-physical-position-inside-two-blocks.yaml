@@ -1,0 +1,17 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode {
+        static int readValid(int value) { if (true) {
+                {
+                    return null instanceof ? 7 : 8;
+                }
+            }
+            return 0; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "src/TicketCode.java:4:40:"
+    - instanceof

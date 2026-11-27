@@ -1,0 +1,37 @@
+entry: src/AliasCollection.java#AliasCollection.total
+input:
+  src/AliasCollection.java: |
+    class AliasCollection {
+        static int total(int[] values, int next) {
+            int[] alias = values;
+            try {
+                values[1] = next;
+            } catch (ArrayIndexOutOfBoundsException ignored) {}
+            int total = 0;
+            for (int value : alias) total += value;
+            return total;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/AliasCollection.java#AliasCollection.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      next:
+        position: 1
+        type: number
+  S:
+    - write:
+        target: values[1]
+        value: next
+        when: LENGTH(values) >= 2
+  R: |-
+    COALESCE(SUM(SELECT value FROM values), 0) + CASE
+      WHEN LENGTH(values) > 1 THEN next - values[1]
+      ELSE 0
+    END

@@ -1,0 +1,64 @@
+entry: src/PayableService.java#PayableService.recordPayable
+input:
+  src/PayableService.java: |
+    class DatabaseWriteError extends RuntimeException {}
+
+    class AmountBox {
+        int value;
+        AmountBox(int amount) { this.value = amount; }
+    }
+    class PayableService {
+        static int recordPayable(int accountId, int amount) throws DatabaseWriteError {
+            if (amount <= 0) return 0;
+            AmountBox box = new AmountBox(amount);
+            int savedAmount = box.value;
+            int affected;
+            /* @normalizer-ir
+               affected = insert into payable_log
+                   values { account_id: accountId, amount: savedAmount }
+                   returning affected_rows
+                   atomic
+                   throws DatabaseWriteError
+            */
+            return affected;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/PayableService.java#PayableService.recordPayable
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      amount:
+        position: 1
+        type: number
+  E:
+    payable_log:
+      kind: table
+      source: payable_log
+      columns:
+        account_id: number
+        amount: number
+  S:
+    - sql: |-
+        INSERT INTO payable_log (account_id, amount)
+        VALUES (accountId, amount)
+      returns: number
+      result: $e_0
+      when: amount > 0
+  R: |-
+    CASE
+      WHEN amount > 0 THEN 1
+      ELSE 0
+    END
+  throws:
+    - type: DatabaseWriteError
+      when: |-
+        CASE
+          WHEN amount > 0 THEN completion.is_throw($e_0, DatabaseWriteError)
+          ELSE false
+        END

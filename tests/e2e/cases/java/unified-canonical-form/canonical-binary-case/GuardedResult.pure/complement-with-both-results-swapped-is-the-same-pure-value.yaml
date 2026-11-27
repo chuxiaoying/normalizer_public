@@ -1,0 +1,28 @@
+entry: src/GuardedResult.java#GuardedResult.pure
+input:
+  src/GuardedResult.java: |
+    import normalizer.intrinsics.N;
+    class GuardedResult {
+        static final GuardedResult INSTANCE = new GuardedResult();
+        @N.EntryState int result;
+        static int pure(int a, int b) { if (a != 1 || b != 2) return 9; return 7; }
+        int state(int a, int b) { result = a == 1 && b == 2 ? 7 : 9; return result; }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GuardedResult.java#GuardedResult.pure
+    returns: number
+  P:
+    parameters:
+      a:
+        position: 0
+        type: number
+      b:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN a == 1 AND b == 2 THEN 7
+      ELSE 9
+    END

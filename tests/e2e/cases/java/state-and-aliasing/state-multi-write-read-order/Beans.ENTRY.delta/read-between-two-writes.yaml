@@ -1,0 +1,44 @@
+entry: src/Ledger.java#Beans.ENTRY.delta
+input:
+  src/Ledger.java: |
+    import normalizer.intrinsics.N;
+
+    class Ledger {
+        @N.EntryState
+        int balance;
+
+        int delta(int amount) {
+            int before = balance;
+            balance = balance + amount;
+            int midway = balance;
+            balance = balance + 1;
+            return balance - midway;
+        }
+    }
+
+    class Beans {
+        static final Ledger ENTRY = new Ledger();
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Ledger.java#Beans.ENTRY.delta
+    returns: number
+  P:
+    parameters:
+      amount:
+        position: 0
+        type: number
+  E:
+    balance:
+      kind: state
+      source: src/Ledger.java#Beans.ENTRY.balance
+      type: number
+  S:
+    - write:
+        target: balance
+        value: balance + amount
+    - write:
+        target: balance
+        value: balance + amount + 1
+  R: "1"

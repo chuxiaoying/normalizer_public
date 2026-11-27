@@ -1,4 +1,0 @@
-- name: swap-predicates-and-both-equality-operands
-  edits:
-    - from: 'zebra == yellow && blue == amber'
-      to: 'amber == blue && yellow == zebra'

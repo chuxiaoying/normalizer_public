@@ -1,0 +1,22 @@
+entry: src/DecimalPrice.java#DecimalPrice.roundPrice
+input:
+  src/DecimalPrice.java: |
+    import java.math.BigDecimal;
+    import normalizer.intrinsics.N;
+
+    class DecimalPrice {
+        static BigDecimal roundPrice(BigDecimal value) {
+            BigDecimal left; BigDecimal right; /* @normalizer-ir left = 1.25 */ /* @normalizer-ir right = 2.5 */ return N.round(N.multiply(left, right), 4, N.HALF_EVEN);
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/DecimalPrice.java#DecimalPrice.roundPrice
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: "3.125"

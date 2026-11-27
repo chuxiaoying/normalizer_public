@@ -1,0 +1,17 @@
+entry: src/FirstValue.java#FirstValue.firstOrZero
+input:
+  src/FirstValue.java: |
+    class FirstValue {
+        static int firstOrZero(int[] values) {
+            int result;
+            /* @normalizer-ir
+               result = first from values[-1:] else 0
+            */
+            return result;
+        }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - slice offset must be nonnegative

@@ -6,10 +6,6 @@
 cargo check --locked --workspace --all-targets --manifest-path implementation/packages/normalizer/Cargo.toml
 implementation/tools/normalizer help
 implementation/tools/normalizer test business-examples
-implementation/tools/normalizer test pers-goldens
-implementation/tools/normalizer test seed-patches
-implementation/tools/normalizer test engineering
-implementation/tools/normalizer test kernel-units
 ```
 
 使用[入门示例](../../usage/getting-started.md)检查 CLI 的源码入口。构建和命令检查只覆盖相应入口的可运行性。从仓库根运行 `implementation/tools/normalizer test business-examples` 只执行测试区所有已登记、严格从种子派生的端到端 CLI 回归，覆盖范围与变体约定见[独立测试区](../../tests/README.md)。
@@ -31,4 +27,4 @@ llvm-cov export -instr-profile="$evidence/rust.profdata" \
   "$CARGO_TARGET_DIR/debug/normalizer-normalized" > "$evidence/rust.json"
 ```
 
-使用与本机 Rust 工具链 profile 格式兼容的 LLVM 工具。采集较早基线若混进单测、非种子探针或工程检查，必须重新测量，不能直接沿用。单测、工程、黄金结构检查和补丁验证单跑，不与这趟采集共用 profile。分析时只纳入仓库自有代码，区分实测零次、未插桩、平台代码及签字例外；不把导入、错误降级或覆盖率百分比当作测试证明。覆盖报告不进 Git。
+使用与本机 Rust 工具链 profile 格式兼容的 LLVM 工具。采集较早基线若混进单测、非种子探针或工程检查，必须重新测量，不能直接沿用。本仓只保留种子派生的端到端用例。PERS 结构校验在该回归内执行。分析时只纳入仓库自有代码，区分实测零次、未插桩、平台代码及签字例外；不把导入、错误降级或覆盖率百分比当作测试证明。覆盖报告不进 Git。

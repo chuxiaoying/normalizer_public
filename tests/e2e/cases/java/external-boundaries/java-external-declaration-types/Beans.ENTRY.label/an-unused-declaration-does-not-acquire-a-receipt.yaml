@@ -1,0 +1,32 @@
+entry: src/ExternalTypeDemo.java#Beans.ENTRY.label
+input:
+  src/ExternalTypeDemo.java: |
+    import normalizer.intrinsics.N;
+
+    class ExternalTypeDemo {
+        @N.External
+        private final Records port;
+        ExternalTypeDemo(Records port) { this.port = port; }
+        String label(int id) {
+            return "offline";
+        }
+    }
+    class Records {
+        native Packet lookup(int id);
+    }
+    class Packet { boolean approved; String label; }
+
+    class Beans {
+        static final ExternalTypeDemo ENTRY = new ExternalTypeDemo(new Records());
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ExternalTypeDemo.java#Beans.ENTRY.label
+    returns: text
+  P:
+    parameters:
+      id:
+        position: 0
+        type: number
+  R: '"offline"'

@@ -1,0 +1,11 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode {
+        static synchronized int readValid(int value) { return value; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-MONITOR]"

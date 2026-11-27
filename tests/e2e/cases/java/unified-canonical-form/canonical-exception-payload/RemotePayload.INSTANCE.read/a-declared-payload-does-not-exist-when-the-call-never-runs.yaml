@@ -1,0 +1,25 @@
+entry: src/RemotePayload.java#RemotePayload.INSTANCE.read
+input:
+  src/RemotePayload.java: |
+    import normalizer.intrinsics.N;
+
+    class RemoteFault extends RuntimeException { @N.Nullable String payload; }
+    class Rates { native int read(int input) throws RemoteFault; }
+    class RemotePayload {
+        static final RemotePayload INSTANCE = new RemotePayload(new Rates());
+
+        @N.External private final Rates rates;
+        RemotePayload(Rates rates) { this.rates = rates; }
+        int read(int input) { if (false) return rates.read(input); return input; }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/RemotePayload.java#RemotePayload.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      input:
+        position: 0
+        type: number
+  R: input

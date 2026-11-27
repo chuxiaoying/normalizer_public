@@ -1,0 +1,37 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+input:
+  src/CanonicalPick.java: |
+    class CanonicalPick {
+        static int total(int[] values, int backup) {
+            int first;
+            /* @normalizer-ir first = choose from values else backup */
+            int second;
+            /* @normalizer-ir second = choose from values else backup */
+            return first + second;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalPick.java#CanonicalPick.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      backup:
+        position: 1
+        type: number
+  T:
+    - id: $t_0
+      op: member_choice
+      when: "true"
+      members: values
+      empty: backup
+    - id: $t_1
+      op: member_choice
+      when: "true"
+      members: values
+      empty: backup
+  R: $t_0 + $t_1

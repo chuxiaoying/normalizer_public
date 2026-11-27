@@ -1,0 +1,14 @@
+entry: src/Shape.java#Shape.read
+input:
+  src/Shape.java: |
+    class Shape {
+        static int read(boolean choose, int[] values, int value) {
+            return choose ? 1 : values;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - kind=PREPROCESS_REQUIRED
+    - location=Shape.read
+    - "branch result type mismatch: then=number else=source sequence<number>"

@@ -1,0 +1,27 @@
+entry: src/CanonicalQuota.java#CanonicalQuota.smaller
+input:
+  src/CanonicalQuota.java: |
+    class CanonicalQuota {
+        static int smaller(int quota, int total) {
+            if (total < quota) return total;
+            return quota;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuota.java#CanonicalQuota.smaller
+    returns: number
+  P:
+    parameters:
+      quota:
+        position: 0
+        type: number
+      total:
+        position: 1
+        type: number
+  R: |-
+    CASE
+      WHEN quota < total THEN quota
+      ELSE total
+    END

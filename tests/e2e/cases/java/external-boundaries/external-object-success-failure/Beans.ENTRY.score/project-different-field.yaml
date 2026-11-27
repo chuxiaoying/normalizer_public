@@ -1,0 +1,56 @@
+entry: src/ProfileService.java#Beans.ENTRY.score
+input:
+  src/ProfileService.java: |
+    import normalizer.intrinsics.N;
+
+    class Profile {
+        int score;
+    }
+
+    class ProfileService {
+        @N.External
+        private final ProfileClient client;
+
+        ProfileService(ProfileClient client) {
+            this.client = client;
+        }
+
+        int score(int accountId) {
+            return client.fetch(accountId).score + 1;
+        }
+    }
+
+    class ProfileClient {
+        native Profile fetch(int accountId) throws ProfileUnavailable;
+    }
+
+    class ProfileUnavailable extends RuntimeException {}
+
+    class Beans {
+        static final ProfileService ENTRY = new ProfileService(new ProfileClient());
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        score: number
+  entry:
+    function: src/ProfileService.java#Beans.ENTRY.score
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  R: $e_0.score + 1
+  S:
+    - call:
+        external: src/ProfileService.java#Beans.ENTRY.client.fetch
+        args:
+          - accountId
+        returns: Profile
+        result: $e_0
+  throws:
+    - type: ProfileUnavailable
+      when: completion.is_throw($e_0, ProfileUnavailable)

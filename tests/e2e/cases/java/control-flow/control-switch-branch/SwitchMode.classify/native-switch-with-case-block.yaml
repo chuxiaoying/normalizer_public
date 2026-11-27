@@ -1,0 +1,32 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+input:
+  src/SwitchMode.java: |
+    class SwitchMode {
+        static int classify(int code) {
+            switch (code) {
+                case 1: {
+                    return 10;
+                }
+                case 2:
+                    return 20;
+                default:
+                    return 0;
+            }
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/SwitchMode.java#SwitchMode.classify
+    returns: number
+  P:
+    parameters:
+      code:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN code == 1 THEN 10
+      WHEN code == 2 THEN 20
+      ELSE 0
+    END

@@ -1,0 +1,27 @@
+entry: src/CanonicalQuantity.java#CanonicalQuantity.band
+input:
+  src/CanonicalQuantity.java: |
+    class CanonicalQuantity {
+        static int band(int quantity) {
+            if (quantity < 0) return 10;
+            if (quantity >= 0 && quantity <= 5) return 20;
+            if (quantity >= 6) return 30;
+            return 99;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuantity.java#CanonicalQuantity.band
+    returns: number
+  P:
+    parameters:
+      quantity:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN quantity <= -1 THEN 10
+      WHEN quantity <= 5 THEN 20
+      ELSE 30
+    END

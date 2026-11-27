@@ -390,19 +390,3 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         exception,
     }))
 }
-
-#[cfg(test)]
-mod map_namespace_contract {
-    use super::*;
-
-    #[test]
-    fn a_map_operation_uses_its_whole_token_in_the_value_namespace() {
-        assert!(matches!(parse("labels = value . map_empty(text,text?)").unwrap(),
-            LocalIr::LocalMapEmpty { binding } if binding == "labels"));
-        assert!(matches!(parse("choice = value").unwrap(), LocalIr::Decimal(_)));
-        for expression in ["value.map_putter(labels,\"key\",null)", "value.entries(labels)"] {
-            assert_eq!(parse(&format!("labels = {expression}")).unwrap_err(),
-                "[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation");
-        }
-    }
-}

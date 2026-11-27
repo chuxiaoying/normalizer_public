@@ -1,0 +1,51 @@
+entry: src/NullMemoService.java#NullMemoService.missingMemoCount
+input:
+  src/NullMemoService.java: |
+    import normalizer.intrinsics.N;
+
+    class BillMemoRow {
+        int accountId;
+        @N.Nullable String memo;
+    }
+    class NullMemoService {
+        static boolean missingMemoCount(int accountId) {
+            BillMemoRow[] bills;
+            /* @normalizer-ir
+               bills = from bill as b
+                   where b.account_id == accountId
+                   yield { accountId: b.account_id, memo: b.memo }
+            */
+            int count;
+            /* @normalizer-ir
+               count = count from bills as row where row.memo IS NULL
+            */
+            return 3 > count;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/NullMemoService.java#NullMemoService.missingMemoCount
+    returns: bool
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        memo: text?
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM bill
+        WHERE bill.account_id == accountId
+          AND bill.memo IS NULL
+      ),
+      0
+    ) < 3

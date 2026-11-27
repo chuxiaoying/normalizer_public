@@ -1,5 +1,0 @@
-reject: ['[SOURCE-PARSE-FAILED]', '[JAVA-RESERVED-METHOD-NAME]', 'TicketCode.return', 'reserved keyword used as a Java method name']
-variants:
-  - name: reserved-name-is-invalid-even-with-a-java-body
-    edits:
-      - { from: 'static native int return();', to: 'static int return() { return 5; }' }

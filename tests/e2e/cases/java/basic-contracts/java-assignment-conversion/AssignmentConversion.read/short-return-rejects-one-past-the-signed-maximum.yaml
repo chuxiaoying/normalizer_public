@@ -1,0 +1,14 @@
+entry: src/AssignmentConversion.java#AssignmentConversion.read
+input:
+  src/AssignmentConversion.java: |
+    class AssignmentConversion {
+        static short read() {
+            int value = 99;
+            value += 99L;
+            return 32768;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - "return: integral literal 32768 is outside the Java short range"

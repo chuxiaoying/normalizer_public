@@ -1,0 +1,8 @@
+entry: src/total.ts#total
+input:
+  src/total.ts: |
+    export function total(value: number, value: number): number { return value + value; }
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - Duplicate identifier 'value'

@@ -1,0 +1,46 @@
+entry: src/GroupService.java#GroupService.statusGroupCount
+input:
+  src/GroupService.java: |
+    class BillGroupRow {
+        String category;
+        int account_id;
+    }
+    class GroupService {
+        static int statusGroupCount() {
+            BillGroupRow[] bills;
+            /* @normalizer-ir
+               bills = from bill as row yield { category: row.status, account_id: row.account_id }
+            */
+            int count;
+            /* @normalizer-ir
+               count = count groups from bills as b by b.category
+            */
+            return count;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/GroupService.java#GroupService.statusGroupCount
+    returns: number
+  P:
+    parameters: {}
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        status: text
+        account_id: number
+  R: |-
+    COALESCE(
+      SUM(
+        SELECT 1
+        FROM (
+          SELECT bill.status
+          FROM bill
+          GROUP BY bill.status
+        ) AS groups
+      ),
+      0
+    )

@@ -1,0 +1,13 @@
+entry: src/Balance.java#Balance.addFee
+input:
+  src/Balance.java: |
+    class Balance {
+        static double raw() { return 1dL; } static int addFee(int balance, int fee) {
+            return balance + fee;
+        }
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - kind=PREPROCESS_REQUIRED
+    - invalid numeric literal suffix

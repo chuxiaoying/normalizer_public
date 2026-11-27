@@ -1,0 +1,31 @@
+entry: src/Guarded.java#Guarded.read
+input:
+  src/Guarded.java: |
+    class NegativeValue extends RuntimeException {}
+
+    class OtherValue extends RuntimeException {}
+
+    class Guarded {
+        static int read(int value) {
+            try {
+                if (value < 0) throw new NegativeValue();
+                return value;
+            } catch (OtherValue ignored) {
+                return 0;
+            }
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Guarded.java#Guarded.read
+    returns: number
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+  R: value
+  throws:
+    - type: NegativeValue
+      when: value < 0

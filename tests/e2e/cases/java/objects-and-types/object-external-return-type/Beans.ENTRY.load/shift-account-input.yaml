@@ -1,0 +1,49 @@
+entry: src/ProfileService.java#Beans.ENTRY.load
+input:
+  src/ProfileService.java: |
+    import normalizer.intrinsics.N;
+
+    class Profile {
+        int score;
+    }
+
+    class ProfileService {
+        @N.External
+        private final ProfileClient client;
+
+        ProfileService(ProfileClient client) { this.client = client; }
+
+        Profile load(int accountId) {
+            return client.fetch(accountId + 1);
+        }
+    }
+
+    class ProfileClient {
+        native Profile fetch(int accountId);
+    }
+
+    class Beans {
+        static final ProfileService ENTRY = new ProfileService(new ProfileClient());
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        score: number
+  entry:
+    function: src/ProfileService.java#Beans.ENTRY.load
+    returns: Profile
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  S:
+    - call:
+        external: src/ProfileService.java#Beans.ENTRY.client.fetch
+        args:
+          - accountId + 1
+        returns: Profile
+        result: $e_0
+  R: $e_0

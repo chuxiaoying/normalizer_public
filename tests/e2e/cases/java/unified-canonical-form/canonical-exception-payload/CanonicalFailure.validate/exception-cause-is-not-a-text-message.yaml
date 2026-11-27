@@ -1,0 +1,15 @@
+entry: src/CanonicalFailure.java#CanonicalFailure.validate
+input:
+  src/CanonicalFailure.java: |
+    class CanonicalFailure {
+        static int validate(int code) {
+            if (code == 2) throw new RuntimeException("zeta");
+            if (code == 1) throw new RuntimeException(new RuntimeException());
+            if (code == 3) throw new RuntimeException();
+            return code;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-EXPLICIT-THROW]"
+    - kind=PREPROCESS_REQUIRED

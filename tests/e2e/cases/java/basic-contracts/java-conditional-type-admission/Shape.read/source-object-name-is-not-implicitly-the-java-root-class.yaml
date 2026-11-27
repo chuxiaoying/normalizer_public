@@ -1,0 +1,15 @@
+entry: src/Shape.java#Shape.read
+input:
+  src/Shape.java: |
+    class Object {}
+    class Shape {
+      static Object unused(boolean b) { return b ? 1 : true; }
+        static int read(boolean choose, int[] values, int value) {
+            return choose ? value : 1;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - location=Shape.unused
+    - branch result type mismatch

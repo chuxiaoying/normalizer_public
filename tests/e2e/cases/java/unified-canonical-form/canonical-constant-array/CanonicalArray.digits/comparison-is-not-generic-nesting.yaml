@@ -1,0 +1,17 @@
+entry: src/CanonicalArray.java#CanonicalArray.digits
+input:
+  src/CanonicalArray.java: |
+    class CanonicalArray {
+        static int digits() {
+            int[] values = {(1 < 2 ? 2 : 9), 7};
+            return values[0] * 10 + values[1];
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.digits
+    returns: number
+  P:
+    parameters: {}
+  R: "27"

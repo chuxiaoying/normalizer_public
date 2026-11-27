@@ -1,0 +1,42 @@
+entry: src/ArrearsPage.ts#caption
+vueSource: src/ArrearsPage.vue
+input:
+  src/ArrearsPage.ts: |
+    /** @N entryState */
+    const arrears = {
+      status: { ready: false, loading: false },
+      summary: { payable: 0 }
+    };
+
+    /** @N componentProp PayableCard#balance.amount */
+    export function amount(): number {
+      return arrears.status.ready ? arrears.summary.payable : 0;
+    }
+
+    function unchecked() { return JSON.parse("{}") }
+    /** @N componentProp PayableCard#balance.caption */
+    export function caption(): string {
+      return arrears.status.loading ? "加载中" : "应付金额";
+    }
+  src/ArrearsPage.vue: |
+    <template>
+      <PayableCard
+        id="balance"
+        :amount="arrears.status.ready ? arrears.summary.payable : 0"
+        :caption="arrears.status.loading ? '加载中' : '应付金额'"
+      />
+    </template>
+
+    <script setup>
+    import { reactive } from 'vue'
+    import PayableCard from './PayableCard.vue'
+
+    const arrears = reactive({
+      status: { ready: false, loading: false },
+      summary: { payable: 0 }
+    })
+    </script>
+reject:
+  fragments:
+    - "SCENARIO_MODULE_INPUT:"
+    - resolved any is not an admitted analysis type

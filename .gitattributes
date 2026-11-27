@@ -1,0 +1,2 @@
+# YAML literal blocks preserve exact source bytes, including whitespace-only source lines.
+tests/e2e/cases/**/*.yaml whitespace=-blank-at-eol

@@ -1,0 +1,23 @@
+entry: src/Eligibility.java#Eligibility.eligible
+input:
+  src/Eligibility.java: |
+    class Eligibility {
+        static boolean eligible(int score, int alternate) {
+            boolean active = score >= 60;
+            return score > 0 || score < 0 || alternate == 0;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Eligibility.java#Eligibility.eligible
+    returns: bool
+  P:
+    parameters:
+      score:
+        position: 0
+        type: number
+      alternate:
+        position: 1
+        type: number
+  R: alternate == 0 OR score < 0 OR score > 0

@@ -1,0 +1,22 @@
+entry: src/Equation.java#Equation.matches
+input:
+  src/Equation.java: |
+    class Equation {
+        static boolean matches(int value, int target) {
+            return value - 1 == target;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Equation.java#Equation.matches
+    returns: bool
+  P:
+    parameters:
+      value:
+        position: 0
+        type: number
+      target:
+        position: 1
+        type: number
+  R: target == value - 1

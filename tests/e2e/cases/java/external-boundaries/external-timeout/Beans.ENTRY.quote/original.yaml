@@ -1,0 +1,43 @@
+entry: src/QuoteService.java#Beans.ENTRY.quote
+input:
+  src/QuoteService.java: |
+    import normalizer.intrinsics.N;
+
+    class QuoteService {
+        @N.External
+        private final QuoteClient client;
+
+        QuoteService(QuoteClient client) {
+            this.client = client;
+        }
+        int quote(int id) { return client.fetch(id); }
+    }
+    class QuoteClient {
+        native int fetch(int id) throws Timeout;
+    }
+    class Timeout extends RuntimeException {}
+
+    class Beans {
+        static final QuoteService ENTRY = new QuoteService(new QuoteClient());
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/QuoteService.java#Beans.ENTRY.quote
+    returns: number
+  P:
+    parameters:
+      id:
+        position: 0
+        type: number
+  S:
+    - call:
+        external: src/QuoteService.java#Beans.ENTRY.client.fetch
+        args:
+          - id
+        returns: number
+        result: $e_0
+  R: $e_0
+  throws:
+    - type: Timeout
+      when: completion.is_throw($e_0, Timeout)

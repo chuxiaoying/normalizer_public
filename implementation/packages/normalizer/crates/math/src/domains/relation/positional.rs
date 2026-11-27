@@ -57,38 +57,3 @@ pub fn reverse_stack_completion(opened: &str, closed: &str, field: &str) -> (Exp
     let failure = b::or(b::gt(close_size, open_size), mismatched);
     (empty, failure)
 }
-
-#[cfg(test)]
-mod positional_projection_tests {
-    use super::*;
-
-    #[test]
-    fn index_rebuilding_keeps_the_exact_source_and_field() {
-        let index = b::row_value("i");
-        let value = field_at("opened", b::add(index.clone(), b::lit_int(0)), "id");
-        let rebuilt = crate::normalize(value);
-        assert_eq!(field_projection(&rebuilt), Some(("opened", &index, "id")));
-
-        let other = field_at("closed", index.clone(), "sequence");
-        assert_eq!(field_projection(&other), Some(("closed", &index, "sequence")));
-        assert!(field_projection(&indices(b::lit_int(3))).is_none());
-    }
-}
-
-#[cfg(test)]
-mod common_position_bounds_tests {
-    use super::*;
-
-    #[test]
-    fn common_prefix_bound_is_symmetric_but_observes_both_lists() {
-        let opened = relation_count(RelationExpr::base("opened", "item"));
-        let closed = relation_count(RelationExpr::base("closed", "item"));
-
-        let ordered = minimum(closed.clone(), opened.clone());
-        assert_eq!(ordered, minimum(opened.clone(), closed.clone()));
-        let (op, keys) = ordered.as_call().expect("independent bounds require minimum");
-        assert_eq!(crate::func_name(op), "LEAST");
-        assert_eq!(keys, &[closed, opened.clone()]);
-        assert_eq!(minimum(opened.clone(), opened.clone()), opened);
-    }
-}

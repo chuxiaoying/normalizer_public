@@ -1,6 +1,0 @@
-- name: read-root-value
-  edits: [{ from: 'root.next.value', to: 'root.value' }]
-  expect: [{ path: [R], value: root.value }]
-- name: read-second-hop
-  edits: [{ from: 'root.next.value', to: 'root.next.next.value' }]
-  expect: [{ path: [R], value: root.next.next.value }]

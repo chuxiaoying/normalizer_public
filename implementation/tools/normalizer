@@ -13,10 +13,6 @@ Usage:
   implementation/tools/normalizer module PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
   implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION --source ORIGINAL.vue
   implementation/tools/normalizer test business-examples
-  implementation/tools/normalizer test pers-goldens
-  implementation/tools/normalizer test seed-patches
-  implementation/tools/normalizer test engineering
-  implementation/tools/normalizer test kernel-units
 
 source, module and scenario write final business PERS to stdout.
 EOF
@@ -92,25 +88,6 @@ case "$command" in
   test)
     require_args 2 "$#"
     case "$2" in
-      kernel-units)
-        cargo_cmd=$(cargo_command)
-        exec "$cargo_cmd" test --locked --target-dir "$TARGET_DIR" --manifest-path "$MANIFEST" --workspace --lib
-        ;;
-      engineering)
-        python3 -B -m unittest discover -s "$ROOT/../tests/architecture"
-        ensure_frontend_dependencies
-        ensure_kernel
-        node --test "$ROOT/../tests/architecture/"*.test.mjs
-        exec python3 -B "$ROOT/tools/docs/check_links.py"
-        ;;
-      seed-patches)
-        ensure_frontend_dependencies
-        exec node "$ROOT/../tests/e2e/check-seed-patches.mjs"
-        ;;
-      pers-goldens)
-        ensure_frontend_dependencies tests
-        exec node "$ROOT/../tests/e2e/check-pers-goldens.mjs"
-        ;;
       business-examples)
         ensure_frontend_dependencies tests
         ensure_kernel

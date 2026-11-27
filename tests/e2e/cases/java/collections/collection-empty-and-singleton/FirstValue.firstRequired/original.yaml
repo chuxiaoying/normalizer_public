@@ -1,0 +1,22 @@
+entry: src/FirstValue.java#FirstValue.firstRequired
+input:
+  src/FirstValue.java: |
+    class FirstValue {
+        static int firstRequired(int[] values) {
+            return values[0];
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstRequired
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: FIRST(value FROM values)
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: LENGTH(values) == 0

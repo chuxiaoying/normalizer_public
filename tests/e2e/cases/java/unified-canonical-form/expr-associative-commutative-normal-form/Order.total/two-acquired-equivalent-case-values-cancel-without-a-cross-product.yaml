@@ -1,0 +1,24 @@
+entry: src/Order.java#Order.total
+input:
+  src/Order.java: |
+    class Order {
+        static int total(int base, int value) {
+            int left = value > 0 ? value + base : value * base;
+            int right = value > 0 ? base + value : base * value;
+            return left - right;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Order.java#Order.total
+    returns: number
+  P:
+    parameters:
+      base:
+        position: 0
+        type: number
+      value:
+        position: 1
+        type: number
+  R: "0"

@@ -1,0 +1,17 @@
+entry: src/CanonicalArray.java#CanonicalArray.sized
+input:
+  src/CanonicalArray.java: |
+    class CanonicalArray {
+        static int sized() {
+            int[] values = new int[]{3};
+            return values.length * 10 + values[0];
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.sized
+    returns: number
+  P:
+    parameters: {}
+  R: "13"

@@ -1,0 +1,10 @@
+entry: src/vector-case.ts#choose
+input:
+  src/vector-case.ts: |
+    export function choose(values: readonly number[]): number {
+      return values[values.length].length > 0 ? 7 : 11;
+    }
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - unsupported standalone scalar operation opaque

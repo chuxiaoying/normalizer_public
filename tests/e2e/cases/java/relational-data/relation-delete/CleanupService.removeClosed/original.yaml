@@ -1,0 +1,45 @@
+entry: src/CleanupService.java#CleanupService.removeClosed
+input:
+  src/CleanupService.java: |
+    class DatabaseWriteError extends RuntimeException {}
+
+    class CleanupService {
+        static int removeClosed(int accountId) {
+            int affected;
+            /* @normalizer-ir
+               affected = delete from bill as b
+                   where b.account_id == accountId and b.status == "CLOSED"
+                   returning affected_rows
+                   atomic throws DatabaseWriteError
+            */
+            return affected;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CleanupService.java#CleanupService.removeClosed
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    bill:
+      kind: table
+      source: bill
+      columns:
+        account_id: number
+        status: text
+  S:
+    - sql: |-
+        DELETE FROM bill
+        WHERE bill.account_id = accountId
+          AND bill.status = 'CLOSED'
+      returns: number
+      result: $e_0
+  R: $e_0
+  throws:
+    - type: DatabaseWriteError
+      when: completion.is_throw($e_0, DatabaseWriteError)

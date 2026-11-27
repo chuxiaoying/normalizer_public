@@ -1,0 +1,11 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    import normalizer.intrinsics.N; class TicketCode {
+        static int readValid(int value) { @N.External int result = value; return result; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-LOCAL-ANNOTATION]"

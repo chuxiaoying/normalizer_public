@@ -1,0 +1,40 @@
+entry: src/CycleState.java#Beans.ENTRY.read
+input:
+  src/CycleState.java: |
+    import normalizer.intrinsics.N;
+
+    class Node { Node next; int value; }
+    class CycleState {
+        @N.EntryState
+        Node root;
+        int read() { return root.next.next.value; }
+    }
+
+    class Beans {
+        static final CycleState ENTRY = new CycleState();
+        static final Node ROOT = new Node();
+        static {
+            ROOT.next = ROOT;
+            ENTRY.root = ROOT;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Node:
+      fields:
+        next: Node
+        value: number
+  entry:
+    function: src/CycleState.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters: {}
+  E:
+    root:
+      kind: state
+      source: src/CycleState.java#Beans.ENTRY.root
+      fields:
+        next: Node
+        value: number
+  R: root.next.next.value

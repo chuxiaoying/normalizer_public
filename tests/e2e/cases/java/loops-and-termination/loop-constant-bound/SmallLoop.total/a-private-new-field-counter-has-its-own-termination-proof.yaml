@@ -1,0 +1,19 @@
+entry: src/SmallLoop.java#SmallLoop.total
+input:
+  src/SmallLoop.java: |
+    class Counter { int position; }
+    class SmallLoop {
+        static int total() {
+            Counter counter = new Counter(); Counter alias = counter; int sum = 0;
+            for (counter.position = 0; counter.position < 3; alias.position++) sum += counter.position;
+            return sum;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/SmallLoop.java#SmallLoop.total
+    returns: number
+  P:
+    parameters: {}
+  R: "3"

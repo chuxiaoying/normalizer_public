@@ -1,0 +1,36 @@
+entry: src/CanonicalPick.java#CanonicalPick.total
+input:
+  src/CanonicalPick.java: |
+    class CanonicalPick {
+        static int total(int[] values, int backup, boolean enabled) {
+            if (!enabled) {
+      int first;
+      /* @normalizer-ir first = choose from values else backup */
+      return first;
+    }
+    return backup;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalPick.java#CanonicalPick.total
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      backup:
+        position: 1
+        type: number
+      enabled:
+        position: 2
+        type: bool
+  T:
+    - id: $t_0
+      op: member_choice
+      when: NOT (enabled)
+      members: values
+      empty: backup
+  R: CASE WHEN enabled THEN backup ELSE $t_0 END

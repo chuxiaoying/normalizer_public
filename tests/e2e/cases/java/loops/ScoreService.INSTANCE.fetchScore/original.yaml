@@ -1,0 +1,82 @@
+entry: src/ScoreService.java#ScoreService.INSTANCE.fetchScore
+input:
+  src/ScoreService.java: |
+    import normalizer.intrinsics.N;
+
+    class ScoreService {
+        static final ScoreService INSTANCE = new ScoreService(new ScoreClient());
+
+        @N.External
+        private final ScoreClient scoreClient;
+
+        ScoreService(ScoreClient scoreClient) {
+            this.scoreClient = scoreClient;
+        }
+
+        int fetchScore(int accountId, int availableCredits) {
+            for (int attempt = 0; attempt < 3; attempt++) {
+                try {
+                    return scoreClient.fetchScore(accountId);
+                } catch (RetryableScoreError ignored) {
+                    // retry
+                }
+            }
+            int fallbackScore = 0;
+            /* @normalizer-ir
+               fallbackScore += count from [0, availableCredits) as credit
+            */
+            return fallbackScore;
+        }
+    }
+
+    class ScoreClient {
+        native int fetchScore(int accountId) throws RetryableScoreError;
+    }
+
+    class RetryableScoreError extends RuntimeException {}
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ScoreService.java#ScoreService.INSTANCE.fetchScore
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      availableCredits:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.fetchScore
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+    - call:
+        external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.fetchScore
+        args:
+          - accountId
+        returns: number
+        result: $e_1
+        when: completion.is_throw($e_0, RetryableScoreError)
+    - call:
+        external: src/ScoreService.java#ScoreService.INSTANCE.scoreClient.fetchScore
+        args:
+          - accountId
+        returns: number
+        result: $e_2
+        when: |-
+          CASE
+            WHEN completion.is_throw($e_0, RetryableScoreError) THEN completion.is_throw($e_1, RetryableScoreError)
+            ELSE false
+          END
+  R: |-
+    CASE
+      WHEN completion.is_return($e_0) THEN $e_0
+      WHEN completion.is_return($e_1) THEN $e_1
+      WHEN completion.is_return($e_2) THEN $e_2
+      WHEN availableCredits > 0 THEN availableCredits
+      ELSE 0
+    END

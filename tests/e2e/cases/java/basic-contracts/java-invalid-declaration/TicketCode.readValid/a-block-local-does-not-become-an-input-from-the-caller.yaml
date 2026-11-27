@@ -1,0 +1,12 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode {
+        static int readValid(int value) { { int local = value + 1; } return local; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - location=TicketCode.readValid
+    - undeclared value local

@@ -1,0 +1,16 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.signed
+input:
+  src/CanonicalQuotient.java: |
+    class CanonicalQuotient {
+        static long signed() {
+            int numerator = -13, divisor = 5; return (numerator / divisor) * 10 + (numerator % divisor);
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuotient.java#CanonicalQuotient.signed
+    returns: number
+  P:
+    parameters: {}
+  R: "-23"

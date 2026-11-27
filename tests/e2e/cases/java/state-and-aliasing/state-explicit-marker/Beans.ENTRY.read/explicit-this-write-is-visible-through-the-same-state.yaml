@@ -1,0 +1,35 @@
+entry: src/Counter.java#Beans.ENTRY.read
+input:
+  src/Counter.java: |
+    import normalizer.intrinsics.N;
+
+    class Counter {
+        @N.EntryState
+        int value;
+
+        int read() {
+            this.value = this.value + 1;
+            return this.value;
+        }
+    }
+
+    class Beans {
+        static final Counter ENTRY = new Counter();
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Counter.java#Beans.ENTRY.read
+    returns: number
+  P:
+    parameters: {}
+  E:
+    value:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.value
+      type: number
+  R: value + 1
+  S:
+    - write:
+        target: value
+        value: value + 1

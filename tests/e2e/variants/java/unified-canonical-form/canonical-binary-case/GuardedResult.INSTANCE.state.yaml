@@ -1,3 +1,0 @@
-- name: complement-with-both-results-swapped-keeps-the-same-write
-  edits:
-    - { from: 'result = a == 1 && b == 2 ? 7 : 9;', to: 'result = a != 1 || b != 2 ? 9 : 7;' }

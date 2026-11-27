@@ -1,0 +1,11 @@
+entry: src/TicketCode.java#TicketCode.readValid
+input:
+  src/TicketCode.java: |
+    class TicketCode { static int unused() { return 0x; }
+        static int readValid(int value) { return value; }
+        static native int booleanValue();
+    }
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - expected digit after integer radix prefix

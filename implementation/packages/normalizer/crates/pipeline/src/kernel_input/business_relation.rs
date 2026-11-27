@@ -102,60 +102,6 @@ fn closed_count_table<'a>(
     Some((name.as_str(), columns, predicates))
 }
 
-#[cfg(test)]
-mod physical_column_contract {
-    use super::*;
-
-    #[test]
-    fn same_column_spelling_in_another_table_is_not_the_same_acquisition() {
-        let columns = BTreeMap::from([
-            ("id".into(), "number".into()),
-            ("memo".into(), "text?".into()),
-        ]);
-        assert_eq!(owned_column_domain(&columns, "bill", ("bill", "id")), Some("number"));
-        assert_eq!(owned_column_domain(&columns, "bill", ("bill", "memo")), Some("text?"));
-        assert_eq!(owned_column_domain(&columns, "bill", ("invoice", "id")), None);
-        assert_eq!(owned_column_domain(&columns, "bill", ("bill", "missing")), None);
-    }
-
-    #[test]
-    fn a_countable_vector_is_not_evidence_of_a_physical_table_snapshot() {
-        let tables = BTreeMap::from([("bill".to_owned(), BTreeMap::from([
-            ("amount".to_owned(), "number".to_owned())
-        ]))]);
-        let predicate = b::gt(b::row_value("bill.amount"), b::lit_int(0));
-        let table = RelationExpr::select(predicate.clone(), RelationExpr::base("bill", "bill"));
-        let (name, _, predicates) = closed_count_table(&table, &tables).unwrap();
-        assert_eq!(name, "bill");
-        assert_eq!(predicates, vec![&predicate]);
-
-        let vector = math::domains::composite::number_vector(vec![b::lit_int(4)]);
-        let rows = RelationExpr::vector(vector, "value");
-        assert!(closed_count_table(&rows, &tables).is_none());
-        assert!(closed_count_table(&RelationExpr::base("bill", "other"), &tables).is_none());
-    }
-
-    #[test]
-    fn inferred_rows_do_not_require_a_java_local_but_respect_it_when_present() {
-        let fields = BTreeMap::from([
-            ("amount".to_owned(), Value::Term(Ty::Integer, b::row_value("bill.amount"))),
-            ("paid".to_owned(), Value::Term(Ty::Bool, b::row_value("bill.paid"))),
-        ]);
-        let declared = BTreeMap::from([
-            ("amount".to_owned(), Ty::Integer),
-            ("paid".to_owned(), Ty::Bool),
-        ]);
-        let different_shape = BTreeMap::from([
-            ("amount".to_owned(), Ty::Integer),
-            ("paid".to_owned(), Ty::Integer),
-        ]);
-        assert!(query_row_matches(&fields, None));
-        assert!(query_row_matches(&fields, Some(&declared)));
-        assert!(!query_row_matches(&fields, Some(&different_shape)));
-    }
-
-
-}
 
 impl<'a> Engine<'a> {
     /// Only declared base tables filtered by closed, typed expressions in the

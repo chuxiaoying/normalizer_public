@@ -1,0 +1,20 @@
+entry: src/CanonicalArray.java#CanonicalArray.guarded
+input:
+  src/CanonicalArray.java: |
+    class CanonicalArray {
+        static int guarded(boolean fail) {
+            if (fail) return (new int[]{2, 7})[1];
+            return 7;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalArray.java#CanonicalArray.guarded
+    returns: number
+  P:
+    parameters:
+      fail:
+        position: 0
+        type: bool
+  R: "7"

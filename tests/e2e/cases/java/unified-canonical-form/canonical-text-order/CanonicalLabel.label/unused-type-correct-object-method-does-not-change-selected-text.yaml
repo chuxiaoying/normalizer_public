@@ -1,0 +1,17 @@
+entry: src/CanonicalLabel.java#CanonicalLabel.label
+input:
+  src/CanonicalLabel.java: |
+    class CanonicalLabel {
+        static Object unused(boolean choose) { return choose ? true : 1; }
+        static String label() {
+            return "zone-" + "42";
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalLabel.java#CanonicalLabel.label
+    returns: text
+  P:
+    parameters: {}
+  R: '"zone-42"'

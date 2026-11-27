@@ -136,7 +136,7 @@ export function loadSeedPlan(root, seeds = loadSeeds(root), seedMetadata = loadS
 export function loadCases(root, seeds = loadSeeds(root)) {
   const seedMetadata = loadSeedManifest(root, seeds);
   const seedPlan = loadSeedPlan(root, seeds, seedMetadata);
-  const variants = 'tests/e2e/variants';
+  const fixtures = 'tests/e2e/cases';
   const catalog = readYaml(root, 'tests/e2e/catalog.yaml');
   assert.deepEqual(Object.keys(catalog).sort(), ['groups', 'pending', 'version'], 'Unknown or missing test catalog section');
   assert.equal(catalog.version, 1, 'Unsupported test catalog version');
@@ -169,9 +169,9 @@ export function loadCases(root, seeds = loadSeeds(root)) {
         const primaryTopic = seedMetadata.get(seedId).topic;
         const directory = group === language + '/' + primaryTopic ? group + '/' + seedId : group;
         const filename = directory + '/' + (extension ? entry.split('#')[0].slice(0, -3) : entry.replaceAll('#', '-')) + '.yaml';
-        register(series, filename, 'variant series');
+        register(series, filename, 'case directory');
         cases.push({
-          seedId, document, entry, group, scene, seriesFile: variants + '/' + filename,
+          seedId, document, entry, group, scene, caseDirectory: fixtures + '/' + filename.slice(0, -5),
           ...seedMetadata.get(seedId), planStatus: seedPlan.get(seedId).status,
         });
       }
@@ -191,7 +191,9 @@ export function loadCases(root, seeds = loadSeeds(root)) {
     assert.equal(plan.testStatus, expected, 'Seed plan test status disagrees with the CLI catalog: ' + id);
   }
   assert.deepEqual([...assigned].sort(), [...seeds.keys()].sort(), 'Every seed needs a test binding or an explicit pending status');
-  const files = inventory(root, variants, file => /\.ya?ml$/i.test(file));
-  assert.deepEqual([...series].sort(), files, 'Registered entries and variant files must correspond one to one');
+  const directories = [...new Set(inventory(root, fixtures, file => file.endsWith('.yaml'))
+    .map(file => file.slice(0, file.lastIndexOf('/'))))].sort();
+  assert.deepEqual([...series].map(file => file.slice(0, -5)).sort(), directories,
+    'Registered entries and fixture directories must correspond one to one');
   return cases;
 }

@@ -1,0 +1,42 @@
+entry: src/StateList.java#Beans.ENTRY.update
+input:
+  src/StateList.java: |
+    import normalizer.intrinsics.N;
+
+    class StateList {
+        @N.EntryState
+        int[] values;
+
+        int update(int next) {
+            int[] alias = values;
+            values[0] += 3 / 0;
+            return alias[0];
+        }
+    }
+
+    class Beans {
+        static final StateList ENTRY = new StateList();
+        static {
+            ENTRY.values = new int[0];
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/StateList.java#Beans.ENTRY.update
+    returns: number
+  P:
+    parameters:
+      next:
+        position: 0
+        type: number
+  E:
+    values:
+      kind: state
+      source: src/StateList.java#Beans.ENTRY.values
+      type: number[]
+  throws:
+    - type: java.lang.ArithmeticException
+      when: LENGTH(values) > 0
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: LENGTH(values) == 0

@@ -1,0 +1,34 @@
+entry: src/Identity.java#Identity.sameValue
+input:
+  src/Identity.java: |
+    class Box {
+        int length;
+    }
+
+    class Identity {
+        static boolean sameValue(Box left, Box right) {
+            return left.length == right.length;
+        }
+
+        static boolean sameIdentity(Box left, Box right) {
+            return left == right;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Box:
+      fields:
+        length: number
+  entry:
+    function: src/Identity.java#Identity.sameValue
+    returns: bool
+  P:
+    parameters:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+  R: left.length == right.length

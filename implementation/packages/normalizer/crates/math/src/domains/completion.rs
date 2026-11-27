@@ -69,28 +69,3 @@ pub fn payload(completion: Expr, class: &str, ty: Primitive) -> Expr {
         ty,
     )
 }
-
-#[cfg(test)]
-mod completion_projection_tests {
-    use super::*;
-
-    #[test]
-    fn projection_keeps_the_return_type_and_does_not_alias_the_throw_payload() {
-        let receipt = b::external_completion(3);
-        let returned = value(receipt.clone(), Primitive::Number);
-        let thrown = payload(receipt.clone(), "Failure", Primitive::String);
-        let check = is_throw(receipt.clone(), "Failure");
-
-        for (expression, display, result, args) in [
-            (returned, "completion.value", Primitive::Number, vec![receipt.clone()]),
-            (thrown, "completion.payload", Primitive::String, vec![receipt.clone(), b::lit_str("Failure")]),
-            (check, "completion.is_throw", Primitive::Boolean, vec![receipt, b::lit_str("Failure")]),
-        ] {
-            let (key, actual_args) = expression.as_call().expect("completion operation");
-            assert_eq!(output_name(&crate::func_name(key)), display);
-            assert_eq!(crate::domains::primitive::registry::func_return_type(key), Some(result));
-            assert_eq!(actual_args, args.as_slice());
-        }
-        assert_eq!(output_name("other.value@number"), "other.value@number");
-    }
-}

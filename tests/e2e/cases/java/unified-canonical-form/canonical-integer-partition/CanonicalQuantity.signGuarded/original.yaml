@@ -1,0 +1,29 @@
+entry: src/CanonicalQuantity.java#CanonicalQuantity.signGuarded
+input:
+  src/CanonicalQuantity.java: |
+    class CanonicalQuantity {
+        static int signGuarded(int quantity) {
+            if (quantity > 0) return 1;
+            if (quantity < 0) return -1;
+            throw new RuntimeException("zero");
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalQuantity.java#CanonicalQuantity.signGuarded
+    returns: number
+  P:
+    parameters:
+      quantity:
+        position: 0
+        type: number
+  R: |-
+    CASE
+      WHEN quantity > 0 THEN 1
+      ELSE -1
+    END
+  throws:
+    - type: java.lang.RuntimeException
+      when: quantity == 0
+      payload: '"zero"'

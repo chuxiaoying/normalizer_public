@@ -1,0 +1,37 @@
+entry: src/Identity.java#Identity.sameIdentity
+input:
+  src/Identity.java: |
+    class Box {
+        int value;
+    }
+
+    class Identity {
+        static boolean sameValue(Box left, Box right) {
+            return left.value == right.value;
+        }
+
+        static boolean sameIdentity(Box left, Box right, boolean replace) {
+            Box alias = left; if (replace) { alias = null; } return alias == null;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Box:
+      fields:
+        value: number
+  entry:
+    function: src/Identity.java#Identity.sameIdentity
+    returns: bool
+  P:
+    parameters:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      replace:
+        position: 2
+        type: bool
+  R: replace

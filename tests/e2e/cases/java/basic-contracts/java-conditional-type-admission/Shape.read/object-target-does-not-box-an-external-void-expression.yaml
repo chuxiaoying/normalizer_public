@@ -1,0 +1,17 @@
+entry: src/Shape.java#Shape.read
+input:
+  src/Shape.java: |
+    interface ShapePort { void effect(int value); }
+    class Shape {
+      @normalizer.annotations.External private final ShapePort port;
+      Shape(ShapePort port) { this.port = port; }
+      Object unused(boolean b) { return b ? port.effect(1) : 1; }
+        static int read(boolean choose, int[] values, int value) {
+            return choose ? value : 1;
+        }
+    }
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - location=Shape.unused
+    - a conditional arm cannot return void

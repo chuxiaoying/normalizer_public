@@ -1,0 +1,24 @@
+entry: src/FirstValue.java#FirstValue.firstRequired
+input:
+  src/FirstValue.java: |
+    class Box {
+        int length;
+        Box(int value) { this.length = value; }
+    }
+
+    class FirstValue {
+        static int firstRequired(int[] values) {
+            Box box = new Box(7); return box.length;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FirstValue.java#FirstValue.firstRequired
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+  R: "7"

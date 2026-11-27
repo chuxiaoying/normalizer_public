@@ -1,0 +1,40 @@
+entry: src/Identity.java#Identity.sameIdentity
+input:
+  src/Identity.java: |
+    class Box {
+        int value;
+    }
+
+    class Identity {
+        static boolean sameValue(Box left, Box right) {
+            return left.value == right.value;
+        }
+
+        static boolean sameIdentity(Box left, Box right, boolean chooseA, boolean chooseB) {
+            Box a = left; if (chooseA) { a = right; } Box b = left; if (chooseB) { b = right; } return b == a;
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  types:
+    Box:
+      fields:
+        value: number
+  entry:
+    function: src/Identity.java#Identity.sameIdentity
+    returns: bool
+  P:
+    parameters:
+      left:
+        position: 0
+        type: Box
+      right:
+        position: 1
+        type: Box
+      chooseA:
+        position: 2
+        type: bool
+      chooseB:
+        position: 3
+        type: bool
+  R: chooseA AND (chooseB OR left == right) OR NOT (chooseA) AND (NOT (chooseB) OR left == right)

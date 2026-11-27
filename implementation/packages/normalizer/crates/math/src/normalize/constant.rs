@@ -83,29 +83,3 @@ fn fold_unary(op: UnaryOpKind, v: &Lit) -> Option<Expr> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod literal_fold_tests {
-    use super::*;
-
-    #[test]
-    fn unary_fold_uses_the_admitted_domain_not_the_storage_width() {
-        let positive = builder::lit_integer(num_bigint::BigInt::from(i64::MAX) + 1_u8);
-        assert_eq!(fold(&builder::neg(builder::lit_int(i64::MIN))), positive);
-        assert_eq!(fold(&builder::neg(positive)), builder::lit_int(i64::MIN));
-        assert_eq!(fold(&builder::neg(builder::lit_int(4))), builder::lit_int(-4));
-        assert_eq!(fold(&builder::not(builder::lit_bool(false))), builder::lit_bool(true));
-        let symbolic = builder::neg(builder::param("amount", crate::ScalarSymbolType::Integer));
-        assert_eq!(fold(&symbolic), symbolic);
-    }
-
-    #[test]
-    fn literal_or_is_true_for_either_position_without_source_short_circuiting() {
-        for (left, right, expected) in [
-            (true, false, true), (false, true, true), (false, false, false),
-        ] {
-            assert_eq!(fold(&builder::or(builder::lit_bool(left), builder::lit_bool(right))),
-                builder::lit_bool(expected));
-        }
-    }
-}

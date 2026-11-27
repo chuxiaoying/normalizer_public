@@ -1,0 +1,59 @@
+entry: src/StoreRoute.java#Beans.ENTRY.next
+input:
+  src/StoreRoute.java: |
+    import normalizer.intrinsics.N;
+
+    class RouteQuota { int units; }
+    class StoreRoute {
+        @N.EntryState
+        RouteQuota quota;
+        int next(int units, boolean replace) {
+            if (replace) {
+                if (units > 0) quota.units = units;
+            } else {
+                quota.units = 2;
+            }
+            return quota.units;
+        }
+    }
+
+    class Beans {
+        static final StoreRoute ENTRY = new StoreRoute();
+        static {
+            ENTRY.quota = new RouteQuota();
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/StoreRoute.java#Beans.ENTRY.next
+    returns: number
+  P:
+    parameters:
+      units:
+        position: 0
+        type: number
+      replace:
+        position: 1
+        type: bool
+  E:
+    quota:
+      kind: state
+      source: src/StoreRoute.java#Beans.ENTRY.quota
+      fields:
+        units: number
+  S:
+    - write:
+        target: quota.units
+        value: units
+        when: replace and units > 0
+    - write:
+        target: quota.units
+        value: "2"
+        when: NOT (replace)
+  R: |-
+    CASE
+      WHEN NOT (replace) THEN 2
+      WHEN units > 0 THEN units
+      ELSE quota.units
+    END

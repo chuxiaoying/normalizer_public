@@ -1,0 +1,16 @@
+entry: src/CanonicalLabel.java#CanonicalLabel.label
+input:
+  src/CanonicalLabel.java: |
+    class CanonicalLabel {
+        static String label() {
+            // comment\u000a        return "visible";
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/CanonicalLabel.java#CanonicalLabel.label
+    returns: text
+  P:
+    parameters: {}
+  R: '"visible"'

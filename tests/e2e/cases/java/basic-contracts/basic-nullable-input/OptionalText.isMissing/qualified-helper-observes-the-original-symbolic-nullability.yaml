@@ -1,0 +1,24 @@
+entry: src/OptionalText.java#OptionalText.isMissing
+input:
+  src/OptionalText.java: |
+    import normalizer.intrinsics.N;
+
+    class OptionalText {
+        static boolean probe(@N.Nullable java.lang.String text) {
+            return text == null;
+        }
+        static boolean isMissing(@N.Nullable String value) {
+            return OptionalText.probe(value);
+        }
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/OptionalText.java#OptionalText.isMissing
+    returns: bool
+  P:
+    parameters:
+      value:
+        position: 0
+        type: text?
+  R: value == null

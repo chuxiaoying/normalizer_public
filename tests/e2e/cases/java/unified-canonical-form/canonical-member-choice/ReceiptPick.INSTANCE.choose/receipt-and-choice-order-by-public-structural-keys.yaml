@@ -1,0 +1,55 @@
+entry: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
+input:
+  src/ReceiptPick.java: |
+    import normalizer.intrinsics.N;
+
+    class ReceiptPick {
+        static final ReceiptPick INSTANCE = new ReceiptPick(new Checkpoints());
+
+        @N.External private final Checkpoints checkpoints;
+
+        ReceiptPick(Checkpoints checkpoints) { this.checkpoints = checkpoints; }
+
+        int choose(int[] values, int code) {
+            int first = checkpoints.read(code);
+            int second = checkpoints.read(first);
+            int selected;
+            /* @normalizer-ir selected = choose from values else second */
+            return selected + second;
+        }
+    }
+
+    class Checkpoints { native int read(int code); }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ReceiptPick.java#ReceiptPick.INSTANCE.choose
+    returns: number
+  P:
+    parameters:
+      values:
+        position: 0
+        type: number[]
+      code:
+        position: 1
+        type: number
+  S:
+    - call:
+        external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
+        args:
+          - code
+        returns: number
+        result: $e_0
+    - call:
+        external: src/ReceiptPick.java#ReceiptPick.INSTANCE.checkpoints.read
+        args:
+          - $e_0
+        returns: number
+        result: $e_1
+  T:
+    - id: $t_0
+      op: member_choice
+      when: "true"
+      members: values
+      empty: $e_1
+  R: $e_1 + $t_0

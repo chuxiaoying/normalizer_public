@@ -1,0 +1,61 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+input:
+  src/FinallyService.java: |
+    import normalizer.intrinsics.N;
+
+    class RemoteError extends RuntimeException {}
+    class DisjointError extends RuntimeException {}
+    class TerminalError extends RuntimeException {}
+
+    class FinallyService {
+        static final FinallyService INSTANCE = new FinallyService(new ScoreClient());
+
+        @N.External
+        private final ScoreClient client;
+        @N.EntryState
+        int attempts;
+
+        FinallyService(ScoreClient client) { this.client = client; }
+
+        int read(int accountId) {
+            try {
+                return client.fetch(accountId);
+            } catch (DisjointError ignored) {
+                return 0;
+            } finally {
+                attempts = attempts + 1; throw new TerminalError();
+            }
+        }
+    }
+
+    class ScoreClient {
+        native int fetch(int accountId) throws RemoteError;
+    }
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FinallyService.java#FinallyService.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    attempts:
+      kind: state
+      source: src/FinallyService.java#FinallyService.INSTANCE.attempts
+      type: number
+  S:
+    - call:
+        external: src/FinallyService.java#FinallyService.INSTANCE.client.fetch
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+    - write:
+        target: attempts
+        value: attempts + 1
+  throws:
+    - type: TerminalError
+      when: "true"
