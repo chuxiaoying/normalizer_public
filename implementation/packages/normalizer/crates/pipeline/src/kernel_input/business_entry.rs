@@ -169,7 +169,7 @@ impl Loaded {
         }
         let context = EntryContext {
             external_results,
-            function: selected.map(|source| source.locator.clone())
+            function: selected.map(|source| source.canonical_function.clone())
                 .unwrap_or_else(|| format!("{}#{entry}", path.display())),
             types,
             returns: {

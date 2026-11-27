@@ -7,6 +7,7 @@ use std::path::{Component, Path, PathBuf};
 #[derive(Debug)]
 pub(super) struct SourceEntry {
     pub(super) locator: String,
+    pub(super) canonical_function: String,
     pub(super) project_root: PathBuf,
     pub(super) target: String,
     pub(super) receiver: Option<SourceReceiver>,
@@ -266,20 +267,32 @@ impl SourceEntry {
         } else {
             (class, None)
         };
-        let mut candidates = target_class.methods().iter().enumerate().filter(|(_, method)|
+        let compatible = target_class.methods().iter().enumerate().filter(|(_, method)|
             !method.is_constructor() && method.name() == method_name
-                && signature.as_ref().is_none_or(|types| method.params().iter()
-                    .map(|(ty, _)| java_type_spelling(ty)).eq(types.iter().copied().map(str::to_owned))));
-        let (index, method) = candidates.next().ok_or_else(|| fail("undeclared entry method or source parameter signature"))?;
+                && method.is_static() == receiver.is_none());
+        let overloaded = compatible.clone().nth(1).is_some();
+        let mut candidates = compatible.filter(|(_, method)|
+            signature.as_ref().is_none_or(|types| method.params().iter()
+                .map(|(ty, _)| java_type_spelling(ty)).eq(types.iter().copied().map(str::to_owned))));
+        let (index, method) = candidates.next().ok_or_else(|| fail("no entry method matches the invocation and source parameter signature"))?;
         if candidates.next().is_some() {
             return Err(crate::preprocess::required(
                 "NORM-OVERLOAD", invocation, "ambiguous entry method", "入口需要显式的 Java 源码参数类型签名。",
             ));
         }
-        if method.is_static() != receiver.is_none() {
-            return Err(fail("invocation does not match the entry method's static/instance declaration"));
-        }
-        Ok(Self { locator: locator.into(), project_root: root.to_path_buf(), target: crate::normalized::method_key(target_class, index, method), receiver })
+
+        // The caller may include a redundant signature. PERS identifies
+        // the bound declaration, not the spelling used to request it.
+        let canonical_root = receiver.as_ref().map_or(root_name.clone(), |receiver|
+            format!("{root_name}.{}", receiver.field));
+        let signature = if overloaded {
+            format!("({})", method.params().iter().map(|(ty, _)| java_type_spelling(ty))
+                .collect::<Vec<_>>().join(", "))
+        } else { String::new() };
+        Ok(Self {
+            locator: locator.into(), canonical_function: format!("{file}#{canonical_root}.{method_name}{signature}"),
+            project_root: root.to_path_buf(), target: crate::normalized::method_key(target_class, index, method), receiver,
+        })
     }
 }
 
