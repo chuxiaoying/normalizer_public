@@ -36,7 +36,7 @@ entry: { function: src/FirstValue.java#FirstValue.firstOrZero, returns: number }
 P:
   parameters:
     values: { position: 0, type: 'number[]' }
-R: CASE WHEN LENGTH(values) == 0 THEN 0 ELSE values[0] END
+R: CASE WHEN LENGTH(values) == 0 THEN 0 ELSE FIRST(value FROM values) END
 ```
 
 **验收要点**：空集合、单元素和多元素是同一个首项合同的不同输入域，默认值和位置读取都必须保留。
