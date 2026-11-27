@@ -45,7 +45,12 @@ pub(super) struct ScopedPlans {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(super) struct ValueLocation(pub(super) Expr, pub(super) Expr, pub(super) Vec<usize>);
+pub(super) struct ValueLocation {
+    pub(super) value: Expr,
+    pub(super) domain: Expr,
+    pub(super) members: Vec<usize>,
+    pub(super) in_reduce_body: bool,
+}
 
 #[derive(Default)]
 pub(super) struct ValueKeys {

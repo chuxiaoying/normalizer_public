@@ -494,6 +494,7 @@ impl LetSearch<'_> {
 #[derive(Clone)]
 pub struct ValuePlan {
     pub key: Rc<CanonicalKey>,
+    pub payload: Expr,
     pub definitions: Vec<Expr>,
 }
 
@@ -515,7 +516,7 @@ pub fn canonical_let_plan(
     let inline = canonical_order_key(value, ctx);
     let inline_full = wrap_choices(inline.clone(), choices);
     if candidates.is_empty() {
-        return Ok(ValuePlan { key: inline_full, definitions: vec![] });
+        return Ok(ValuePlan { key: inline_full, payload: value.clone(), definitions: vec![] });
     }
     candidates.sort_by(|(_, a), (_, b)| a.cmp(b));
     let mut selected = vec![false; candidates.len()];
@@ -525,5 +526,5 @@ pub fn canonical_let_plan(
         candidates, best: (inline_full, vec![]), budget };
     search.search(&mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut selected)?;
     let (key, definitions) = search.best;
-    Ok(ValuePlan { key, definitions })
+    Ok(ValuePlan { key, payload: value.clone(), definitions })
 }

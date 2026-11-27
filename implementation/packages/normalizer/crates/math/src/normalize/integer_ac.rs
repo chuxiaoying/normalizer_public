@@ -14,7 +14,9 @@ pub(super) fn total_integer(value: &Expr) -> bool {
 fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
     match value.kind() {
         ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
-            primitive_type == "integer" && ctx.temporal_is_total(*binding_id),
+            primitive_type == "integer" && (ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
+                || (ctx.temporal_is_total(*binding_id)
+                    && crate::canonical_order::comparison_operands_are_bound(value, ctx))),
         ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_))
         | ExprKind::RowValue { acquired_integer: true, .. } => true,
         ExprKind::SymVar {
@@ -103,7 +105,10 @@ fn simplify_admitted(
     expr: &Expr, op: B, left: &Expr, right: &Expr, total: bool, ctx: &dyn SortContext,
 ) -> Expr {
     if !total {
-        if exact_business_integer(expr, ctx) && crate::canonical_order_compare(left, right, ctx).is_gt() {
+        if exact_business_integer(expr, ctx)
+            && crate::canonical_order::comparison_operands_are_bound(expr, ctx)
+            && crate::canonical_order_compare(left, right, ctx).is_gt()
+        {
             return b::binop_public(op, right.clone(), left.clone());
         }
         return expr.clone();

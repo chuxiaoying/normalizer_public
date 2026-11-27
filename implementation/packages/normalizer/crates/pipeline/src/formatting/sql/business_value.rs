@@ -35,9 +35,9 @@ pub(super) fn closed_candidate(value: &Expr, ctx: &FormatCtx) -> bool {
     false
 }
 
-fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut FormatCtx) -> String) -> String {
-    if ctx.business_inputs.is_none() || !value.has_case_when() {
-        return ctx.in_relation_scope(value, render);
+fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&Expr, &mut FormatCtx) -> String) -> String {
+    if ctx.business_inputs.is_none() || (!value.has_case_when() && ctx.relation_scope.slots.is_empty()) {
+        return render(value, ctx);
     }
     let external = ctx.published_external_names();
     let first = ctx.scoped_plans.is_none();
@@ -54,7 +54,9 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut F
         definitions.push(format!("LET {name} = {}", super::format_expr_with_ctx(&expression, ctx)));
         ctx.display_business_value(expression, name);
     }
-    let result = ctx.in_relation_scope(value, render);
+    // Choose bindings from the pre-rewrite value. A simplifying rule can
+    // replace a member-dependent result without changing its acquisition.
+    let result = ctx.in_relation_scope(value, |ctx| render(&plan.payload, ctx));
     for _ in &definitions { ctx.forget_business_value(); }
     if first { ctx.scoped_plans = None; }
     if definitions.is_empty() { result }
@@ -62,7 +64,7 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut F
 }
 
 pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
-    with_value_plan(value, ctx, |ctx| super::format_expr_with_ctx(value, ctx))
+    with_value_plan(value, ctx, super::format_expr_with_ctx)
 }
 
 /// A short-circuit candidate must be safe to observe, not merely algebraically
@@ -187,8 +189,8 @@ pub(crate) fn format_guarded_boolean(
 }
 
 pub(crate) fn format_record(expression: &Expr, fields: &[(String, Expr)], ctx: &mut FormatCtx) -> String {
-    let values = expression.as_array_lit().expect("declared record projection");
-    with_value_plan(expression, ctx, |ctx| {
+    with_value_plan(expression, ctx, |value, ctx| {
+        let values = value.as_array_lit().expect("declared record projection");
         let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
             let value = super::format_expr_with_ctx(value, ctx);
             format!("  {name}: {}", value.replace('\n', "\n  "))

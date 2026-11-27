@@ -39,7 +39,7 @@ pub use domains::primitive::registry::{
 };
 pub use expr::{BinOpKind, Expr, Lit, RelationAggregateKind, UnaryOpKind};
 pub use normalize::{
-    normalize, normalize_with, try_normalize_with, BudgetKind, NormalizationLimit,
+    canonicalize_bound_integer_ops, normalize, normalize_with, try_normalize_with, BudgetKind, NormalizationLimit,
 };
 pub use canonical_order::{
     canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison, CanonicalKey,

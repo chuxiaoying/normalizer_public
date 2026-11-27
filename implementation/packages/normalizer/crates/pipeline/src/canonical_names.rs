@@ -29,13 +29,14 @@ impl math::SortContext for CanonicalNames<'_> {
 
 
 /// Keys produced for a particular YIELD see only its lexical member slots.
-pub(crate) struct ChoiceKeys<'a> {
+pub(crate) struct ScopedValueKeys<'a> {
     pub(crate) base: CanonicalNames<'a>,
     pub(crate) slots: &'a BTreeMap<u64, usize>,
     pub(crate) cases: &'a std::collections::HashMap<math::Expr, math::CaseArmKeys>,
+    pub(crate) in_reduce_body: bool,
 }
 
-impl math::SortContext for ChoiceKeys<'_> {
+impl math::SortContext for ScopedValueKeys<'_> {
     fn heap_display_name(&self, id: i64) -> Option<String> { self.base.heap_display_name(id) }
     fn external_names(&self) -> Option<&BTreeMap<u64, String>> { self.base.external_names() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
@@ -44,5 +45,6 @@ impl math::SortContext for ChoiceKeys<'_> {
     fn case_arm_keys(&self, expression: &math::Expr) -> Option<&math::CaseArmKeys> { self.cases.get(expression) }
     fn has_case_arm_keys(&self) -> bool { !self.cases.is_empty() }
     fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { (!self.slots.is_empty()).then_some(self.slots) }
+    fn in_reduce_body(&self) -> bool { self.in_reduce_body }
     fn temporal_is_total(&self, id: u64) -> bool { self.base.temporal_is_total(id) }
 }

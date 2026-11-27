@@ -249,6 +249,18 @@ pub fn normalize_with(expr: Expr, ctx: &dyn crate::sort_context::SortContext) ->
     try_normalize_with(expr, ctx).unwrap_or_else(|error| panic!("{error}"))
 }
 
+/// Reapply exact integer laws after lexical member binding. Branches and
+/// relation rows are separate scopes; their callers supply their own domains.
+pub fn canonicalize_bound_integer_ops(value: &Expr, ctx: &dyn crate::SortContext) -> Expr {
+    if ctx.choice_slots().is_none()
+        || matches!(value.kind(), ExprKind::CaseWhen { .. } | ExprKind::RelationAggregate { .. } | ExprKind::Relation(_))
+    {
+        return value.clone();
+    }
+    let rebuilt = rebuild::rebuild_with_children_simplified(value, &|child| canonicalize_bound_integer_ops(child, ctx));
+    integer_ac::simplify(&rebuilt, ctx)
+}
+
 /// Checked normalization for callers that need to report resource failure.
 pub fn try_normalize_with(
     expr: Expr,

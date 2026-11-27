@@ -182,17 +182,21 @@ impl FormatCtx {
     fn canonical_value_plan(
         &self, value: &Expr, external: &std::collections::BTreeMap<u64, String>, active: &Expr, bound: &[usize],
     ) -> math::ValuePlan {
-        let location = scoped_relation::ValueLocation(value.clone(), active.clone(), bound.to_vec());
+        let location = scoped_relation::ValueLocation {
+            value: value.clone(), domain: active.clone(), members: bound.to_vec(),
+            in_reduce_body: self.relation_scope.in_reduce_yield,
+        };
         let cache = self.scoped_plans.as_ref().filter(|plans| &plans.external == external).map(|plans| &plans.plans);
         if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
         let keys = self.prepare_value_keys(value, external, active, bound, true);
-        let compare = crate::canonical_names::ChoiceKeys {
+        let compare = crate::canonical_names::ScopedValueKeys {
             base: CanonicalNames { heap: &self.business_identities,
                 external: (!external.is_empty()).then_some(external), total_temporals: None,
                 reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
-            slots: &keys.lexical, cases: &keys.cases,
+            slots: &keys.lexical, cases: &keys.cases, in_reduce_body: self.relation_scope.in_reduce_yield,
         };
-        let plan = math::canonical_let_plan(value, &compare, &keys.prefix,
+        let payload = math::canonicalize_bound_integer_ops(value, &compare);
+        let plan = math::canonical_let_plan(&payload, &compare, &keys.prefix,
             |expr| business_value::closed_candidate(expr, self))
             .unwrap_or_else(|failure| panic!("{failure}"));
         if let Some(cache) = cache { cache.borrow_mut().insert(location, plan.clone()); }
@@ -215,8 +219,9 @@ impl FormatCtx {
                 let Slot::Choice { shape, .. } = &self.relation_scope.slots[slot] else {
                     unreachable!("certified choice slot");
                 };
-                let compare = crate::canonical_names::ChoiceKeys {
+                let compare = crate::canonical_names::ScopedValueKeys {
                     base: base(), slots: &prepared.lexical, cases: &empty_cases,
+                    in_reduce_body: self.relation_scope.in_reduce_yield,
                 };
                 prepared.prefix.push((shape.source.key(&compare), shape.fallback.key(&compare)));
                 order.push(slot);
@@ -231,8 +236,9 @@ impl FormatCtx {
             if prepared.cases.contains_key(part) { return false; }
             let guard_key = |child: &Expr, domain: &Expr| {
                 let inner = self.prepare_value_keys(child, external, domain, &order, false);
-                let compare = crate::canonical_names::ChoiceKeys {
+                let compare = crate::canonical_names::ScopedValueKeys {
                     base: base(), slots: &inner.lexical, cases: &inner.cases,
+                    in_reduce_body: self.relation_scope.in_reduce_yield,
                 };
                 math::canonical_order_key(child, &compare)
             };
@@ -431,12 +437,12 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         } else {
             scoped_relation::ValueKeys::default()
         };
-        let public = crate::canonical_names::ChoiceKeys { base: CanonicalNames {
+        let public = crate::canonical_names::ScopedValueKeys { base: CanonicalNames {
             heap: &ctx.business_identities,
             external: (!external.is_empty()).then_some(external),
             total_temporals: None, reductions: Some(&ctx.reductions),
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-        }, slots: &keys.lexical, cases: &keys.cases };
+        }, slots: &keys.lexical, cases: &keys.cases, in_reduce_body: ctx.relation_scope.in_reduce_yield };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.
         let (op, left, right) = match math::canonical_order_ordered_comparison(op, left, right, &public) {
