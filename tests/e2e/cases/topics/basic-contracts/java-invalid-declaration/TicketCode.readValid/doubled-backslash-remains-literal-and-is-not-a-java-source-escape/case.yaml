@@ -3,10 +3,10 @@ expected:
   schema: normalizer.pers/1
   entry:
     function: src/TicketCode.java#TicketCode.readValid
-    returns: number
+    returns: text
   P:
     parameters:
       value:
         position: 0
         type: number
-  R: value
+  R: '"\\u0061"'

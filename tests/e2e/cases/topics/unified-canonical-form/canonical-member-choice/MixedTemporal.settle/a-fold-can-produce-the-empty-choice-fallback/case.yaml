@@ -12,5 +12,8 @@ expected:
       backup:
         position: 1
         type: number
+      candidates:
+        position: 2
+        type: number[]
   R: >-
-    CHOOSE(values DEFAULT REDUCE(values FROM backup AS (acc, item) YIELD item + acc * 2) AS member0 YIELD member0 + REDUCE(values FROM backup AS (acc, item) YIELD item + acc * 2))
+    CHOOSE(candidates DEFAULT REDUCE(values FROM backup AS (acc, item) YIELD item + acc * 2) AS member0 YIELD member0 + REDUCE(values FROM backup AS (acc, item) YIELD item + acc * 2))

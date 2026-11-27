@@ -12,4 +12,8 @@ expected:
       detailed:
         position: 1
         type: bool
-  R: "0"
+  R: |-
+    CASE
+      WHEN detailed == (detailed AND failed) THEN 0
+      ELSE 1
+    END

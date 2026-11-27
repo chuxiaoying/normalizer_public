@@ -1,4 +1,4 @@
 class TicketCode {
-    static int readValid(int value) { String literal = "\\u0061"; return value; }
+    static String readValid(int value) { String literal = "\\u0061"; return literal; }
     static native int booleanValue();
 }
