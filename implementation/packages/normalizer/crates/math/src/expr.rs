@@ -468,11 +468,49 @@ impl Expr {
         }
     }
 
+    /// Comparison tokens are only mathematical complements under the
+    /// operand contract. Ordered comparisons over opaque or unordered values
+    /// retain a Boolean NOT rather than inventing a closed number order.
+    pub(crate) fn comparison_complement_operator(&self) -> Option<BinOpKind> {
+        let (op, left, right) = self.as_binop()?;
+        use BinOpKind::*;
+        match op {
+            Eq | Ne => op.complemented_comparison(),
+            Lt | Le | Gt | Ge if left.has_exact_numeric_order() && right.has_exact_numeric_order() =>
+                op.complemented_comparison(),
+            _ => None,
+        }
+    }
+
+    // Value contract only. This cannot authorize eliding or moving a read;
+    // replacing a comparison token still evaluates these same two operands.
+    fn has_exact_numeric_order(&self) -> bool {
+        use crate::domains::decimal::{self, View};
+        match self.kind() {
+            ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_)) => true,
+            ExprKind::SymVar { origin } =>
+                matches!(origin.primitive_type(), "integer" | decimal::VALUE_TAG),
+            ExprKind::RowValue { acquired_integer, sql, .. } =>
+                *acquired_integer || sql.as_ref().is_some_and(|column| column.scalar_type == "number"),
+            ExprKind::UnaryOp { op: UnaryOpKind::Neg, operand } => operand.has_exact_numeric_order(),
+            ExprKind::BinOp { op: BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right } =>
+                left.has_exact_numeric_order() && right.has_exact_numeric_order(),
+            ExprKind::RelationAggregate { kind: RelationAggregateKind::Count, .. } => true,
+            ExprKind::Call { .. } => match decimal::view(self) {
+                Some(View::Literal(..)) => true,
+                Some(View::Multiply(left, right)) => left.has_exact_numeric_order() && right.has_exact_numeric_order(),
+                Some(View::Round(value, ..)) => value.has_exact_numeric_order(),
+                None => crate::domains::composite::vector_length_input(self).is_some(),
+            },
+            _ => false,
+        }
+    }
+
     /// A complement preserves the operands; it is not an operand swap.
     pub(crate) fn is_comparison_complement(&self, other: &Expr) -> bool {
-        let Some((a, left, right)) = self.as_binop() else { return false; };
+        let Some((_, left, right)) = self.as_binop() else { return false; };
         let Some((b, other_left, other_right)) = other.as_binop() else { return false; };
-        left == other_left && right == other_right && a.complemented_comparison() == Some(b)
+        left == other_left && right == other_right && self.comparison_complement_operator() == Some(b)
     }
 
     /// 查询器：若本 Expr 是 BinOp，返回 (op, left, right)

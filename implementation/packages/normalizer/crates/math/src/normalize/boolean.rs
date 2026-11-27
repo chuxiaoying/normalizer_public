@@ -583,13 +583,9 @@ fn simplify_not(operand: &Expr) -> Option<Expr> {
     {
         return Some(inner.clone());
     }
-    // 比较取反：NOT(x == y) → x != y，NOT(a < b) → a >= b
-    // 用户化简原则（20260428180545）：等价逻辑下越简单越正确。
-    // 这是纯布尔代数/比较运算反演，不改变 Java 求值语义。
-    if let ExprKind::BinOp { op, left, right } = operand.kind() {
-        if let Some(inv) = op.complemented_comparison() {
-            return Some(builder::binop_public(inv, left.clone(), right.clone()));
-        }
+    if let Some(inverse) = operand.comparison_complement_operator() {
+        let (_, left, right) = operand.as_binop().expect("comparison contract");
+        return Some(builder::binop_public(inverse, left.clone(), right.clone()));
     }
     // A matching binary root always flattens to at least two terms.
     let (op, _, _) = operand.as_binop()?;
