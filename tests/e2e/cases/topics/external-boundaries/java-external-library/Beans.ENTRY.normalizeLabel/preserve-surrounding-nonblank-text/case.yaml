@@ -12,8 +12,4 @@ expected:
       fallback:
         position: 1
         type: text
-  R: |-
-    CASE
-      WHEN blank(raw) THEN fallback
-      ELSE raw
-    END
+  R: 'N.defaultIfBlank(raw, fallback)'

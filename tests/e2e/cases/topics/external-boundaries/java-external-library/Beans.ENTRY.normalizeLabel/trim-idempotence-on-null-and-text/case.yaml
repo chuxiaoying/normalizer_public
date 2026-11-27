@@ -12,8 +12,4 @@ expected:
       fallback:
         position: 1
         type: text
-  R: |-
-    CASE
-      WHEN blank(TRIM(raw)) THEN fallback
-      ELSE TRIM(raw)
-    END
+  R: 'N.defaultIfBlank(N.trim(raw), fallback)'

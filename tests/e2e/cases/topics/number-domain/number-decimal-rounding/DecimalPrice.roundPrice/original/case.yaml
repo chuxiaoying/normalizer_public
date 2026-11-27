@@ -9,4 +9,4 @@ expected:
       value:
         position: 0
         type: number
-  R: ROUND(value, 2, "HALF_UP")
+  R: N.round(value, 2, N.HALF_UP)

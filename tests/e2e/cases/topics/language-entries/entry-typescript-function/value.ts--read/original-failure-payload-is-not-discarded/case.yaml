@@ -8,6 +8,5 @@ expected:
   R: value
   throws:
     - type: TypeError
-      when: 'typeof(value) != "string"'
+      when: '"string" != typeof(value)'
       payload: '"Text required"'
-      payload_type: text
