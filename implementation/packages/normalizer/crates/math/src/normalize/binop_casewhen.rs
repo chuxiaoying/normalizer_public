@@ -49,28 +49,11 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         return expr.clone();
     }
 
-    if matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul) {
+    if matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul) || op.comparison().is_some() {
         return reduce_integer_case(expr, *op, left, right, ctx)
             .unwrap_or_else(|| expr.clone());
     }
-
-    let (case, branches, other, case_on_left) = match (left_case, right_case) {
-        (Some(branches), None) => (left, branches, right, true),
-        (None, Some(branches)) => (right, branches, left, false),
-        _ => return expr.clone(),
-    };
-    if !is_leaf(other)
-        || branches.len() <= 4 && (case.size() > 2048 || case.depth() > 48)
-    {
-        return expr.clone();
-    }
-    let branches = branches.iter().map(|(guard, value)| {
-        let (a, b) = if case_on_left { (value, other) } else { (other, value) };
-        (guard.clone(), Expr::new(ExprKind::BinOp {
-            op: *op, left: a.clone(), right: b.clone(),
-        }))
-    }).collect();
-    Expr::new(ExprKind::CaseWhen { branches })
+    expr.clone()
 }
 
 /// A rejected candidate never escapes this local phase. Its guards and first-match
@@ -106,7 +89,10 @@ fn reduce_integer_case(
         // These are local, terminating rules, not a new normalization scope.
         let folded = super::constant::fold(&operation);
         let reduced = super::arithmetic::simplify(&folded);
-        (guard.clone(), super::integer_ac::simplify(&reduced, ctx))
+        let reduced = if op.comparison().is_some() {
+            super::integer_ranges::strict_endpoint(&reduced).unwrap_or(reduced)
+        } else { super::integer_ac::simplify(&reduced, ctx) };
+        (guard.clone(), reduced)
     }).collect::<Vec<_>>();
     let last = result.pop()?;
     let candidate = b::normal_return_case_when(result, last);
@@ -155,8 +141,4 @@ fn acquired_guard(value: &Expr) -> bool {
             acquired_integer(left) && acquired_integer(right),
         _ => false,
     }
-}
-
-fn is_leaf(expr: &Expr) -> bool {
-    matches!(expr.kind(), ExprKind::Lit(_) | ExprKind::SymVar { .. } | ExprKind::HeapRef(_))
 }
