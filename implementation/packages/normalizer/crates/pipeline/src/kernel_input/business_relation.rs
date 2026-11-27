@@ -350,7 +350,7 @@ impl<'a> Engine<'a> {
     pub(super) fn projected_union_count(
         &self, binding: &str, first: &(String, String), remaining: &[(String, String)], env: &mut Env,
     ) -> Result<()> {
-        let projection = |(source, field): &(String, String)| -> Result<(TableSource, String)> {
+        let projection = |(source, field): &(String, String)| -> Result<((TableSource, String), &'static str)> {
             let Some(Value::Rows(rows)) = env.get(source) else {
                 return Err(fail("projected union needs a declared table row source"));
             };
@@ -359,18 +359,24 @@ impl<'a> Engine<'a> {
             };
             need(rows.ordering.is_empty() && self.source_relations.tables.contains_key(name),
                 "projected union requires an unordered read-only table")?;
-            let Some(Value::Term(Ty::Integer, expression)) = rows.fields.get(field) else {
-                return Err(fail("projected union field must be a declared nonnullable integer"));
+            let Some(Value::Term(ty, expression)) = rows.fields.get(field) else {
+                return Err(fail("projected union needs a declared scalar field"));
             };
+            let ty = super::business_sql::column_type(ty, false)
+                .ok_or_else(|| fail("projected union field needs a supported SQL scalar type"))?;
             let column = expression.as_row_value().and_then(|path| path.split_once('.'))
                 .filter(|(root, _)| *root == alias)
                 .map(|(_, column)| column)
-                .filter(|column| self.source_relations.tables[name].get(*column).is_some_and(|ty| ty == "number"))
+                .filter(|column| self.source_relations.tables[name].get(*column).is_some_and(|declared| declared == ty))
                 .ok_or_else(|| fail("projected union field must be a direct nonnullable table column"))?;
-            Ok((TableSource { name: name.clone(), snapshot: *snapshot }, column.into()))
+            Ok(((TableSource { name: name.clone(), snapshot: *snapshot }, column.into()), ty))
         };
-        let first = projection(first)?;
-        let remaining = remaining.iter().map(projection).collect::<Result<Vec<_>>>()?;
+        let (first, ty) = projection(first)?;
+        let remaining = remaining.iter().map(|branch| {
+            let (column, declared) = projection(branch)?;
+            need(declared == ty, "projected union branches must have the same scalar type")?;
+            Ok(column)
+        }).collect::<Result<Vec<_>>>()?;
         let count = r::relation_count(RelationExpr::projected_union(first, remaining));
         env.insert(binding.into(), Value::Term(Ty::Integer, count));
         Ok(())
