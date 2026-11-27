@@ -44,3 +44,5 @@ R: |-
 | 只返回 `selected - shift` | 只使用一次，保持内联。 |
 | 直接返回 `selected * selected` | 两个相同的完整 CASE 可同步取臂；先化为 `CASE WHEN enabled THEN a * a ELSE b * b END`，没有需要提取的重复。 |
 | 原表达式再加 `include ? selected + shift : 0` | 第三个引用仍在外层条件域内内联；前两个同域引用仍共享一个 LET，不把这第三处纳入共同绑定。 |
+
+**嵌套候选对照**　令 `D = ((selected + shift) * a) - b`，返回由 `D, D, selected` 组成的单个值。在同一安全域里，提取 `selected` 后，D 只引用该绑定，本身不再含 CASE；完整结果只提取 `selected`，不能让 D 因为在内联基准中曾出现两次就再成一条无 CASE 的 LET。

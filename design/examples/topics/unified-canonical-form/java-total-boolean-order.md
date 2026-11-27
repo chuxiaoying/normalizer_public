@@ -79,7 +79,7 @@ class CanonicalChecks {
 }
 ```
 
-**原样通过。** 当 a 为假而 b、c 都为真时，先命中 b，应返回 20。不能直接把两个返回 10 的原条件写成 `a OR c`；只有 `b` 失败时第三个条件才有机会命中。10 的有效域是 `a OR (c AND NOT (b))`，20 的有效域是 `b AND NOT (a)`。按[纯布尔多臂 CASE](../../../chapters/08-统一定形.md#cf-11-纯布尔多臂-case-从有效域选形)比较所有结果排列及默认值：以 30 作默认值的两棵整式都需三个布尔运算；其他默认值至少四个。两棵同成本候选中，20 在前的首 WHEN 更简单，后续的 10 臂只需 `a OR c`。
+**原样通过。** 当 a 为假而 b、c 都为真时，先命中 b，应返回 20。不能直接把两个返回 10 的原条件写成 `a OR c`；只有 `b` 失败时第三个条件才有机会命中。10 的有效域是 `a OR (c AND NOT (b))`，20 的有效域是 `b AND NOT (a)`。按[纯布尔 CASE](../../../chapters/08-统一定形.md#cf-11-纯布尔-case-从有效域选形)比较所有结果排列及默认值：以 30 作默认值的两棵整式都需三个布尔运算；其他默认值至少四个。两棵同成本候选中，20 在前的首 WHEN 更简单；该首臂的 `a != (a OR b)` 与 `b AND NOT(a)` 同域同成本，`!=` 排前，后续的 10 臂只需 `a OR c`。
 
 ```yaml
 schema: normalizer.pers/1
@@ -91,7 +91,7 @@ P:
     c: { position: 2, type: bool }
 R: |-
   CASE
-    WHEN b AND NOT (a) THEN 20
+    WHEN a != (a OR b) THEN 20
     WHEN a OR c THEN 10
     ELSE 30
   END
@@ -150,3 +150,7 @@ R: common OR other
 证明预算不足只表示这轮没有得到结论，不是找到反例。对同一范围，例如「`x > 4 AND x > 2` 是否推出 `x > 3`」，证明器预算用完时不作该化简；换成有预算的请求仍可证明，不能复用上次的“没有证明”作为否定答案。 若缺少此证明会阻断已承诺的定形，则最终报告未完成。
 
 **相关入参对照**　只在 `a == b` 的父域内，将局部 CASE 的 `b AND c → 10，b → 20，ELSE 30` 改用 a，结果不变：两者都应定为 `CASE WHEN a AND c THEN 10 WHEN a THEN 20 ELSE 30 END`。例如 `(a,b,c) = (true,true,false)` 得 20，而 `(false,false,false)` 得 30，不能因两个输入无法在该域内单独翻转而删掉它们。
+
+在同一 `a == b` 父域，两条都返回 10 的分支合并之后，`CASE WHEN b THEN 10 ELSE 20 END` 与原本就用 a 的二分都归到 `CASE WHEN a THEN 10 ELSE 20 END`。合并前有几个臂不影响选形。
+
+**布尔等值对照**　同签名的已取得布尔参数上，用 `a == b` 或 `(a && b) || !(a || b)` 守卫 10，默认返回 20。两份 R 都是 `CASE WHEN a == b THEN 10 ELSE 20 END`；等式只计一次运算，不能因生成文法遗漏它而展开。

@@ -48,9 +48,11 @@ P:
     detailed: { position: 1, type: bool }
 R: |-
   CASE
-    WHEN detailed AND NOT (failed) THEN 2
-    ELSE 0
+    WHEN detailed == (detailed AND failed) THEN 0
+    ELSE 2
   END
 ```
 
 **判别例**　成功且详细时索引 0 仍占位，追踪项恰好两项；普通成功为零；失败时缺少第二槽，即使 detailed 为真也返回零。
+
+两种结果的最小守卫各需两次布尔运算。已取得的同一对布尔入参上，`detailed == (detailed AND failed)` 恰好覆盖返回零的域，和返回 2 的不等式互补。按[完整纯布尔 CASE](../../../chapters/08-统一定形.md#cf-11-纯布尔-case-从有效域选形)比较整式，`==` 在 `!=` 和 AND 前，故选零臂在前；并不移动源码中的槽读取。
