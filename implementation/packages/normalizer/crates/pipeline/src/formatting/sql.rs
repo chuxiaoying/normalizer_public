@@ -494,7 +494,9 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if let Some((op, operand)) = expr.as_unary_op() {
         match op {
             UnaryOpKind::Not => {
-                if let Some(rendered) = try_format_not_exists_as_count_zero(operand, ctx) {
+                if let Some(rendered) = try_format_not_exists_as_count_zero(operand, ctx)
+                    .or_else(|| relation_query::render_empty_test(operand, ctx))
+                {
                     return rendered;
                 }
                 let inner = format_expr_with_ctx(operand, ctx);

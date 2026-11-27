@@ -33,6 +33,23 @@ fn table_reference(physical: &str, snapshot: Option<u64>, ctx: &crate::FormatCtx
 }
 
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
+    render_aggregate(expr, ctx, false)
+}
+
+pub(super) fn render_empty_test(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
+    let (kind, _, _, _) = expr.as_relation_aggregate()?;
+    (kind == math::RelationAggregateKind::Exists).then(|| render_aggregate(expr, ctx, true))?
+}
+
+// The PERS relation contract expresses presence by testing the exact
+// count of the already acquired, filtered rows. The internal existence
+// proof does not create a second output operator or another table read.
+fn presence_test(clauses: &str, empty: bool) -> String {
+    let comparison = if empty { "==" } else { "<" };
+    format!("0 {comparison} COALESCE(SUM(SELECT 1 {clauses}), 0)")
+}
+
+fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Option<String> {
     let (kind, mut relation, mut value, default) = expr.as_relation_aggregate()?;
     let mut nth = None;
     if kind == math::RelationAggregateKind::NthValue {
@@ -158,7 +175,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         && value.as_row_value().is_some_and(|column| ctx.nullable_columns.contains(column))
         && default.is_some_and(|fallback| !fallback.is_null());
     let presence = nullable_first.then(|| {
-        format!("EXISTS (SELECT 1 {})", inline_body(&clauses))
+        presence_test(&inline_body(&clauses), false)
     });
     if !keys.is_empty() {
         clauses.push(format!(
@@ -183,7 +200,7 @@ pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> 
         return Some(format!("SELECT COUNT({prefix}{projection}) {}", inline_body(&clauses)));
     }
     if kind == math::RelationAggregateKind::Exists {
-        return Some(format!("EXISTS (SELECT {projection} {})", inline_body(&clauses)));
+        return Some(presence_test(&inline_body(&clauses), empty));
     }
     if kind == math::RelationAggregateKind::FirstValue && (default.is_some_and(Expr::is_null) || nullable_first) {
         let first = format!("FIRST({projection} {})", inline_body(&clauses));
