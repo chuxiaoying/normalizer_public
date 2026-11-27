@@ -57,7 +57,7 @@ P:
     initial: { position: 2, type: number }
     step: { position: 3, type: number }
 T:
-  - { id: $t_0, op: fold, type: number, source: values, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item + CASE WHEN enabled THEN step ELSE 0 END' }
+  - { id: $t_0, op: fold, type: number, source: values, initial: initial, accumulator: acc, element: item, body: 'item + acc * 2 + CASE WHEN enabled THEN step ELSE 0 END' }
 R: $t_0 * $t_0
 ```
 

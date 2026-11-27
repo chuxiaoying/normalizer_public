@@ -38,7 +38,7 @@ P:
       position: 1
       type: number
 
-R: major * 100 + minor
+R: minor + major * 100
 ```
 
 **预处理要点**：精度规则已经是业务代码时，AI 只交付原生表达式，不能用金额库名替代规则。

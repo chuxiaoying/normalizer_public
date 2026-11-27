@@ -38,7 +38,7 @@ S:
       target: 'values[0]'
       value: next
       when: 0 < LENGTH(values)
-R: COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values) + next
+R: next + (COALESCE(SUM(SELECT value FROM values), 0) - FIRST(value FROM values))
 throws:
   - { type: java.lang.ArrayIndexOutOfBoundsException, when: '0 == LENGTH(values)' }
 ```
