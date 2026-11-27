@@ -353,7 +353,7 @@ impl<'a> Parser<'a> {
             }
         };
         self.skip_ws();
-        let condition = Some(self.parse_expression()?);
+        let condition = if self.peek() == Some(b';') { None } else { Some(self.parse_expression()?) };
         self.skip_ws();
         self.require_semicolon("for condition")?;
         self.skip_ws();
@@ -478,6 +478,10 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
+        if resource.is_none() && catches.is_empty() && finally.is_none() {
+            return Err(self.err("[JAVA-TRY] try requires a resource, a catch, or finally"));
+        }
 
         Ok(JavaStatement::Try {
             resource, body: try_body,
@@ -648,7 +652,7 @@ impl<'a> Parser<'a> {
             self.pos += 1;
             let then_e = self.parse_expression()?; // 右结合
             self.require_delimiter(b':', "expected ':' in ternary")?;
-            let else_e = self.parse_expression()?;
+            let else_e = self.parse_ternary()?;
             return Ok(JavaExpr::Ternary {
                 cond: Box::new(cond),
                 then_expr: Box::new(then_e),
@@ -891,7 +895,8 @@ impl<'a> Parser<'a> {
         // parenthesized name precedes '+' or '-', let binary/postfix parsing
         // continue instead of consuming the operator as a cast operand.
         let is_expr_start = match self.peek() {
-            Some(c) if c.is_ascii_alphanumeric() || c == b'_' || c == b'$' => true,
+            Some(c) if c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'(' | b'"' | b'\'' | b'!' | b'~') => true,
+            Some(b'.') => self.peek_at(1).is_some_and(|digit| digit.is_ascii_digit()),
             _ => false,
         };
         if !is_expr_start {
