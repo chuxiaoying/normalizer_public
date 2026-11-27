@@ -594,16 +594,27 @@ pub struct ValuePlan {
 pub fn canonical_let_plan(
     value: &Expr, ctx: &dyn SortContext, choices: &[ChoiceOperands], eligible: impl Fn(&Expr) -> bool,
 ) -> Result<ValuePlan, &'static str> {
-    fn occurrences(expr: &Expr, eligible: &impl Fn(&Expr) -> bool, counts: &mut HashMap<Expr, usize>) {
-        if expr.has_case_when() && eligible(expr) { *counts.entry(expr.clone()).or_default() += 1; }
-        for child in let_eager_children(expr) { occurrences(child, eligible, counts); }
+    fn occurrences(
+        expr: &Expr, key: &Rc<CanonicalKey>, eligible: &impl Fn(&Expr) -> bool,
+        counts: &mut HashMap<Expr, (usize, Rc<CanonicalKey>)>,
+    ) {
+        // A retained REDUCE owns the CASEs in its YIELD; an acquisition
+        // reference or LET reference does not own any expression behind it.
+        if key.arms == BigUint::default() { return; }
+        if eligible(expr) {
+            counts.entry(expr.clone()).or_insert_with(|| (0, key.clone())).0 += 1;
+        }
+        for (index, child) in let_eager_children(expr).into_iter().enumerate() {
+            let slot = key.children[index].as_ref().expect("eager key slot");
+            occurrences(child, slot, eligible, counts);
+        }
     }
 
-    let mut counts = HashMap::new();
-    if value.has_case_when() { occurrences(value, &eligible, &mut counts); }
-    let mut candidates: Vec<_> = counts.into_iter().filter(|(_, count)| *count >= 2)
-        .map(|(expr, _)| { let key = canonical_order_key(&expr, ctx); (expr, key) }).collect();
     let inline = canonical_order_key(value, ctx);
+    let mut counts = HashMap::new();
+    occurrences(value, &inline, &eligible, &mut counts);
+    let mut candidates: Vec<_> = counts.into_iter().filter_map(|(expr, (count, key))|
+        (count >= 2).then_some((expr, key))).collect();
     let inline_full = wrap_choices(inline.clone(), choices);
     if candidates.is_empty() {
         return Ok(ValuePlan { key: inline_full, payload: value.clone(), definitions: vec![] });

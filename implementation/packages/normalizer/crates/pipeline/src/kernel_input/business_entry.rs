@@ -605,7 +605,7 @@ impl EntryContext {
             }
             ctx.set_temporal_names(definition_names.clone());
             ctx.set_relation_slots(publication.slots.clone());
-            ctx.set_reductions(publication.reductions.clone());
+            ctx.set_reductions(publication.reductions.clone(), publication.total.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());

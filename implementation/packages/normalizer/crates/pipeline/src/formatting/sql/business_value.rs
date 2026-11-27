@@ -8,7 +8,7 @@ fn direct_input(value: &Expr, ctx: &FormatCtx) -> bool {
 }
 
 fn total_value(value: &Expr, ctx: &FormatCtx, row: Option<&str>) -> bool {
-    if value.as_lit().is_some() || direct_input(value, ctx) { return true; }
+    if value.as_lit().is_some() || direct_input(value, ctx) || ctx.is_total_reduce(value) { return true; }
     if let Some(alias) = value.as_row_value() { return row == Some(alias); }
     if let Some((_, operand)) = value.as_unary_op() { return total_value(operand, ctx, row); }
     if let Some((_, left, right)) = value.as_binop() {
@@ -51,7 +51,7 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&Expr,
     let mut definitions = Vec::new();
     for (slot, expression) in plan.definitions.into_iter().enumerate() {
         let name = format!("$l_{slot}");
-        definitions.push(format!("LET {name} = {}", super::format_expr_with_ctx(&expression, ctx)));
+        definitions.push(ctx.format_let_definition(&name, &expression));
         ctx.display_business_value(expression, name);
     }
     // Choose bindings from the pre-rewrite value. A simplifying rule can

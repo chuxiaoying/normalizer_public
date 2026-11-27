@@ -441,7 +441,7 @@ pub(super) fn observations(
         };
         ctx.set_temporal_names(publication.aliases);
         ctx.set_relation_slots(publication.slots);
-        ctx.set_reductions(publication.reductions);
+        ctx.set_reductions(publication.reductions, publication.total);
         let normal_domain = math::normalize(alternatives.as_slice().iter()
             .filter(|alternative| matches!(&alternative.outcome, TerminalOutcome::Return(_)))
             .fold(b::lit_bool(false), |domain, alternative| b::or(domain, alternative.guard.clone())));

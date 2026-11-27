@@ -28,6 +28,7 @@ pub struct FormatCtx {
     record_arrays: std::collections::BTreeSet<String>,
     temporal_names: std::collections::BTreeMap<u64, usize>,
     reductions: std::collections::BTreeMap<u64, math::ReduceShape>,
+    total_temporals: std::collections::BTreeSet<u64>,
     relation_scope: scoped_relation::Scope,
     scoped_plans: Option<scoped_relation::ScopedPlans>,
     business_identities: std::collections::BTreeMap<i64, String>,
@@ -55,6 +56,7 @@ impl Default for FormatCtx {
             record_arrays: Default::default(),
             temporal_names: Default::default(),
             reductions: Default::default(),
+            total_temporals: Default::default(),
             relation_scope: Default::default(),
             scoped_plans: None,
             business_identities: Default::default(),
@@ -133,8 +135,16 @@ impl FormatCtx {
         self.temporal_names = names;
     }
 
-    pub(crate) fn set_reductions(&mut self, reductions: std::collections::BTreeMap<u64, math::ReduceShape>) {
+    pub(crate) fn set_reductions(
+        &mut self, reductions: std::collections::BTreeMap<u64, math::ReduceShape>,
+        total: std::collections::BTreeSet<u64>,
+    ) {
         self.reductions = reductions;
+        self.total_temporals = total;
+    }
+    fn is_total_reduce(&self, value: &Expr) -> bool {
+        matches!(value.as_sym_var(), Some(SymVarOrigin::Temporal { binding_id, .. })
+            if self.total_temporals.contains(binding_id) && self.reductions.contains_key(binding_id))
     }
 
     pub(crate) fn set_relation_slots(&mut self, slots: Vec<scoped_relation::Slot>) {
@@ -167,17 +177,33 @@ impl FormatCtx {
         use scoped_relation::Slot;
         let slots = self.relation_scope.slots.clone();
         match &slots[slot] {
-            Slot::Fold { source, initial, body } => {
-                let source = self.uncaptured_name("P", source);
-                let initial = self.relation_operand(initial);
-                let prior = std::mem::replace(&mut self.relation_scope.in_reduce_yield, true);
-                let body = format_expr_with_ctx(body, self);
-                self.relation_scope.in_reduce_yield = prior;
-                format!("REDUCE({source} FROM {initial} AS (acc, item) YIELD {body})")
-            },
+            Slot::Fold { source, initial, body } => self.format_fold(source, initial, body, None),
             Slot::Choice { .. } => self.relation_scope.members.get(&slot)
                 .expect("choice must be bound in its certified acquisition domain").clone(),
         }
+    }
+
+    fn format_fold(&mut self, source: &str, initial: &scoped_relation::Operand, body: &Expr, indent: Option<usize>) -> String {
+        let source = self.uncaptured_name("P", source);
+        let initial = self.relation_operand(initial);
+        let prior = std::mem::replace(&mut self.relation_scope.in_reduce_yield, true);
+        let body = format_expr_with_ctx(body, self);
+        self.relation_scope.in_reduce_yield = prior;
+        let gap = indent.map_or_else(|| " ".into(), |n| format!("\n{}", " ".repeat(n + "REDUCE(".len())));
+        format!("REDUCE({source} FROM {initial} AS (acc, item){gap}YIELD {body})")
+    }
+
+    fn format_let_definition(&mut self, name: &str, expression: &Expr) -> String {
+        let prefix = format!("LET {name} = ");
+        if let Some(SymVarOrigin::Temporal { binding_id, .. }) = expression.as_sym_var() {
+            if let Some(&slot) = self.temporal_names.get(binding_id) {
+                let slots = self.relation_scope.slots.clone();
+                if let scoped_relation::Slot::Fold { source, initial, body } = &slots[slot] {
+                    return format!("{prefix}{}", self.format_fold(source, initial, body, Some(prefix.len())));
+                }
+            }
+        }
+        format!("{prefix}{}", format_expr_with_ctx(expression, self))
     }
 
     fn eligible_choices(
@@ -215,7 +241,7 @@ impl FormatCtx {
         let keys = self.prepare_value_keys(value, external, active, bound, true);
         let compare = crate::canonical_names::ScopedValueKeys {
             base: CanonicalNames { heap: &self.heap_bindings, completion_classes: None,
-                external: (!external.is_empty()).then_some(external), total_temporals: None,
+                external: (!external.is_empty()).then_some(external), total_temporals: Some(&self.total_temporals),
                 reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
             slots: &keys.lexical, cases: &keys.cases, in_reduce_body: self.relation_scope.in_reduce_yield,
         };
