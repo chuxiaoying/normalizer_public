@@ -361,8 +361,15 @@ pub(super) fn observations(
             }
         }
     }
+    let public_guards = crate::canonical_names::CanonicalNames {
+        heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: None,
+        external: Some(ctx.observation_identities()),
+        total_temporals: None, reductions: None, temporals: None,
+    };
     for (_, _, guard) in &mut exceptions {
-        *guard = math::normalize::canonical_terminal_guard(guard.clone());
+        let stable_guard = math::try_normalize_with(guard.clone(), &public_guards)
+            .map_err(|error| fail(error.to_string()))?;
+        *guard = math::normalize::canonical_terminal_guard(stable_guard);
     }
     // PERS-05 applies equally to typed payloads and to type-only exits.
     // A proof about two tags concerns the same acquired receipt only.

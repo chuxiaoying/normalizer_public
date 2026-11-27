@@ -251,11 +251,14 @@ impl Keys<'_> {
                 };
                 binding(class, origin.primitive_type(), id)
             }
-            HeapRef(id) => binding(Class::Reference, "reference", match ctx.heap_binding_identity(*id) {
-                Some(HeapBindingIdentity::Parameter(path)) => Identity::Parameter(path.clone()),
-                Some(HeapBindingIdentity::EntrySnapshot(path)) => Identity::EntrySnapshot(path.clone()),
-                None => Identity::InternalHeap(*id),
-            }),
+            HeapRef(id) => match ctx.heap_binding_identity(*id) {
+                Some(HeapBindingIdentity::Parameter(parts)) =>
+                    binding(if parts.len() == 1 { Class::Reference } else { Class::Read },
+                        "reference", Identity::Parameter(parts.clone())),
+                Some(HeapBindingIdentity::EntrySnapshot(parts)) =>
+                    binding(Class::Reference, "reference", Identity::EntrySnapshot(parts.clone())),
+                None => binding(Class::Reference, "reference", Identity::InternalHeap(*id)),
+            },
             RowValue { sql: Some(column), .. } => {
                 // Physical column ownership belongs to stable identity, not
                 // to the comparison type or operation contract. The current
