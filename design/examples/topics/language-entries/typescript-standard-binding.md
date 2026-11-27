@@ -23,7 +23,7 @@ entry:
   returns: text
 P:
   parameters:
-    raw: {position: 0, type: text?}
+    raw: {position: 0, type: 'text?'}
     fallback: {position: 1, type: text}
 R: |-
   CASE
