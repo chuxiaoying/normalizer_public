@@ -99,3 +99,5 @@ R: value + 1
 已知新建对象的类型测试比较真实声明，不靠变量名称。把 `new OtherCode()` 绑定到 `Object code`，是合法 Java；`code instanceof TicketCode` 为假，原输入照常返回。反过来，新建的 TicketCode 一定满足 `instanceof java.lang.Object`。这两个对照都不改变 P，也不创造 E 或 S。
 
 闭合的双参数泛型积在实例化后仍按构造器赋值绑定字段：即使先声明 second、再声明 first，`Pair<String,java.lang.String>("LEFT", "right")` 的 first 仍取第一个参数，second 仍取第二个。两种 String 拼写不改变值域，按 first、second 拼接的结果是 `"LEFTright"`，不观察对象身份、不产生 S。
+
+内置标记的名字按真实声明绑定。项目类不能伪装成 `normalizer.intrinsics.N`，也不能遮蔽同一个分析工程显式导入的 `N`；没有该导入时，普通应用类 `N` 仍然只是应用类。

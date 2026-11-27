@@ -69,3 +69,7 @@
   edits:
     - {from: 'int value;', to: 'int value; Counter(int initial) { this.value = initial; }'}
     - {from: 'new Counter();', to: 'new Counter(7);'}
+
+- name: repeating-the-same-intrinsic-import-preserves-state-binding
+  edits:
+    - {from: 'import normalizer.intrinsics.N;', to: 'import normalizer.intrinsics.N; import normalizer.intrinsics.N;'}

@@ -619,11 +619,7 @@ fn parse_class_body(
 ) -> Result<(), ParseError> {
     let mut p = Parser::new(body, file).with_surrogates(surrogates);
     // Source admission separately rejects project declarations shadowing N.
-    p.official_n = !class.has_unbound_imports
-        && class.imports.iter().any(|name| name == "normalizer.intrinsics.N")
-        && !class.imports.iter().any(|name| {
-            name != "normalizer.intrinsics.N" && name.rsplit('.').next() == Some("N")
-        });
+    p.official_n = class.imports_normalizer_intrinsics();
     p.imports.clone_from(&class.imports);
 
     loop {

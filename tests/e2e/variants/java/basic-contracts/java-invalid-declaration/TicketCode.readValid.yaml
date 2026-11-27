@@ -506,3 +506,17 @@
 - name: an-unused-nested-class-can-start-with-a-keyword
   edits:
     - { from: 'class TicketCode {', to: 'class TicketCode { static class returnValue {}' }
+
+- name: a-project-class-cannot-claim-the-fully-qualified-intrinsic-namespace
+  edits:
+    - {from: 'class TicketCode {', to: 'class normalizer { static class intrinsics { static class N {} } } class TicketCode {'}
+  reject: ['[NORM-INTRINSIC-SHADOW]', 'normalizer.intrinsics.N']
+
+- name: a-project-class-cannot-shadow-the-explicit-intrinsic-import
+  edits:
+    - {from: 'class TicketCode {', to: 'import normalizer.intrinsics.N; class N {} class TicketCode {'}
+  reject: ['[NORM-INTRINSIC-SHADOW]', 'normalizer.intrinsics.N']
+
+- name: an-ordinary-n-without-the-intrinsic-import-keeps-its-own-identity
+  edits:
+    - {from: 'class TicketCode {', to: 'class N {} class TicketCode {'}

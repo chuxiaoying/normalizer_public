@@ -323,7 +323,7 @@ pub(crate) fn source_layouts(
 }
 const ENTRY_STATE: &str = "normalizer.annotations.EntryState";
 const NULLABLE: &str = "normalizer.annotations.Nullable";
-pub(crate) const N_IMPORT: &str = "normalizer.intrinsics.N";
+use simulator_parser::NORMALIZER_INTRINSICS_IMPORT as N_IMPORT;
 
 fn official_member(marker: &str) -> Option<(&'static str, &'static str)> {
     match marker {
@@ -332,13 +332,6 @@ fn official_member(marker: &str) -> Option<(&'static str, &'static str)> {
         source_ports::IMPORT => Some(("N.External", "normalizer.intrinsics.N.External")),
         _ => None,
     }
-}
-
-pub(crate) fn imports_official_n(class: &simulator_parser::JavaClass) -> bool {
-    class.imports().iter().any(|name| name == N_IMPORT)
-        && class.imports().iter().all(|name| name == N_IMPORT
-            || name.rsplit('.').next() != Some("N"))
-        && !class.has_unbound_imports()
 }
 
 /// The closed Java profile admits no package declarations. Refuse an ambiguous
@@ -350,7 +343,7 @@ fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
         let name = class.simple_name();
         name == N_IMPORT || name.strip_prefix(N_IMPORT).is_some_and(|tail| tail.starts_with('.'))
     });
-    if counterfeit_namespace || declared_n && program.classes().iter().any(imports_official_n) {
+    if counterfeit_namespace || declared_n && program.classes().iter().any(|class| class.imports_normalizer_intrinsics()) {
         return Err(error("NORM-INTRINSIC-SHADOW", N_IMPORT));
     }
     for (qualified, alias) in [("java.math.BigDecimal", "BigDecimal"), ("java.time.LocalDate", "LocalDate")] {
@@ -364,11 +357,19 @@ fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
     Ok(())
 }
 
-fn official_marker(class: &simulator_parser::JavaClass, annotations: &[AnnotationRef], qualified: &str) -> bool {
-    let [annotation] = annotations else { return false; };
-    !annotation.has_arguments() && official_member(qualified).is_some_and(|(short, full)| {
-        annotation.name() == full || (annotation.name() == short && imports_official_n(class))
+fn bare_annotation(annotations: &[AnnotationRef]) -> Option<&str> {
+    let [annotation] = annotations else { return None; };
+    (!annotation.has_arguments()).then(|| annotation.name())
+}
+
+fn official_marker_name(class: &simulator_parser::JavaClass, name: &str, qualified: &str) -> bool {
+    official_member(qualified).is_some_and(|(short, full)| {
+        name == full || (name == short && class.imports_normalizer_intrinsics())
     })
+}
+
+fn official_marker(class: &simulator_parser::JavaClass, annotations: &[AnnotationRef], qualified: &str) -> bool {
+    bare_annotation(annotations).is_some_and(|name| official_marker_name(class, name, qualified))
 }
 
 fn source_marker(
@@ -376,17 +377,14 @@ fn source_marker(
     annotations: &[AnnotationRef],
     qualified: &str,
 ) -> bool {
-    let [annotation] = annotations else { return false; };
-    if annotation.has_arguments() {
-        return false;
-    }
-    if official_marker(class, annotations, qualified) {
+    let Some(name) = bare_annotation(annotations) else { return false; };
+    if official_marker_name(class, name, qualified) {
         return true;
     }
     // Continue decoding explicitly bound legacy annotations in existing
     // adapters; an application marker with only a matching suffix is not one.
-    annotation.name() == qualified
-        || (qualified.rsplit('.').next() == Some(annotation.name())
+    name == qualified
+        || (qualified.rsplit('.').next() == Some(name)
             && class.imports().iter().any(|name| name == qualified))
 }
 

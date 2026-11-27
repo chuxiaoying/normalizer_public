@@ -28,7 +28,7 @@ mod parser;
 
 pub use ast::{
     AnnotationRef, CatchClause, JavaBinOp, JavaClass, JavaExpr, JavaField, JavaLit, JavaMethod,
-    JavaProgram, JavaStatement, JavaType, JavaUnaryOp,
+    JavaProgram, JavaStatement, JavaType, JavaUnaryOp, NORMALIZER_INTRINSICS_IMPORT,
 };
 pub use parser::{parse, ParseError, ParseOptions};
 pub(crate) mod body_parser;

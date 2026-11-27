@@ -7,6 +7,8 @@
 //! - BinOp/UnaryOp 强类型枚举，编译期防打错 + 模式穷尽
 //! - parser 不做类型推断（权责交给 resolver）
 
+pub const NORMALIZER_INTRINSICS_IMPORT: &str = "normalizer.intrinsics.N";
+
 /// Java 程序：一组类定义的集合。
 #[derive(Debug, Clone)]
 pub struct JavaProgram {
@@ -72,6 +74,15 @@ impl JavaClass {
 
     pub fn imports(&self) -> &[String] {
         &self.imports
+    }
+
+    /// Does the simple name N have the one supported explicit import?
+    /// Project-wide source declarations are checked by source admission.
+    pub fn imports_normalizer_intrinsics(&self) -> bool {
+        let mut candidates = self.imports.iter().filter(|name| name.rsplit('.').next() == Some("N"));
+        !self.has_unbound_imports
+            && candidates.next().is_some_and(|name| name == NORMALIZER_INTRINSICS_IMPORT)
+            && candidates.all(|name| name == NORMALIZER_INTRINSICS_IMPORT)
     }
     pub fn has_unknown_import_origins(&self) -> bool { self.has_unknown_import_origins }
 

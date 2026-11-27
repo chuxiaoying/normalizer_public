@@ -31,7 +31,7 @@ pub(crate) fn bound_receiver(
     receiver: &str,
 ) -> bool {
     let bound = match receiver {
-        "N" => crate::normalized::imports_official_n(class),
+        "N" => class.imports_normalizer_intrinsics(),
         "NormalizedText" => class.imports().iter().any(|import| import == SOURCE_IMPORT),
         _ => false,
     };
