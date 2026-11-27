@@ -22,7 +22,11 @@ impl Engine<'_> {
             "local stack or its output is not a fresh closed binding",
         )?;
         need(self.selected_entry.id == method, "local stack requires typed entry arrays")?;
-        need(exception == "IllegalArgumentException", "local stack uses the same supported type-only exception for both guards")?;
+        let exception = self.project.source_exception_bindings.get(method)
+            .and_then(|bindings| bindings.get(exception))
+            .filter(|name| self.project.type_only_exception(name))
+            .ok_or_else(|| fail("local stack requires its resolved type-only exception"))?
+            .clone();
         let root_of = |local: &str| -> Result<(String, &str)> {
             let Some(Value::Sequence { item: Ty::Ref, name, .. }) = env.get(local)
                 else { return Err(fail("local stack requires bound record arrays")); };
@@ -39,7 +43,7 @@ impl Engine<'_> {
             f.name() == field && crate::normalized::integral(f.java_type())),
             "local stack requires one declared integer field in the same input record type")?;
         let (empty, failed) = math::domains::relation::positional::reverse_stack_completion(&opens, &closes, field);
-        self.throw_source_on_path(b::and(path, failed), "java.lang.IllegalArgumentException");
+        self.throw_source_on_path(b::and(path, failed), &exception);
         env.insert(binding.clone(), Value::Term(Ty::Bool, math::normalize(empty)));
         Ok(4)
     }

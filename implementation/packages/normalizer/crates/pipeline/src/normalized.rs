@@ -419,6 +419,7 @@ const SOURCE_BUILTIN_EXCEPTIONS: &[(&str, Option<&str>)] = &[
     (RUNTIME_EXCEPTION, Some("java.lang.Exception")),
     ("java.lang.NullPointerException", Some(RUNTIME_EXCEPTION)),
     ("java.lang.ArithmeticException", Some(RUNTIME_EXCEPTION)),
+    ("java.lang.IllegalArgumentException", Some(RUNTIME_EXCEPTION)),
     ("java.lang.IndexOutOfBoundsException", Some(RUNTIME_EXCEPTION)),
     ("java.lang.ArrayIndexOutOfBoundsException", Some("java.lang.IndexOutOfBoundsException")),
     ("java.lang.NegativeArraySizeException", Some(RUNTIME_EXCEPTION)),
@@ -875,6 +876,16 @@ impl CatchAdmission<'_> {
         Ok(name)
     }
 
+    fn bind_stack_failure(&mut self, at: &str, raw: &str) -> Result<(), String> {
+        let owner = at.rsplit_once('.').map_or("", |(owner, _)| owner);
+        let name = exception_name(raw, owner, self.parents)
+            .filter(|name| builtin_exception_name(name).is_some()
+                || self.program.find_class(name).is_some_and(|class| class.fields().is_empty()))
+            .ok_or_else(|| error("NORM-STACK-EXCEPTION", &format!("{at}: {raw} requires a declared type-only exception")))?;
+        self.resolved.insert(raw.into(), name);
+        Ok(())
+    }
+
     fn bind_finally_throw(&mut self, at: &str, raw: &str) -> Result<(), String> {
         let owner = at.rsplit_once('.').map_or("", |(owner, _)| owner);
         let name = exception_name(raw, owner, self.parents)
@@ -896,6 +907,9 @@ fn unsupported_finally_throw(at: &str) -> String {
 fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>, inside_finally: bool) -> Result<(), String> {
     for stmt in body {
         match stmt {
+            S::LocalIr(normalizer_ir::local::LocalIr::Stack(
+                normalizer_ir::local::stack::Action::CheckAndPop { exception, .. },
+            )) => catch_admission.bind_stack_failure(at, exception)?,
             S::LocalIr(normalizer_ir::local::LocalIr::CountRange { .. }
                 | normalizer_ir::local::LocalIr::FoldIndexRange { .. }
                 | normalizer_ir::local::LocalIr::MemberChoice { .. }

@@ -245,10 +245,8 @@ impl Project {
     }
 }
 pub(super) fn builtin_exception(name: &str) -> bool {
-    // The normalized action wire has one additional declared type with
-    // no implicit source operation. Wire names remain fully qualified.
-    name == "java.lang.IllegalArgumentException"
-        || crate::normalized::builtin_exception_name(name) == Some(name)
+    // Wire names remain fully qualified.
+    crate::normalized::builtin_exception_name(name) == Some(name)
 }
 fn adapter_scalar_domain(domain: &str) -> Option<Ty> {
     match domain {
