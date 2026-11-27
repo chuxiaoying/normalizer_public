@@ -520,3 +520,27 @@
 - name: an-ordinary-n-without-the-intrinsic-import-keeps-its-own-identity
   edits:
     - {from: 'class TicketCode {', to: 'class N {} class TicketCode {'}
+
+- name: a-project-class-cannot-claim-the-standard-decimal-namespace
+  edits:
+    - {from: 'class TicketCode {', to: 'class java { static class math { static class BigDecimal {} } } class TicketCode {'}
+  reject: ['[NORM-INTRINSIC-SHADOW]', 'java.math.BigDecimal']
+
+- name: a-project-decimal-class-cannot-shadow-the-explicit-standard-import
+  edits:
+    - {from: 'class TicketCode {', to: 'import java.math.BigDecimal; class BigDecimal {} class TicketCode {'}
+  reject: ['[NORM-INTRINSIC-SHADOW]', 'java.math.BigDecimal']
+
+- name: a-project-class-cannot-claim-the-standard-calendar-namespace
+  edits:
+    - {from: 'class TicketCode {', to: 'class java { static class time { static class LocalDate {} } } class TicketCode {'}
+  reject: ['[NORM-INTRINSIC-SHADOW]', 'java.time.LocalDate']
+
+- name: a-project-calendar-class-cannot-shadow-the-explicit-standard-import
+  edits:
+    - {from: 'class TicketCode {', to: 'import java.time.LocalDate; class LocalDate {} class TicketCode {'}
+  reject: ['[NORM-INTRINSIC-SHADOW]', 'java.time.LocalDate']
+
+- name: application-types-with-standard-simple-names-do-not-become-builtins-without-imports
+  edits:
+    - {from: 'class TicketCode {', to: 'class BigDecimal {} class LocalDate {} class TicketCode {'}

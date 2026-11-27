@@ -101,3 +101,5 @@ R: value + 1
 闭合的双参数泛型积在实例化后仍按构造器赋值绑定字段：即使先声明 second、再声明 first，`Pair<String,java.lang.String>("LEFT", "right")` 的 first 仍取第一个参数，second 仍取第二个。两种 String 拼写不改变值域，按 first、second 拼接的结果是 `"LEFTright"`，不观察对象身份、不产生 S。
 
 内置标记的名字按真实声明绑定。项目类不能伪装成 `normalizer.intrinsics.N`，也不能遮蔽同一个分析工程显式导入的 `N`；没有该导入时，普通应用类 `N` 仍然只是应用类。
+
+标准十进制数和日历日期也按已声明的类型绑定。工程里的同名类不能伪装成 `java.math.BigDecimal` 或 `java.time.LocalDate`，也不能覆盖对应的显式导入；没有该导入且名字不占用标准库的全限定名时，未调用的同名应用类不应改变正常入口。
