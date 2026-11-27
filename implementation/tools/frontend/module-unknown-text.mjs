@@ -1,5 +1,5 @@
-// A narrow, checked native TypeScript type-test boundary. No assertion,
-// coercion, shadowed constructor or unsupported type use is lowered.
+// A checked native TypeScript type-test boundary. A conversion is transparent
+// only when the branch already proves the same acquired native value.
 import ts from 'typescript';
 import {isLocalExportList, textWireValue, unwrapParens} from './ir.mjs';
 
@@ -45,7 +45,22 @@ export function guardedUnknownText(sf, fn, checker, fail) {
   const normal = equal ? taken : alternate;
   const failure = equal ? alternate : taken;
   const returned = normal && ts.isReturnStatement(normal) && normal.expression && unwrapParens(normal.expression);
-  if (!returned || !sameBinding(returned) || !(checker.getTypeAtLocation(returned).flags & ts.TypeFlags.String)) {
+  let observed = returned;
+  if (returned && ts.isCallExpression(returned) && !returned.questionDotToken
+      && !returned.typeArguments?.length && returned.arguments.length === 1) {
+    const callee = unwrapParens(returned.expression);
+    if (ts.isIdentifier(callee) && callee.text === 'String'
+        && checker.getSymbolAtLocation(callee)?.declarations?.length
+        && checker.getSymbolAtLocation(callee).declarations.every(d => {
+          const owner = d.getSourceFile();
+          return owner.isDeclarationFile && owner.hasNoDefaultLib;
+        })) {
+      // Builtin String of a value already proved a primitive string is
+      // that very value. Do not admit pre-check coercion or a shadow.
+      observed = unwrapParens(returned.arguments[0]);
+    }
+  }
+  if (!observed || !sameBinding(observed) || !(checker.getTypeAtLocation(observed).flags & ts.TypeFlags.String)) {
     fail('normal result must be the same input proved to be native string on that path');
   }
   const thrown = failure && ts.isThrowStatement(failure) && unwrapParens(failure.expression);

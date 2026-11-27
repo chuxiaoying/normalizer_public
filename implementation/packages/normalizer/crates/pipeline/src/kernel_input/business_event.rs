@@ -403,7 +403,10 @@ pub(super) fn observations(
             if let Some(value) = payload {
                 record["payload"] = json!(ctx.with_business_evaluation_guard(&cond, |ctx|
                     crate::format_expr_with_ctx(&value, ctx)));
-                if let Some(ty) = name.as_ref().and_then(|name| project.exceptions.get(name)).filter(|ty| ty.as_str() != "unit") {
+                // A literal already carries its value type. The extra
+                // field is only needed for a dynamically acquired payload.
+                if let Some(ty) = name.as_ref().and_then(|name| project.exceptions.get(name))
+                    .filter(|ty| ty.as_str() != "unit" && value.as_lit().is_none()) {
                     record["payload_type"] = json!(ty);
                 } else if name.is_none() {
                     record["payload_type"] = json!("unknown");
