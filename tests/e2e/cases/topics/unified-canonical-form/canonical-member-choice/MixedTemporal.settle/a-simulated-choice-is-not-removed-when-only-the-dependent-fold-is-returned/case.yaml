@@ -13,4 +13,5 @@ expected:
         position: 1
         type: number
   R: |-
-    CHOOSE(values DEFAULT backup AS member0 YIELD REDUCE(values FROM member0 AS (acc, item) YIELD item + acc * 2))
+    CHOOSE(values DEFAULT backup AS member0 YIELD
+      REDUCE(values FROM member0 AS (acc, item) YIELD item + acc * 2))

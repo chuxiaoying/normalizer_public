@@ -200,6 +200,12 @@ pub(crate) fn format_guarded_boolean(
 pub(crate) fn format_record(expression: &Expr, fields: &[(String, Expr)], ctx: &mut FormatCtx) -> String {
     with_value_plan(expression, ctx, |value, ctx| {
         let values = value.as_array_lit().expect("declared record projection");
+        if ctx.relation_scope.member_order.len() > 1 {
+            let pairs = fields.iter().zip(values).map(|((name, _), value)| {
+                format!("{name}: {}", super::format_expr_with_ctx(value, ctx))
+            }).collect::<Vec<_>>();
+            return format!("{{{}}}", pairs.join(", "));
+        }
         let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
             let value = super::format_expr_with_ctx(value, ctx);
             format!("  {name}: {}", value.replace('\n', "\n  "))

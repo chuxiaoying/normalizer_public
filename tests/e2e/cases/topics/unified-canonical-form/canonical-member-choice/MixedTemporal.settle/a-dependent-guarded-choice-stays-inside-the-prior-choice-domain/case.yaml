@@ -15,5 +15,6 @@ expected:
       candidates:
         position: 2
         type: number[]
-  R: >-
-    CASE WHEN backup == 0 THEN CHOOSE(values DEFAULT 0 AS member0 YIELD CHOOSE(candidates DEFAULT member0 AS member1 YIELD member1)) ELSE backup END
+  R: |-
+    CASE WHEN backup == 0 THEN CHOOSE(values DEFAULT 0 AS member0 YIELD
+      CHOOSE(candidates DEFAULT member0 AS member1 YIELD member1)) ELSE backup END

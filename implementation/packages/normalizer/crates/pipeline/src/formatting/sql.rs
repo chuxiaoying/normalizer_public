@@ -320,14 +320,24 @@ impl FormatCtx {
                 let name = format!("member{}", self.relation_scope.members.len());
                 self.relation_scope.members.insert(slot, name.clone());
                 self.relation_scope.member_order.push(slot);
-                bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD ")));
+                bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD")));
             }
         }
+        let mut block_yield = expression.as_array_lit().is_some();
+        if !bindings.is_empty() {
+            expression.walk_pruned(&mut |expr| {
+                block_yield |= matches!(expr.as_sym_var(), Some(SymVarOrigin::Temporal { binding_id, .. })
+                    if self.reductions.contains_key(binding_id));
+                !block_yield
+            });
+        }
         let mut value = render(self);
-        for (slot, prefix) in bindings.into_iter().rev() {
+        for (depth, (slot, prefix)) in bindings.into_iter().rev().enumerate() {
             self.relation_scope.members.remove(&slot);
             self.relation_scope.member_order.pop();
-            value = format!("{prefix}{value})");
+            value = if block_yield || depth > 0 {
+                format!("{prefix}\n  {})", value.replace('\n', "\n  "))
+            } else { format!("{prefix} {value})") };
         }
         value
     }
