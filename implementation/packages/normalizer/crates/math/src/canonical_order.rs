@@ -116,6 +116,14 @@ impl Eq for Exact {}
 fn named(name: &str) -> Operation { Operation::Named(name.into()) }
 fn path(name: &str) -> Vec<String> { name.split('.').map(str::to_owned).collect() }
 
+fn value_type_tag(tag: String) -> String {
+    match tag.as_str() {
+        "bool" => "boolean".into(),
+        "string" => "text".into(),
+        _ => tag,
+    }
+}
+
 fn node(
     class: Class, operation: Operation, types: Vec<String>, contract: Vec<String>,
     payload: Vec<Payload>, children: Vec<Option<Rc<CanonicalKey>>>,
@@ -127,6 +135,7 @@ fn node(
         arms += &child.arms;
         operations += &child.operations;
     }
+    let types = types.into_iter().map(value_type_tag).collect();
     Rc::new(CanonicalKey { arms, operations, class, operation, types, contract, payload, children, tail: None, identity })
 }
 
@@ -250,7 +259,7 @@ impl Keys<'_> {
                 }
                 let (name, parameters, result) = registry::func_signature(*key);
                 let ty = result.map(|result| result.algebra_name().into()).into_iter().collect();
-                let signature = parameters.iter().map(|p| p.algebra_name().into()).collect();
+                let signature = parameters.iter().map(|p| value_type_tag(p.algebra_name().into())).collect();
                 let class = if crate::domains::composite::field_intrinsic_result(*key).is_some()
                     || crate::domains::composite::vector_length_input(expression).is_some()
                 {
