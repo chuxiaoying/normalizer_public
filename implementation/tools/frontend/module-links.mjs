@@ -61,10 +61,10 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
         diagnostic(record, st, 'linked module import must name an executable relative project source');
       }
       const clause = st.importClause;
-      if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)
-          || !clause.namedBindings.elements.length || clause.namedBindings.elements.some(
-            binding => (binding.propertyName ?? binding.name).text === 'default')) {
-        diagnostic(record, st, 'linked modules require explicitly named imports (no default or side-effect import)');
+      const named = clause?.namedBindings;
+      if (!clause || (named && !ts.isNamedImports(named))
+          || (!clause.name && (!named || !named.elements.length))) {
+        diagnostic(record, st, 'linked modules require explicit named or default bindings, not side-effect imports');
       }
       const sourcePath = posix.normalize(posix.join(posix.dirname(input.name), specifier));
       if (sourcePath === '..' || sourcePath.startsWith('../')) diagnostic(record, st, 'relative import escapes the project root');
@@ -89,7 +89,7 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
 
   add(entry);
   const options = {strict: true, noEmit: true, types: [], target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ESNext, allowImportingTsExtensions: true};
+    module: ts.ModuleKind.ESNext, allowImportingTsExtensions: true, allowSyntheticDefaultImports: false};
   const host = ts.createCompilerHost(options);
   const builtinSource = host.getSourceFile.bind(host);
   const library = dirname(host.getDefaultLibFileName(options));
