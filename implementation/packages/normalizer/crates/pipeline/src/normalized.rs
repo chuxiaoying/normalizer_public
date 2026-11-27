@@ -287,7 +287,7 @@ pub(crate) fn source_layouts(
         if !class.static_initializers().is_empty() && !receiver.is_some_and(|(owner, _)| owner == class.full_name()) {
             return Err(error("NORM-STATIC-INITIALIZER", &class.full_name()));
         }
-        if source_payload_domain(class).is_some() || generic_product::prove(class).is_some() { continue; }
+        if admitted_exception_fields(class).is_some() || generic_product::prove(class).is_some() { continue; }
         if class.fields().is_empty() {
             if class.supertype().is_none()
                 && (!class.is_interface() || plain_source_interface(class)) {
@@ -496,8 +496,8 @@ pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String,
     let lexical = format!("{owner}.{name}");
     parents.contains_key(&lexical).then_some(lexical)
 }
-/// Closed data carried by the external exception, not a Java heap target.
-pub(crate) fn source_payload_domain(class: &simulator_parser::JavaClass) -> Option<&'static str> {
+/// An admitted declaration shape, not evidence that a port returns an external payload.
+pub(crate) fn admitted_exception_fields(class: &simulator_parser::JavaClass) -> Option<&'static str> {
     if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
     let [field] = class.fields() else { return None; };
     let field = Some(field).filter(|field| field.name() == "payload" && !field.is_static()
@@ -519,7 +519,7 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
             return Err(error("NORM-EXCEPTION-SHADOW", &class.full_name()));
         }
         if let Some(parent) = class.supertype() {
-            if (!class.fields().is_empty() && source_payload_domain(class).is_none())
+            if (!class.fields().is_empty() && admitted_exception_fields(class).is_none())
                 || !class.methods().is_empty()
                 || !class.annotations().is_empty()
                 || !class.interfaces().is_empty()

@@ -518,14 +518,11 @@ impl Loaded {
             &program, entry, receiver, source_entry.as_ref().map(|source| source.locator.as_str()),
         )?;
         let ports = source_ports::contracts(&program, &source_ports)?;
-        let exceptions = source_exception_parents
-            .keys()
-            .cloned()
-            .map(|name| {
-                let domain = program.find_class(&name).and_then(crate::normalized::source_payload_domain).unwrap_or("unit");
-                (name, domain.to_owned())
-            })
-            .collect();
+        // A Java throws clause binds the exception declaration. A class
+        // may contain a field named payload, but that alone does not say
+        // what an external transport supplies on this particular call.
+        let exceptions = source_exception_parents.keys().cloned()
+            .map(|name| (name, "unit".into())).collect();
         let heap_fields = source_layouts
             .values()
             .flat_map(|fields| fields.iter())
