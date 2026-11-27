@@ -577,7 +577,7 @@ impl EntryContext {
             if !closed { return Err("[NORM-BUSINESS-EXPRESSION] expression has an unsupported operation or input".into()); }
             // The boundary checks both identity and definition references
             // before passing their stable identities to the typed normalizer.
-            let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
+            let mut ctx = crate::FormatCtx::for_business(inputs, states.clone(), &result.source_state_bindings);
             let expression = if expression.has_heap_ref() || !definition_names.is_empty() || !states.is_empty() {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &heap_keys,

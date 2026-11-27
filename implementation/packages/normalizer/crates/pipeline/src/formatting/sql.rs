@@ -321,9 +321,13 @@ impl FormatCtx {
         rendered
     }
 
-    pub(crate) fn for_business(inputs: std::collections::BTreeMap<String, String>, business_states: std::collections::BTreeMap<u64,String>) -> Self {
-        let observation_identities = business_states.iter().map(|(&id, name)| {
-            (id, math::ObservationIdentity::EntrySnapshot(name.split('.').map(str::to_owned).collect()))
+    pub(crate) fn for_business(
+        inputs: std::collections::BTreeMap<String, String>,
+        business_states: std::collections::BTreeMap<u64, String>,
+        state_roots: &std::collections::BTreeMap<u64, String>,
+    ) -> Self {
+        let observation_identities = state_roots.iter().map(|(&id, root)| {
+            (id, math::ObservationIdentity::EntrySnapshot(vec![root.clone()]))
         }).collect();
         Self { business_inputs: Some(inputs), business_states, observation_identities, ..Self::default() }
     }

@@ -96,7 +96,7 @@ pub(super) fn observations(
         add_declared_paths(&event.guard);
         for arg in event.arguments() { add_declared_paths(arg); }
     }
-    let mut ctx = crate::FormatCtx::for_business(names.clone(), states);
+    let mut ctx = crate::FormatCtx::for_business(names.clone(), states, &result.source_state_bindings);
     ctx.set_business_identities(identities.clone(), heap_keys.clone());
     ctx.set_scalar_arrays(arrays.clone());
     ctx.set_record_arrays(entry.record_array_symbols());
