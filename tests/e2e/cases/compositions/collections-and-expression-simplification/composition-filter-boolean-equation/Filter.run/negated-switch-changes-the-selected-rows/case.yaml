@@ -7,4 +7,4 @@ expected:
       values: { position: 0, type: 'number[]' }
       target: { position: 1, type: number }
       enabled: { position: 2, type: bool }
-  R: COUNT(value FROM values WHERE value == target - 2   AND NOT (enabled))
+  R: COUNT(value FROM values WHERE NOT (enabled) AND value == target - 2)

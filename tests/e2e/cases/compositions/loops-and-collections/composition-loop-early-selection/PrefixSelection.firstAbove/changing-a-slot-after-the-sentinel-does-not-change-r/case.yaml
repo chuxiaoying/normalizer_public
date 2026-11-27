@@ -8,6 +8,6 @@ expected:
       fallback: {position: 1, type: number}
   R: |-
     CASE
-      WHEN cutoff < 7 THEN 7
-      ELSE fallback
+      WHEN cutoff > 6 THEN fallback
+      ELSE 7
     END

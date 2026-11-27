@@ -13,4 +13,4 @@ expected:
       profiles:
         position: 0
         type: Profile[]
-  R: COALESCE(SUM(SELECT profile.score FROM profiles AS profile WHERE profile.score > 0), 0)
+  R: COALESCE(SUM(SELECT profile.score FROM profiles AS profile WHERE 0 < profile.score), 0)

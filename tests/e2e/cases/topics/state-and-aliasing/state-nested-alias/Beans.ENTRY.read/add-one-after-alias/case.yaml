@@ -12,4 +12,4 @@ expected:
       source: src/Alias.java#Beans.ENTRY.box
       fields:
         value: number
-  R: box.value + 1
+  R: 1 + box.value

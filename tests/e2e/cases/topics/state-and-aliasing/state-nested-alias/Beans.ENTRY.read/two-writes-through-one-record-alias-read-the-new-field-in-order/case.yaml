@@ -12,11 +12,11 @@ expected:
       source: src/Alias.java#Beans.ENTRY.box
       fields:
         value: number
-  R: box.value + 1
+  R: 1 + box.value
   S:
     - write:
         target: box.value
-        value: box.value + 2
+        value: 2 + box.value
     - write:
         target: box.value
-        value: box.value + 1
+        value: 1 + box.value

@@ -14,11 +14,11 @@ expected:
   throws:
     - type: java.lang.ArrayIndexOutOfBoundsException
       when: |-
-        COALESCE(
+        2 > COALESCE(
           SUM(
             SELECT 1
             FROM bill
             WHERE bill.account_id == accountId
           ),
           0
-        ) <= 1
+        )
