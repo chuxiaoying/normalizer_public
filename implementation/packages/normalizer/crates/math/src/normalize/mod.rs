@@ -25,9 +25,8 @@ mod integer_ranges;
 
 /// Canonicalize a closed, exact integer condition at its terminal boundary.
 pub fn canonical_terminal_guard(value: Expr) -> Expr {
-    integer_ranges::canonical_terminal_guard(&value).map(normalize)
-        .or_else(|| crate::domains::completion::factor_terminal_tag_guard(&value))
-        .unwrap_or(value)
+    let value = normalize(value);
+    crate::domains::completion::factor_terminal_tag_guard(&value).unwrap_or(value)
 }
 
 mod logical_chain;
@@ -510,6 +509,7 @@ fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent
     let e = crate::canonical_order::orient_ordered_expression(&e, ctx);
     let e = integer_equations::isolate_offset(&e, ctx).unwrap_or(e);
     let e = boolean::simplify(&e, ctx);
+    let e = integer_ranges::canonical_guard(&e, parent, ctx).unwrap_or(e);
     let e = binop_casewhen::simplify(&e, ctx);
     if let Some(canonical) = boolean_domains::simplify(&e, ctx, parent) {
         return canonical;

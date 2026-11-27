@@ -405,6 +405,11 @@ pub fn canonical_order_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext)
     canonical_order_key(left, ctx).cmp(&canonical_order_key(right, ctx))
 }
 
+pub(crate) fn canonical_cost_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> Ordering {
+    let (left, right) = (canonical_order_key(left, ctx), canonical_order_key(right, ctx));
+    (&left.arms, &left.operations).cmp(&(&right.arms, &right.operations))
+}
+
 /// Construction of provisional execution keys still needs to distinguish
 /// handles. They are not eligible to decide a canonical operand direction.
 pub(crate) fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) -> bool {

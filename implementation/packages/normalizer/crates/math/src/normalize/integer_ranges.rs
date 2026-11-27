@@ -29,6 +29,7 @@ pub(super) fn strict_endpoint(expr: &Expr) -> Option<Expr> {
 enum Guard {
     Bool(bool),
     Compare(fn(&BigInt, &BigInt) -> bool, BigInt),
+    Not(Box<Guard>),
     And(Box<Guard>, Box<Guard>),
     Or(Box<Guard>, Box<Guard>),
 }
@@ -37,6 +38,7 @@ impl Guard {
         match self {
             Self::Bool(v) => *v,
             Self::Compare(test, n) => test(x, n),
+            Self::Not(guard) => !guard.at(x),
             Self::And(a, b) => a.at(x) && b.at(x),
             Self::Or(a, b) => a.at(x) || b.at(x),
         }
@@ -45,6 +47,9 @@ impl Guard {
 fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option<Guard> {
     if let Some(v) = e.as_bool() {
         return Some(Guard::Bool(v));
+    }
+    if let Some(operand) = e.as_not() {
+        return Some(Guard::Not(Box::new(guard(operand, subject, cuts)?)));
     }
     let (op, a, z) = e.as_binop()?;
     if matches!(op, B::And | B::Or) {
@@ -107,51 +112,107 @@ pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {
     })
 }
 
-/// Settle a small enumeration or exclusion of points before publishing a
-/// terminal outcome. The source integer must already be acquired and total.
-/// Existing ordered predicates need no conversion, and an interval spelling
-/// that expands the guard is not a simplification.
-pub(crate) fn canonical_terminal_guard(expr: &Expr) -> Option<Expr> {
-    fn enumerates_points(value: &Expr) -> bool {
-        match value.as_binop() {
-            Some((B::And | B::Or, left, right)) => enumerates_points(left) && enumerates_points(right),
-            Some((B::Eq | B::Ne, _, _)) => true,
-            _ => false,
-        }
-    }
-    if expr.size() > 64 || !matches!(expr.as_binop(), Some((B::And | B::Or, _, _)))
-        || !enumerates_points(expr)
-    {
-        return None;
-    }
+/// CF-07 on the domain of one already acquired integer parameter.
+pub(super) fn canonical_guard(
+    expr: &Expr, parent: Option<&Expr>, ctx: &dyn crate::SortContext,
+) -> Option<Expr> {
+    // At the root, isolated bounds already go through strict_endpoint.
+    // A path domain can expose a shorter representative even for one bound.
+    let compound = expr.as_not().is_some()
+        || matches!(expr.as_binop(), Some((B::And | B::Or, _, _)));
+    if parent.is_none() && !compound { return None; }
+
     let mut subject = None;
     let mut cuts = Vec::new();
     let predicate = guard(expr, &mut subject, &mut cuts)?;
-    if cuts.len() > 32 { return None; }
     let subject = subject?;
-    let mut intervals: Vec<(Endpoint, Endpoint)> = Vec::new();
-    let mut contiguous = false;
-    for (lo, hi) in cells(cuts) {
-        if !predicate.at(&cell_representative(&lo, &hi)) {
-            contiguous = false;
+    let domain = match parent {
+        Some(parent) => {
+            // Only use a domain whose truth is proved on this same subject.
+            // A domain using other observations does not certify a projection.
+            guard(parent, &mut Some(subject.clone()), &mut cuts)?
+        }
+        None => Guard::Bool(true),
+    };
+    let input_nodes = expr.size().saturating_add(parent.map_or(0, Expr::size));
+    if !super::require_candidate_budget(
+        cuts.len().saturating_add(1).saturating_mul(input_nodes), input_nodes,
+    ) { return None; }
+
+    struct Segment { low: Endpoint, high: Endpoint, truth: bool }
+    let mut parts: Vec<Segment> = Vec::new();
+    for (low, high) in cells(cuts) {
+        let representative = cell_representative(&low, &high);
+        if !domain.at(&representative) { continue; }
+        let truth = predicate.at(&representative);
+        if let Some(last) = parts.last_mut() {
+            // Holes outside the domain do not split equal truth segments.
+            if last.truth == truth {
+                last.high = high;
+                continue;
+            }
+        }
+        parts.push(Segment { low, high, truth });
+    }
+    if parts.is_empty() { return None; }
+    if parts.len() == 1 { return Some(b::lit_bool(parts[0].truth)); }
+
+    let point = |segment: &Segment| segment.low.as_ref().zip(segment.high.as_ref())
+        .filter(|(low, high)| low == high).map(|(low, _)| low.clone());
+    let sort = |items: &mut Vec<Expr>| {
+        items.sort_by_cached_key(|value| crate::canonical_order_key(value, ctx));
+    };
+    let mut union = Vec::new();
+    for (index, segment) in parts.iter().enumerate() {
+        if !segment.truth { continue; }
+        if let Some(value) = point(segment) {
+            union.push(b::eq(subject.clone(), b::lit_integer(value)));
             continue;
         }
-        if contiguous {
-            intervals.last_mut()?.1 = hi;
-        } else {
-            intervals.push((lo, hi));
+        let mut span = Vec::new();
+        if index != 0 {
+            span.push(b::gt(subject.clone(), b::lit_integer(segment.low.as_ref()? - 1)));
         }
-        contiguous = true;
+        if index != parts.len() - 1 {
+            span.push(b::lt(subject.clone(), b::lit_integer(segment.high.as_ref()? + 1)));
+        }
+        sort(&mut span);
+        union.push(super::logical_chain::rebuild_and(&span));
     }
-    let candidate = intervals.into_iter().map(|(lo, hi)| {
-        if let (Some(lo), Some(hi)) = (&lo, &hi) {
-            if lo == hi { return b::eq(subject.clone(), b::lit_integer(lo.clone())); }
+    sort(&mut union);
+    let union = super::logical_chain::rebuild_or(&union);
+
+    // Also exclude each maximal false segment. This retains the compact
+    // conjunction when several isolated points (or bounded spans) are
+    // excluded, rather than expanding it to a union of many true spans.
+    let mut intersection = Vec::new();
+    for (index, segment) in parts.iter().enumerate() {
+        if segment.truth { continue; }
+        let interior = index != 0 && index != parts.len() - 1;
+        if let Some(value) = point(segment).filter(|_| interior) {
+            intersection.push(b::ne(subject.clone(), b::lit_integer(value)));
+            continue;
         }
-        let lower = lo.map(|n| b::ge(subject.clone(), b::lit_integer(n)));
-        let upper = hi.map(|n| b::le(subject.clone(), b::lit_integer(n)));
-        lower.into_iter().chain(upper).reduce(b::and).unwrap_or_else(|| b::lit_bool(true))
-    }).reduce(b::or).unwrap_or_else(|| b::lit_bool(false));
-    (candidate.size() <= expr.size()).then_some(candidate)
+        let mut outside = Vec::new();
+        if index != 0 {
+            outside.push(b::lt(subject.clone(), b::lit_integer(segment.low.as_ref()?.clone())));
+        }
+        if index != parts.len() - 1 {
+            outside.push(b::gt(subject.clone(), b::lit_integer(segment.high.as_ref()?.clone())));
+        }
+        sort(&mut outside);
+        intersection.push(super::logical_chain::rebuild_or(&outside));
+    }
+    sort(&mut intersection);
+    let intersection = super::logical_chain::rebuild_and(&intersection);
+    // Alternate exclusion spelling is a simplification only when cheaper.
+    // At equal cost keep the endpoints derived from the true segments.
+    let selected = if crate::canonical_order::canonical_cost_compare(&intersection, &union, ctx).is_lt() {
+        intersection
+    } else { union };
+    // This family of representatives must not obstruct a separately proven,
+    // strictly smaller formula; compare with the same CF-02 cost.
+    (!crate::canonical_order::canonical_cost_compare(&selected, expr, ctx).is_gt()).then_some(selected)
 }
 
 pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)>, Expr)> {
