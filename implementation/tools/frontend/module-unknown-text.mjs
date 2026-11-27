@@ -1,7 +1,7 @@
 // A narrow, checked native TypeScript type-test boundary. No assertion,
 // coercion, shadowed constructor or unsupported type use is lowered.
 import ts from 'typescript';
-import {unwrapParens} from './ir.mjs';
+import {isLocalExportList, unwrapParens} from './ir.mjs';
 
 function oneStatement(node) {
   return node && ts.isBlock(node) ? (node.statements.length === 1 ? node.statements[0] : undefined) : node;
@@ -9,10 +9,13 @@ function oneStatement(node) {
 
 export function guardedUnknownText(sf, fn, checker, fail) {
   const declarationsOnly = sf.statements.every(statement => statement === fn
-    || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement));
+    || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)
+    || isLocalExportList(statement));
+  const signature = checker.getSignatureFromDeclaration(fn);
+  const returnedType = signature && checker.getReturnTypeOfSignature(signature);
   if (!declarationsOnly || fn.parameters.length !== 1 ||
       !(checker.getTypeAtLocation(fn.parameters[0].name).flags & ts.TypeFlags.Unknown) ||
-      fn.type?.kind !== ts.SyntaxKind.StringKeyword || fn.asteriskToken ||
+      !(returnedType?.flags & ts.TypeFlags.String) || fn.asteriskToken ||
       fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('unknown input requires a checked standalone string guard with the original TypeError branch');
   }

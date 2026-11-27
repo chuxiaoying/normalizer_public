@@ -182,13 +182,13 @@ function compile(source, file, entry, physicalPath, linked) {
     if (simple) {
       const name = parameter.name.text;
       const params = [{publicName: name, name, position: 0, domain: 'unknown'}];
-      if (ts.isThrowStatement(statement) && fn.type?.kind === ts.SyntaxKind.VoidKeyword) {
+      const signature = checker.getSignatureFromDeclaration(fn);
+      const returnedType = signature && checker.getReturnTypeOfSignature(signature);
+      if (ts.isThrowStatement(statement) && (returnedType?.flags & ts.TypeFlags.Void)) {
         return projectInput(file, entry, params, 'void', false, 'void',
           {op: 'source.throw_unknown_input', name}, fn.getText(sf));
       }
-      const signature = checker.getSignatureFromDeclaration(fn);
-      if (ts.isReturnStatement(statement) && signature
-          && checker.getReturnTypeOfSignature(signature).flags & ts.TypeFlags.Unknown) {
+      if (ts.isReturnStatement(statement) && (returnedType?.flags & ts.TypeFlags.Unknown)) {
         return projectInput(file, entry, params, 'unknown', false, 'unknown',
           {op: 'var', name}, fn.getText(sf));
       }
