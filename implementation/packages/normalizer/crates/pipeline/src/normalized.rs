@@ -236,7 +236,7 @@ fn closed_resource_close(program: &JavaProgram, class: &JavaClass) -> Option<Str
     }
     let (index, method) = class.methods().iter().enumerate()
         .find(|(_, method)| method.name() == "close" && method.arity() == 0)?;
-    if !method.is_public() || method.is_static() || !method.throws().is_empty()
+    if !method.is_public() || method.is_static()
         || *method.return_type() != JavaType::Void || method.body().is_none() {
         return None;
     }
@@ -287,7 +287,7 @@ pub(crate) fn source_layouts(
         if !class.static_initializers().is_empty() && !receiver.is_some_and(|(owner, _)| owner == class.full_name()) {
             return Err(error("NORM-STATIC-INITIALIZER", &class.full_name()));
         }
-        if admitted_exception_fields(class).is_some() || generic_product::prove(class).is_some() { continue; }
+        if admitted_exception_fields(program, class).is_some() || generic_product::prove(class).is_some() { continue; }
         if class.fields().is_empty() {
             if class.supertype().is_none()
                 && (!class.is_interface() || plain_source_interface(class)) {
@@ -497,7 +497,7 @@ pub(crate) fn exception_name(name: &str, owner: &str, parents: &BTreeMap<String,
     parents.contains_key(&lexical).then_some(lexical)
 }
 /// An admitted declaration shape, not evidence that a port returns an external payload.
-pub(crate) fn admitted_exception_fields(class: &simulator_parser::JavaClass) -> Option<&'static str> {
+fn admitted_exception_fields(program: &JavaProgram, class: &simulator_parser::JavaClass) -> Option<&'static str> {
     if !matches!(class.supertype(), Some("RuntimeException" | RUNTIME_EXCEPTION)) { return None; }
     let [field] = class.fields() else { return None; };
     let field = Some(field).filter(|field| field.name() == "payload" && !field.is_static()
@@ -506,6 +506,11 @@ pub(crate) fn admitted_exception_fields(class: &simulator_parser::JavaClass) -> 
         JavaType::Class(name) if matches!(name.as_str(), "String" | "java.lang.String")
             && official_marker(class, field.annotations(), NULLABLE) => Some("text?"),
         ty if integral(ty) && field.annotations().is_empty() => Some("number"),
+        JavaType::Class(name) if field.annotations().is_empty()
+            && (name == "java.lang.Object" || name == "Object" && program.find_class(name).is_none()) =>
+            // A broad value field is not a declared external payload
+            // contract. Preserve the exception class; never invent data.
+            Some("unit"),
         _ => None,
     }
 }
@@ -519,7 +524,7 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
             return Err(error("NORM-EXCEPTION-SHADOW", &class.full_name()));
         }
         if let Some(parent) = class.supertype() {
-            if (!class.fields().is_empty() && admitted_exception_fields(class).is_none())
+            if (!class.fields().is_empty() && admitted_exception_fields(program, class).is_none())
                 || !class.methods().is_empty()
                 || !class.annotations().is_empty()
                 || !class.interfaces().is_empty()

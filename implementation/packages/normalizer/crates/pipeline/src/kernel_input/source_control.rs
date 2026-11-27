@@ -411,16 +411,42 @@ impl Engine<'_> {
             // that could erase this newly entered unwind path.
             self.realtime_throws.truncate(prior_realtime_throws);
             // An acquired resource closes on every body completion, even
-            // when a return or throw is pending. The currently admitted
-            // source slice must prove close itself cannot throw.
+            // when a return or throw is pending. Execute it once on its own
+            // acquisition domain, then compose the two completions.
             self.java_call_on(&close, Vec::new(), close_path.clone(), Some(resource))?;
-            if self.realtime_completion.clone().alternatives().iter().any(|alternative|
-                matches!(alternative.outcome, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_))
-                    && math::normalize(b::and(close_path.clone(), alternative.guard.clone())).as_bool() != Some(false))
-            {
-                return Err(fail("close with a possible failure requires suppressed-exception semantics"));
+            let finished_close = self.realtime_completion.clone().alternatives();
+            let mut combined = Vec::new();
+            for primary in protected_completion.alternatives() {
+                let not_acquired = math::normalize(b::and(primary.guard.clone(), b::not(close_path.clone())));
+                if not_acquired.as_bool() != Some(false) {
+                    combined.push(CompletionAlternative { guard: not_acquired, outcome: primary.outcome.clone() });
+                }
+                for secondary in &finished_close {
+                    let guard = math::normalize(b::and(primary.guard.clone(),
+                        b::and(close_path.clone(), secondary.guard.clone())));
+                    if guard.as_bool() == Some(false) { continue; }
+                    let outcome = match (&primary.outcome, &secondary.outcome) {
+                        (_, CompletionOutcome::Continue) => primary.outcome.clone(),
+                        (CompletionOutcome::Throw { class, .. }, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_)) => {
+                            let local_handler = catches.iter().find(|catch| catch.exception_classes().iter()
+                                .any(|name| crate::normalized::subtype(class,
+                                    &self.project.source_exception_bindings[id][name], &self.project.source_exception_parents)));
+                            // This catch interpreter admits an ignored exception
+                            // or exact rethrow. If the original object could
+                            // escape, its suppressed exception must not be lost.
+                            need(local_handler.is_some_and(|catch| !crate::normalized::rethrows_caught_value(catch)),
+                                "escaping resource failure requires suppressed-exception semantics")?;
+                            primary.outcome.clone()
+                        }
+                        (CompletionOutcome::ThrowValue(_), _) =>
+                            return Err(fail("escaping resource failure requires suppressed-exception semantics")),
+                        (_, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_)) => secondary.outcome.clone(),
+                        (_, CompletionOutcome::Return(_)) => return Err(fail("resource close must complete as a void method")),
+                    };
+                    combined.push(CompletionAlternative { guard, outcome });
+                }
             }
-            self.realtime_completion = protected_completion;
+            self.realtime_completion = Completion::from_alternatives(combined);
         }
         let mut pending = self.realtime_completion.clone().alternatives();
 
