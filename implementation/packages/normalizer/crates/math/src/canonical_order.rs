@@ -56,6 +56,40 @@ pub struct CanonicalKey {
     identity: Option<Identity>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OperandKind { Boolean, Reference, Null, Other }
+
+impl CanonicalKey {
+    fn operand_kind(&self) -> OperandKind {
+        match self.types.first().map(String::as_str) {
+            Some("bool" | "boolean") if self.contract.first().is_none_or(|tag| tag != "sql") =>
+                OperandKind::Boolean,
+            Some("reference") => OperandKind::Reference,
+            Some("null") => OperandKind::Null,
+            None if self.operation == Operation::Not => OperandKind::Boolean,
+            None if self.class == Class::Construct && self.operation == named("case") => {
+                // Infer only the common type of CASE results, never from a
+                // guard or from a path proof. Individual slots already have keys.
+                let mut values = self.children.iter().skip(1).step_by(2).flatten().chain(self.tail.iter());
+                let Some(first) = values.next() else { return OperandKind::Other; };
+                let first = first.operand_kind();
+                if values.all(|value| value.operand_kind() == first) { first } else { OperandKind::Other }
+            }
+            _ => OperandKind::Other,
+        }
+    }
+}
+
+fn equality_contract(op: BinOpKind, left: &CanonicalKey, right: &CanonicalKey) -> Vec<String> {
+    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) { return vec![]; }
+    use OperandKind::{Boolean, Null, Reference};
+    match (left.operand_kind(), right.operand_kind()) {
+        (Boolean, Boolean) => vec!["boolean_equality".into()],
+        (Reference, Reference | Null) | (Null, Reference) => vec!["object_identity_equality".into()],
+        _ => vec![],
+    }
+}
+
 #[derive(Clone)]
 struct Exact(BigInt, u32);
 impl Ord for Exact {
@@ -229,8 +263,10 @@ impl Keys<'_> {
                         | BinOpKind::And | BinOpKind::Or => vec!["bool".into()],
                     BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul => vec![],
                 };
-                node(Class::Scalar, bin_op(*op), types, vec![], vec![],
-                    vec![Some(self.expr(left)), Some(self.expr(right))], None, 0, 1)
+                let (left, right) = (self.expr(left), self.expr(right));
+                let contract = equality_contract(*op, &left, &right);
+                node(Class::Scalar, bin_op(*op), types, contract, vec![],
+                    vec![Some(left), Some(right)], None, 0, 1)
             }
             UnaryOp { op, operand } => {
                 let name = match op { UnaryOpKind::Not => Operation::Not, UnaryOpKind::Neg => named("neg") };
