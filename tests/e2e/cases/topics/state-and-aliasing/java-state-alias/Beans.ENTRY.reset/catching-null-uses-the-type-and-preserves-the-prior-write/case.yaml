@@ -26,6 +26,6 @@ expected:
   R: |-
     CASE
       WHEN observer == null THEN 11
-      WHEN observer == quota THEN 7
+      WHEN quota == observer THEN 7
       ELSE observer.units
     END

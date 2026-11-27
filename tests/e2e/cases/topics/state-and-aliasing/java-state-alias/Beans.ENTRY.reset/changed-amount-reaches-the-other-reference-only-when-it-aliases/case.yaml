@@ -25,7 +25,7 @@ expected:
         value: "11"
   R: |-
     CASE
-      WHEN observer == quota THEN 11
+      WHEN quota == observer THEN 11
       ELSE observer.units
     END
   throws:
