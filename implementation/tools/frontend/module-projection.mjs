@@ -1,9 +1,10 @@
 // Prepared module declarations supply the public identity of a component prop
 // and the types of its instance state. Initial values describe field types only.
 import ts from 'typescript';
-import { definedModuleExport, lowerExpression, parseSourceModule } from './ir.mjs';
+import { definedModuleExport, isLocalExportList, lowerExpression, parseSourceModule } from './ir.mjs';
 import { checkedTypeScript } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
+import { isOfficialNamespaceImport } from './standard-library.mjs';
 
 function fail(detail) {
   throw new Error(`SCENARIO_MODULE_INPUT: ${detail}`);
@@ -54,26 +55,39 @@ export function normalizerMarkers(node, reject = fail) {
 export function readModuleProjection(modulePath, source, entryName) {
   const sf = parseSourceModule(modulePath, source, fail, ts.ScriptKind.TS);
   const states = new Map();
+  const fn = definedModuleExport(sf, entryName, fail);
+  const usesStandard = sf.statements.some(isOfficialNamespaceImport);
   for (const statement of sf.statements) {
     const markers = normalizerMarkers(statement);
-    if (!markers.has('entryState')) continue;
+    if (!markers.has('entryState')) {
+      // An ambient port declaration adds a type contract, not an initializer.
+      if (markers.size === 1 && markers.has('external') && ts.isVariableStatement(statement)
+          && statement.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.DeclareKeyword)) continue;
+      if (markers.size && !(ts.isFunctionDeclaration(statement)
+          && markers.size === 1 && markers.has('componentProp'))) {
+        fail('component projection has a misplaced @N marker');
+      }
+      if (ts.isFunctionDeclaration(statement) || ts.isTypeAliasDeclaration(statement)
+          || ts.isInterfaceDeclaration(statement) || isLocalExportList(statement)
+          || isOfficialNamespaceImport(statement)) continue;
+      fail('component projection cannot skip executable module initialization');
+    }
     if (!ts.isVariableStatement(statement) || markers.size !== 1) fail('@N entryState only marks one state declaration');
     const decl = singleAnnotatedBinding(statement, '@N entryState must mark one named binding');
     const name = decl.name.text;
     states.set(name, { source: `${modulePath}#${name}`, fields: literalShape(decl.initializer) });
   }
-  const fn = definedModuleExport(sf, entryName, fail);
   const statements = fn.body.statements;
   const returned = statements.at(-1);
-  if (fn.modifiers.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)
+  if (fn.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)
       || fn.asteriskToken || fn.parameters.length
       || !returned || !ts.isReturnStatement(returned) || !returned.expression) {
     fail(`prepared component projection ${entryName} requires a synchronous exported function with a return expression and no parameters`);
   }
   const prop = normalizerMarkers(fn).get('componentProp');
   if (typeof prop !== 'string' || !/^[\w.-]+#[\w.-]+\.[\w-]+$/.test(prop)) fail(`missing or invalid @N componentProp on ${entryName}`);
-  localDirectives(sf, fn.body).requireConsumed();
-  checkedTypeScript(modulePath, sf, fail);
+  localDirectives(sf, sf).requireConsumed();
+  checkedTypeScript(modulePath, sf, fail, {allowOfficial: usesStandard});
   const locals = [];
   for (const st of statements.slice(0, -1)) {
     if (!ts.isVariableStatement(st) || !(st.declarationList.flags & ts.NodeFlags.Const)) {
