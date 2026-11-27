@@ -952,12 +952,11 @@ impl<'a> Engine<'a> {
                 need(crate::normalized::java_int(element_type), "unsupported Java expression in pure-array-1")?;
                 // The initializer still runs before .length. Its element
                 // values are never observed, so no constant carrier is needed.
-                for element in elements {
-                    let active = self.normal_path(path.clone());
-                    if active.as_bool() == Some(false) { break; }
-                    let value = self.java_expr(element, id, env, active)?;
-                    need(value.ty() == Ty::Integer, "expected Java int for local array")?;
-                }
+                let Some((values, _)) = self.source_arguments(elements, id, env, path)? else {
+                    return Ok(Some(b::lit_null()));
+                };
+                need(values.iter().all(|value| value.ty() == Ty::Integer),
+                    "expected Java int for local array")?;
                 Ok(Some(b::lit_int(elements.len() as i64)))
             }
             J::ArrayAllocation { element_type, length } => {
@@ -1034,10 +1033,10 @@ impl<'a> Engine<'a> {
                 Err(fail(format!("undefined Java variable {n}")))
             }
             J::InstanceOf { value, target } => {
-                let value = self.java_expr(value, id, env, path.clone())?.scalar()?;
-                if self.normal_path(path).as_bool() == Some(false) {
+                let Some((value, _)) = self.source_operand(value, id, env, path)? else {
                     return Ok(Value::Term(Ty::Bool, b::lit_null()));
-                }
+                };
+                let value = value.scalar()?;
                 if crate::normalized::root_object_type(self.program, target)
                     && matches!(value.as_sym_var(), Some(math::SymVarOrigin::Parameter { primitive_type, .. })
                         if primitive_type == "java_reference")
@@ -1848,6 +1847,7 @@ impl Engine<'_> {
             self.active.insert(format!("java:{id}")),
             "recursive Java call",
         )?;
+        self.max_active_calls = self.max_active_calls.max(self.active.len());
         let method = self.methods.get(id)
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), id));
         let m = method.syntax;
