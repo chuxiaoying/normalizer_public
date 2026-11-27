@@ -4,9 +4,7 @@ use normalizer_ir::local::relation::{Op, Scalar};
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Definition {
-    pub(super) source: String,
-    pub(super) initial: Expr,
-    pub(super) body: Expr,
+    pub(super) shape: math::ReduceShape,
     pub(super) guard: Expr,
 }
 
@@ -62,10 +60,12 @@ impl Engine<'_> {
     ) -> Result<Value> {
         need(acc != item, "fold needs separate accumulator and element bindings")?;
         let definition = Definition {
-            source: source.into(),
-            initial,
-            body: math::try_normalize_with(local_body(self, body, acc, item, env)?, &math::ReduceBodyContext)
-                .map_err(|error| fail(error.to_string()))?,
+            shape: math::ReduceShape {
+                source: source.into(),
+                initial,
+                body: math::try_normalize_with(local_body(self, body, acc, item, env)?, &math::ReduceBodyContext)
+                    .map_err(|error| fail(error.to_string()))?,
+            },
             guard: guard.clone(),
         };
         let node = super::temporal_graph::Definition::Fold(definition);

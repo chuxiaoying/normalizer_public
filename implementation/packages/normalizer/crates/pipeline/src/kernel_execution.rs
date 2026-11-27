@@ -103,7 +103,53 @@ pub(super) struct Engine<'a> {
     pub(super) max_active_calls: usize,
 }
 
+// Execution and publication compare the same retained REDUCE, not the
+// integer handle that happens to identify it in the execution ledger.
+struct ExecutionOrder<'a>(&'a [super::temporal_graph::Definition]);
+
+impl math::SortContext for ExecutionOrder<'_> {
+    fn heap_display_name(&self, _id: i64) -> Option<String> { None }
+
+    fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> {
+        match self.0.get(usize::try_from(id).ok()?)? {
+            super::temporal_graph::Definition::Fold(fold) => Some(&fold.shape),
+            super::temporal_graph::Definition::Choice(_) => None,
+        }
+    }
+
+    fn has_reduce_shapes(&self) -> bool { !self.0.is_empty() }
+
+    fn temporal_is_total(&self, id: u64) -> bool {
+        usize::try_from(id).ok().and_then(|i| self.0.get(i)).is_some_and(|definition| {
+            matches!(definition, super::temporal_graph::Definition::Fold(fold)
+                if fold.guard.as_bool() == Some(true))
+        })
+    }
+}
+
 impl<'a> Engine<'a> {
+    fn normalize_execution_value(&self, value: Expr) -> Expr {
+        if self.temporal_definitions.is_empty() {
+            math::normalize(value)
+        } else {
+            math::normalize_with(value, &ExecutionOrder(&self.temporal_definitions))
+        }
+    }
+
+    fn order_execution_comparison(&self, op: BinOpKind, left: Expr, right: Expr) -> Expr {
+        // CHOOSE still needs its lexical binder; an execution handle must
+        // not determine operand orientation before that binder exists.
+        if self.temporal_definitions.iter().any(|node| matches!(node, super::temporal_graph::Definition::Choice(_))) {
+            return b::binop_public(op, left, right);
+        }
+        let order = ExecutionOrder(&self.temporal_definitions);
+        if let Some((reverse, true)) = math::canonical_order_ordered_comparison(op, &left, &right, &order) {
+            b::binop_public(reverse, right, left)
+        } else {
+            b::binop_public(op, left, right)
+        }
+    }
+
     fn diagnostic_entry(&self) -> &str {
         self.public_source_entry.unwrap_or(self.selected_entry.id)
     }
@@ -194,7 +240,7 @@ impl<'a> Engine<'a> {
                 let left = self.node(left, env, path.clone())?;
                 let right = self.node(right, env, path)?;
                 need(left.ty() == Ty::Integer && right.ty() == Ty::Integer, "exact arithmetic requires business numbers")?;
-                Ok(Value::Term(Ty::Integer, math::normalize(b::add(left.scalar()?, right.scalar()?))))
+                Ok(Value::Term(Ty::Integer, self.normalize_execution_value(b::add(left.scalar()?, right.scalar()?))))
             }
             Node::Var { name } => env
                 .get(name)
@@ -733,7 +779,7 @@ impl<'a> Engine<'a> {
             if let (Some(left_floor), Some(right_floor)) =
                 (left.certified_integer_floor(&domain), right.certified_integer_floor(&domain))
             {
-                let value = math::normalize(b::add(left.scalar()?, right.scalar()?));
+                let value = self.normalize_execution_value(b::add(left.scalar()?, right.scalar()?));
                 return Ok(Value::IntegerFloor { value, lower: left_floor + right_floor, domain });
             }
         }
@@ -755,7 +801,7 @@ impl<'a> Engine<'a> {
         if op == JavaArithmetic::Sub && left == right && self.acquired_integer_receipt(&left, &path) {
             return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
         }
-        Ok(Value::Term(Ty::Integer, math::normalize(op.build(left, right))))
+        Ok(Value::Term(Ty::Integer, self.normalize_execution_value(op.build(left, right))))
     }
 
     fn evaluate_local_array_initializer(
@@ -1166,7 +1212,7 @@ impl<'a> Engine<'a> {
                 need(value.ty() == Ty::Integer, "negation requires an integer")?;
                 Ok(Value::Term(
                     Ty::Integer,
-                    math::normalize(b::neg(value.scalar()?)),
+                    self.normalize_execution_value(b::neg(value.scalar()?)),
                 ))
             }
             J::BinOp { op: B::Add, left, right } =>
@@ -1333,7 +1379,7 @@ impl<'a> Engine<'a> {
                 }
                 Ok(Value::Term(
                     Ty::Bool,
-                    b::binop_public(op, a, z),
+                    self.order_execution_comparison(op, a, z),
                 ))
             }
             _ => Err(fail("unsupported Java expression in pure-array-1")),
@@ -1409,7 +1455,7 @@ impl Engine<'_> {
         }
     }
     pub(super) fn condition_under_path(&self, condition: Expr, path: &Expr) -> Expr {
-        let condition = math::normalize(condition);
+        let condition = self.normalize_execution_value(condition);
         let path = math::normalize(self.normal_path(path.clone()));
         if b::path_implies(&path, &condition) {
             b::lit_bool(true)

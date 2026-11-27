@@ -21,7 +21,8 @@ impl math::SortContext for CanonicalNames<'_> {
         self.total_temporals.is_some_and(|ids| ids.contains(&id))
     }
 
-    fn reduce_shapes(&self) -> Option<&BTreeMap<u64, math::ReduceShape>> { self.reductions }
+    fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> { self.reductions?.get(&id) }
+    fn has_reduce_shapes(&self) -> bool { self.reductions.is_some_and(|shapes| !shapes.is_empty()) }
 
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.temporals }
 }
@@ -38,7 +39,8 @@ impl math::SortContext for ChoiceKeys<'_> {
     fn heap_display_name(&self, id: i64) -> Option<String> { self.base.heap_display_name(id) }
     fn external_names(&self) -> Option<&BTreeMap<u64, String>> { self.base.external_names() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
-    fn reduce_shapes(&self) -> Option<&BTreeMap<u64, math::ReduceShape>> { self.base.reduce_shapes() }
+    fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> { self.base.reduce_shape(id) }
+    fn has_reduce_shapes(&self) -> bool { self.base.has_reduce_shapes() }
     fn case_arm_keys(&self, expression: &math::Expr) -> Option<&math::CaseArmKeys> { self.cases.get(expression) }
     fn has_case_arm_keys(&self) -> bool { !self.cases.is_empty() }
     fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { (!self.slots.is_empty()).then_some(self.slots) }

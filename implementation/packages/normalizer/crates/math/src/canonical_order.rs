@@ -188,7 +188,7 @@ impl Keys<'_> {
                         (if parts.is_empty() { Class::Reference } else { Class::Read }, id)
                     }
                     SymVarOrigin::Temporal { binding_id, primitive_type: _ } => {
-                        if let Some(reduce) = ctx.reduce_shapes().and_then(|shapes| shapes.get(binding_id)) {
+                        if let Some(reduce) = ctx.reduce_shape(*binding_id) {
                             let source = binding(Class::Reference, "number[]",
                                 Identity::Parameter(path(&reduce.source)));
                             let initial = self.expr(&reduce.initial);
@@ -318,7 +318,7 @@ thread_local! {
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
     let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
     if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.external_names().is_some()
-        || ctx.in_reduce_body() || ctx.has_case_arm_keys() || ctx.choice_slots().is_some() || ctx.reduce_shapes().is_some_and(|shapes| !shapes.is_empty())
+        || ctx.in_reduce_body() || ctx.has_case_arm_keys() || ctx.choice_slots().is_some() || ctx.has_reduce_shapes()
     {
         return keys.expr(expr);
     }

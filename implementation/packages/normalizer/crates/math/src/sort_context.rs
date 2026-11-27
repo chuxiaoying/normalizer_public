@@ -6,7 +6,7 @@
 //! 通过 trait 让 pipeline 实现信息提供能力，math 通过 interface 查询。
 
 /// The three RA-09 slots of a retained exact-integer recurrence.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ReduceShape {
     pub source: String,
     pub initial: crate::Expr,
@@ -46,7 +46,9 @@ pub trait SortContext {
     fn has_case_arm_keys(&self) -> bool { false }
 
     /// Retained evaluation handles lower to this structure for comparison.
-    fn reduce_shapes(&self) -> Option<&std::collections::BTreeMap<u64, ReduceShape>> { None }
+    fn reduce_shape(&self, _id: u64) -> Option<&ReduceShape> { None }
+
+    fn has_reduce_shapes(&self) -> bool { false }
 
     /// Body parameters are lexical slots only inside a recurrence's YIELD.
     fn in_reduce_body(&self) -> bool { false }

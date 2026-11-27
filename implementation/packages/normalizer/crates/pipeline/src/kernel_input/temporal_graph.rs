@@ -12,7 +12,7 @@ pub(super) enum Definition {
 impl Definition {
     fn operand(&self) -> Option<&Expr> {
         match self {
-            Self::Fold(node) => Some(&node.initial),
+            Self::Fold(node) => Some(&node.shape.initial),
             Self::Choice(node) => match &node.empty {
                 Fallback::Integer(value) => Some(value),
                 Fallback::RecordParameter {..} => None,
@@ -116,10 +116,8 @@ pub(super) fn publish(
         let slot = published.aliases.len();
         let row = match &nodes[id as usize] {
             Definition::Fold(fold) => {
-                published.reductions.insert(id, math::ReduceShape {
-                    source: fold.source.clone(), initial: fold.initial.clone(), body: fold.body.clone(),
-                });
-                Slot::Fold { source: array_name(&fold.source)?.clone(), initial: value, body: fold.body.clone() }
+                published.reductions.insert(id, fold.shape.clone());
+                Slot::Fold { source: array_name(&fold.shape.source)?.clone(), initial: value, body: fold.shape.body.clone() }
             }
             Definition::Choice(choice) => {
                 let mut entry_guard = true;
@@ -168,7 +166,7 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
             return match def {
                 Definition::Fold(fold) => {
                     need(b::path_implies(active, &fold.guard), "fold use outside its source path")?;
-                    check(&fold.initial, active, nodes)
+                    check(&fold.shape.initial, active, nodes)
                 },
                 Definition::Choice(choice) => {
                     need(b::path_implies(active, &choice.guard),
