@@ -33,6 +33,7 @@ pub(super) struct Publication {
     pub(super) aliases: BTreeMap<u64, usize>,
     pub(super) total: BTreeSet<u64>,
     pub(super) rows: Vec<Json>,
+    pub(super) inline_folds: BTreeMap<u64, String>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,11 +45,11 @@ enum Operand {
 }
 
 impl Operand {
-    fn render(&self) -> String {
+    fn render(&self, inline: &[String]) -> String {
         match self {
             Self::Integer(n) => n.to_string(),
             Self::Parameter(name) | Self::Acquired(name) => name.clone(),
-            Self::Prior(slot) => format!("$t_{slot}"),
+            Self::Prior(slot) => inline.get(*slot).cloned().unwrap_or_else(|| format!("$t_{slot}")),
         }
     }
 }
@@ -78,6 +79,10 @@ pub(super) fn publish(
         }
     }
     let mut published = Publication::default();
+    // RA-09 / PERS-06: deterministic folds need no published identity.
+    // Inline in dependency order; their accumulator and element are only in scope in YIELD.
+    let inline_folds_only = pending.iter().all(|&id| matches!(nodes.get(id as usize), Some(Definition::Fold(_))));
+    let mut inline = Vec::new();
     let array_name = |name: &str| names.get(name).filter(|_| arrays.contains(name))
         .ok_or_else(|| fail("temporal source requires a published array parameter"));
     while !pending.is_empty() {
@@ -129,14 +134,23 @@ pub(super) fn publish(
         }
         let (_, id, value) = ready.into_iter().min_by(|a,b| a.0.cmp(&b.0))
             .ok_or_else(|| fail("temporal definition dependency cycle"))?;
-        let slot = published.rows.len();
+        let slot = published.aliases.len();
         let label = format!("$t_{slot}");
         let row = match &nodes[id as usize] {
             Definition::Fold(fold) => {
                 let mut ctx = crate::FormatCtx::for_business(BTreeMap::new(), BTreeMap::new());
                 let body = crate::format_expr_with_ctx(&fold.body, &mut ctx);
-                json!({"id":label,"op":"fold","type":"number","source":array_name(&fold.source)?,
-                    "initial":value.render(),"accumulator":"acc","element":"item","body":body})
+                let source = array_name(&fold.source)?;
+                let initial = value.render(&inline);
+                if inline_folds_only {
+                    let expression = format!("REDUCE({source} FROM {initial} AS (acc, item) YIELD {body})");
+                    inline.push(expression.clone());
+                    published.inline_folds.insert(id, expression);
+                    Json::Null
+                } else {
+                    json!({"id":label,"op":"fold","type":"number","source":source,
+                        "initial":initial,"accumulator":"acc","element":"item","body":body})
+                }
             }
             Definition::Choice(choice) => {
                 let mut entry_guard = true;
@@ -159,12 +173,12 @@ pub(super) fn publish(
                 };
                 let mut ctx = crate::FormatCtx::for_business(names.clone(), BTreeMap::new());
                 let guard = super::business_event::condition_text(&choice.guard, &mut ctx);
-                json!({"id":label,"op":"member_choice","when":guard,"members":members,"empty":value.render()})
+                json!({"id":label,"op":"member_choice","when":guard,"members":members,"empty":value.render(&inline)})
             }
         };
         published.aliases.insert(id, slot);
         if nodes[id as usize].is_total() { published.total.insert(id); }
-        published.rows.push(row);
+        if !inline_folds_only { published.rows.push(row); }
         pending.remove(&id);
     }
     Ok(published)

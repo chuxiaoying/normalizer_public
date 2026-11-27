@@ -26,6 +26,7 @@ pub struct FormatCtx {
     nested_arrays: std::collections::BTreeSet<String>,
     record_arrays: std::collections::BTreeSet<String>,
     temporal_names: std::collections::BTreeMap<u64, usize>,
+    inline_folds: std::collections::BTreeMap<u64, String>,
     business_identities: std::collections::BTreeMap<i64, String>,
     business_projections: Vec<(Expr,String)>,
     business_states: std::collections::BTreeMap<u64,String>,
@@ -47,6 +48,7 @@ impl Default for FormatCtx {
             nested_arrays: Default::default(),
             record_arrays: Default::default(),
             temporal_names: Default::default(),
+            inline_folds: Default::default(),
             business_identities: Default::default(),
             business_projections: Vec::new(),
             business_states: Default::default(),
@@ -102,6 +104,10 @@ impl FormatCtx {
 
     pub(crate) fn set_temporal_names(&mut self, names: std::collections::BTreeMap<u64, usize>) {
         self.temporal_names = names;
+    }
+
+    pub(crate) fn set_inline_folds(&mut self, forms: std::collections::BTreeMap<u64, String>) {
+        self.inline_folds = forms;
     }
 
     pub(crate) fn set_business_identities(&mut self, roots: std::collections::BTreeMap<i64, String>) {
@@ -492,6 +498,9 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &FormatCtx) -> String {
             }
         }
         SymVarOrigin::Temporal { binding_id, primitive_type } => {
+            if let Some(expression) = ctx.inline_folds.get(binding_id) {
+                return expression.clone();
+            }
             let slot = if matches!(primitive_type.as_str(), "integer" | math::builder::RECORD_TEMPORAL_TAG) && ctx.business_inputs.is_some() {
                 ctx.temporal_names.get(binding_id).copied().expect("closed temporal definition")
             } else { *binding_id as usize };

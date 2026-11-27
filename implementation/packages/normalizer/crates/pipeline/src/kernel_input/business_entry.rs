@@ -546,6 +546,7 @@ impl EntryContext {
             }
             let mut ctx = crate::FormatCtx::for_business(inputs, states.clone());
             ctx.set_temporal_names(definition_names.clone());
+            ctx.set_inline_folds(publication.inline_folds.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());

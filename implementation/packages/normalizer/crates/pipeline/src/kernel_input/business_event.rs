@@ -429,6 +429,7 @@ pub(super) fn observations(
             normalized
         };
         ctx.set_temporal_names(publication.aliases);
+        ctx.set_inline_folds(publication.inline_folds);
         Some(if let Some(fields) = projected_record {
             let values = returned.as_array_lit().filter(|values| values.len() == fields.len())
                 .ok_or_else(|| fail("projected record lost its declared fields"))?;
