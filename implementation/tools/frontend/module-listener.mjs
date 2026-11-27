@@ -37,9 +37,6 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
     if (!host.modifiers?.some(m => is(m, ts.SyntaxKind.DeclareKeyword))) {
       fail('listener requires a closed top-level host declaration');
     }
-    if (ts.getJSDocTags(host).some(tag => ['throws', 'exception'].includes(tag.tagName.text))) {
-      fail('unsupported listener host contract tag');
-    }
     if (markers.size && !markers.has('external') || root.initializer || !root.type || !ts.isTypeLiteralNode(root.type)) {
       fail('listener host requires a closed declared receiver interface or source shape');
     }
@@ -48,6 +45,11 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
           signature.questionToken || signature.typeParameters?.length ||
           signature.parameters.length || !is(signature.type, ts.SyntaxKind.VoidKeyword)) {
         fail('listener requires a named required zero-argument void member');
+      }
+      // Prose JSDoc is not an external completion declaration. A reserved
+      // @N method marker still needs a supported explicit contract.
+      if (ts.getJSDocTags(signature).some(tag => tag.tagName.text === 'N')) {
+        fail('listener method needs a supported explicit completion contract');
       }
       const target = root.name.text + '.' + signature.name.text;
       const port = markers.has('external') ? 'sync_' + contracts.size : null;
@@ -63,11 +65,22 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
   }
 
   const statements = [...fn.body.statements];
-  const registrarIndex = statements.findIndex(ts.isFunctionDeclaration);
+  function registrarOf(statement) {
+    if (ts.isFunctionDeclaration(statement)) return {binding: statement, callable: statement};
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)
+        || statement.declarationList.declarations.length !== 1) return;
+    const [binding] = statement.declarationList.declarations;
+    const callable = binding.initializer && unwrapParens(binding.initializer);
+    if (ts.isIdentifier(binding.name) && callable && ts.isArrowFunction(callable) && ts.isBlock(callable.body)) {
+      return {binding, callable};
+    }
+  }
+  const registrarIndex = statements.findIndex(st => Boolean(registrarOf(st)));
   if (registrarIndex < 1) fail('listener needs a closed synchronous entry, callback slot and registration');
   const slots = statements.slice(0, registrarIndex).flatMap(st => ts.isVariableStatement(st)
     && st.declarationList.flags & ts.NodeFlags.Let ? [...st.declarationList.declarations] : []);
-  const [registrar, call, ...dispatches] = statements.slice(registrarIndex);
+  const [declaration, call, ...dispatches] = statements.slice(registrarIndex);
+  const {binding, callable: registrar} = registrarOf(declaration);
   const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   const observedSlots = new Set();
   for (const st of dispatches) {
@@ -97,12 +110,12 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
           && st.declarationList.declarations.every(dec => !dec.initializer && ts.isIdentifier(dec.name)
             && dec.type && ts.isUnionTypeNode(dec.type) && dec.type.types.length === 2
             && dec.type.types.some(callbackType) && dec.type.types.some(t => is(t, ts.SyntaxKind.UndefinedKeyword))))
-      || !registrar.name || !registrar.body || registrar.asteriskToken
+      || !binding.name || !registrar.body || registrar.asteriskToken
       || registrar.modifiers || registrar.parameters.length !== 1
       || !ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
       || parameter.dotDotDotToken || parameter.questionToken
       || !registration || registration.questionDotToken || registration.arguments.length !== 1
-      || !named(registration.expression, registrar.name.text) || declarationOf(registration.expression) !== registrar || !body || arrow.modifiers
+      || !named(registration.expression, binding.name.text) || declarationOf(registration.expression) !== binding || !body || arrow.modifiers
       || arrow.parameters.some(p => !p.questionToken || p.initializer || p.dotDotDotToken || !ts.isIdentifier(p.name))
       || !returns || !ts.isReturnStatement(returns) || !returns.expression
       || !(checker.getTypeAtLocation(returns.expression).flags & ts.TypeFlags.StringLike
@@ -201,10 +214,12 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
         && is(st.expression.operatorToken, ts.SyntaxKind.EqualsEqualsEqualsToken)
         && ts.isIdentifier(st.expression.left) && ts.isIdentifier(st.expression.right)) {
       const a = declarationOf(st.expression.left), b = declarationOf(st.expression.right);
-      if (!saved || !((a === parameter && b === pending) || (b === parameter && a === pending))) {
+      if (!((a === parameter && b === pending) || (b === parameter && a === pending))) {
         fail('listener registration requires a proven local callback equality');
       }
-      for (const branch of blockStatements(st.thenStatement)) lowerObserved(branch, null);
+      // Before the assignment this closed slot is undefined. Afterwards
+      // it holds this very callback object, not only an equal return value.
+      if (saved) for (const branch of blockStatements(st.thenStatement)) lowerObserved(branch, null);
     } else {
       lowerObserved(st, null);
     }
