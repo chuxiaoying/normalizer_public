@@ -207,7 +207,12 @@ impl EntryContext {
     // Native source constructs this identity and dense parameter positions
     // from its selected AST. Only the adapter accepts supplied values.
     fn validate_public_bindings(&self) -> Result<()> {
-        if !self.function.contains('#') { return Err("missing business entry identity".into()); }
+        let (source, target) = self.function.split_once('#').ok_or("missing business entry identity")?;
+        if source.contains('\\') || source.split('/').any(|part| part.is_empty() || matches!(part, "." | ".."))
+            || target.is_empty() || target.contains('#') || self.function.chars().any(char::is_control)
+        {
+            return Err("business entry needs an unambiguous project-relative source path and invocation".into());
+        }
         let mut positions: Vec<_> = self.parameters.values().map(|p| p.position).collect();
         positions.sort_unstable();
         if !positions.into_iter().eq(0..self.parameters.len()) {
@@ -650,10 +655,16 @@ impl EntryContext {
         }
         let tables = observations.map(|o| &o.tables).unwrap_or(&result.source_tables);
         for (table, columns) in tables {
+            if self.environment.contains_key(table) {
+                return Err(format!("[NORM-BUSINESS-IDENTITY] state and table share the E name {table}"));
+            }
             doc["E"][table] = json!({"kind":"table", "source":table, "columns":columns});
         }
         if let Some(observations) = observations {
             for (identity, acquisition) in &observations.acquisitions {
+                if doc["E"].get(identity).is_some() {
+                    return Err(format!("[NORM-BUSINESS-IDENTITY] acquired value shadows an E name {identity}"));
+                }
                 doc["E"][identity] = acquisition.clone();
             }
             if !observations.effects.is_empty() { doc["S"] = json!(observations.effects); }
