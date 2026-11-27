@@ -16,6 +16,6 @@ expected:
       type: number[]
   throws:
     - type: java.lang.ArithmeticException
-      when: LENGTH(values) > 0
+      when: 0 < LENGTH(values)
     - type: java.lang.ArrayIndexOutOfBoundsException
-      when: LENGTH(values) == 0
+      when: 0 == LENGTH(values)

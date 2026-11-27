@@ -18,9 +18,9 @@ expected:
     - write:
         target: values[0]
         value: next
-        when: LENGTH(values) > 0
+        when: 0 < LENGTH(values)
   throws:
     - type: java.lang.ArithmeticException
-      when: LENGTH(values) > 0
+      when: 0 < LENGTH(values)
     - type: java.lang.ArrayIndexOutOfBoundsException
-      when: LENGTH(values) == 0
+      when: 0 == LENGTH(values)

@@ -14,7 +14,7 @@ expected:
         type: bool
   R: |-
     CASE
-      WHEN amount > 0 AND replace THEN amount + 1
-      WHEN replace THEN 0
-      ELSE 2
+      WHEN NOT (replace) THEN 2
+      WHEN amount > 0 THEN amount + 1
+      ELSE 0
     END

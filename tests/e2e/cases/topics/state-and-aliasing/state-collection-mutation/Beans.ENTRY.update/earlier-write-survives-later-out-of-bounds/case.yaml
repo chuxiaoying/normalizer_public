@@ -18,12 +18,12 @@ expected:
     - write:
         target: values[0]
         value: next
-        when: LENGTH(values) > 0
+        when: 0 < LENGTH(values)
     - write:
         target: values[1]
         value: next + 1
-        when: LENGTH(values) >= 2
+        when: 1 < LENGTH(values)
   R: next + 1
   throws:
     - type: java.lang.ArrayIndexOutOfBoundsException
-      when: LENGTH(values) <= 1
+      when: 2 > LENGTH(values)
