@@ -1,5 +1,17 @@
 entry: src/ordered-map.ts#labels
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - readonly Map requires unique literal keys
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ordered-map.ts#labels
+    returns: map<text,text>
+  P:
+    parameters:
+      a: { position: 0, type: 'text?' }
+      b: { position: 1, type: 'text?' }
+      c: { position: 2, type: 'text?' }
+  R: |-
+    CASE
+      WHEN a == null AND b == null THEN MAP([])
+      WHEN b == null THEN MAP([["a", a]])
+      ELSE MAP([["a", b]])
+    END
