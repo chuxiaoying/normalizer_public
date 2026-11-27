@@ -127,13 +127,29 @@ fn simplify_admitted(
     expr: &Expr, op: B, left: &Expr, right: &Expr, total: bool, ctx: &dyn SortContext,
 ) -> Expr {
     if !total {
-        if exact_business_integer(expr, ctx)
-            && crate::canonical_order::comparison_operands_are_bound(expr, ctx)
-            && crate::canonical_order_compare(left, right, ctx).is_gt()
+        if !exact_business_integer(expr, ctx)
+            || !crate::canonical_order::comparison_operands_are_bound(expr, ctx)
         {
-            return b::binop_public(op, right.clone(), left.clone());
+            return expr.clone();
         }
-        return expr.clone();
+        // A strict AC expression still requires every acquired operand.
+        // Canonicalize the whole chain but never erase an observation,
+        // even if a multiplication by zero would hide its unavailability.
+        fn strict_leaves(value: &Expr, op: B, out: &mut Vec<Expr>) {
+            if let Some((inner, left, right)) = value.as_binop() {
+                if inner == op {
+                    strict_leaves(left, op, out);
+                    strict_leaves(right, op, out);
+                    return;
+                }
+            }
+            out.push(value.clone());
+        }
+        let mut leaves = Vec::new();
+        strict_leaves(expr, op, &mut leaves);
+        leaves.sort_by_cached_key(|value| crate::canonical_order_key(value, ctx));
+        return leaves.into_iter().reduce(|left, right| b::binop_public(op, left, right))
+            .expect("binary exact arithmetic has operands");
     }
     if op == B::Add {
         if let Some(offset) = combine_constant_offset(left, right)
