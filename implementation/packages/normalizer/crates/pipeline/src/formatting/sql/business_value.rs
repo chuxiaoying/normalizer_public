@@ -1,127 +1,68 @@
 use super::FormatCtx;
 use math::{builder as b, BinOpKind, Expr, SymVarOrigin};
-use std::collections::HashMap;
-
-struct Repetition {
-    definition: Expr,
-    eager: usize,
-}
-
-fn direct_input(value: &Expr, primitive: &str, ctx: &FormatCtx) -> bool {
+fn direct_input(value: &Expr, ctx: &FormatCtx) -> bool {
     matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
-        if primitive_type == primitive && !name.starts_with('$') && !name.contains('.')
+        if matches!(primitive_type.as_str(), "integer" | "boolean" | "text")
+            && !name.starts_with('$') && !name.contains(['.', '[', ']'])
             && ctx.business_inputs.as_ref().is_some_and(|inputs| inputs.contains_key(name)))
 }
 
-fn closed_scalar_integer(value: &Expr, ctx: &FormatCtx) -> bool {
-    if value.as_lit().and_then(math::Lit::as_integer).is_some() || direct_input(value, "integer", ctx) {
-        return true;
+fn total_value(value: &Expr, ctx: &FormatCtx, row: Option<&str>) -> bool {
+    if value.as_lit().is_some() || direct_input(value, ctx) { return true; }
+    if let Some(alias) = value.as_row_value() { return row == Some(alias); }
+    if let Some((_, operand)) = value.as_unary_op() { return total_value(operand, ctx, row); }
+    if let Some((_, left, right)) = value.as_binop() {
+        return total_value(left, ctx, row) && total_value(right, ctx, row);
     }
-    if let Some((math::UnaryOpKind::Neg, operand)) = value.as_unary_op() {
-        return closed_scalar_integer(operand, ctx);
+    if let Some((arms, otherwise)) = value.as_total_case_when() {
+        return arms.iter().all(|(guard, value)| total_value(guard, ctx, row) && total_value(value, ctx, row))
+            && total_value(otherwise, ctx, row);
     }
-    value.as_binop().is_some_and(|(op, left, right)| {
-        matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
-            && closed_scalar_integer(left, ctx) && closed_scalar_integer(right, ctx)
-    })
+    value.as_array_lit().is_some_and(|items| items.iter().all(|item| total_value(item, ctx, row)))
 }
 
-fn closed_scalar_case(value: &Expr, ctx: &FormatCtx) -> bool {
-    matches!(value.as_total_case_when(), Some(([(guard, then_value)], fallback))
-        if direct_input(guard, "boolean", ctx) && closed_scalar_integer(then_value, ctx)
-            && closed_scalar_integer(fallback, ctx))
-}
-
-fn record_repetition(value: &Expr, repetitions: &mut Vec<Repetition>) {
-    if let Some(repetition) = repetitions.iter_mut().find(|repetition| &repetition.definition == value) {
-        repetition.eager += 1;
-    } else {
-        repetitions.push(Repetition { definition: value.clone(), eager: 1 });
-    }
-}
-
-// Only visit eager arithmetic children. Certified scalar CASEs depend on
-// direct parameters; certified sums retain their own row binder. Neither
-// can capture a partial observation or a dependency on another definition.
-fn collect_closed_repetitions(value: &Expr, ctx: &FormatCtx, repetitions: &mut Vec<Repetition>) {
-    use math::{domains::relation::RelationExpr, BinOpKind, RelationAggregateKind, SymVarOrigin};
-
-    if closed_scalar_case(value, ctx) {
-        record_repetition(value, repetitions);
-        return;
-    }
+fn closed_candidate(value: &Expr, ctx: &FormatCtx) -> bool {
+    use math::{domains::relation::RelationExpr, RelationAggregateKind};
+    if total_value(value, ctx, None) { return true; }
+    // A SUM can be shared as a whole only over the exact same acquired
+    // input sequence. Its row binder never participates in outer sharing.
     if let Some((RelationAggregateKind::Sum, RelationExpr::Base { name, alias, snapshot: None }, Some(select), None)) =
         value.as_relation_aggregate()
     {
-        if name.starts_with('$') || !ctx.scalar_arrays.contains(name) || !select.has_case_when() {
-            return;
-        }
-        let mut closed = true;
-        select.walk(&mut |part| {
-            closed &= match part.as_sym_var() {
-                Some(SymVarOrigin::Parameter { name, .. }) => !name.starts_with('$') && !name.contains('.')
-                    && ctx.business_inputs.as_ref().is_some_and(|inputs| inputs.contains_key(name)),
-                Some(_) => false,
-                None => part.as_row_value().is_some_and(|row| row == alias)
-                    || part.as_lit().is_some() || part.as_binop().is_some()
-                    || part.as_unary_op().is_some()
-                    || part.as_total_case_when().is_some(),
-            };
-        });
-        if closed {
-            record_repetition(value, repetitions);
-        }
-    } else if let Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right)) = value.as_binop() {
-        collect_closed_repetitions(left, ctx, repetitions);
-        collect_closed_repetitions(right, ctx, repetitions);
+        return !name.starts_with('$') && ctx.scalar_arrays.contains(name)
+            && total_value(select, ctx, Some(alias));
     }
+    false
+}
+
+fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&mut FormatCtx) -> String) -> String {
+    if ctx.business_inputs.is_none() || !value.has_case_when() {
+        return ctx.in_relation_scope(value, render);
+    }
+    let external = ctx.published_external_names();
+    let compare = crate::canonical_names::CanonicalNames {
+        heap: &ctx.business_identities,
+        external: (!external.is_empty()).then_some(&external),
+        total_temporals: None,
+        temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
+    };
+    let plan = math::canonical_let_plan(value, &compare, |expr| closed_candidate(expr, ctx))
+        .unwrap_or_else(|failure| panic!("{failure}"));
+    let mut definitions = Vec::new();
+    for (slot, expression) in plan.into_iter().enumerate() {
+        let name = format!("$l_{slot}");
+        definitions.push(format!("LET {name} = {}", super::format_expr_with_ctx(&expression, ctx)));
+        ctx.display_business_value(expression, name);
+    }
+    let result = ctx.in_relation_scope(value, render);
+    for _ in &definitions { ctx.forget_business_value(); }
+    if definitions.is_empty() { result }
+    else { format!("{}\nIN {result}", definitions.join("\n")) }
 }
 
 pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
-    let mut queries = Vec::new();
-    collect_closed_repetitions(value, ctx, &mut queries);
-    queries.retain(|repetition| repetition.eager > 1);
-    // Count all occurrences together: formatter substitutions are
-    // expression-wide, so none of a query's occurrences may be guarded.
-    let mut total_counts = vec![0; queries.len()];
-    if !queries.is_empty() {
-        let indices: HashMap<_, _> = queries.iter().enumerate()
-            .map(|(index, repetition)| (&repetition.definition, index))
-            .collect();
-        value.walk(&mut |expr| {
-            if let Some(&index) = indices.get(expr) {
-                total_counts[index] += 1;
-            }
-        });
-    }
-    // Certified cases and sums are independent; the latter have a private row
-    // binder. Because no eligible definition contains another eligible eager
-    // definition, extracting one cannot alter the gain of the others. Use
-    // the shared order
-    // rather than the traversal order of the surrounding value.
-    let mut independent: Vec<_> = queries.into_iter().zip(total_counts)
-        .filter_map(|(repetition, total)| (repetition.eager == total).then_some(repetition.definition))
-        .collect();
-    independent.sort_by_cached_key(|query| math::canonical_order_key(query, &math::DefaultSortContext));
-    let mut definitions = Vec::new();
-    for query in independent {
-        let name = format!("$l_{}", definitions.len());
-        definitions.push(format!(
-            "LET {name} = {}",
-            super::format_expr_with_ctx(&query, ctx)
-        ));
-        ctx.display_business_value(query, name);
-    }
-    let mut result = ctx.in_relation_scope(value, |ctx| super::format_expr_with_ctx(value, ctx));
-    if !definitions.is_empty() {
-        result = format!("{}\nIN {result}", definitions.join("\n"));
-        for _ in definitions {
-            ctx.forget_business_value();
-        }
-    }
-    result
+    with_value_plan(value, ctx, |ctx| super::format_expr_with_ctx(value, ctx))
 }
-
 
 /// A short-circuit candidate must be safe to observe, not merely algebraically
 /// equivalent on total Boolean values.
@@ -246,9 +187,9 @@ pub(crate) fn format_guarded_boolean(
 
 pub(crate) fn format_record(expression: &Expr, fields: &[(String, Expr)], ctx: &mut FormatCtx) -> String {
     let values = expression.as_array_lit().expect("declared record projection");
-    ctx.in_relation_scope(expression, |ctx| {
+    with_value_plan(expression, ctx, |ctx| {
         let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
-            let value = format_value(value, ctx);
+            let value = super::format_expr_with_ctx(value, ctx);
             format!("  {name}: {}", value.replace('\n', "\n  "))
         }).collect();
         format!("{{\n{}\n}}", lines.join(",\n"))

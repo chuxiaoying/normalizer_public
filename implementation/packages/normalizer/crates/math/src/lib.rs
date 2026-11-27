@@ -43,6 +43,7 @@ pub use normalize::{
 };
 pub use canonical_order::{
     canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison, CanonicalKey,
+    canonical_let_plan, let_eager_children,
 };
 pub use primitive_enum::Primitive;
 pub use sort_context::{DefaultSortContext, SortContext};

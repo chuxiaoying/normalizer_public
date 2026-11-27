@@ -196,6 +196,21 @@ pub fn format_expr_sql(expr: &Expr) -> String {
 
 /// Expr → 类 SQL 字符串（带 ctx，外部复用编号/heap）
 pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
+    if let Some((_, label)) = ctx.business_projections.iter().rev().find(|(value, _)| value == expr) {
+        return label.clone();
+    }
+    if ctx.business_projections.is_empty() || !math::let_eager_children(expr).is_empty() {
+        return format_expr_inner(expr, ctx);
+    }
+    // The virtual LET key and rendering use the same occurrence scope.
+    // A matching expression behind a guard or in a row is not a use here.
+    let outer = std::mem::take(&mut ctx.business_projections);
+    let rendered = format_expr_inner(expr, ctx);
+    ctx.business_projections = outer;
+    rendered
+}
+
+fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if ctx.business_inputs.is_some() {
         if let Some(entries) = math::domains::composite::ordered_text_map_entries(expr) {
             let rows = entries.iter().map(|entry| format_expr_with_ctx(entry, ctx)).collect::<Vec<_>>();
@@ -203,9 +218,6 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
         }
         if let Some(vector) = math::domains::composite::vector_length_input(expr) {
             return format!("LENGTH({})", format_expr_with_ctx(vector, ctx));
-        }
-        if let Some((_, label)) = ctx.business_projections.iter().rev().find(|(value, _)| value == expr) {
-            return label.clone();
         }
         if let Some((record, name, _)) = math::domains::composite::field_projection(expr) {
             return format!("{}.{name}", format_expr_with_ctx(record, ctx));
@@ -472,10 +484,12 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
         let text = if scoped {
             let (selected, next) = math::builder::first_match_domains(remaining.clone(), guard);
             ctx.relation_scope.active = Some(selected);
-            let text = ctx.in_relation_scope(value, |ctx| format_expr_with_ctx(value, ctx));
+            let text = business_value::format_value(value, ctx);
             ctx.relation_scope.active = Some(remaining);
             remaining = next;
             text
+        } else if business {
+            business_value::format_value(value, ctx)
         } else {
             format_expr_with_ctx(value, ctx)
         };
@@ -493,7 +507,8 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
                 && matches!(relation, math::domains::relation::RelationExpr::Base { name, .. }
                     if ctx.scalar_arrays.contains(name))
         }));
-    if business && branches.len() == 2 && (scoped || branches[0].0.as_sym_var().is_some() || array_index_arm) {
+    if business && branches.len() == 2 && !parts.iter().any(|part| part.contains("\nLET") || part.contains("THEN LET") || part.contains("ELSE LET"))
+        && (scoped || branches[0].0.as_sym_var().is_some() || array_index_arm) {
         parts.push("END".into());
         return parts.join(" ");
     }

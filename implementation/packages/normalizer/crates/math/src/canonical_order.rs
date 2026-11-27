@@ -7,13 +7,13 @@ use crate::symvar::SymVarOrigin;
 use num_bigint::{BigInt, BigUint, Sign};
 use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Class { Reference, Read, Scalar, Relation, Construct, Literal }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Operation { Eq, Ne, Gt, Lt, Ge, Le, And, Or, Not, Named(String) }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Payload {
     Bool(bool),
     Number(Exact),
@@ -23,13 +23,13 @@ enum Payload {
     Tables(Vec<(TableKey, String)>),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct TableKey { path: Vec<String>, snapshot: Option<Observation> }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Observation { Entry(Vec<String>), Receipt(u64), Runtime(u64), Unnamed(u64) }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Identity {
     Column(Vec<String>),
     EntrySnapshot(Vec<String>),
@@ -43,7 +43,7 @@ enum Identity {
     InternalHeap(i64),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CanonicalKey {
     arms: BigUint,
     operations: BigUint,
@@ -57,6 +57,7 @@ pub struct CanonicalKey {
     identity: Option<Identity>,
 }
 
+#[derive(Clone)]
 struct Exact(BigInt, u32);
 impl Ord for Exact {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -327,4 +328,117 @@ pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> E
         }
     }
     expr.clone()
+}
+
+/// The value positions in which an outer LET can substitute without
+/// entering a new branch, short-circuit guard, row, or acquisition scope.
+pub fn let_eager_children(expr: &Expr) -> Vec<&Expr> {
+    match expr.kind() {
+        ExprKind::BinOp { op: BinOpKind::Add | BinOpKind::Mul | BinOpKind::Sub, left, right } => vec![left, right],
+        ExprKind::UnaryOp { op: UnaryOpKind::Neg, operand } => vec![operand],
+        ExprKind::ArrayLit(items) => items.iter().collect(),
+        _ => vec![],
+    }
+}
+
+fn value_key_with_lets(
+    expression: &Expr, inline: &Rc<CanonicalKey>, bindings: &[Expr], uses: &mut [usize],
+) -> Rc<CanonicalKey> {
+    if let Some(slot) = bindings.iter().position(|definition| definition == expression) {
+        uses[slot] += 1;
+        return node(Class::Reference, named("let_reference"), inline.types.clone(), inline.contract.clone(),
+            vec![], vec![], Some(Identity::Local(slot)), 0, 1);
+    }
+    let children = let_eager_children(expression);
+    if bindings.is_empty() || children.is_empty() { return inline.clone(); }
+    let mut key = inline.as_ref().clone();
+    for (index, expr) in children.into_iter().enumerate() {
+        let old = inline.children[index].as_ref().expect("eager key slot");
+        let new = value_key_with_lets(expr, old, bindings, uses);
+        key.arms -= &old.arms;
+        key.arms += &new.arms;
+        key.operations -= &old.operations;
+        key.operations += &new.operations;
+        key.children[index] = Some(new);
+    }
+    Rc::new(key)
+}
+
+struct LetSearch<'a> {
+    value: &'a Expr,
+    inline: Rc<CanonicalKey>,
+    candidates: Vec<(Expr, Rc<CanonicalKey>)>,
+    best: (Rc<CanonicalKey>, Vec<Expr>),
+    budget: usize,
+}
+
+impl LetSearch<'_> {
+    fn search(&mut self, bindings: &mut Vec<Expr>, definition_keys: &mut Vec<Rc<CanonicalKey>>,
+        definition_uses: &mut Vec<usize>, selected: &mut [bool]) -> Result<(), &'static str>
+    {
+        // Charge owned occurrences, not arena node count; a traversal may
+        // visit each syntactically repeated child separately.
+        let work = self.value.size().saturating_add(bindings.iter()
+            .fold(1usize, |sum, expr| sum.saturating_add(expr.size())));
+        self.budget = self.budget.checked_sub(work)
+            .ok_or("LET candidate budget exhausted; no canonical result was produced")?;
+        if !bindings.is_empty() {
+            let mut uses = definition_uses.clone();
+            let value = value_key_with_lets(self.value, &self.inline, bindings, &mut uses);
+            if uses.iter().all(|&count| count >= 2) {
+                let declarations = definition_keys.iter().cloned().map(Some).collect();
+                let mut key = node(Class::Construct, named("let"), self.inline.types.clone(),
+                    self.inline.contract.clone(), vec![], declarations, None, 0, 0);
+                let result = Rc::get_mut(&mut key).expect("new LET key");
+                result.arms += &value.arms;
+                result.operations += &value.operations;
+                result.tail = Some(value);
+                if key < self.best.0 { self.best = (key, bindings.clone()); }
+            }
+        }
+        for index in 0..self.candidates.len() {
+            if selected[index] { continue; }
+            let (expression, inline) = &self.candidates[index];
+            let mut uses = definition_uses.clone();
+            let body = value_key_with_lets(expression, inline, bindings, &mut uses);
+            if body.arms == BigUint::default() { continue; } // a LET reference does not own a CASE
+            let binding = node(Class::Construct, named("let_binding"), body.types.clone(), body.contract.clone(),
+                vec![], vec![Some(body)], None, 0, 1);
+            selected[index] = true;
+            uses.push(0);
+            bindings.push(expression.clone());
+            definition_keys.push(binding);
+            self.search(bindings, definition_keys, &mut uses, selected)?;
+            definition_keys.pop();
+            bindings.pop();
+            selected[index] = false;
+        }
+        Ok(())
+    }
+}
+
+/// Compare complete CF-09 plans using this module's ordinary structural key.
+/// Eligibility is supplied by the owner of the acquired value. Names are not
+/// part of the search; reference slots are allocated by each candidate order.
+pub fn canonical_let_plan(
+    value: &Expr, ctx: &dyn SortContext, eligible: impl Fn(&Expr) -> bool,
+) -> Result<Vec<Expr>, &'static str> {
+    fn occurrences(expr: &Expr, eligible: &impl Fn(&Expr) -> bool, counts: &mut HashMap<Expr, usize>) {
+        if expr.has_case_when() && eligible(expr) { *counts.entry(expr.clone()).or_default() += 1; }
+        for child in let_eager_children(expr) { occurrences(child, eligible, counts); }
+    }
+    if !value.has_case_when() { return Ok(vec![]); }
+    let mut counts = HashMap::new();
+    occurrences(value, &eligible, &mut counts);
+    let mut candidates: Vec<_> = counts.into_iter().filter(|(_, count)| *count >= 2)
+        .map(|(expr, _)| { let key = canonical_order_key(&expr, ctx); (expr, key) }).collect();
+    if candidates.is_empty() { return Ok(vec![]); }
+    candidates.sort_by(|(_, a), (_, b)| a.cmp(b));
+    let inline = canonical_order_key(value, ctx);
+    let mut selected = vec![false; candidates.len()];
+    let budget = std::env::var("NORMALIZER_MATH_MAX_CANDIDATE_NODES").ok()
+        .and_then(|raw| raw.parse().ok()).unwrap_or(4_000_000);
+    let mut search = LetSearch { value, inline: inline.clone(), candidates, best: (inline, vec![]), budget };
+    search.search(&mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut selected)?;
+    Ok(search.best.1)
 }
