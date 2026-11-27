@@ -172,7 +172,7 @@ P:
     backup: { position: 1, type: number }
 T:
   - { id: $t_0, op: member_choice, when: 'true', members: values, empty: backup }
-  - { id: $t_1, op: fold, type: number, source: values, initial: '$t_0', accumulator: acc, element: item, body: 'acc * 2 + item' }
+  - { id: $t_1, op: fold, type: number, source: values, initial: '$t_0', accumulator: acc, element: item, body: 'item + acc * 2' }
 R: '$t_0 + $t_1'
 ```
 

@@ -66,8 +66,8 @@ P:
     right: { position: 1, type: 'number[]' }
     initial: { position: 2, type: number }
 T:
-  - { id: $t_0, op: fold, type: number, source: left, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item' }
-  - { id: $t_1, op: fold, type: number, source: right, initial: initial, accumulator: acc, element: item, body: 'acc * 2 + item' }
+  - { id: $t_0, op: fold, type: number, source: left, initial: initial, accumulator: acc, element: item, body: 'item + acc * 2' }
+  - { id: $t_1, op: fold, type: number, source: right, initial: initial, accumulator: acc, element: item, body: 'item + acc * 2' }
 R: $t_0 - $t_1
 ```
 
@@ -106,7 +106,7 @@ P:
 E:
   seed: { kind: state, source: src/CanonicalFolds.java#CanonicalFolds.INSTANCE.seed, fields: { value: number } }
 T:
-  - { id: $t_0, op: fold, type: number, source: values, initial: seed.value, accumulator: acc, element: item, body: 'acc * 2 + item' }
+  - { id: $t_0, op: fold, type: number, source: values, initial: seed.value, accumulator: acc, element: item, body: 'item + acc * 2' }
 R: $t_0
 ```
 
