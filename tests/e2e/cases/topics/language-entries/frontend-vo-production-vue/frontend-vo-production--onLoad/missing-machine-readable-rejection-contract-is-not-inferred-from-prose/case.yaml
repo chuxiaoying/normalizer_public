@@ -1,5 +1,111 @@
 entry: src/ArrearsPage.ts#onLoad
-reject:
-  fragments:
-    - "SCENARIO_MODULE_INPUT:"
-    - awaited external port requires a closed Promise<Element> and named rejection types
+expected:
+  schema: normalizer.pers/1
+  types:
+    Profile:
+      fields:
+        accountId: number
+        minPriority: number
+        quota: number
+    BillRow:
+      fields:
+        accountId: number
+        dueDate: number
+        amount: number
+        waivedAmount: number
+        priority: number
+  entry:
+    function: src/ArrearsPage.ts#onLoad
+    returns: void
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+      today:
+        position: 1
+        type: number
+  E:
+    arrears:
+      kind: state
+      source: src/ArrearsPage.ts#arrears
+      fields:
+        loadedAccountId: number
+        status:
+          loading: bool
+          ready: bool
+          failed: bool
+        summary:
+          payable: number
+  S:
+    - write:
+        target: arrears.loadedAccountId
+        value: accountId
+
+    - write:
+        target: arrears.status.loading
+        value: true
+
+    - call:
+        external: src/ArrearsPage.ts#profileClient.fetchProfile
+        args:
+          - accountId
+        returns: Profile
+        result: $e_0
+
+    - call:
+        external: src/ArrearsPage.ts#arrearsClient.queryOpenBills
+        args:
+          - $e_0.accountId
+        returns: BillRow[]
+        result: $e_1
+
+    - write:
+        target: arrears.status.loading
+        value: false
+
+    - write:
+        target: arrears.summary.payable
+        value: |-
+          CASE
+            WHEN $e_0.quota > COALESCE(
+              SUM(
+                SELECT row.amount - row.waivedAmount
+                FROM $e_1 AS row
+                WHERE today >= row.dueDate
+                  AND row.amount > row.waivedAmount
+                  AND $e_0.minPriority <= row.priority
+              ),
+              0
+            ) THEN COALESCE(
+              SUM(
+                SELECT row.amount - row.waivedAmount
+                FROM $e_1 AS row
+                WHERE today >= row.dueDate
+                  AND row.amount > row.waivedAmount
+                  AND $e_0.minPriority <= row.priority
+              ),
+              0
+            )
+            ELSE $e_0.quota
+          END
+        when: completion.is_return($e_1)
+
+    - write:
+        target: arrears.status.ready
+        value: true
+        when: completion.is_return($e_1)
+
+    - write:
+        target: arrears.status.failed
+        value: true
+        when: completion.is_throw($e_1, BillQueryError)
+
+    - write:
+        target: arrears.status.ready
+        value: false
+        when: completion.is_throw($e_1, BillQueryError)
+  R: void
+  throws:
+    - type: BillQueryError
+      when: completion.is_throw($e_1, BillQueryError)

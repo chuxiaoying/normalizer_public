@@ -64,20 +64,20 @@ expected:
         target: arrears.summary.payable
         value: |-
           CASE
-            WHEN $e_0.quota < COALESCE(
+            WHEN $e_0.quota > COALESCE(
               SUM(
                 SELECT row.priority
                 FROM $e_1 AS row
               ),
               0
-            ) THEN $e_0.quota
-            ELSE COALESCE(
+            ) THEN COALESCE(
               SUM(
                 SELECT row.priority
                 FROM $e_1 AS row
               ),
               0
             )
+            ELSE $e_0.quota
           END
         when: |-
           CASE
@@ -97,16 +97,16 @@ expected:
         value: true
         when: |-
           CASE
-            WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
-            ELSE completion.is_throw($e_1, BillQueryError)
+            WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, BillQueryError)
+            ELSE true
           END
     - write:
         target: arrears.status.ready
         value: false
         when: |-
           CASE
-            WHEN completion.is_throw($e_0, ProfileFetchError) THEN true
-            ELSE completion.is_throw($e_1, BillQueryError)
+            WHEN completion.is_return($e_0) THEN completion.is_throw($e_1, BillQueryError)
+            ELSE true
           END
   R: void
   throws:
