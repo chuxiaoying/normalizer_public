@@ -16,6 +16,21 @@ pub(crate) fn simplify(
     let Some(branches) = expr.as_case_when() else {
         return expr.clone();
     };
+    // A WHEN that returns SQL UNKNOWN does not select its arm, but its
+    // negation is UNKNOWN as well. A two-valued first-match proof cannot
+    // invent either an exhaustive complement or facts for following arms.
+    if branches.iter().any(|(guard, _)| guard.may_observe_sql_unknown()) {
+        let mut unchanged_when = Vec::new();
+        for (guard, value) in branches {
+            if guard.as_bool() == Some(false) { continue; }
+            unchanged_when.push((guard.clone(), value.clone()));
+            if guard.as_bool() == Some(true) { break; }
+        }
+        if unchanged_when.len() != branches.len() {
+            return Expr::new(ExprKind::CaseWhen { branches: unchanged_when });
+        }
+        return expr.clone();
+    }
     if let Some(value) = select_first_default(expr) {
         return value;
     }
@@ -532,17 +547,19 @@ fn is_covered_by_previous(cond: &Expr, previous: &[(Expr, Expr)]) -> bool {
 /// 因此 branch[k].cond 显式包含 NOT(prev_cond) 作为 AND 项是冗余的。
 fn strip_redundant_path_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
     map_prior_guards(branches, |cond, prev_conds| {
-        let conjuncts = flatten_and(cond);
+        let mut conjuncts = flatten_and(cond);
         let original_len = conjuncts.len();
-        let filtered: Vec<Expr> = conjuncts
-            .iter()
-            .filter(|c| {
-                !is_not_of_any(c, prev_conds)
-                    && !is_not_conj_implied_by_prev_failure(c, &conjuncts, prev_conds)
-            })
-            .cloned()
-            .collect();
-        (filtered.len() != original_len).then(|| rebuild_and(&filtered))
+        // Reprove each deletion against what remains. Two terms can use
+        // each other as evidence; neither proof alone licenses dropping both.
+        for index in (0..original_len).rev() {
+            let term = &conjuncts[index];
+            if is_not_of_any(term, prev_conds)
+                || is_not_conj_implied_by_prev_failure(term, &conjuncts, prev_conds)
+            {
+                conjuncts.remove(index);
+            }
+        }
+        (conjuncts.len() != original_len).then(|| rebuild_and(&conjuncts))
     })
 }
 
