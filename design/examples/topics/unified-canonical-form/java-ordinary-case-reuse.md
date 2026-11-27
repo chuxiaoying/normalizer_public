@@ -35,7 +35,7 @@ P:
     include: { position: 4, type: bool }
 R: |-
   LET $l_0 = CASE WHEN enabled THEN a ELSE b END
-  IN ($l_0 + shift) * ($l_0 - shift)
+  IN (shift + $l_0) * ($l_0 - shift)
 ```
 
 | 对照 | 必须保留的区别 |
@@ -43,4 +43,4 @@ R: |-
 | 反写条件并同时交换两臂，改局部名 | PERS 与原例完全一致。 |
 | 只返回 `selected - shift` | 只使用一次，保持内联。 |
 | 直接返回 `selected * selected` | 两个相同的完整 CASE 可同步取臂；先化为 `CASE WHEN enabled THEN a * a ELSE b * b END`，没有需要提取的重复。 |
-| 原表达式再加 `include ? selected + shift : 0` | 第三个引用在外层条件域内；不能用整值 LET 同时替换三个位置，保持内联。 |
+| 原表达式再加 `include ? selected + shift : 0` | 第三个引用仍在外层条件域内内联；前两个同域引用仍共享一个 LET，不把这第三处纳入共同绑定。 |

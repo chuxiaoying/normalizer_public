@@ -78,7 +78,7 @@ P:
 R: LENGTH(closed) == LENGTH(opened)
 throws:
   - type: java.lang.IllegalArgumentException
-    when: LENGTH(closed) > LENGTH(opened) or EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE closed[i].id != opened[LENGTH(opened) - 1 - i].id)
+    when: LENGTH(closed) > LENGTH(opened) OR EXISTS (SELECT 1 FROM indices(LEAST(LENGTH(closed), LENGTH(opened))) AS i WHERE closed[i].id != opened[LENGTH(opened) - 1 - i].id)
 ```
 
 **判别例**　indices(n) 枚举 0 到 n−1。打开 [1,2]、关闭 [2,1] 返回真；关闭 [1,2] 抛异常；只关闭 [2] 返回假。
