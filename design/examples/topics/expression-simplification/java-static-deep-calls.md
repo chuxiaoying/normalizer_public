@@ -57,9 +57,9 @@ P:
 
 R: |-
   CASE
-    WHEN limit < base + value + 1 THEN limit
-    ELSE base + value + 1
+    WHEN limit > base + value + 1 THEN base + value + 1
+    ELSE limit
   END
 ```
 
-三个 helper 均为纯计算，最终的额度判断只读取 `value`、`base` 和 `limit`。
+三个 helper 均为纯计算。展开调用后，`cap` 的两臂正是已经取得的 `limit` 和 `base + value + 1`；相等时取任一边相同。按 [CF-04](../../../chapters/08-统一定形.md#cf-04-完整二分-case)，简单的 `limit` 放在左侧，两种严格取小候选同成本，选 `>` 并在真臂返回计算值。相等点不因交换两臂而变。
