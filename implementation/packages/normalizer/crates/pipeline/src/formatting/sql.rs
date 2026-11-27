@@ -170,14 +170,18 @@ impl FormatCtx {
             if !self.relation_scope.members.contains_key(slot) && math::builder::path_implies(&active, guard))).collect()
     }
 
+    fn active_choice_slots(&self) -> std::collections::BTreeMap<u64, usize> {
+        self.temporal_names.iter().filter_map(|(&id, &slot)| {
+            self.relation_scope.member_order.iter().position(|&active| active == slot)
+                .map(|position| (id, position))
+        }).collect()
+    }
+
     fn choice_prefix_keys(
         &self, expression: &Expr, external: &std::collections::BTreeMap<u64, String>,
     ) -> (Vec<math::ChoiceOperands>, std::collections::BTreeMap<u64, usize>) {
-        let mut lexical = std::collections::BTreeMap::new();
+        let mut lexical = self.active_choice_slots();
         let ids: std::collections::BTreeMap<_, _> = self.temporal_names.iter().map(|(&id, &slot)| (slot, id)).collect();
-        for (position, &slot) in self.relation_scope.member_order.iter().enumerate() {
-            if let Some(&id) = ids.get(&slot) { lexical.insert(id, position); }
-        }
         let mut shapes = Vec::new();
         for slot in self.eligible_choices(expression) {
             let scoped_relation::Slot::Choice { shape, .. } = &self.relation_scope.slots[slot] else { unreachable!("certified choice slot") };
@@ -361,11 +365,13 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some(rendered) = business_value::format_guarded_boolean(op, left, right, ctx) {
             return rendered;
         }
-        let public = CanonicalNames {
+        let lexical = ctx.active_choice_slots();
+        let public = crate::canonical_names::ChoiceKeys { base: CanonicalNames {
             heap: &ctx.business_identities,
             external: (!ctx.business_states.is_empty()).then_some(&ctx.business_states),
-            total_temporals: None, reductions: Some(&ctx.reductions), temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-        };
+            total_temporals: None, reductions: Some(&ctx.reductions),
+            temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
+        }, slots: &lexical };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.
         let (op, left, right) = match math::canonical_order_ordered_comparison(op, left, right, &public) {

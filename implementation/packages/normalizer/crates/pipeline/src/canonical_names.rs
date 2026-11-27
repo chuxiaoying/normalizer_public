@@ -38,6 +38,6 @@ impl math::SortContext for ChoiceKeys<'_> {
     fn external_names(&self) -> Option<&BTreeMap<u64, String>> { self.base.external_names() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
     fn reduce_shapes(&self) -> Option<&BTreeMap<u64, math::ReduceShape>> { self.base.reduce_shapes() }
-    fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { Some(self.slots) }
+    fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { (!self.slots.is_empty()).then_some(self.slots) }
     fn temporal_is_total(&self, id: u64) -> bool { self.base.temporal_is_total(id) }
 }
