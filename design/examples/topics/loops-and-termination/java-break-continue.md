@@ -43,7 +43,7 @@ P:
 
 R: |-
   CASE
-    WHEN limit <= 2 THEN 0
+    WHEN limit < 3 THEN 0
     WHEN limit == 3 THEN 2
     WHEN limit == 4 THEN 5
     ELSE 9
