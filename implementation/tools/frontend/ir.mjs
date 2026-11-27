@@ -50,6 +50,7 @@ export function unwrapParens(node) {
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
   if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
+  if (node.questionDotToken) return undefined; // Optional access is not a plain path read.
   const property = ts.isPropertyAccessExpression(node) ? node.name
     : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)
       ? node.argumentExpression : undefined;

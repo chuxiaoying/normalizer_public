@@ -165,8 +165,10 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       return { op: 'const', type: 'number', value: Number(n.text) };
     if (n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.TrueKeyword)
       return { op: 'const', type: 'bool', value: n.kind === ts.SyntaxKind.TrueKeyword };
-    if (ts.isPropertyAccessExpression(n))
+    if (ts.isPropertyAccessExpression(n)) {
+      if (n.questionDotToken) fail('optional access needs a checked nullish branch before field observation');
       return { op: 'value.field', value: lowerValue(n.expression, scope), name: n.name.text };
+    }
     if (ts.isConditionalExpression(n)) {
       const cond = lowerValue(n.condition, scope);
       const then = lowerValue(n.whenTrue, scope);
