@@ -119,9 +119,7 @@ pub(super) fn publish(
                 published.reductions.insert(id, math::ReduceShape {
                     source: fold.source.clone(), initial: fold.initial.clone(), body: fold.body.clone(),
                 });
-                let mut ctx = crate::FormatCtx::for_business(BTreeMap::new(), BTreeMap::new());
-                let body = crate::format_expr_with_ctx(&fold.body, &mut ctx);
-                Slot::Fold { source: array_name(&fold.source)?.clone(), initial: value, body }
+                Slot::Fold { source: array_name(&fold.source)?.clone(), initial: value, body: fold.body.clone() }
             }
             Definition::Choice(choice) => {
                 let mut entry_guard = true;

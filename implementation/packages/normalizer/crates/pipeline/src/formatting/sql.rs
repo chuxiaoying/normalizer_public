@@ -115,11 +115,21 @@ impl FormatCtx {
         self.relation_scope.slots = slots.into();
     }
 
+    fn uncaptured_name(&self, namespace: &str, name: &str) -> String {
+        let root = name.split('.').next().unwrap_or(name);
+        if self.relation_scope.members.values().any(|member| member == root) {
+            format!("{namespace}.{name}")
+        } else {
+            name.to_owned()
+        }
+    }
+
     fn relation_operand(&mut self, operand: &scoped_relation::Operand) -> String {
         use scoped_relation::Operand;
         match operand {
             Operand::Integer(value) => value.to_string(),
-            Operand::Parameter(name) | Operand::Acquired(name) => name.clone(),
+            Operand::Parameter(name) => self.uncaptured_name("P", name),
+            Operand::Acquired(name) => self.uncaptured_name("E", name),
             Operand::Prior(slot) => self.relation_slot(*slot),
             Operand::Arithmetic(expression) => format_expr_with_ctx(expression, self),
         }
@@ -129,8 +139,14 @@ impl FormatCtx {
         use scoped_relation::Slot;
         let slots = self.relation_scope.slots.clone();
         match &slots[slot] {
-            Slot::Fold { source, initial, body } =>
-                format!("REDUCE({source} FROM {} AS (acc, item) YIELD {body})", self.relation_operand(initial)),
+            Slot::Fold { source, initial, body } => {
+                let source = self.uncaptured_name("P", source);
+                let initial = self.relation_operand(initial);
+                let prior = std::mem::replace(&mut self.relation_scope.in_reduce_yield, true);
+                let body = format_expr_with_ctx(body, self);
+                self.relation_scope.in_reduce_yield = prior;
+                format!("REDUCE({source} FROM {initial} AS (acc, item) YIELD {body})")
+            },
             Slot::Choice { .. } => self.relation_scope.members.get(&slot)
                 .expect("choice must be bound in its certified acquisition domain").clone(),
         }
@@ -155,6 +171,7 @@ impl FormatCtx {
                     continue;
                 }
                 let empty = self.relation_operand(empty);
+                let members = self.uncaptured_name("P", members);
                 let name = format!("member{}", self.relation_scope.members.len());
                 self.relation_scope.members.insert(slot, name.clone());
                 bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD ")));
@@ -404,8 +421,9 @@ fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<S
         .then(|| format!("0 == LENGTH({})", array_name(name, ctx)))
 }
 
-fn array_name<'a>(raw: &'a str, ctx: &'a FormatCtx) -> &'a str {
-    ctx.business_inputs.as_ref().and_then(|names| names.get(raw)).map_or(raw, String::as_str)
+fn array_name(raw: &str, ctx: &FormatCtx) -> String {
+    let name = ctx.business_inputs.as_ref().and_then(|names| names.get(raw)).map_or(raw, String::as_str);
+    ctx.uncaptured_name("P", name)
 }
 
 /// Failure on either of two fixed indices of the same non-null sequence
@@ -555,13 +573,17 @@ fn format_lit(lit: &Lit) -> String {
 fn format_sym_var(origin: &SymVarOrigin, ctx: &mut FormatCtx) -> String {
     match origin {
         SymVarOrigin::Parameter { name, .. } => {
-            if let Some(display) = ctx.business_inputs.as_ref().and_then(|names| names.get(name)) { return display.clone(); }
-            name.clone()
+            if ctx.relation_scope.in_reduce_yield && matches!(name.as_str(), "acc" | "item") {
+                return name.clone();
+            }
+            let display = ctx.business_inputs.as_ref().and_then(|names| names.get(name)).map_or(name.as_str(), String::as_str);
+            ctx.uncaptured_name("P", display)
         }
         SymVarOrigin::External {
             binding_id, path, ..
         } => {
             if let Some(root) = ctx.business_states.get(binding_id).or_else(|| ctx.business_acquisitions.get(binding_id)) {
+                let root = ctx.uncaptured_name("E", root);
                 return std::iter::once(root.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join(".");
             }
             let n = if ctx.business_inputs.is_some() {

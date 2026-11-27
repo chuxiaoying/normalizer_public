@@ -13,7 +13,7 @@ pub(crate) enum Operand {
 
 #[derive(Clone)]
 pub(crate) enum Slot {
-    Fold { source: String, initial: Operand, body: String },
+    Fold { source: String, initial: Operand, body: Expr },
     Choice { members: String, empty: Operand, guard: Expr },
 }
 
@@ -22,6 +22,7 @@ pub(super) struct Scope {
     pub(super) slots: Rc<[Slot]>,
     pub(super) active: Option<Expr>,
     pub(super) members: BTreeMap<usize, String>,
+    pub(super) in_reduce_yield: bool,
 }
 
 pub(super) fn add_dependencies(slots: &[Slot], slot: usize, needed: &mut BTreeSet<usize>) {
