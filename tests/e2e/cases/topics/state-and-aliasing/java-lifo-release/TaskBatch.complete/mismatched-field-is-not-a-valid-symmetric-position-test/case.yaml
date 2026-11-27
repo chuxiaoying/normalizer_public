@@ -1,6 +1,7 @@
 entry: src/TaskBatch.java#TaskBatch.complete
 reject:
   fragments:
-    - "[NORM-PROJECT]"
-    - "unknown projected field"
+    - "[SOURCE-PARSE-FAILED]"
+    - "matching member fields"
+    - "id"
     - "other"

@@ -670,7 +670,8 @@ impl<'a> Engine<'a> {
                 S::Assign {target: J::Ident(name), value, ..} => {
                     if let Some(local) = env.get(name) {
                         let ty = local.ty();
-                        need(ty != Ty::LocalTextMap, "local map binding cannot be reassigned as a Java alias")?;
+                        need(ty != Ty::LocalTextMap,
+                            "local map carrier can only be used through declared map operators; Java assignment cannot rebind it")?;
                         let java_component = local.java_array_component().map(str::to_owned);
                         let value = self.java_expr(value,id,env,path.clone())?;
                         if self.normal_path(path).as_bool() == Some(false) { continue; }
@@ -710,6 +711,11 @@ impl<'a> Engine<'a> {
                     let reference = self.java_expr(target, id, env, path.clone())?;
                     let path = self.normal_path(path);
                     if path.as_bool() == Some(false) { continue; }
+                    if matches!(reference.ty(), Ty::Record(_)) {
+                        return Err(crate::preprocess::required("NORM-SOURCE-TYPE", id,
+                            &format!("field {field} of the acquired immutable record is not writable"),
+                            "保留原始字段写入目标；不可把只读记录投影当作可写堆对象。"));
+                    }
                     // Java evaluates RHS before the target putfield null check,
                     // but only if evaluating the receiver itself completed.
                     let value = self.java_expr(value, id, env, path.clone())?;

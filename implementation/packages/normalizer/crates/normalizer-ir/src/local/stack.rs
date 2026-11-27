@@ -70,9 +70,15 @@ pub(super) fn parse(binding: &str, tokens: &mut Tokens<'_>) -> Result<Option<Act
     tokens.expect("!=")?;
     tokens.bound(&item, "unbound local stack operand")?;
     tokens.expect(".")?;
-    tokens.bound(&field, "unbound local stack operand")?;
+    let other_field = tokens.name()?;
+    if other_field != field {
+        return Err(format!("ordered stack reduction requires matching member fields: {field} versus {other_field}"));
+    }
     tokens.expect("throw")?;
-    tokens.bound(&exception, "unbound local stack operand")?;
+    let other_exception = tokens.name()?;
+    if other_exception != exception {
+        return Err("ordered stack reduction requires the same exception type in both failure guards".into());
+    }
     tokens.expect("yield")?;
     op(tokens, "pop")?;
     tokens.bound(&accumulator, "unbound local stack operand")?;

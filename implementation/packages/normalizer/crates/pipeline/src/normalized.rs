@@ -941,8 +941,12 @@ impl CatchAdmission<'_> {
     fn bind(&mut self, at: &str, raw: &str) -> Result<String, String> {
         let owner = at.rsplit_once('.').expect("source method has a declaring class").0;
         let name = exception_name(raw, owner, self.parents).ok_or_else(|| {
+            let problem = if self.program.find_class(raw).is_some()
+                || self.program.find_class(&format!("{owner}.{raw}")).is_some()
+            { format!("catch class {raw} is not a Throwable") }
+            else { format!("undeclared catch class {raw}") };
             crate::preprocess::required(
-                "NORM-CATCH-TYPE", at, &format!("undeclared catch class {raw}"),
+                "NORM-CATCH-TYPE", at, &problem,
                 "请在源码入口声明可解析的异常类；不要把非法 catch 当成不匹配。",
             )
         })?;

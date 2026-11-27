@@ -320,7 +320,7 @@ impl<'a> Engine<'a> {
                     fields
                         .get(parts.next().ok_or_else(|| fail("expected a row field"))?)
                         .cloned()
-                        .ok_or_else(|| fail("unknown projected field"))?
+                        .ok_or_else(|| fail(format!("unknown projected field {}", path.join("."))))?
                 } else {
                     if let Some(value) = locals.get(&path.join(".")) {
                         return Ok(value.clone());
@@ -328,7 +328,13 @@ impl<'a> Engine<'a> {
                     locals
                         .get(root)
                         .cloned()
-                        .ok_or_else(|| fail(format!("undeclared query input {root}")))?
+                        .ok_or_else(|| {
+                            if locals.keys().any(|slot| slot.strip_prefix(root)
+                                .is_some_and(|rest| rest.starts_with('.')))
+                            {
+                                fail(format!("unknown projected field {}", path.join(".")))
+                            } else { fail(format!("undeclared query input {root}")) }
+                        })?
                 };
                 for member in parts {
                     value = values::field(value, member)?;
@@ -374,7 +380,7 @@ impl<'a> Engine<'a> {
             need(rows.ordering.is_empty() && self.source_relations.tables.contains_key(name),
                 "projected union requires an unordered read-only table")?;
             let Some(Value::Term(ty, expression)) = rows.fields.get(field) else {
-                return Err(fail("projected union needs a declared scalar field"));
+                return Err(fail(format!("projected union requires a declared scalar field: {source}.{field}")));
             };
             let ty = super::business_sql::column_type(ty, false)
                 .ok_or_else(|| fail("projected union field needs a supported SQL scalar type"))?;
