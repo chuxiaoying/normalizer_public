@@ -455,3 +455,55 @@
     - {from: 'if (deliver) pending!()', to: 'if ((deliver ? "send" : "send") === "send") pending!()'}
   expect:
     - {path: [S, 1, call, when], absent: true}
+
+- name: constant-false-dispatch-runs-only-the-else-action
+  edits:
+    - {from: 'if (deliver) pending!()', to: 'if (false) pending!(); else audit.registered()'}
+  expect:
+    - path: [S]
+      value:
+        - call: {external: 'src/handler.ts#audit.registered', args: [], returns: void, result: '$e_0'}
+        - call: {external: 'src/handler.ts#audit.registered', args: [], returns: void, result: '$e_1'}
+- name: selected-listener-needs-a-lexical-registrar
+  edits:
+    - from: |-
+        function listen(callback: () => string) {
+                pending = callback
+                audit.registered()
+            }
+      to: 'const listen = (callback: () => string): void => { pending = callback; audit.registered() }'
+  reject: ['[NORM-TS-MODULE]', 'listener needs a closed synchronous entry, callback slot and registration']
+- name: equality-before-saving-the-callback-is-not-proved
+  edits:
+    - from: |-
+        pending = callback
+                audit.registered()
+      to: |-
+        if (pending === callback) audit.registered()
+                pending = callback
+  reject: ['[NORM-TS-MODULE]', 'listener registration requires a proven local callback equality']
+- name: an-executed-module-initializer-cannot-be-ignored
+  edits:
+    - from: 'export function handle'
+      to: |-
+        audit.registered()
+        export function handle
+  reject: ['[NORM-TS-MODULE]', 'listener requires a closed top-level host declaration']
+- name: state-marker-does-not-create-a-synchronous-port
+  edits:
+    - from: |-
+        /** @N external */
+        declare const audit
+      to: |-
+        /** @N entryState */
+        declare const audit
+  reject: ['[NORM-TS-MODULE]', 'listener host requires a closed declared receiver interface or source shape']
+- name: a-real-host-argument-must-not-be-omitted-from-the-contract
+  edits:
+    - {from: 'registered(): void', to: 'registered(sequence: number): void'}
+    - {from: 'audit.registered()', to: 'audit.registered(1)'}
+  reject: ['[NORM-TS-MODULE]', 'listener requires a named required zero-argument void member']
+- name: a-host-conversion-is-not-a-proven-pure-callback-result
+  edits:
+    - {from: 'return "callback-only"', to: 'return String(deliver)'}
+  reject: ['[NORM-TS-MODULE]', 'listener callback return must be a closed pure value']

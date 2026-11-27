@@ -55,9 +55,10 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
 
   const statements = [...fn.body.statements];
   const registrarIndex = statements.findIndex(ts.isFunctionDeclaration);
+  if (registrarIndex < 1) fail('listener needs a closed synchronous entry, callback slot and registration');
   const slots = statements.slice(0, registrarIndex).flatMap(st => ts.isVariableStatement(st)
     && st.declarationList.flags & ts.NodeFlags.Let ? [...st.declarationList.declarations] : []);
-  const [register, call, ...dispatches] = registrarIndex < 0 ? [] : statements.slice(registrarIndex);
+  const [registrar, call, ...dispatches] = statements.slice(registrarIndex);
   const declarationOf = node => checker.getSymbolAtLocation(node)?.valueDeclaration;
   const observedSlots = new Set();
   for (const st of dispatches) {
@@ -75,20 +76,19 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
     scan(st);
   }
   const pending = [...observedSlots][0];
-  const registrar = register && ts.isFunctionDeclaration(register) && register;
-  const parameter = registrar?.parameters?.[0];
+  const parameter = registrar.parameters[0];
   const registration = call && statementCall(call);
   const arrow = registration?.arguments[0];
   const body = arrow && ts.isArrowFunction(arrow) && ts.isBlock(arrow.body) && arrow.body.statements;
   const returns = body?.at?.(-1);
   if (fn.asteriskToken || fn.modifiers?.some((m) => is(m, ts.SyntaxKind.AsyncKeyword))
-      || registrarIndex < 1 || observedSlots.size > 1
+      || observedSlots.size > 1
       || !statements.slice(0, registrarIndex).every(st => ts.isVariableStatement(st)
           && st.declarationList.flags & ts.NodeFlags.Let
           && st.declarationList.declarations.every(dec => !dec.initializer && ts.isIdentifier(dec.name)
             && dec.type && ts.isUnionTypeNode(dec.type) && dec.type.types.length === 2
             && dec.type.types.some(callbackType) && dec.type.types.some(t => is(t, ts.SyntaxKind.UndefinedKeyword))))
-      || !registrar?.name || !registrar.body || registrar.asteriskToken
+      || !registrar.name || !registrar.body || registrar.asteriskToken
       || registrar.modifiers || registrar.parameters.length !== 1
       || !ts.isIdentifier(parameter.name) || !callbackType(parameter.type) || parameter.initializer
       || parameter.dotDotDotToken || parameter.questionToken
@@ -142,7 +142,7 @@ export function compileTypedListener(checker, sf, fn, modulePath) {
   }
   const executeCallback = condition => { for (const st of callback) lowerExternal(st, condition); };
   let saved = false;
-  for (const st of register.body.statements) {
+  for (const st of registrar.body.statements) {
     const expr = statementExpression(st);
     if (expr && ts.isBinaryExpression(expr) && is(expr.operatorToken, ts.SyntaxKind.EqualsToken)
         && ts.isIdentifier(expr.left) && ts.isIdentifier(expr.right)
