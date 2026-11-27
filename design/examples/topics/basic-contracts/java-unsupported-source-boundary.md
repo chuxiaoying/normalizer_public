@@ -26,11 +26,4 @@ class UnsupportedBoundary {
 
 未生成 PERS。如果把原输入直接交给 Normalizer，执行到无定义调用时报告带源码位置的 `Panic: not-support`，而不输出一份普通业务异常或 S。这与「有可验证合同的真实外部端口」不同。
 
-```text
-ABORT
-
-format:
-  location: src/UnsupportedBoundary.java:3
-  call: UnsupportedBoundary.runtimeFormat(int)
-  reason: Panic: not-support
-```
+诊断定位到 `src/UnsupportedBoundary.java` 中的 `runtimeFormat(value)` 调用。

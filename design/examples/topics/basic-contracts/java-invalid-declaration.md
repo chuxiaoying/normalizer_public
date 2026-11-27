@@ -23,15 +23,7 @@ class TicketCode {
 
 ## 归一化最终结果
 
-目标是让该输入在解析 Java 声明时被拒绝。stdout 为空，stderr 指向第二个声明的非法方法名，而不是把问题报告为所选入口缺少方法体。
-
-```text
-PREPROCESS_REQUIRED
-
-read:
-  location: src/TicketCode.java#TicketCode.return
-  reason: reserved keyword used as a Java method name
-```
+按 [AI-11](../../../chapters/04-AI救赎.md#ai-11-分析副本先通过静态校验) 拒绝。诊断定位到 `src/TicketCode.java` 中非法的方法名 `return`，没有PERS。
 
 **正向对照**　只需把 helper 名换成 booleanValue，Java 声明就合法。下例把选定入口写作 readValid，以区分两个验收入口；它的函数体没有变化。helper 不可达，不需要补造实现。如果执行确实走到没有合法 external 合同的 native 调用，内核必须 Panic，不输出 PERS。
 

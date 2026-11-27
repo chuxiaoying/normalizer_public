@@ -89,33 +89,6 @@ throws:
   - { type: java.lang.RuntimeException, when: 'CASE WHEN enabled THEN $e_0 == 2 ELSE false END', payload: '"zeta"' }
 ```
 
-## 外部异常载荷必须来自它自己的回执
+## 外部异常不能借另一条回执提供载荷
 
-```java
-import normalizer.intrinsics.N;
-
-class RemoteFault extends RuntimeException { @N.Nullable String payload; }
-class Rates { native int read(int input) throws RemoteFault; }
-class RemotePayload {
-    static final RemotePayload INSTANCE = new RemotePayload(new Rates());
-
-    @N.External private final Rates rates;
-    RemotePayload(Rates rates) { this.rates = rates; }
-    int read(int input) { return rates.read(input); }
-}
-```
-
-**原样通过。** 外部异常类直接继承 RuntimeException 并声明一个明确的 `payload` 标量字段：可空文本或精确整数。类型声明本身不会创建回执；原调用未发生时，S 和异常载荷均不存在。这里只描述合法 S 的外部异常数据，不赋予该声明可写堆身份。载荷类型显式发布，数值与可空文本不能归成同一种结果。正常时返回回执值；发生 `RemoteFault` 时仅从同一次调用投影该异常的载荷。没有载荷的异常则省略字段，而不是编造 null。如两次调用均可抛相同类型，实际发生域仍不同，不得合并两份载荷。 同一回执允许多种异常时，每类有独立且互斥的完成标签；有载荷和仅类型异常可以在同一个合同中同时出现。不得拿另一个异常类型的同一份回执替代本异常的载荷，也不能给仅类型的异常补值。
-
-```yaml
-schema: normalizer.pers/1
-entry: { function: src/RemotePayload.java#RemotePayload.INSTANCE.read, returns: number }
-P:
-  parameters:
-    input: { position: 0, type: number }
-S:
-  - call: { external: src/RemotePayload.java#RemotePayload.INSTANCE.rates.read, args: [input], returns: number, result: '$e_0' }
-R: $e_0
-throws:
-  - { type: RemoteFault, when: 'completion.is_throw($e_0, RemoteFault)', payload: 'completion.payload($e_0, RemoteFault)', payload_type: 'text?' }
-```
+外部异常若有业务可观察的载荷，按 [PERS-03](../../../chapters/07-PERS登场.md#pers-03-完成与完整等价) 和 [PERS-07](../../../chapters/07-PERS登场.md#pers-07-完成的互补只在已取得域内成立)，只能从那次调用真实取得的对应异常完成观察；不能从普通 Java 字段名猜测外部载荷合同。本例不另定载荷声明或投影语法。

@@ -43,8 +43,4 @@ rename to src/total.ts
 
 入口可静态定位，执行原生调用时保留调用者提供的对象和成员名。真实调用到达 `source.read()` 后，发现它没有随工程交付的实现或合法外部合同，按 [AI-05](../../../chapters/04-AI救赎.md#ai-05-预处理停在哪儿) 报 `Panic: not-support`，定位实际调用，不产生 PERS。不能把 await 本身当作非法，也不能在普通类型和名称校验通过后把已证明不可达的调用伪造成一次执行失败。
 
-```text
-ABORT
-total:
-Panic: not-support — src/total.ts#total 中的 source.read 缺少执行定义
-```
+例如本例的定位是 `src/total.ts` 中 `total` 的 `source.read()`。

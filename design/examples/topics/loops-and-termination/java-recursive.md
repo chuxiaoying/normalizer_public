@@ -21,19 +21,13 @@ class Recursive {
 
 **拒绝。** AI 不截断递归深度，不把递归调用改成固定次数循环，也不凭借参数名猜测终止合同。应报告正数路径的调用环；不能编造有界结束行为。
 
-```text
-PREPROCESS_REQUIRED
-
-down:
-  reason: the reachable positive-value call cycle has no decreasing state
-  required: a closed recursive termination contract or an equivalent finite fold
-```
+诊断指出 `down(value)` 在正数路径上的回边没有下降度量；不能用一份部分结果代替完整求值。
 
 **预处理要点**：符号化执行不能在不知道递归深度时假装得到完整结果。无法证明终止时，拒绝比截断或补默认值可靠。
 
 ## 归一化最终结果
 
-未生成 PERS。CLI 必须以非零状态返回 `PREPROCESS_REQUIRED`，stdout 为空，并指出 `Recursive.down`。
+未生成 PERS。如果仍交给分析器，诊断应指出 `Recursive.down` 无法完成完整分析；不把预算或终止证明的缺口当业务异常。
 
 **PERS 验收要点**：递归终止合同属于进入内核前的准入条件，不能把不完整的递归执行包装成一个看似完整的 R。
 

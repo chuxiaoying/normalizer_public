@@ -89,14 +89,7 @@ interface ReadinessClient {
 
 **仍然拒绝。** 就绪状态取决于外部响应。源码没有给出等待次数上限或等价的完成合同；提前结束会改变外部调用次数及读取评分的时机。
 
-```text
-PREPROCESS_REQUIRED
-
-readWhenReady:
-  source loop: while (!readinessClient.isReady(accountId))
-  termination: depends on external state and has no finite bound
-  required: explicit readiness completion contract or bounded polling policy
-```
+诊断定位到 `readWhenReady` 的轮询条件，说明就绪取决于未给定终止合同的外部状态。
 
 该轮询判定不依赖另一个未调用方法中的递归。
 

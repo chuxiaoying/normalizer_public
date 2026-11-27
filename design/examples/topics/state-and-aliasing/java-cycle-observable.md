@@ -100,10 +100,4 @@ class LocalCycle {
 }
 ```
 
-```text
-ABORT
-
-exportSelf:
-  reason: cyclic content at the return boundary
-  diagnostic: NORM-CYCLIC-CONTENT-EXIT
-```
+分析应指出无法完整表达 `exportSelf` 的循环对象出口，不生成 PERS，也不能把表示缺口写成业务异常。

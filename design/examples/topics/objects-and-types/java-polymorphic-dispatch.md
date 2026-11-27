@@ -39,11 +39,7 @@ class Billing {
 
 调用者传入 `Fee fee` 对象和 `int value`。`fee.apply(value)` 的具体实现不随规范源码交付。虽然源码列出几个实现，但不能推定 `fee` 必属于其中一个。接口签名没有声明合法 external 边界，故本例必须 Panic；不返回 PERS，也不凭空生成 S.call。
 
-```text
-ABORT
-charge:
-[NORM-OUT-OF-SOURCE] Billing.charge -> Fee.apply: unsupported
-```
+按 [AI-05](../../../chapters/04-AI救赎.md#ai-05-预处理停在哪儿) 报 `Panic: not-support`，定位 `Billing.charge` 中的 `fee.apply(value)`。
 
 ### 封闭入口
 

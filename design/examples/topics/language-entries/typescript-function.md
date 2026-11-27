@@ -30,7 +30,6 @@ throws:
   - type: TypeError
     when: '"string" != typeof(value)'
     payload: '"Expected text"'
-    payload_type: text
 ```
 
 `R` 仅在正常完成路径成立：检查命中时，返回收窄为文本的原值。非文本路径保留 `TypeError` 和原消息，不产生正常返回。不访问环境、不产生外部动作。若删掉检查并直接从这个声明返回 `string` 的入口返回 `value`，应在 TypeScript 类型检查时报错；原因是返回类型不匹配，而不是参数声明了 `unknown`。
