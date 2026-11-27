@@ -14,13 +14,13 @@ description: >-
   普通 Java 整数和源码声明的 number 映射为 number；字段名、金额或日期用途不改变类型。
   money 与 date 需要独立的来源类型依据。
   number 表示无固定大小上限、可全序比较的业务数值，普通算术按数学关系归约。
-  该字段描述当前业务数值表示，不决定何时必须保留宿主数值行为；语义见 BF-02。
+  该字段描述精确业务数值表示，不决定何时必须保留宿主数值行为；语义见 BF-02。
 x-enums:
   top-level-keys: [schema, types, entry, P, E, S, R, throws]
   entry-variants: [function]
   source-kinds: [state, table, acquisition]
   operation-kinds: [write, call, sql]
-  semantic-types: [number, money, date, bool, text]
+  semantic-types: [number, money, date, instant, bool, text, bytes]
   type-modifiers: ['?', '[]']
 type: object
 additionalProperties: false
@@ -99,21 +99,23 @@ $defs:
   semantic-type:
     type: string
     description: 普通类型非空，? 表示该值允许为 null。
-    pattern: '^(number|money|date|bool|text)\??$'
+    pattern: '^(number|money|date|instant|bool|text|bytes)\??$'
   semantic-array-type:
     type: string
-    pattern: '^(number|money|date|bool|text)(\[\])+\??$'
+    pattern: '^(number|money|date|instant|bool|text|bytes)(\[\])+\??$'
   named-type-reference:
     type: string
     pattern: '^[A-Za-z_][A-Za-z0-9_]*(\[\])*\??$'
     not:
-      pattern: '^(void|number|money|date|bool|text|unknown)(\[\])*\??$'
+      pattern: '^(void|number|money|date|instant|bool|text|bytes|unknown)(\[\])*\??$'
   type-name:
     allOf:
       - $ref: '#/$defs/identifier'
       - $ref: '#/$defs/named-type-reference'
   value-type:
     oneOf:
+      # An open source value retains its actual kind; this is not a native scalar kind.
+      - const: unknown
       - $ref: '#/$defs/semantic-type'
       - $ref: '#/$defs/semantic-array-type'
       - $ref: '#/$defs/named-type-reference'
@@ -144,9 +146,7 @@ $defs:
         type: integer
         minimum: 0
       type:
-        oneOf:
-          - const: unknown
-          - $ref: '#/$defs/value-type'
+        $ref: '#/$defs/value-type'
   p-sources:
     description: 保留完整入口参数，包括化简后未被 R、S 或 throws 引用的参数。
     type: object
@@ -330,7 +330,10 @@ $defs:
   throw-declaration:
     type: object
     additionalProperties: false
-    required: [type]
+    # A native TypeScript throw can carry a value without an exception class.
+    anyOf:
+      - required: [type]
+      - required: [payload]
     dependentRequired:
       payload_type: [payload]
     properties:
@@ -341,4 +344,4 @@ $defs:
       payload:
         $ref: '#/$defs/expression'
       payload_type:
-        $ref: '#/$defs/semantic-type'
+        $ref: '#/$defs/value-type'
