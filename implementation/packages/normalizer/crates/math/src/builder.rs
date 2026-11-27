@@ -92,6 +92,7 @@ pub fn lit_null() -> Expr {
 pub fn lit(l: Lit) -> Expr {
     let value = match l {
         Lit::StrUnits(units) => Lit::from_text_units(units),
+        Lit::BigInt(integer) => return lit_integer(integer),
         other => other,
     };
     Expr::new(ExprKind::Lit(value))
@@ -308,7 +309,9 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
     let relevant = canonicalize_coverage_conditions(
         conds
             .iter()
-            .filter(|cond| cond.as_bool() != Some(false))
+            // The propositional prover is two-valued. A nullable SQL
+            // predicate cannot supply one side of a coverage certificate.
+            .filter(|cond| cond.as_bool() != Some(false) && !cond.may_observe_sql_unknown())
             .cloned()
             .collect(),
     );
@@ -748,8 +751,13 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     if expr.as_bool() == Some(true) || active.as_bool() == Some(false) || active == expr {
         return true;
     }
+    if active.may_observe_sql_unknown() || expr.may_observe_sql_unknown() {
+        return false;
+    }
     if active.as_bool() == Some(true) {
-        return expr.as_bool() == Some(true);
+        // Include an un-folded literal NOT/AND/OR, without recursively
+        // launching normalization from a proof about the whole domain.
+        return evaluate_with_exact_facts(expr, &HashMap::new()) == Some(true);
     }
     let profile_start = crate::profile::enabled().then(Instant::now);
     let proof_input_size = active.size().saturating_add(expr.size());
