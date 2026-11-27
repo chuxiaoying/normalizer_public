@@ -1,5 +1,12 @@
 entry: src/value.ts#read
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - 'normal result must be the same input proved to be native string'
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/value.ts#read, returns: text }
+  P:
+    parameters:
+      value: { position: 0, type: unknown }
+  R: value
+  throws:
+    - type: TypeError
+      when: '"string" != typeof(value)'
+      payload: '"Expected text"'
