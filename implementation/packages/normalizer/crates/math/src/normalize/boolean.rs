@@ -355,6 +355,39 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         return Some(rebuild_and(&out));
     }
 
+    // Solve each independently acquired integer's conjunction on its
+    // own domain. A separate total Boolean flag is not an interval term
+    // and does not prevent exact intersection or point exclusion.
+    let mut integer_groups = Vec::<(Expr, Vec<Expr>)>::new();
+    let mut ordinary = Vec::new();
+    for factor in &out {
+        if let Some(subject) = super::integer_ranges::closed_integer_subject(factor) {
+            if let Some((_, group)) = integer_groups.iter_mut().find(|(old, _)| *old == subject) {
+                group.push(factor.clone());
+            } else {
+                integer_groups.push((subject, vec![factor.clone()]));
+            }
+        } else {
+            ordinary.push(factor.clone());
+        }
+    }
+    let mut shrunk = false;
+    for (_, group) in integer_groups {
+        let original = rebuild_and(&group);
+        let mut replacement = None;
+        if group.len() > 1 {
+            replacement = super::integer_ranges::canonical_guard(&original, None, ctx)
+                .filter(|value| crate::canonical_order::canonical_cost_compare(value, &original, ctx).is_lt());
+        }
+        if let Some(replacement) = replacement {
+            ordinary.push(replacement);
+            shrunk = true;
+        } else {
+            ordinary.extend(group);
+        }
+    }
+    if shrunk { return Some(rebuild_and(&sort_commutative(ordinary, ctx))); }
+
     // Solve same-subject ordered comparison constraints as an interval system:
     //
     //   x > 0 && x > 1   -> x > 1

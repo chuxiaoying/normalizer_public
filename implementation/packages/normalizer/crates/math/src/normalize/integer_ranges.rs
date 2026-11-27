@@ -106,8 +106,13 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
 
 /// A source guard over one acquired, exact integer parameter is total.
 pub(super) fn is_closed_integer_guard(expr: &Expr) -> bool {
+    closed_integer_subject(expr).is_some()
+}
+
+pub(super) fn closed_integer_subject(expr: &Expr) -> Option<Expr> {
     let mut subject = None;
-    guard(expr, &mut subject, &mut Vec::new()).is_some() && subject.is_some()
+    guard(expr, &mut subject, &mut Vec::new())?;
+    subject
 }
 
 fn is_input_integer_vector(value: &Expr) -> bool {
