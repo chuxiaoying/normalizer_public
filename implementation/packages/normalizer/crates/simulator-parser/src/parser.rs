@@ -287,7 +287,7 @@ impl<'a> Parser<'a> {
         while let Some(c) = self.peek() {
             self.pos += 1;
             match c {
-                b'\\' => self.pos += 1,
+                b'\\' if self.peek().is_some() => self.pos += 1,
                 c if c == delimiter => break,
                 _ => {}
             }
@@ -528,7 +528,12 @@ impl<'a> Parser<'a> {
         let modifiers = [
             "public", "private", "protected", "static", "final", "abstract", "sealed", "strictfp",
         ];
-        while modifiers.iter().any(|keyword| self.eat_keyword(keyword)) {}
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(&keyword) = modifiers.iter().find(|keyword| self.eat_keyword(keyword)) {
+            if matches!(keyword, "private" | "protected" | "static") || !seen.insert(keyword) {
+                return Err(self.err("[JAVA-TYPE-MODIFIER] invalid or repeated top-level type modifier"));
+            }
+        }
         let is_record = self.eat_keyword("record");
         let is_interface = if is_record { false } else {
             self.take_class_kind()?.ok_or_else(|| self.err("expected class or interface declaration"))?
@@ -754,6 +759,9 @@ fn parse_class_body(
                 }
                 if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] constructor cannot be default")); }
                 if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
+                if is_static || is_final || native_modifier_conflict {
+                    return Err(p.err("[JAVA-CONSTRUCTOR] invalid constructor modifier"));
+                }
                 let (params, param_annotations) = parse_params(&mut p)?;
                 p.skip_ws();
                 let throws = parse_throws(&mut p)?;
