@@ -1,0 +1,19 @@
+design/chapters/06-业务至上.md
+  s_47ae65fe8e6220::t_e27ee83cadf76e 191-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e0b25009e350bd4167bd9e4e420bf7adf72d7419",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}
