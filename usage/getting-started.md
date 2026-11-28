@@ -55,7 +55,7 @@ implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total
 
 从两个已准备的用例分别复制纯净 TypeScript 分析源码。原始 Vue 只用于种子里展示预处理对照，不进入运行工程。生产看 `onLoad` 怎样读取数据和写入页面状态；消费看某个组件属性怎样从已有状态得到展示值。两次分析相互独立，不把生产命令的输出喂给消费命令。
 
-这里各跑一个已准备入口。对真实页面，按[整页归一化](skills/normalizer-preprocess/SKILL.md#前端整页归一化)查齐该页的入口或属性。
+这里各跑一个已准备入口。对真实页面，先[选定生产或消费以及入口范围](README.md#用户说把这张欠费单页面归一化)，再逐入口运行。
 
 **生产：查询数据并写入页面状态。**
 

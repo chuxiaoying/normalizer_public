@@ -30,7 +30,7 @@
 
 | 场景名 | 选择时机 | 例证 |
 |---|---|---|
-| `frontend-vo-production` | 看事件或生命周期入口（如 `onLoad`）如何读取环境并写入页面展示状态（VO） | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
+| `frontend-vo-production` | 看宿主回调（如 `onLoad`）触发了什么业务行为，例如发出请求或写入页面状态 | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
 | `frontend-vo-consumption` | 看单个组件属性如何读已有 VO 并返回展示值；准备成同步、导出的无参函数，不分析整次渲染 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
 
 每次命令只交付所选入口的结果。整页的入口选择、VO 辨识和覆盖验收见[前端整页归一化](skills/normalizer-preprocess/SKILL.md#前端整页归一化)。

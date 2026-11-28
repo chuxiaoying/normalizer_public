@@ -12,6 +12,6 @@
 
 入口统一写作 `工程相对路径#入口调用`，不附带某次调用的实际参数。准备时先核对可见源码、边界、状态和类型；需要修改时按[AI 预处理 Skill](skills/normalizer-preprocess/SKILL.md)操作。分析副本缺少关键证据时，说明缺口后停止，不用占位值换取运行成功。
 
-前端页面按[整页归一化](skills/normalizer-preprocess/SKILL.md#前端整页归一化)从装配关系确定范围，准备各入口并保留它们与原页面的对应。
+前端页面按[已选的方向和范围](README.md#用户说把这张欠费单页面归一化)，从[实际装配](skills/normalizer-preprocess/SKILL.md#前端整页归一化)定位对应入口，再为各入口准备输入。
 
 命令和约束见 [CLI](cli.md)。`normalizer.kernel-input/1` 是适配器内部交接协议，不是第四种公开输入，CLI 使用者不需要手写；维护者查[实现区](../implementation/contracts/normalized-source-contract.md)。
