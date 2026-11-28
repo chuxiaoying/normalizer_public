@@ -1,0 +1,6 @@
+entry: src/Billing.java#Billing.chargeClosed
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - qualified interface super requires a direct implemented interface

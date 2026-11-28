@@ -677,6 +677,30 @@ pub(crate) fn named_method_for_arity<'a>(
     matches.next().is_none().then(|| (method_key(class, index, method), method))
 }
 
+pub(crate) fn interface_super_qualifier(target: &E) -> Option<&str> {
+    if let E::FieldAccess { target, field } = target {
+        if field == "super" {
+            if let E::Ident(name) = target.as_ref() {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+/// Qualified super selects a declared default, never the runtime override.
+pub(crate) fn interface_super_method<'a>(
+    program: &'a JavaProgram, caller: &JavaClass, qualifier: &str, member: &str, arity: usize,
+) -> Option<(String, &'a JavaMethod)> {
+    let interface = program.find_class(qualifier)?;
+    if !interface.is_interface() || !caller.interfaces().iter().any(|name|
+        program.find_class(name).is_some_and(|direct| direct.full_name() == interface.full_name())) {
+        return None;
+    }
+    named_method_for_arity(interface, member, arity)
+        .filter(|(_, method)| method.is_default() && method.body().is_some())
+}
+
 pub(crate) fn assembled_instance_method<'a>(
     caller: &JavaClass, class: &'a JavaClass, member: &str, arity: usize,
 ) -> Option<(String, &'a JavaMethod)> {
@@ -841,6 +865,17 @@ pub(crate) fn validate_with_receiver(
                     continue;
                 }
                 SourceCall::Method { owner, member } => (owner, member),
+                SourceCall::InterfaceSuper { qualifier, member } => {
+                    let target = (!m.is_static()).then(|| interface_super_method(program, owner, &qualifier, &member, arity))
+                        .flatten().map(|(key, _)| key).filter(|key| methods.contains_key(key))
+                        .ok_or_else(|| crate::preprocess::required(
+                            "NORM-SOURCE-TYPE", id,
+                            "qualified interface super requires a direct implemented interface with a visible default body in an instance method",
+                            "保留实际的直接父接口和默认方法，不把它改成普通虚调用。",
+                        ))?;
+                    targets.push(target);
+                    continue;
+                }
                 SourceCall::StaticReceiver { owner: root, field, member } => {
                     let target = program.find_class(&root)
                         .and_then(|root| crate::kernel_input::inert_instance_method(program, owner, root, &field, &member, arity))
@@ -962,6 +997,7 @@ pub(crate) fn validate_with_receiver(
 enum SourceCall {
     Resolved(String),
     Method { owner: String, member: String },
+    InterfaceSuper { qualifier: String, member: String },
     StaticReceiver { owner: String, field: String, member: String },
     Constructor(String),
 }
@@ -1328,7 +1364,9 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
                 Some(t) => match t.as_ref() {
                     E::FieldAccess { target, field } => {
                         let E::Ident(owner) = target.as_ref() else { return Err(error("NORM-CALL-TARGET", at)); };
-                        if owner == "this" {
+                        if field == "super" {
+                            SourceCall::InterfaceSuper { qualifier: owner.clone(), member: method.clone() }
+                        } else if owner == "this" {
                             SourceCall::Method { owner: field.clone(), member: method.clone() }
                         } else {
                             SourceCall::StaticReceiver { owner: owner.clone(), field: field.clone(), member: method.clone() }

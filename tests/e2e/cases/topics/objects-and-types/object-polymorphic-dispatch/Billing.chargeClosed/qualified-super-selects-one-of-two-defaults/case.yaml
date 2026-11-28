@@ -1,0 +1,6 @@
+entry: src/Billing.java#Billing.chargeClosed
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Billing.java#Billing.chargeClosed, returns: number}
+  P: {parameters: {value: {position: 0, type: number}}}
+  R: value + 11

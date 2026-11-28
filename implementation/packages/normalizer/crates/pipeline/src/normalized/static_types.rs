@@ -188,6 +188,10 @@ impl Admission<'_> {
 
     fn method<'a>(&'a self, target: Option<&E>, method: &str, arity: usize, scope: &Scope) -> Option<&'a JavaMethod> {
         if let Some(target) = target {
+            if let Some(qualifier) = super::interface_super_qualifier(target) {
+                return super::interface_super_method(self.program, self.class, qualifier, method, arity)
+                    .map(|(_, method)| method);
+            }
             let root = match target {
                 E::Ident(field) if !scope.contains_key(field) => Some((self.class, field)),
                 E::FieldAccess { target, field } => match target.as_ref() {

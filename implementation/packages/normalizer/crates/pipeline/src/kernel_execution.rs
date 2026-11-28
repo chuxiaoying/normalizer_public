@@ -1284,6 +1284,22 @@ impl<'a> Engine<'a> {
                 method,
                 args,
             } => {
+                if let Some(qualifier) = target.as_deref().and_then(crate::normalized::interface_super_qualifier) {
+                    let owner = id.rsplit_once('.').unwrap().0;
+                    let (member, declaration) = self.program.find_class(owner)
+                        .and_then(|caller| crate::normalized::interface_super_method(self.program, caller, qualifier, method, args.len()))
+                        .ok_or_else(|| fail("interface default target was not admitted"))?;
+                    let receiver = env.get("this").cloned()
+                        .ok_or_else(|| fail("qualified interface super needs the original receiver"))?;
+                    for ((expected, _), actual) in declaration.params().iter().zip(args) {
+                        self.source_reference_assignment(expected, actual, id)?;
+                    }
+                    let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                        return Ok(Value::Term(self.methods[&member].returns.clone(), b::lit_null()));
+                    };
+                    return self.java_call_on(&member, values, path, Some(receiver));
+                }
+
                 if !self.methods[id].syntax.is_static() && !env.contains_key("this")
                     && self.active_static_receiver.is_none()
                 {

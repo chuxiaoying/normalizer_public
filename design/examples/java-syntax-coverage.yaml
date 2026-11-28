@@ -80,10 +80,10 @@ families:
     leaves:
       expression-and-block-body:
         focus: 目标类型明确时，表达式体与等价的块返回体
-        gap: review
+        gap: implementation
       effectively-final-capture:
         focus: 捕获有效 final 局部变量，区分捕获值和调用实参
-        gap: review
+        gap: implementation
       invalid-mutable-capture:
         focus: 被重新赋值的局部变量不得作为合法捕获
         gap: review
@@ -111,4 +111,15 @@ families:
       qualified-super:
         focus: 接口名.super 调用选定接口的默认本体而非动态覆盖
         seed: object-polymorphic-dispatch
-        gap: review
+        evidence:
+          - [Billing.chargeClosed, qualified-super-selects-one-of-two-defaults, pers]
+          - [Billing.chargeClosed, qualified-super-cannot-select-an-unimplemented-interface, reject]
+          - [Billing.chargeClosed, qualified-super-cannot-run-from-a-static-method, reject]
+      inherited-through-subinterface:
+        focus: 子接口继承默认体，或以最具体的覆盖消解父接口选择
+        seed: object-polymorphic-dispatch
+        gap: implementation
+      dispatch-inside-default-body:
+        focus: 默认方法中的普通接收者调用仍应动态分派
+        seed: object-polymorphic-dispatch
+        gap: implementation

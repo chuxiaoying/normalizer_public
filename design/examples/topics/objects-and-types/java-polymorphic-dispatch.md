@@ -60,3 +60,22 @@ R: CASE WHEN fixed THEN value - 1 ELSE value * 2 END
 已闭合的接收者选择也可以嵌套。内外重复使用同一个条件时，矛盾路径上的实现不参与执行；若两个不同的具体接收者调用后都得到 7，R 只有 7，而不是依赖接收者身份的分支。反过来，把开放接口入参赋给同类型局部变量仍无实现源码，不能生成 S 或返回 PERS。
 
 若 FixedFee 同时实现两个各自定义同签名默认方法的接口，只有实际声明的覆盖体可以消解冲突。保留 FixedFee 自己的覆盖体时，分派仍只执行那个实现，两个默认体均不执行；若去掉覆盖体，源码有冲突，必须在准入拒绝，不能按接口书写顺序挑一个默认体。
+
+
+## 显式父接口调用
+
+```java
+interface Fee { default int apply(int value) { return value + 10; } }
+interface AlternativeFee { default int apply(int value) { return value + 20; } }
+class FixedFee implements Fee, AlternativeFee {
+    public int apply(int value) { return Fee.super.apply(value) + 1; }
+}
+class Billing {
+    static int chargeClosed(int value) {
+        Fee fee = new FixedFee();
+        return fee.apply(value);
+    }
+}
+```
+
+**原样通过。** 外层虚调用进入 `FixedFee.apply`；里面的 `Fee.super.apply` 只调用选定的父接口实现，接收者仍是同一个对象。不会再次分派到 `FixedFee.apply`，也不会选 `AlternativeFee`。P 只有 `value: number`，R 为 `value + 11`。静态方法没有这个接收者；未直接实现的接口也不能作这个限定名，两者都是源码准入错误。
