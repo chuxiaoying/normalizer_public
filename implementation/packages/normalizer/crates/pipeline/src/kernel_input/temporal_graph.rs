@@ -32,10 +32,10 @@ pub(super) struct Publication {
     pub(super) slots: Vec<Slot>,
 }
 
-/// A SUM may use an acquired scalar array or the same finite integer
+/// A closed aggregate may use an acquired scalar array or the same finite integer
 /// domain that is available to ordinary relation results. Bind each row
 /// at its own relation site, including rows mentioned in filters.
-fn sum_row<'a>(relation: &'a RelationExpr, arrays: &BTreeSet<String>) -> Option<&'a str> {
+fn aggregate_row<'a>(relation: &'a RelationExpr, arrays: &BTreeSet<String>) -> Option<&'a str> {
     use math::domains::relation::positional::integer_domain;
     if let Some((_, alias)) = integer_domain(relation) { return Some(alias); }
     if super::business_relation::is_scalar_array_relation(relation, arrays) { return Some("value"); }
@@ -49,7 +49,7 @@ fn closed_computed_value(
     value.walk_pruned(&mut |part| {
         if !closed { return false; }
         if let Some((kind, relation, select, fallback)) = part.as_relation_aggregate() {
-            use math::RelationAggregateKind::{Count, Sum};
+            use math::RelationAggregateKind::{Count, FirstValue, Sum};
             if kind == Count
                 && matches!(relation, RelationExpr::Base { name, alias, snapshot: None }
                     if arrays.contains(name) && alias == "value")
@@ -57,13 +57,22 @@ fn closed_computed_value(
             {
                 return false;
             }
-            let Some(row) = (kind == Sum).then(|| sum_row(relation, arrays)).flatten() else {
+            let source_relation = match relation {
+                RelationExpr::Distinct(input) if kind == Count => input,
+                other => other,
+            };
+            let supported = match kind {
+                Sum | FirstValue => true,
+                Count => super::business_relation::is_scalar_array_relation(source_relation, arrays),
+                _ => false,
+            };
+            let Some(row) = supported.then(|| aggregate_row(source_relation, arrays)).flatten() else {
                 closed = false;
                 return false;
             };
             let mut scoped = rows.to_vec();
             scoped.push(row);
-            let mut source = relation;
+            let mut source = source_relation;
             while let RelationExpr::Select { predicate, input } = source {
                 closed &= closed_computed_value(predicate, &scoped, arrays, acquired);
                 source = input;
@@ -72,8 +81,14 @@ fn closed_computed_value(
                 // Bounds live in the enclosing scope, not the row scope.
                 closed &= closed_computed_value(value, rows, arrays, acquired);
             }
-            closed &= select.is_some_and(|value| closed_computed_value(value, &scoped, arrays, acquired))
-                && fallback.is_none();
+            closed &= select.is_some_and(|value| closed_computed_value(value, &scoped, arrays, acquired));
+            // Only the projection and filters see the current row. A FIRST
+            // default follows the same outer-scope rule as its interval.
+            closed &= match fallback {
+                Some(value) if kind == FirstValue => closed_computed_value(value, rows, arrays, acquired),
+                None => kind != FirstValue,
+                _ => false,
+            };
             return false;
         }
         use math::domains::relation::positional::{minimum_bounds, range_bounds};

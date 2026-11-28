@@ -393,3 +393,5 @@ throws:
 入口与输入声明的共性见[基础案例](../expression-simplification/java-static.md)，业务类型的共性见[对象案例](../objects-and-types/java-static-object.md)。
 
 **读取状态的时点。** 如果事件先令 `before = arrears.total`，再写 `arrears.total = before + delta`，`before` 仍代表入口旧值，而随后的 `arrears.total` 读取应取得新值。依次将旧值和新值写入两个独立字段时，两个写入的值不能合并或都退回入口快照。
+
+若已取得的状态字段是布尔值，也可以用它决定随后写入的值：`arrears.total = arrears.ready ? delta : 0` 的守卫来自入口状态，不把初始化中的 false 当成此入口测试的真实值。

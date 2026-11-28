@@ -1,0 +1,9 @@
+entry: src/PrefixSelection.java#PrefixSelection.firstAbove
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/PrefixSelection.java#PrefixSelection.firstAbove, returns: number}
+  P:
+    parameters:
+      values: {position: 0, type: 'number[]'}
+      i: {position: 1, type: number}
+  R: COALESCE(FIRST(i_ FROM indices(LENGTH(values)) AS i_ WHERE i < values[i_] ORDER BY i_), i)

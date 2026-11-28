@@ -1,0 +1,9 @@
+entry: src/MixedTemporal.java#MixedTemporal.settle
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/MixedTemporal.java#MixedTemporal.settle, returns: number}
+  P:
+    parameters:
+      options: {position: 0, type: 'number[]'}
+      values: {position: 1, type: 'number[]'}
+  R: CHOOSE(options DEFAULT COUNT(DISTINCT value FROM values WHERE value > 0) AS member0 YIELD member0)

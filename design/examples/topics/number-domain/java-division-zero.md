@@ -81,3 +81,5 @@ R: |-
 ```
 
 无保护的同值取余 `divisor % divisor` 与同值相除共享真实的除零域：divisor 为 0 仍抛 `java.lang.ArithmeticException`，非零域内余数恒为 0 而不是 1。R 只描述该正常域。
+
+捕获除零异常后直接 `throw problem` 不会把失败吞掉或换成新异常。对 `10 / divisor`，除数为 0 仍传播同一个算术异常，其他输入仍按 Java 整数除法取商。

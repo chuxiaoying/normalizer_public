@@ -1,0 +1,17 @@
+entry: src/ArrearsPage.ts#onLoad
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/ArrearsPage.ts#onLoad, returns: void}
+  P:
+    parameters:
+      delta: {position: 0, type: number}
+  E:
+    arrears:
+      kind: state
+      source: src/ArrearsPage.ts#arrears
+      fields: {ready: bool, total: number}
+  R: void
+  S:
+    - write:
+        target: arrears.total
+        value: CASE WHEN arrears.ready THEN delta ELSE 0 END

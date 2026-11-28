@@ -171,3 +171,5 @@ R: CHOOSE(values DEFAULT backup AS member0 YIELD member0 + COALESCE(SUM(SELECT v
 若新增已取得的布尔参数 `enabled` 并仅在 `!enabled` 时选择，则 R 写 `CASE WHEN enabled THEN backup ELSE CHOOSE(values DEFAULT backup AS member0 YIELD member0) END`。真臂不选，假臂才选；空数组仍取备用值。
 
 **已取得的聚合缺省。** 候选为空时可取已经计算的闭合整数聚合。对输入数组先筛正数再求和，再供 `choose` 使用；也可在区间 `[1, hi)` 内筛出大于 `threshold` 的位置并求平方和。只有候选为空才采用缺省；不能因为聚合带过滤或来自整数区间就把已取得的值拒掉。
+
+已取得的带筛选去重计数或有序首项也能作为缺省，保留缺省值外层的绑定；候选非空时仍采用被选中的实际成员。
