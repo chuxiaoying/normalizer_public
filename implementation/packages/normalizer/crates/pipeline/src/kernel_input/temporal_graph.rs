@@ -248,7 +248,9 @@ pub(super) fn publish(
         } else {
             let operand = node.operand().ok_or_else(|| fail("missing scalar temporal operand"))?;
             if let Some(dep) = integer_definition_id(operand) {
-                let &slot = published.aliases.get(&dep).ok_or_else(|| fail("relation dependency was not published"))?;
+                // The walk above added this dependency to pending and
+                // proved it is earlier. Ascending publication already owns it.
+                let slot = published.aliases[&dep];
                 let Definition::Choice(current) = node;
                 let guard = &current.guard;
                 let prior_guard = match &nodes[dep as usize] {
@@ -273,10 +275,12 @@ pub(super) fn publish(
                 let mut well_bound = true;
                 operand.walk(&mut |part| {
                     if let Some(dep) = integer_definition_id(part) {
-                        if let (Some(&slot), Some(Definition::Choice(prior))) = (published.aliases.get(&dep), nodes.get(dep as usize)) {
-                            if b::path_implies(&current.guard, &prior.guard) { seen.insert(slot); }
-                            else { well_bound = false; }
-                        } else { well_bound = false; }
+                        let Definition::Choice(prior) = &nodes[dep as usize];
+                        if b::path_implies(&current.guard, &prior.guard) {
+                            seen.insert(published.aliases[&dep]);
+                        } else {
+                            well_bound = false;
+                        }
                     }
                 });
                 let acquired = |part: &Expr| match part.as_sym_var() {
@@ -307,7 +311,7 @@ pub(super) fn publish(
                         || matches!(node.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
                             if matches!(primitive_type.as_str(), "integer" | "boolean") && names.contains_key(name))
                         || integer_definition_id(node).is_some_and(|dep|
-                            dep < id && nodes.get(dep as usize).is_some_and(Definition::is_total));
+                            nodes[dep as usize].is_total());
                 });
                 need(entry_guard, "member choice guard requires acquired scalars or an earlier total lexical value")?;
                 let members = match &choice.members {
