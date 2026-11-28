@@ -86,6 +86,7 @@ seeds:
   control-switch-branch:
     source:
       - SwitchMode.classify
+      - Stage.read
   control-try-catch-finally:
     source:
       - FinallyService.INSTANCE.read

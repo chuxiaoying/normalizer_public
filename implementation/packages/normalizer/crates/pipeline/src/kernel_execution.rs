@@ -790,8 +790,23 @@ impl<'a> Engine<'a> {
                     let selector = self.java_expr(selector, id, env, path.clone())?;
                     let path = self.normal_path(path);
                     if path.as_bool() == Some(false) { continue; }
-                    need(selector.ty() == Ty::Integer, "switch requires an exact integral selector")?;
-                    self.source_switch(selector.scalar()?, cases, default, id, env, path)?;
+                    let ty = selector.ty();
+                    need(matches!(ty, Ty::Integer | Ty::Text), "switch requires an exact integer or text selector")?;
+                    let selector = selector.scalar()?;
+                    let nonnull_text = matches!(selector.as_sym_var(),
+                        Some(SymVarOrigin::Parameter { primitive_type, .. }
+                            | SymVarOrigin::External { primitive_type, .. }
+                            | SymVarOrigin::Temporal { primitive_type, .. }) if primitive_type == "text");
+                    if ty == Ty::Text && !nonnull_text {
+                        self.throw_source_on_path(
+                            b::and(path.clone(), b::eq(selector.clone(), b::lit_null())),
+                            "java.lang.NullPointerException",
+                        );
+                    }
+                    let path = self.normal_path(path);
+                    if path.as_bool() != Some(false) {
+                        self.source_switch(selector, cases, default, id, env, path)?;
+                    }
                 }
                 S::For {init,cond,update,body} => {
                     if let Some(proof) = crate::normalized::fixed_for::BoundedControlFor::from_for(s) {

@@ -1,0 +1,12 @@
+entry: src/Stage.java#Stage.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Stage.java#Stage.read, returns: number}
+  P:
+    parameters:
+      mode: {position: 0, type: text}
+  R: |-
+    CASE
+      WHEN mode == "ready" THEN 1
+      ELSE 0
+    END

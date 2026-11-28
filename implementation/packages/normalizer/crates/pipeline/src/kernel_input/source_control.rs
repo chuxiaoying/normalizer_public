@@ -36,11 +36,14 @@ impl Engine<'_> {
         };
         use simulator_parser::ast::{JavaExpr, JavaLit};
         let label = match label {
-            JavaExpr::Lit(JavaLit::Int(value)) => i64::from(*value),
-            JavaExpr::Lit(JavaLit::Char(value)) => i64::from(*value),
-            _ => return Err(fail("switch label requires an int or char literal")),
+            JavaExpr::Lit(JavaLit::Int(value)) => b::lit_int(i64::from(*value)),
+            JavaExpr::Lit(JavaLit::Char(value)) => b::lit_int(i64::from(*value)),
+            JavaExpr::Lit(JavaLit::Str(value)) => b::lit_str(value),
+            JavaExpr::Lit(JavaLit::StrUnits(units)) => b::lit(math::Lit::from_text_units(units.clone())),
+            _ => return Err(fail("switch label requires a checked integral or text literal")),
         };
-        let condition = self.condition_under_path(b::eq(selector.clone(), b::lit_int(label)), &path);
+        // String switch matches text content, not Java's reference ==.
+        let condition = self.condition_under_path(b::eq(selector.clone(), label), &path);
         self.source_branch(condition, env, path,
             |engine, locals, path| engine.source_scope(body, id, locals, path),
             |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))

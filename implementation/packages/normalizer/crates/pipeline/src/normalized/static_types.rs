@@ -896,11 +896,17 @@ impl Admission<'_> {
                 }
                 S::Switch { selector, cases, default } => {
                     let actual = self.expression(selector, scope)?;
-                    if actual != Kind::Number || self.integer_width(selector, scope) != Some(IntegerWidth::IntFamily) {
+                    let text = actual == Kind::Text;
+                    if !text && (actual != Kind::Number || self.integer_width(selector, scope) != Some(IntegerWidth::IntFamily)) {
                         return Err(self.diagnostic("NORM-SOURCE-TYPE",
-                            "switch selector requires a proven byte, short, char or int value"));
+                            "switch selector requires a proven byte, short, char or int value or native String"));
                     }
                     for (label, body) in cases {
+                        let text_label = matches!(label, E::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)));
+                        if text != text_label {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                                "switch case type does not match its selector"));
+                        }
                         let target = self.declared_type(selector, scope);
                         self.check_assignment_narrowing(target.as_ref(), label, scope, "switch label")?;
                         if let Some(JavaType::Primitive(name)) = target {

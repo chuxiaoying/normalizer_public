@@ -1,0 +1,7 @@
+entry: src/Stage.java#Stage.read
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-SWITCH]"
+    - 'duplicate case label'
