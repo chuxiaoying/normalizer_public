@@ -12,11 +12,8 @@ mod runtime_heap;
 pub mod stages;
 
 pub use error::PipelineError;
-pub use formatting::sql::{
-    format_expr_sql, format_expr_with_ctx, FormatCtx,
-};
+pub use formatting::sql::{format_expr_sql, format_expr_with_ctx, FormatCtx};
 pub use stages::load::parse_source_directory;
-
 
 mod normalized_decimal;
 pub mod normalized_text;

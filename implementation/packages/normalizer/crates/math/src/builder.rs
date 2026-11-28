@@ -42,7 +42,6 @@ static PATH_IMPLIES_INDEPENDENT_COUNTEREXAMPLES: AtomicU64 = AtomicU64::new(0);
 static PATH_IMPLIES_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static PATH_IMPLIES_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 
-
 // Truth-table compilation is an exact proof, but compiling a boolean tree is
 // linear in the complete tree for every condition and evaluation then repeats
 // it for each assignment. A small number of atoms therefore does not imply a
@@ -155,14 +154,20 @@ pub const RECORD_TEMPORAL_TAG: &str = "normalized.choice_record";
 
 pub fn record_temporal_result(binding_id: u64) -> Expr {
     Expr::new(ExprKind::SymVar {
-        origin: SymVarOrigin::Temporal { binding_id, primitive_type: RECORD_TEMPORAL_TAG.into() },
+        origin: SymVarOrigin::Temporal {
+            binding_id,
+            primitive_type: RECORD_TEMPORAL_TAG.into(),
+        },
     })
 }
 
 /// Exact integer produced by a closed, caller-owned temporal definition.
 pub fn integer_temporal_result(binding_id: u64) -> Expr {
     Expr::new(ExprKind::SymVar {
-        origin: SymVarOrigin::Temporal { binding_id, primitive_type: ScalarSymbolType::Integer.tag().into() },
+        origin: SymVarOrigin::Temporal {
+            binding_id,
+            primitive_type: ScalarSymbolType::Integer.tag().into(),
+        },
     })
 }
 
@@ -183,22 +188,42 @@ pub fn heap_ref(id: i64) -> Expr {
 /// parameters.  The alias is still indexed as a relation-row variable so RCL
 /// predicate splitting keeps it inside the relation.
 pub fn row_value<T: Into<String>>(alias: T) -> Expr {
-    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: false, sql: None })
+    Expr::new(ExprKind::RowValue {
+        alias: alias.into(),
+        acquired_integer: false,
+        sql: None,
+    })
 }
 
 /// An already-bound physical column. SQL qualification names the slot
 /// without performing a field read on an ordinary record.
 pub fn sql_column(
-    alias: &str, table: crate::domains::relation::TableSource, row_slot: usize,
-    column: &str, scalar_type: &'static str,
+    alias: &str,
+    table: crate::domains::relation::TableSource,
+    row_slot: usize,
+    column: &str,
+    scalar_type: &'static str,
 ) -> Expr {
-    let sql = crate::expr::SqlColumnBinding { table, row_slot, column: column.into(), scalar_type };
-    Expr::new(ExprKind::RowValue { alias: format!("{alias}.{column}"), acquired_integer: false, sql: Some(sql) })
+    let sql = crate::expr::SqlColumnBinding {
+        table,
+        row_slot,
+        column: column.into(),
+        scalar_type,
+    };
+    Expr::new(ExprKind::RowValue {
+        alias: format!("{alias}.{column}"),
+        acquired_integer: false,
+        sql: Some(sql),
+    })
 }
 
 /// A member acquired from a non-null exact-integer input array.
 pub fn acquired_integer_row<T: Into<String>>(alias: T) -> Expr {
-    Expr::new(ExprKind::RowValue { alias: alias.into(), acquired_integer: true, sql: None })
+    Expr::new(ExprKind::RowValue {
+        alias: alias.into(),
+        acquired_integer: true,
+        sql: None,
+    })
 }
 
 // =============================================================================
@@ -292,7 +317,9 @@ pub fn normal_return_case_when(
     last_guarded_arm: (Expr, Expr),
 ) -> Expr {
     earlier_arms.push(last_guarded_arm);
-    Expr::new(ExprKind::CaseWhen { branches: earlier_arms })
+    Expr::new(ExprKind::CaseWhen {
+        branches: earlier_arms,
+    })
 }
 
 pub fn conditions_cover_all(conds: &[Expr]) -> bool {
@@ -325,14 +352,24 @@ pub fn conditions_cover_all(conds: &[Expr]) -> bool {
         .fold(0usize, usize::saturating_add);
 
     let decline = |cache_miss: bool| {
-        let reason = if cache_miss { "run_proof_budget" } else { "input_size_budget" };
+        let reason = if cache_miss {
+            "run_proof_budget"
+        } else {
+            "input_size_budget"
+        };
         crate::profile::count(
             &CONDITIONS_COVER_BUDGET_SKIPS,
             "math.proof.conditions_cover_all.budget_skip",
-            |_| if cache_miss {
-                format!("conds={} reason={}", relevant.len(), reason)
-            } else {
-                format!("conds={} size_budget={}", relevant.len(), MAX_TRUTH_TABLE_INPUT_SIZE)
+            |_| {
+                if cache_miss {
+                    format!("conds={} reason={}", relevant.len(), reason)
+                } else {
+                    format!(
+                        "conds={} size_budget={}",
+                        relevant.len(),
+                        MAX_TRUTH_TABLE_INPUT_SIZE
+                    )
+                }
             },
         );
         crate::profile::rule_event(
@@ -473,7 +510,13 @@ fn conditions_cover_cache_insert(conds: &[Expr], value: bool) {
     crate::cache::with_entry_budget(cache_weight, || {
         CONDITIONS_COVER_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
-            crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover");
+            crate::cache::insert_bounded(
+                &mut cache,
+                conds.to_vec(),
+                value,
+                crate::cache::DEFAULT_KEY_LIMIT,
+                "conditions_cover",
+            );
         });
     });
 }
@@ -516,7 +559,6 @@ fn conditions_have_direct_complement_pair(conds: &[Expr]) -> bool {
 }
 
 fn normalized_disjunction_for_conditions(conds: &[Expr]) -> Expr {
-
     crate::profile::count(
         &CONDITIONS_COVER_DISJUNCTION_CACHE_MISSES,
         "math.proof.conditions_cover_all.disjunction_cache_miss",
@@ -587,7 +629,13 @@ fn conditions_cover_disjunction_cache_insert(conds: &[Expr], value: Expr) {
     crate::cache::with_entry_budget(cache_weight, || {
         CONDITIONS_COVER_DISJUNCTION_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
-            crate::cache::insert_bounded(&mut cache, conds.to_vec(), value, crate::cache::DEFAULT_KEY_LIMIT, "conditions_cover_disjunction");
+            crate::cache::insert_bounded(
+                &mut cache,
+                conds.to_vec(),
+                value,
+                crate::cache::DEFAULT_KEY_LIMIT,
+                "conditions_cover_disjunction",
+            );
         });
     });
 }
@@ -610,7 +658,13 @@ fn path_proof_cache_insert(
     crate::cache::with_entry_budget(cache_weight, || {
         cache_cell.with(|cache| {
             let mut cache = cache.borrow_mut();
-            crate::cache::insert_bounded(&mut cache, (active.clone(), expr.clone()), value, crate::cache::DEFAULT_KEY_LIMIT, "path_proof");
+            crate::cache::insert_bounded(
+                &mut cache,
+                (active.clone(), expr.clone()),
+                value,
+                crate::cache::DEFAULT_KEY_LIMIT,
+                "path_proof",
+            );
         });
     });
 }
@@ -637,7 +691,6 @@ fn independent_condition_groups(conds: &[Expr]) -> Option<Vec<Vec<Expr>>> {
     if groups.len() <= 1 {
         return None;
     }
-
 
     (groups.len() > 1).then_some(groups)
 }
@@ -669,9 +722,15 @@ fn proof_can_skip_as_unrelated(left: &Expr, right: &Expr) -> bool {
 fn exact_active_facts(active: &Expr, facts: &mut HashMap<Expr, bool>) -> bool {
     match active.kind() {
         ExprKind::Lit(Lit::Bool(true)) => true,
-        ExprKind::BinOp { op: BinOpKind::And, left, right } =>
-            exact_active_facts(left, facts) && exact_active_facts(right, facts),
-        ExprKind::UnaryOp { op: UnaryOpKind::Not, operand } => {
+        ExprKind::BinOp {
+            op: BinOpKind::And,
+            left,
+            right,
+        } => exact_active_facts(left, facts) && exact_active_facts(right, facts),
+        ExprKind::UnaryOp {
+            op: UnaryOpKind::Not,
+            operand,
+        } => {
             facts.insert(operand.clone(), false);
             facts.insert(not(operand.clone()), true);
             true
@@ -814,7 +873,11 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
     let run_budget_skipped =
         !crate::normalize::consume_proof_budget(proof_input_size, proof_input_size);
     if run_budget_skipped || proof_input_size > MAX_TRUTH_TABLE_INPUT_SIZE {
-        let reason = if run_budget_skipped { "run_proof_budget" } else { "input_size_budget" };
+        let reason = if run_budget_skipped {
+            "run_proof_budget"
+        } else {
+            "input_size_budget"
+        };
         crate::profile::count(
             &PATH_IMPLIES_BUDGET_SKIPS,
             "math.proof.path_implies.budget_skip",
@@ -824,7 +887,11 @@ pub fn path_implies(active: &Expr, expr: &Expr) -> bool {
                 } else {
                     format!("size_budget={MAX_TRUTH_TABLE_INPUT_SIZE}")
                 };
-                format!("active_size={} expr_size={} {context}", active.size(), expr.size())
+                format!(
+                    "active_size={} expr_size={} {context}",
+                    active.size(),
+                    expr.size()
+                )
             },
         );
         return finish(false, Some(reason));
@@ -1164,7 +1231,8 @@ fn is_pure_boolean_propositional_expr(expr: &Expr) -> bool {
             && is_pure_boolean_propositional_expr(left)
             && is_pure_boolean_propositional_expr(right);
     }
-    expr.as_sym_var().is_some_and(|origin| origin.primitive_type() == "boolean")
+    expr.as_sym_var()
+        .is_some_and(|origin| origin.primitive_type() == "boolean")
 }
 
 fn comparison_atom_key(left: &Expr, right: &Expr) -> String {
@@ -1184,10 +1252,7 @@ fn comparison_atom_key(left: &Expr, right: &Expr) -> String {
 /// 构造已注册函数的调用。
 ///
 pub(crate) fn call(key: FuncKey, args: Vec<Expr>) -> Expr {
-    Expr::new(ExprKind::Call {
-        key,
-        args,
-    })
+    Expr::new(ExprKind::Call { key, args })
 }
 
 // =============================================================================

@@ -17,8 +17,8 @@
 //! 先展开同族连接，再按有效域消去冗余，最后用共享结构键固定次序。
 
 use super::logical_chain::{flatten_and, flatten_or, rebuild_and, rebuild_or};
-use crate::{builder, domains::completion::different_throw_tags};
 use crate::expr::{BinOpKind, Expr, ExprKind, Lit, RelationAggregateKind, UnaryOpKind};
+use crate::{builder, domains::completion::different_throw_tags};
 use implication::*;
 
 pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
@@ -27,15 +27,25 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
             // Only use the identities that are valid under SQL's three
             // values. IS NULL does not imply that inequality with text
             // is true: the conjunction can still evaluate to UNKNOWN.
-            let (absorber, terms, rebuild): (bool, _, fn(&[Expr]) -> Expr) =
-                if op == BinOpKind::And { (false, flatten_and(expr), rebuild_and) }
-                else { (true, flatten_or(expr), rebuild_or) };
+            let (absorber, terms, rebuild): (bool, _, fn(&[Expr]) -> Expr) = if op == BinOpKind::And
+            {
+                (false, flatten_and(expr), rebuild_and)
+            } else {
+                (true, flatten_or(expr), rebuild_or)
+            };
             if terms.iter().any(|term| term.as_bool() == Some(absorber)) {
                 return builder::lit_bool(absorber);
             }
             let len = terms.len();
-            let remaining: Vec<_> = terms.into_iter().filter(|term| term.as_bool().is_none()).collect();
-            return if remaining.len() < len { rebuild(&remaining) } else { expr.clone() };
+            let remaining: Vec<_> = terms
+                .into_iter()
+                .filter(|term| term.as_bool().is_none())
+                .collect();
+            return if remaining.len() < len {
+                rebuild(&remaining)
+            } else {
+                expr.clone()
+            };
         }
     }
     match expr.kind() {
@@ -58,7 +68,8 @@ pub(crate) fn simplify(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) 
             op: UnaryOpKind::Not,
             operand,
         } => negate_complete_boolean_case(operand, expr, ctx)
-            .or_else(|| simplify_not(operand)).unwrap_or_else(|| expr.clone()),
+            .or_else(|| simplify_not(operand))
+            .unwrap_or_else(|| expr.clone()),
         _ => expr.clone(),
     }
 }
@@ -112,7 +123,9 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
             || (!profile_pair_can_skip_proof_check(c, expr)
                 && (relation_count_nonzero_implies_exists(c, expr)
                     || literal_equality_implies_literal_inequality(c, expr)
-                    || expr.as_not().is_some_and(|negated| different_throw_tags(c, negated))
+                    || expr
+                        .as_not()
+                        .is_some_and(|negated| different_throw_tags(c, negated))
                     || or_all_branches_imply(c, expr)))
     }) {
         return true;
@@ -138,7 +151,8 @@ fn expr_is_true_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
 fn expr_is_false_under_and_context(expr: &Expr, context: &[Expr]) -> bool {
     if context.iter().any(|c| {
         !profile_pair_can_skip_proof_check(c, expr)
-            && (is_complement(c, expr) || different_throw_tags(c, expr)
+            && (is_complement(c, expr)
+                || different_throw_tags(c, expr)
                 || empty_input_implies_empty_selection(c, &builder::not(expr.clone())))
     }) {
         return true;
@@ -190,12 +204,16 @@ fn factor_common_and_conjuncts_under_or(disjuncts: &[Expr]) -> Option<Expr> {
         return None;
     }
 
-    let remainders: Vec<Expr> = all_conjs.into_iter().map(|conjs| {
-        let rest: Vec<Expr> = conjs.into_iter()
-            .filter(|expr| !common.contains(expr))
-            .collect();
-        rebuild_and(&rest)
-    }).collect();
+    let remainders: Vec<Expr> = all_conjs
+        .into_iter()
+        .map(|conjs| {
+            let rest: Vec<Expr> = conjs
+                .into_iter()
+                .filter(|expr| !common.contains(expr))
+                .collect();
+            rebuild_and(&rest)
+        })
+        .collect();
     let common_expr = rebuild_and(&common);
     let remainder_expr = rebuild_or(&remainders);
     Some(builder::and(common_expr, remainder_expr))
@@ -270,7 +288,6 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     }
     let mut out: Vec<Expr> = Vec::with_capacity(flat.len());
     for item in &flat {
-
         // 吸收元：遇到 false 立即返回 false
         if let ExprKind::Lit(Lit::Bool(false)) = item.kind() {
             return Some(builder::lit_bool(false));
@@ -296,34 +313,59 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         // A positive tag establishes the same receipt and excludes every
         // other class. Drop only those negations; never treat distinct
         // receipts as correlated or expand protected values into OR.
-        if item.as_not().is_some_and(|negated| out.iter().any(|fact| different_throw_tags(fact, negated))) {
+        if item
+            .as_not()
+            .is_some_and(|negated| out.iter().any(|fact| different_throw_tags(fact, negated)))
+        {
             continue;
         }
-        out.retain(|fact| !fact.as_not().is_some_and(|negated| different_throw_tags(item, negated)));
+        out.retain(|fact| {
+            !fact
+                .as_not()
+                .is_some_and(|negated| different_throw_tags(item, negated))
+        });
 
         // A concrete literal and a positive allocation identity each form
         // their own closed equality class. Do not cross the domains.
         let mut skip_item = false;
         for domain in [EqualityAtomDomain::Literal, EqualityAtomDomain::Allocated] {
-            let Some((op, subject, atom)) = equality_atom(item, domain) else { continue; };
+            let Some((op, subject, atom)) = equality_atom(item, domain) else {
+                continue;
+            };
             if op == BinOpKind::Eq {
                 out.retain(|existing| {
-                    let Some((op, other_subject, other)) = equality_atom(existing, domain) else { return true; };
-                    if other_subject != subject { return true; }
+                    let Some((op, other_subject, other)) = equality_atom(existing, domain) else {
+                        return true;
+                    };
+                    if other_subject != subject {
+                        return true;
+                    }
                     op == BinOpKind::Eq || atom == other
                 });
             } else {
                 for existing in &out {
-                    let Some((existing_op, existing_subject, other)) = equality_atom(existing, domain) else { continue; };
-                    if existing_op != BinOpKind::Eq || existing_subject != subject { continue; }
-                    if atom == other { return Some(builder::lit_bool(false)); }
+                    let Some((existing_op, existing_subject, other)) =
+                        equality_atom(existing, domain)
+                    else {
+                        continue;
+                    };
+                    if existing_op != BinOpKind::Eq || existing_subject != subject {
+                        continue;
+                    }
+                    if atom == other {
+                        return Some(builder::lit_bool(false));
+                    }
                     skip_item = true;
                     break;
                 }
             }
-            if skip_item { break; }
+            if skip_item {
+                break;
+            }
         }
-        if skip_item { continue; }
+        if skip_item {
+            continue;
+        }
 
         if let Some(predicate_subject) = predicate_subject_at_null(item, false) {
             discard_null_guard(&mut out, BinOpKind::Ne, &predicate_subject);
@@ -340,9 +382,11 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
     // cardinality semantics, not broad peer implication.
     let absorbed_by_cardinality: Vec<bool> = (0..out.len())
         .map(|i| {
-            (0..out.len())
-                .any(|j| i != j && (relation_count_nonzero_implies_exists(&out[j], &out[i])
-                    || empty_input_implies_empty_selection(&out[j], &out[i])))
+            (0..out.len()).any(|j| {
+                i != j
+                    && (relation_count_nonzero_implies_exists(&out[j], &out[i])
+                        || empty_input_implies_empty_selection(&out[j], &out[i]))
+            })
         })
         .collect();
     if absorbed_by_cardinality.iter().any(|absorbed| *absorbed) {
@@ -377,8 +421,10 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
         let original = rebuild_and(&group);
         let mut replacement = None;
         if group.len() > 1 {
-            replacement = super::integer_ranges::canonical_guard(&original, None, ctx)
-                .filter(|value| crate::canonical_order::canonical_cost_compare(value, &original, ctx).is_lt());
+            replacement =
+                super::integer_ranges::canonical_guard(&original, None, ctx).filter(|value| {
+                    crate::canonical_order::canonical_cost_compare(value, &original, ctx).is_lt()
+                });
         }
         if let Some(replacement) = replacement {
             ordinary.push(replacement);
@@ -387,7 +433,9 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
             ordinary.extend(group);
         }
     }
-    if shrunk { return Some(rebuild_and(&sort_commutative(ordinary, ctx))); }
+    if shrunk {
+        return Some(rebuild_and(&sort_commutative(ordinary, ctx)));
+    }
 
     // Solve same-subject ordered comparison constraints as an interval system:
     //
@@ -442,7 +490,9 @@ fn simplify_and_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) -
             .collect();
         if or_implies_absorbed.iter().any(|a| *a) {
             // The witnessing OR term is never marked for removal.
-            let remaining: Vec<_> = out.into_iter().zip(or_implies_absorbed)
+            let remaining: Vec<_> = out
+                .into_iter()
+                .zip(or_implies_absorbed)
                 .filter_map(|(expr, absorbed)| (!absorbed).then_some(expr))
                 .collect();
             return Some(rebuild_and(&remaining));
@@ -521,14 +571,36 @@ fn boolean_parameter(expr: &Expr) -> bool {
 /// After separating the result from the path predicates used to discover
 /// it, prefer a smaller closed Boolean value over its expanded proof form.
 pub fn compact_total_input_boolean_value(expr: Expr, ctx: &dyn crate::SortContext) -> Expr {
-    let Some((op @ (BinOpKind::And | BinOpKind::Or), ..)) = expr.as_binop() else { return expr; };
-    let terms = if op == BinOpKind::And { flatten_and(&expr) } else { flatten_or(&expr) };
-    let Some(terms) = terms.iter().map(|term| term.as_not().filter(|base| boolean_parameter(base)).cloned())
+    let Some((op @ (BinOpKind::And | BinOpKind::Or), ..)) = expr.as_binop() else {
+        return expr;
+    };
+    let terms = if op == BinOpKind::And {
+        flatten_and(&expr)
+    } else {
+        flatten_or(&expr)
+    };
+    let Some(terms) = terms
+        .iter()
+        .map(|term| {
+            term.as_not()
+                .filter(|base| boolean_parameter(base))
+                .cloned()
+        })
         .collect::<Option<Vec<_>>>()
-    else { return expr; };
-    let opposite = if op == BinOpKind::And { rebuild_or(&terms) } else { rebuild_and(&terms) };
+    else {
+        return expr;
+    };
+    let opposite = if op == BinOpKind::And {
+        rebuild_or(&terms)
+    } else {
+        rebuild_and(&terms)
+    };
     let candidate = builder::not(crate::normalize_with(opposite, ctx));
-    if crate::canonical_order_compare(&candidate, &expr, ctx).is_lt() { candidate } else { expr }
+    if crate::canonical_order_compare(&candidate, &expr, ctx).is_lt() {
+        candidate
+    } else {
+        expr
+    }
 }
 
 /// Two complementary selector arms with complementary Boolean results
@@ -538,23 +610,41 @@ fn diagonal_boolean_pair(left: &Expr, right: &Expr) -> Option<Expr> {
     fn sign(expr: &Expr) -> (&Expr, bool) {
         expr.as_not().map_or((expr, true), |base| (base, false))
     }
-    let (BinOpKind::And, a, b) = left.as_binop()? else { return None; };
-    let (BinOpKind::And, c, d) = right.as_binop()? else { return None; };
+    let (BinOpKind::And, a, b) = left.as_binop()? else {
+        return None;
+    };
+    let (BinOpKind::And, c, d) = right.as_binop()? else {
+        return None;
+    };
     for (selector, arm) in [(a, b), (b, a)] {
         for (opposite, alternate) in [(c, d), (d, c)] {
             let (p, positive) = sign(selector);
             let (other_p, opposite_positive) = sign(opposite);
-            if p != other_p || positive == opposite_positive || !boolean_parameter(p) { continue; }
+            if p != other_p || positive == opposite_positive || !boolean_parameter(p) {
+                continue;
+            }
             let left_terms = flatten_or(arm);
             let right_terms = flatten_or(alternate);
-            let shared: Vec<_> = left_terms.iter().filter(|x| right_terms.contains(x)).cloned().collect();
+            let shared: Vec<_> = left_terms
+                .iter()
+                .filter(|x| right_terms.contains(x))
+                .cloned()
+                .collect();
             let left_only: Vec<_> = left_terms.iter().filter(|x| !shared.contains(x)).collect();
             let right_only: Vec<_> = right_terms.iter().filter(|x| !shared.contains(x)).collect();
-            let ([l], [r]) = (left_only.as_slice(), right_only.as_slice()) else { continue; };
+            let ([l], [r]) = (left_only.as_slice(), right_only.as_slice()) else {
+                continue;
+            };
             let (q, q_positive) = sign(l);
             let (other_q, other_q_positive) = sign(r);
-            if q != other_q || q_positive == other_q_positive || !boolean_parameter(q) { continue; }
-            let guard = if positive == q_positive { builder::eq } else { builder::ne };
+            if q != other_q || q_positive == other_q_positive || !boolean_parameter(q) {
+                continue;
+            }
+            let guard = if positive == q_positive {
+                builder::eq
+            } else {
+                builder::ne
+            };
             let mut values = shared;
             values.push(guard(p.clone(), q.clone()));
             return Some(rebuild_or(&values));
@@ -576,7 +666,10 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
             continue;
         }
         // 互补检测：x || NOT(x) → true.
-        if out.iter().any(|e| !profile_pair_can_skip_proof_check(e, item) && is_complement(e, item)) {
+        if out
+            .iter()
+            .any(|e| !profile_pair_can_skip_proof_check(e, item) && is_complement(e, item))
+        {
             return Some(builder::lit_bool(true));
         }
         // Primitive predicate null-behavior absorption:
@@ -606,21 +699,28 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
             let factored = diagonal_boolean_pair(&out[i], &out[j]).or_else(|| {
                 (super::boolean_domains::is_closed_boolean(&out[i])
                     && super::boolean_domains::is_closed_boolean(&out[j]))
-                    .then(|| factor_common_and_conjuncts_under_or(&[out[i].clone(), out[j].clone()]))
-                    .flatten()
+                .then(|| factor_common_and_conjuncts_under_or(&[out[i].clone(), out[j].clone()]))
+                .flatten()
             });
             if let Some(diagonal) = factored {
-                let mut candidate: Vec<_> = out.iter().enumerate()
-                    .filter_map(|(index, term)| (i != index && j != index).then(|| term.clone())).collect();
+                let mut candidate: Vec<_> = out
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, term)| (i != index && j != index).then(|| term.clone()))
+                    .collect();
                 candidate.push(diagonal);
                 let candidate = rebuild_or(&candidate);
-                if crate::canonical_order_compare(&candidate, best.as_ref().unwrap_or(expr), ctx).is_lt() {
+                if crate::canonical_order_compare(&candidate, best.as_ref().unwrap_or(expr), ctx)
+                    .is_lt()
+                {
                     best = Some(candidate);
                 }
             }
         }
     }
-    if best.is_some() { return best; }
+    if best.is_some() {
+        return best;
+    }
     if let Some(factored) = factor_common_and_conjuncts_under_or(&out) {
         return Some(factored);
     }
@@ -674,7 +774,9 @@ fn simplify_or_multi(expr: &Expr, ctx: &dyn crate::sort_context::SortContext) ->
         })
         .collect();
     // Removing terms does not change the remaining canonical order.
-    let out: Vec<Expr> = out.into_iter().zip(absorbed)
+    let out: Vec<Expr> = out
+        .into_iter()
+        .zip(absorbed)
         .filter_map(|(expr, absorbed)| (!absorbed).then_some(expr))
         .collect();
     let canonical = rebuild_or(&out);
@@ -696,21 +798,34 @@ fn sort_commutative(
 // NOT 化简
 // =============================================================================
 
-fn negate_complete_boolean_case(operand: &Expr, original: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
+fn negate_complete_boolean_case(
+    operand: &Expr,
+    original: &Expr,
+    ctx: &dyn crate::SortContext,
+) -> Option<Expr> {
     let (arms, fallback) = operand.as_total_case_when()?;
-    if !arms.iter().all(|(_, value)| super::boolean_casewhen::is_boolean_expr(value))
+    if !arms
+        .iter()
+        .all(|(_, value)| super::boolean_casewhen::is_boolean_expr(value))
         || !super::boolean_casewhen::is_boolean_expr(fallback)
-    { return None; }
+    {
+        return None;
+    }
     // Only the subvalues are negated. Branch selection and the live
     // domain of any guarded receipt remain exactly the same.
     let invert = |value: &Expr| crate::normalize_with(builder::not(value.clone()), ctx);
-    let candidate = builder::case_when(arms.iter().map(|(guard, value)|
-        (guard.clone(), invert(value))).collect(), invert(fallback));
-    crate::canonical_order_compare(&candidate, original, ctx).is_lt().then_some(candidate)
+    let candidate = builder::case_when(
+        arms.iter()
+            .map(|(guard, value)| (guard.clone(), invert(value)))
+            .collect(),
+        invert(fallback),
+    );
+    crate::canonical_order_compare(&candidate, original, ctx)
+        .is_lt()
+        .then_some(candidate)
 }
 
 fn simplify_not(operand: &Expr) -> Option<Expr> {
-
     // not(not(x)) => x
     if let ExprKind::UnaryOp {
         op: UnaryOpKind::Not,
@@ -856,18 +971,34 @@ fn resolution_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
                 // Each disjunct only needs to explain the domain in which
                 // its siblings are false. In p OR (p == q), the second
                 // disjunct is therefore evaluated with p fixed to false.
-                let replacement = current[j].as_binop()
-                    .filter(|(op, left, right)| matches!(op, BinOpKind::Eq | BinOpKind::Ne)
-                        && boolean_parameter(left) && boolean_parameter(right))
-                    .and_then(|(op, left, right)| current.iter().enumerate().find_map(|(i, anchor)| {
-                        if i == j { return None; }
-                        let (subject, fixed) = anchor.as_not().map_or((anchor, false), |part| (part, true));
-                        let remaining = if subject == left { right }
-                            else if subject == right { left } else { return None; };
-                        Some(if fixed == (op == BinOpKind::Eq) {
-                            remaining.clone()
-                        } else { builder::not(remaining.clone()) })
-                    }));
+                let replacement = current[j]
+                    .as_binop()
+                    .filter(|(op, left, right)| {
+                        matches!(op, BinOpKind::Eq | BinOpKind::Ne)
+                            && boolean_parameter(left)
+                            && boolean_parameter(right)
+                    })
+                    .and_then(|(op, left, right)| {
+                        current.iter().enumerate().find_map(|(i, anchor)| {
+                            if i == j {
+                                return None;
+                            }
+                            let (subject, fixed) =
+                                anchor.as_not().map_or((anchor, false), |part| (part, true));
+                            let remaining = if subject == left {
+                                right
+                            } else if subject == right {
+                                left
+                            } else {
+                                return None;
+                            };
+                            Some(if fixed == (op == BinOpKind::Eq) {
+                                remaining.clone()
+                            } else {
+                                builder::not(remaining.clone())
+                            })
+                        })
+                    });
                 changed |= replacement.is_some();
                 next.push(replacement.unwrap_or_else(|| current[j].clone()));
             }
@@ -931,7 +1062,12 @@ fn solve_ordered_comparison_conjunction(items: &[Expr]) -> Option<Vec<Expr>> {
 
     // Terms outside a solved multi-bound group remain conjuncts, including
     // single bounds on different subjects and non-comparison predicates.
-    solved.extend(items.iter().zip(consumed).filter_map(|(item, used)| (!used).then(|| item.clone())));
+    solved.extend(
+        items
+            .iter()
+            .zip(consumed)
+            .filter_map(|(item, used)| (!used).then(|| item.clone())),
+    );
     Some(solved)
 }
 
@@ -953,17 +1089,21 @@ fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
             let last = &upper.value - i32::from(!upper.inclusive);
             match first.cmp(&last) {
                 std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
-                std::cmp::Ordering::Equal => return vec![builder::eq(subject.clone(), builder::lit_integer(first))],
+                std::cmp::Ordering::Equal => {
+                    return vec![builder::eq(subject.clone(), builder::lit_integer(first))]
+                }
                 std::cmp::Ordering::Less => (),
             }
         }
         match lower.value.cmp(&upper.value) {
             std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
-            std::cmp::Ordering::Equal => return vec![if lower.inclusive && upper.inclusive {
-                builder::eq(subject.clone(), builder::lit_integer(lower.value.clone()))
-            } else {
-                builder::lit_bool(false)
-            }],
+            std::cmp::Ordering::Equal => {
+                return vec![if lower.inclusive && upper.inclusive {
+                    builder::eq(subject.clone(), builder::lit_integer(lower.value.clone()))
+                } else {
+                    builder::lit_bool(false)
+                }]
+            }
             std::cmp::Ordering::Less => (),
         }
     }
@@ -997,12 +1137,21 @@ fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
 }
 
 #[derive(Clone, Copy)]
-enum EqualityAtomDomain { Literal, Allocated }
+enum EqualityAtomDomain {
+    Literal,
+    Allocated,
+}
 
 #[derive(PartialEq)]
-enum EqualityAtom { Literal(Lit), Allocated(i64) }
+enum EqualityAtom {
+    Literal(Lit),
+    Allocated(i64),
+}
 
-fn equality_atom(expr: &Expr, domain: EqualityAtomDomain) -> Option<(BinOpKind, Expr, EqualityAtom)> {
+fn equality_atom(
+    expr: &Expr,
+    domain: EqualityAtomDomain,
+) -> Option<(BinOpKind, Expr, EqualityAtom)> {
     match domain {
         EqualityAtomDomain::Literal => literal_eq_ne_comparison(expr)
             .map(|(op, subject, value)| (op, subject, EqualityAtom::Literal(value))),
@@ -1013,7 +1162,8 @@ fn equality_atom(expr: &Expr, domain: EqualityAtomDomain) -> Option<(BinOpKind, 
 }
 
 fn eq_ne_comparison<T>(
-    expr: &Expr, operand: impl Fn(&Expr) -> Option<T>,
+    expr: &Expr,
+    operand: impl Fn(&Expr) -> Option<T>,
 ) -> Option<(BinOpKind, Expr, T)> {
     let comparison @ (BinOpKind::Eq | BinOpKind::Ne, ..) = expr.as_binop()? else {
         return None;
@@ -1050,9 +1200,9 @@ fn or_all_branches_imply(or_expr: &Expr, target: &Expr) -> bool {
     if disjuncts.len() <= 1 {
         return false;
     }
-    disjuncts.iter().all(|d| {
-        d == target || literal_equality_implies_literal_inequality(d, target)
-    })
+    disjuncts
+        .iter()
+        .all(|d| d == target || literal_equality_implies_literal_inequality(d, target))
 }
 
 struct Bound {
@@ -1070,7 +1220,12 @@ fn ordered_comparison_interval(expr: &Expr) -> Option<(Expr, Interval)> {
         expr.as_binop()?,
         super::constraint::integer_literal,
     )?;
-    let bound = |inclusive| Some(Bound { value: value.clone(), inclusive });
+    let bound = |inclusive| {
+        Some(Bound {
+            value: value.clone(),
+            inclusive,
+        })
+    };
     use BinOpKind::*;
     let (lower, upper) = match op {
         Lt => (None, bound(false)),
@@ -1084,7 +1239,9 @@ fn ordered_comparison_interval(expr: &Expr) -> Option<(Expr, Interval)> {
 }
 
 fn tighter_bound(
-    a: Option<Bound>, b: Option<Bound>, preferred: std::cmp::Ordering,
+    a: Option<Bound>,
+    b: Option<Bound>,
+    preferred: std::cmp::Ordering,
 ) -> Option<Bound> {
     match (a, b) {
         (Some(a), Some(b)) => Some(match a.value.cmp(&b.value) {
@@ -1102,8 +1259,12 @@ fn tighter_bound(
 
 // This proof is shared by an explicit OR and a short-circuit CASE.
 pub(super) fn absorbed_cardinality_disjunction(left: &Expr, right: &Expr) -> Option<Expr> {
-    if empty_relation_is_within_count(left, right) { return Some(right.clone()); }
-    if empty_relation_is_within_count(right, left) { return Some(left.clone()); }
+    if empty_relation_is_within_count(left, right) {
+        return Some(right.clone());
+    }
+    if empty_relation_is_within_count(right, left) {
+        return Some(left.clone());
+    }
     None
 }
 
@@ -1115,7 +1276,8 @@ fn comparison_or_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
         'outer: for i in 0..out.len() {
             for j in (i + 1)..out.len() {
                 let Some(absorbed) = absorbed_cardinality_disjunction(&out[i], &out[j])
-                    .or_else(|| absorb_two_ordered_comparisons(&out[i], &out[j])) else {
+                    .or_else(|| absorb_two_ordered_comparisons(&out[i], &out[j]))
+                else {
                     continue;
                 };
                 out[i] = absorbed;
@@ -1158,7 +1320,9 @@ fn absorb_two_ordered_comparisons(a: &Expr, b: &Expr) -> Option<Expr> {
 }
 
 fn is_complement(a: &Expr, b: &Expr) -> bool {
-    if crate::domains::completion::single_failure_complement(a, b) { return true; }
+    if crate::domains::completion::single_failure_complement(a, b) {
+        return true;
+    }
     // SQL UNKNOWN survives negation, so a syntactic NOT does not prove
     // excluded middle or contradiction for a nullable row predicate.
     if let ExprKind::UnaryOp {
@@ -1182,7 +1346,9 @@ fn is_complement(a: &Expr, b: &Expr) -> bool {
     // 2. 比较级：`a < b` 与 `a >= b`、`x == null` 与 `x != null` 是互补。
     //
     // NOT may already have been rewritten as a closed comparison.
-    if a.is_comparison_complement(b) || super::integer_ranges::complementary_guards(a, b) { return true; }
+    if a.is_comparison_complement(b) || super::integer_ranges::complementary_guards(a, b) {
+        return true;
+    }
 
     // 2b. De Morgan 互补：`A || B` 与 `!A && !B` 互补，反向同理。
     //
@@ -1204,11 +1370,13 @@ fn predicate_subject_at_null(expr: &Expr, expected: bool) -> Option<Expr> {
         _ => (expr, expected),
     };
     let (key, args) = call.as_call()?;
-    let [subject] = args else { return None; };
+    let [subject] = args else {
+        return None;
+    };
     let behavior = crate::domains::primitive::registry::func_semantics(key).null_behavior?;
     (behavior.trigger_positions.contains(&0)
         && matches!(behavior.result, Lit::Bool(value) if value == expected))
-        .then(|| subject.clone())
+    .then(|| subject.clone())
 }
 
 fn null_comparison_subject(expr: &Expr, expected_op: BinOpKind) -> Option<Expr> {
@@ -1222,7 +1390,9 @@ fn null_comparison_subject(expr: &Expr, expected_op: BinOpKind) -> Option<Expr> 
 
 fn discard_null_guard(terms: &mut Vec<Expr>, op: BinOpKind, subject: &Expr) {
     terms.retain(|term| {
-        null_comparison_subject(term, op).as_ref().is_none_or(|guarded| guarded != subject)
+        null_comparison_subject(term, op)
+            .as_ref()
+            .is_none_or(|guarded| guarded != subject)
     });
 }
 

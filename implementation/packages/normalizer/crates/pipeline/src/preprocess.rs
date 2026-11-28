@@ -6,7 +6,6 @@ pub(crate) fn required(code: &str, location: &str, problem: &str, action: &str) 
     format!("[{code}] kind=PREPROCESS_REQUIRED location={location}\nproblem={problem}\nskill={SKILL}\naction={action}\nresult=not-produced")
 }
 
-
 /// A reachable execution target has neither a source/semantic definition
 /// nor a legal external boundary contract. Never return a symbolic substitute.
 #[cold]

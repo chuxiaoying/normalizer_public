@@ -36,11 +36,19 @@ pub(super) fn text_operand(operand: &MapText, env: &Env) -> Result<Expr> {
 
 impl LocalTextMap {
     pub(super) fn put(&mut self, key: String, value: Expr) {
-        self.0.insert(key, Entry {present: b::lit_bool(true), payload: value});
+        self.0.insert(
+            key,
+            Entry {
+                present: b::lit_bool(true),
+                payload: value,
+            },
+        );
     }
 
     pub(super) fn get_or(&self, key: &str, fallback: Expr) -> Expr {
-        let Some(entry) = self.0.get(key) else { return fallback; };
+        let Some(entry) = self.0.get(key) else {
+            return fallback;
+        };
         branch(entry.present.clone(), entry.payload.clone(), fallback)
     }
 
@@ -61,10 +69,15 @@ impl LocalTextMap {
             joined.insert(key, entry);
         }
         let inverse = b::not(condition);
-        joined.extend(other.0.into_iter().map(|(key, no)| (key, Entry {
-            present: math::normalize(b::and(inverse.clone(), no.present)),
-            payload: no.payload,
-        })));
+        joined.extend(other.0.into_iter().map(|(key, no)| {
+            (
+                key,
+                Entry {
+                    present: math::normalize(b::and(inverse.clone(), no.present)),
+                    payload: no.payload,
+                },
+            )
+        }));
         Self(joined)
     }
 }

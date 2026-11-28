@@ -9,10 +9,13 @@ pub(crate) fn fold(expr: &Expr) -> Expr {
         return length;
     }
     let folded = match expr.kind() {
-        ExprKind::BinOp { op, left, right } => left.as_lit().zip(right.as_lit())
+        ExprKind::BinOp { op, left, right } => left
+            .as_lit()
+            .zip(right.as_lit())
             .and_then(|(a, b)| fold_binop(*op, a, b)),
-        ExprKind::UnaryOp { op, operand } => operand.as_lit()
-            .and_then(|value| fold_unary(*op, value)),
+        ExprKind::UnaryOp { op, operand } => {
+            operand.as_lit().and_then(|value| fold_unary(*op, value))
+        }
         ExprKind::Call { key, args } => fold_call(*key, args),
         _ => None,
     };
@@ -31,14 +34,19 @@ fn fold_call(
 ) -> Option<Expr> {
     let sem = crate::domains::primitive::registry::func_semantics(func_key);
     if let Some(null_behavior) = &sem.null_behavior {
-        if null_behavior.trigger_positions.iter().any(|&position| {
-            args.get(position).is_some_and(Expr::is_null)
-        }) {
+        if null_behavior
+            .trigger_positions
+            .iter()
+            .any(|&position| args.get(position).is_some_and(Expr::is_null))
+        {
             return Some(builder::lit(null_behavior.result.clone()));
         }
     }
     if let Some(evaluator) = &sem.evaluator {
-        let literals = args.iter().map(|arg| arg.as_lit().cloned()).collect::<Option<Vec<_>>>();
+        let literals = args
+            .iter()
+            .map(|arg| arg.as_lit().cloned())
+            .collect::<Option<Vec<_>>>();
         if let Some(value) = literals.and_then(|values| evaluator(&values)) {
             return Some(builder::lit(value));
         }
@@ -55,7 +63,9 @@ fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
             Add => Some(builder::lit_integer(x + y)),
             Sub => Some(builder::lit_integer(x - y)),
             Mul => Some(builder::lit_integer(x * y)),
-            _ => op.comparison_test().map(|compare| builder::lit_bool(compare(&x, &y))),
+            _ => op
+                .comparison_test()
+                .map(|compare| builder::lit_bool(compare(&x, &y))),
         };
     }
     if a.is_text() && b.is_text() {
@@ -64,14 +74,15 @@ fn fold_binop(op: BinOpKind, a: &Lit, b: &Lit) -> Option<Expr> {
                 let mut joined = a.text_units()?;
                 joined.extend(b.text_units()?);
                 Some(builder::lit(Lit::from_text_units(joined)))
-            },
+            }
             Eq | Ne => Some(builder::lit_bool((a == b) == (op == Eq))),
             _ => None,
         };
     }
     match (op, a, b) {
-        (Eq | Ne, Null, _) | (Eq | Ne, _, Null) | (Eq | Ne, Bool(_), Bool(_)) =>
-            Some(builder::lit_bool((a == b) == (op == Eq))),
+        (Eq | Ne, Null, _) | (Eq | Ne, _, Null) | (Eq | Ne, Bool(_), Bool(_)) => {
+            Some(builder::lit_bool((a == b) == (op == Eq)))
+        }
 
         (And, Bool(x), Bool(y)) => Some(builder::lit_bool(*x && *y)),
         (Or, Bool(x), Bool(y)) => Some(builder::lit_bool(*x || *y)),

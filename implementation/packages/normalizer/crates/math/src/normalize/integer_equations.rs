@@ -15,9 +15,9 @@ pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr>
     };
     // An opaque receipt or staged observation does not become a total
     // integer merely because the comparison returns a Boolean.
-    if [left, right].iter().any(|value| value.size() > 256 || value.depth() > 48
-        || !super::integer_ac::total_integer(value))
-    {
+    if [left, right].iter().any(|value| {
+        value.size() > 256 || value.depth() > 48 || !super::integer_ac::total_integer(value)
+    }) {
         return None;
     }
     let (mut left, mut left_offset) = split_offset(left);
@@ -31,9 +31,13 @@ pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr>
     if integer_row(left).is_some() && integer_row(right).is_some() {
         return None;
     }
-    if left_offset.is_zero() && right_offset.is_zero() { return None; }
+    if left_offset.is_zero() && right_offset.is_zero() {
+        return None;
+    }
     if left == right {
-        return Some(b::lit_bool((left_offset == right_offset) == (op == BinOpKind::Eq)));
+        return Some(b::lit_bool(
+            (left_offset == right_offset) == (op == BinOpKind::Eq),
+        ));
     }
     if crate::canonical_order_compare(left, right, ctx).is_gt() {
         std::mem::swap(&mut left, &mut right);
@@ -54,7 +58,11 @@ pub(super) fn isolate_offset(expr: &Expr, ctx: &dyn SortContext) -> Option<Expr>
 
 fn integer_row(expr: &Expr) -> Option<&str> {
     match expr.kind() {
-        crate::expr::ExprKind::RowValue { alias, acquired_integer: true, .. } => Some(alias),
+        crate::expr::ExprKind::RowValue {
+            alias,
+            acquired_integer: true,
+            ..
+        } => Some(alias),
         _ => None,
     }
 }
@@ -65,9 +73,15 @@ fn affine_subject(expr: &Expr) -> bool {
 
 fn direct_integer_input(expr: &Expr) -> Option<&str> {
     match expr.as_sym_var()? {
-        SymVarOrigin::Parameter { name, primitive_type }
-            if primitive_type == "integer"
-                && !name.starts_with('$') && !name.contains(['.', '[', ']']) => Some(name),
+        SymVarOrigin::Parameter {
+            name,
+            primitive_type,
+        } if primitive_type == "integer"
+            && !name.starts_with('$')
+            && !name.contains(['.', '[', ']']) =>
+        {
+            Some(name)
+        }
         _ => None,
     }
 }
@@ -88,7 +102,9 @@ fn split_offset(mut value: &Expr) -> (&Expr, BigInt) {
                 }
             }
             BinOpKind::Sub => {
-                let Some(n) = right.as_lit().and_then(crate::Lit::as_integer) else { break };
+                let Some(n) = right.as_lit().and_then(crate::Lit::as_integer) else {
+                    break;
+                };
                 offset -= n;
                 value = left;
             }
@@ -148,9 +164,15 @@ impl Equation {
 pub(super) fn isolate_single_subject(expr: &Expr) -> Option<Expr> {
     let (op, left, right) = expr.as_binop()?;
     let mut op = op.comparison()?;
-    let affine_work = |operand: &Expr| matches!(operand.as_binop(),
-        Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, _, _)));
-    if !affine_work(left) && !affine_work(right) { return None; }
+    let affine_work = |operand: &Expr| {
+        matches!(
+            operand.as_binop(),
+            Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, _, _))
+        )
+    };
+    if !affine_work(left) && !affine_work(right) {
+        return None;
+    }
     let nodes = expr.size();
     if nodes > 256 || expr.depth() > 48 || !super::consume_proof_budget(nodes, nodes) {
         return None;
@@ -158,12 +180,19 @@ pub(super) fn isolate_single_subject(expr: &Expr) -> Option<Expr> {
     let mut affine = Equation::default();
     affine.accumulate(left, &BigInt::one())?;
     affine.accumulate(right, &-BigInt::one())?;
-    affine.coefficients.retain(|_, coefficient| !coefficient.is_zero());
+    affine
+        .coefficients
+        .retain(|_, coefficient| !coefficient.is_zero());
     use crate::expr::Comparison::*;
     if affine.coefficients.is_empty() {
-        return Some(b::lit_bool(BinOpKind::from(op).comparison_test::<BigInt>()?(&affine.constant, &BigInt::zero())));
+        return Some(b::lit_bool(BinOpKind::from(op)
+            .comparison_test::<BigInt>()?(
+            &affine.constant, &BigInt::zero()
+        )));
     }
-    if affine.coefficients.len() != 1 { return None; }
+    if affine.coefficients.len() != 1 {
+        return None;
+    }
     let (name, mut coefficient) = affine.coefficients.into_iter().next()?;
     let mut bound = -affine.constant;
     if coefficient.is_negative() {
@@ -173,7 +202,11 @@ pub(super) fn isolate_single_subject(expr: &Expr) -> Option<Expr> {
     }
     let quotient = &bound / &coefficient;
     let exact = (&bound % &coefficient).is_zero();
-    let floor = if !exact && bound.is_negative() { &quotient - 1 } else { quotient };
+    let floor = if !exact && bound.is_negative() {
+        &quotient - 1
+    } else {
+        quotient
+    };
     let ceil = if exact { floor.clone() } else { &floor + 1 };
     let (direction, endpoint) = match op {
         Eq | Ne if !exact => return Some(b::lit_bool(matches!(op, Ne))),
@@ -183,8 +216,11 @@ pub(super) fn isolate_single_subject(expr: &Expr) -> Option<Expr> {
         Gt => (Gt, floor),
         Ge => (Gt, ceil - 1),
     };
-    let result = b::binop_public(direction.into(),
-        b::param(name, crate::ScalarSymbolType::Integer), b::lit_integer(endpoint));
+    let result = b::binop_public(
+        direction.into(),
+        b::param(name, crate::ScalarSymbolType::Integer),
+        b::lit_integer(endpoint),
+    );
     (result != *expr).then_some(result)
 }
 
@@ -207,7 +243,13 @@ fn primitive(mut equation: Equation) -> Equation {
             *coefficient /= &factor;
         }
     }
-    if equation.coefficients.values().next().unwrap_or(&equation.constant).is_negative() {
+    if equation
+        .coefficients
+        .values()
+        .next()
+        .unwrap_or(&equation.constant)
+        .is_negative()
+    {
         equation.constant = -equation.constant;
         for coefficient in equation.coefficients.values_mut() {
             *coefficient = -std::mem::take(coefficient);
@@ -217,10 +259,18 @@ fn primitive(mut equation: Equation) -> Equation {
 }
 
 fn predicate(equation: &Equation) -> Option<Expr> {
-    let left = equation.coefficients.iter().map(|(name, coefficient)| {
-        let input = b::param(name, crate::ScalarSymbolType::Integer);
-        if coefficient.is_one() { input } else { b::mul(b::lit_integer(coefficient.clone()), input) }
-    }).reduce(b::add)?;
+    let left = equation
+        .coefficients
+        .iter()
+        .map(|(name, coefficient)| {
+            let input = b::param(name, crate::ScalarSymbolType::Integer);
+            if coefficient.is_one() {
+                input
+            } else {
+                b::mul(b::lit_integer(coefficient.clone()), input)
+            }
+        })
+        .reduce(b::add)?;
     Some(b::eq(left, b::lit_integer(-&equation.constant)))
 }
 
@@ -234,14 +284,19 @@ fn remove_repeated_classes(equations: Vec<Equation>, conjuncts: &[Expr]) -> Opti
             classes.push((equation, index, false));
         }
     }
-    if classes.len() == conjuncts.len() { return None; }
-    classes.into_iter().map(|(equation, index, repeated)| {
-        if repeated {
-            predicate(&equation).unwrap_or_else(|| conjuncts[index].clone())
-        } else {
-            conjuncts[index].clone()
-        }
-    }).reduce(b::and)
+    if classes.len() == conjuncts.len() {
+        return None;
+    }
+    classes
+        .into_iter()
+        .map(|(equation, index, repeated)| {
+            if repeated {
+                predicate(&equation).unwrap_or_else(|| conjuncts[index].clone())
+            } else {
+                conjuncts[index].clone()
+            }
+        })
+        .reduce(b::and)
 }
 
 pub(super) fn solve(conjuncts: &[Expr]) -> Option<Expr> {
@@ -314,6 +369,11 @@ fn solve_full_rank(equations: &[Equation], variables: BTreeSet<String>) -> Optio
     variables
         .iter()
         .zip(solution)
-        .map(|(name, value)| b::eq(b::param(name, crate::ScalarSymbolType::Integer), b::lit_integer(value)))
+        .map(|(name, value)| {
+            b::eq(
+                b::param(name, crate::ScalarSymbolType::Integer),
+                b::lit_integer(value),
+            )
+        })
         .reduce(b::and)
 }

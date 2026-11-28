@@ -6,7 +6,10 @@ use num_bigint::BigInt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ConstraintBound {
-    Interval { low: Option<BigInt>, high: Option<BigInt> },
+    Interval {
+        low: Option<BigInt>,
+        high: Option<BigInt>,
+    },
     Excludes(BigInt),
 }
 
@@ -51,25 +54,59 @@ fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
     }
     use ConstraintBound::{Excludes, Interval};
     let bound = match op {
-        Comparison::Gt => Interval { low: Some(value + 1), high: None },
-        Comparison::Ge => Interval { low: Some(value), high: None },
-        Comparison::Lt => Interval { low: None, high: Some(value - 1) },
-        Comparison::Le => Interval { low: None, high: Some(value) },
-        Comparison::Eq => Interval { low: Some(value.clone()), high: Some(value) },
+        Comparison::Gt => Interval {
+            low: Some(value + 1),
+            high: None,
+        },
+        Comparison::Ge => Interval {
+            low: Some(value),
+            high: None,
+        },
+        Comparison::Lt => Interval {
+            low: None,
+            high: Some(value - 1),
+        },
+        Comparison::Le => Interval {
+            low: None,
+            high: Some(value),
+        },
+        Comparison::Eq => Interval {
+            low: Some(value.clone()),
+            high: Some(value),
+        },
         Comparison::Ne => Excludes(value),
     };
-    Some(LinearConstraint { subject: subject.clone(), bound })
+    Some(LinearConstraint {
+        subject: subject.clone(),
+        bound,
+    })
 }
 
 fn bounds_contradict(a: &ConstraintBound, b: &ConstraintBound) -> bool {
     use ConstraintBound::{Excludes, Interval};
     match (a, b) {
-        (Interval { low: a_low, high: a_high }, Interval { low: b_low, high: b_high }) => {
-            a_low.as_ref().zip(b_high.as_ref()).is_some_and(|(low, high)| low > high)
-                || b_low.as_ref().zip(a_high.as_ref()).is_some_and(|(low, high)| low > high)
+        (
+            Interval {
+                low: a_low,
+                high: a_high,
+            },
+            Interval {
+                low: b_low,
+                high: b_high,
+            },
+        ) => {
+            a_low
+                .as_ref()
+                .zip(b_high.as_ref())
+                .is_some_and(|(low, high)| low > high)
+                || b_low
+                    .as_ref()
+                    .zip(a_high.as_ref())
+                    .is_some_and(|(low, high)| low > high)
         }
-        (Interval { low, high }, Excludes(value)) | (Excludes(value), Interval { low, high }) =>
-            low.as_ref() == Some(value) && high.as_ref() == Some(value),
+        (Interval { low, high }, Excludes(value)) | (Excludes(value), Interval { low, high }) => {
+            low.as_ref() == Some(value) && high.as_ref() == Some(value)
+        }
         (Excludes(_), Excludes(_)) => false,
     }
 }
@@ -77,12 +114,27 @@ fn bounds_contradict(a: &ConstraintBound, b: &ConstraintBound) -> bool {
 fn bound_implies(existing: &ConstraintBound, target: &ConstraintBound) -> bool {
     use ConstraintBound::{Excludes, Interval};
     match (existing, target) {
-        (Interval { low: a_low, high: a_high }, Interval { low: b_low, high: b_high }) => {
-            b_low.as_ref().is_none_or(|low| a_low.as_ref().is_some_and(|own| own >= low))
-                && b_high.as_ref().is_none_or(|high| a_high.as_ref().is_some_and(|own| own <= high))
+        (
+            Interval {
+                low: a_low,
+                high: a_high,
+            },
+            Interval {
+                low: b_low,
+                high: b_high,
+            },
+        ) => {
+            b_low
+                .as_ref()
+                .is_none_or(|low| a_low.as_ref().is_some_and(|own| own >= low))
+                && b_high
+                    .as_ref()
+                    .is_none_or(|high| a_high.as_ref().is_some_and(|own| own <= high))
         }
-        (Interval { low, high }, Excludes(value)) =>
-            low.as_ref().is_some_and(|low| value < low) || high.as_ref().is_some_and(|high| value > high),
+        (Interval { low, high }, Excludes(value)) => {
+            low.as_ref().is_some_and(|low| value < low)
+                || high.as_ref().is_some_and(|high| value > high)
+        }
         (Excludes(a), Excludes(b)) => a == b,
         (Excludes(_), Interval { .. }) => false,
     }
@@ -93,10 +145,15 @@ fn any_matching_bound(
     context: &[Expr],
     proves: impl Fn(&ConstraintBound, &ConstraintBound) -> bool,
 ) -> bool {
-    let Some(target) = extract_linear_constraint(expr) else { return false; };
-    context.iter().filter_map(extract_linear_constraint).any(|candidate| {
-        candidate.subject == target.subject && proves(&candidate.bound, &target.bound)
-    })
+    let Some(target) = extract_linear_constraint(expr) else {
+        return false;
+    };
+    context
+        .iter()
+        .filter_map(extract_linear_constraint)
+        .any(|candidate| {
+            candidate.subject == target.subject && proves(&candidate.bound, &target.bound)
+        })
 }
 
 /// 在 AND 上下文中检查 `expr` 是否因线性约束矛盾而恒 false。

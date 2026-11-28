@@ -20,9 +20,13 @@ pub(crate) fn receiver(expr: &E) -> Option<&str> {
 }
 
 pub(crate) fn declares_bodyless_member(class: &JavaClass, member: &str, arity: usize) -> bool {
-    let mut declarations = class.methods().iter()
+    let mut declarations = class
+        .methods()
+        .iter()
         .filter(|method| method.name() == member && method.arity() == arity);
-    declarations.next().is_some_and(|method| external_member(class, method))
+    declarations
+        .next()
+        .is_some_and(|method| external_member(class, method))
         && declarations.next().is_none()
 }
 
@@ -46,15 +50,25 @@ pub(crate) struct SourcePort {
 /// Resolve the actual source-declared port class before analyzing a
 /// receiver's assembly. A malformed declaration must not be diagnosed as
 /// merely an incompatible constructor argument.
-pub(crate) fn endpoint_declaration<'a>(program: &'a JavaProgram, field: &JavaField) -> Result<&'a JavaClass, String> {
+pub(crate) fn endpoint_declaration<'a>(
+    program: &'a JavaProgram,
+    field: &JavaField,
+) -> Result<&'a JavaClass, String> {
     if field.is_static() || field.has_initializer() {
         return Err(error("NORM-EXTERNAL-FIELD", field.name()));
     }
     let JavaType::Class(endpoint) = field.java_type() else {
         return Err(error("NORM-EXTERNAL-TYPE", field.name()));
     };
-    program.find_class(endpoint)
-        .filter(|class| class.is_interface() || class.methods().iter().any(|method| external_member(class, method)))
+    program
+        .find_class(endpoint)
+        .filter(|class| {
+            class.is_interface()
+                || class
+                    .methods()
+                    .iter()
+                    .any(|method| external_member(class, method))
+        })
         .ok_or_else(|| error("NORM-EXTERNAL-TYPE", endpoint))
 }
 
@@ -69,10 +83,11 @@ pub(crate) fn declarations(
             let interface = declaration.full_name();
             for method in declaration.methods() {
                 // The constructor, if present, is assembly, not a port member.
-                if !declaration.is_interface() && method.is_constructor() { continue; }
+                if !declaration.is_interface() && method.is_constructor() {
+                    continue;
+                }
                 if !external_member(declaration, method)
                     || !method.annotations().is_empty()
-
                     || method
                         .params()
                         .iter()

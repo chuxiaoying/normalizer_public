@@ -2,12 +2,7 @@
 //!
 //! This only chooses between `(condition, yes, no)` and its complemented,
 //! swapped form. It neither evaluates an arm nor expands CASE into AND/OR.
-use crate::{
-    expr::BinOpKind,
-    sort_context::SortContext,
-    symvar::SymVarOrigin,
-    Expr, Lit,
-};
+use crate::{expr::BinOpKind, sort_context::SortContext, symvar::SymVarOrigin, Expr, Lit};
 
 fn direct_exact_number(value: &Expr) -> bool {
     matches!(value.as_sym_var(), Some(SymVarOrigin::Parameter { name, primitive_type })
@@ -53,7 +48,12 @@ pub fn ordered_number_selection(
     order_selection(op, yes, no, context)
 }
 
-fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortContext) -> Option<Expr> {
+fn order_selection(
+    op: BinOpKind,
+    yes: &Expr,
+    no: &Expr,
+    context: &dyn SortContext,
+) -> Option<Expr> {
     if !crate::canonical_order::comparison_operands_are_bound(yes, context)
         || !crate::canonical_order::comparison_operands_are_bound(no, context)
     {
@@ -72,25 +72,56 @@ fn order_selection(op: BinOpKind, yes: &Expr, no: &Expr, context: &dyn SortConte
     } else {
         (left, right)
     };
-    Some(crate::builder::case_when(vec![(guard, when_greater.clone())], otherwise.clone()))
+    Some(crate::builder::case_when(
+        vec![(guard, when_greater.clone())],
+        otherwise.clone(),
+    ))
 }
 
 fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) -> bool {
     // A native comparison of the two exact, bound operands already
     // acquires both values before selecting either. Arithmetic over those
     // values contributes no new binding or observation to the selection.
-    if (value.as_call().is_some() || matches!(value.as_relation_aggregate(),
-        Some((crate::RelationAggregateKind::Count | crate::RelationAggregateKind::Sum, ..))))
+    if (value.as_call().is_some()
+        || matches!(
+            value.as_relation_aggregate(),
+            Some((
+                crate::RelationAggregateKind::Count | crate::RelationAggregateKind::Sum,
+                ..
+            ))
+        ))
         && crate::normalize::exact_acquired_arithmetic(value, context)
-    { return true; }
-    if let Some(SymVarOrigin::Temporal { binding_id, primitive_type }) = value.as_sym_var() {
-        return primitive_type == "integer" && (context.temporal_is_total(*binding_id)
-            || context.choice_slots().is_some_and(|slots| slots.contains_key(binding_id)));
+    {
+        return true;
     }
-    if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = value.as_sym_var() {
-        return path.is_empty() && matches!(primitive_type.as_str(), "integer" | crate::domains::decimal::VALUE_TAG)
-            && context.observation_identities().and_then(|identities| identities.get(binding_id))
-                .is_some_and(|identity| matches!(identity, crate::ObservationIdentity::EntrySnapshot(_)));
+    if let Some(SymVarOrigin::Temporal {
+        binding_id,
+        primitive_type,
+    }) = value.as_sym_var()
+    {
+        return primitive_type == "integer"
+            && (context.temporal_is_total(*binding_id)
+                || context
+                    .choice_slots()
+                    .is_some_and(|slots| slots.contains_key(binding_id)));
+    }
+    if let Some(SymVarOrigin::External {
+        binding_id,
+        path,
+        primitive_type,
+    }) = value.as_sym_var()
+    {
+        return path.is_empty()
+            && matches!(
+                primitive_type.as_str(),
+                "integer" | crate::domains::decimal::VALUE_TAG
+            )
+            && context
+                .observation_identities()
+                .and_then(|identities| identities.get(binding_id))
+                .is_some_and(|identity| {
+                    matches!(identity, crate::ObservationIdentity::EntrySnapshot(_))
+                });
     }
     direct_exact_number(value) || matches!(value.as_lit(), Some(Lit::Int(_) | Lit::BigInt(_)))
 }
@@ -98,15 +129,23 @@ fn has_total_number_selection_evidence(value: &Expr, context: &dyn SortContext) 
 /// A final min/max is a complete two-value decision in the remaining
 /// domain. Its already acquired total operands may use CF-04 without
 /// moving any earlier arm or treating arbitrary suffix guards as binary.
-pub(crate) fn canonicalize_terminal_extremum(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
+pub(crate) fn canonicalize_terminal_extremum(
+    expression: &Expr,
+    context: &dyn SortContext,
+) -> Option<Expr> {
     let (arms, fallback) = expression.as_total_case_when()?;
     let ((condition, selected), earlier) = arms.split_last()?;
-    if earlier.is_empty() || !has_total_number_selection_evidence(selected, context)
+    if earlier.is_empty()
+        || !has_total_number_selection_evidence(selected, context)
         || !has_total_number_selection_evidence(fallback, context)
-    { return None; }
+    {
+        return None;
+    }
     let op = selection_comparison(condition, selected, fallback)?;
     let suffix = order_selection(op, selected, fallback, context)?;
-    let ([(condition, selected)], fallback) = suffix.as_total_case_when()? else { return None; };
+    let ([(condition, selected)], fallback) = suffix.as_total_case_when()? else {
+        return None;
+    };
     let mut rewritten = earlier.to_vec();
     rewritten.push((condition.clone(), selected.clone()));
     let result = crate::builder::case_when(rewritten, fallback.clone());
@@ -115,16 +154,29 @@ pub(crate) fn canonicalize_terminal_extremum(expression: &Expr, context: &dyn So
 
 /// A final receipt decision is binary in its remaining domain. The same
 /// closed-completion rule applies without moving any earlier CASE arm.
-pub(crate) fn canonicalize_terminal_completion(expression: &Expr, context: &dyn SortContext) -> Option<Expr> {
+pub(crate) fn canonicalize_terminal_completion(
+    expression: &Expr,
+    context: &dyn SortContext,
+) -> Option<Expr> {
     let (arms, fallback) = expression.as_total_case_when()?;
     let ((condition, result), earlier) = arms.split_last()?;
-    if earlier.is_empty() { return None; }
-    let (receipt, classes) = crate::domains::completion::failure_partition(condition.as_not().unwrap_or(condition))?;
-    let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() else { return None; };
-    if context.total_failure_classes(*binding_id).as_deref() != Some(classes.as_slice()) { return None; }
-    let suffix = crate::builder::case_when(vec![(condition.clone(), result.clone())], fallback.clone());
+    if earlier.is_empty() {
+        return None;
+    }
+    let (receipt, classes) =
+        crate::domains::completion::failure_partition(condition.as_not().unwrap_or(condition))?;
+    let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() else {
+        return None;
+    };
+    if context.total_failure_classes(*binding_id).as_deref() != Some(classes.as_slice()) {
+        return None;
+    }
+    let suffix =
+        crate::builder::case_when(vec![(condition.clone(), result.clone())], fallback.clone());
     let selected = canonicalize_binary_case(&suffix, context, None)?;
-    let ([(condition, result)], fallback) = selected.as_total_case_when()? else { return None; };
+    let ([(condition, result)], fallback) = selected.as_total_case_when()? else {
+        return None;
+    };
     let mut arms = earlier.to_vec();
     arms.push((condition.clone(), result.clone()));
     let new = crate::builder::case_when(arms, fallback.clone());
@@ -132,15 +184,22 @@ pub(crate) fn canonicalize_terminal_completion(expression: &Expr, context: &dyn 
 }
 
 fn preferred_complement_for_case(
-    condition: &Expr, yes: &Expr, no: &Expr, context: &dyn SortContext,
+    condition: &Expr,
+    yes: &Expr,
+    no: &Expr,
+    context: &dyn SortContext,
 ) -> Option<Expr> {
     // In SQL a third outcome can fall through in both orientations.
     // NOT UNKNOWN does not select the former ELSE arm.
-    if condition.may_observe_sql_unknown() { return None; }
+    if condition.may_observe_sql_unknown() {
+        return None;
+    }
     let complement = crate::normalize_with(crate::builder::not(condition.clone()), context);
     let original = crate::builder::case_when(vec![(condition.clone(), yes.clone())], no.clone());
     let swapped = crate::builder::case_when(vec![(complement.clone(), no.clone())], yes.clone());
-    crate::canonical_order_compare(&swapped, &original, context).is_lt().then_some(complement)
+    crate::canonical_order_compare(&swapped, &original, context)
+        .is_lt()
+        .then_some(complement)
 }
 
 /// Return the canonical representative when a total binary CASE should use
@@ -148,7 +207,9 @@ fn preferred_complement_for_case(
 /// callers that must preserve CASE laziness while sharing the published
 /// predicate polarity and ordering key.
 pub(crate) fn canonicalize_binary_case(
-    expression: &Expr, context: &dyn SortContext, parent: Option<&Expr>,
+    expression: &Expr,
+    context: &dyn SortContext,
+    parent: Option<&Expr>,
 ) -> Option<Expr> {
     let ([(condition, yes)], no) = expression.as_total_case_when()? else {
         return None;
@@ -160,9 +221,16 @@ pub(crate) fn canonicalize_binary_case(
     if let Some((receipt, classes)) = completion::failure_partition(failed) {
         if let Some(SymVarOrigin::External { binding_id, .. }) = receipt.as_sym_var() {
             if context.total_failure_classes(*binding_id).as_deref() == Some(classes.as_slice()) {
-                let (success, failure) = if condition.as_not().is_some() { (yes, no) } else { (no, yes) };
+                let (success, failure) = if condition.as_not().is_some() {
+                    (yes, no)
+                } else {
+                    (no, yes)
+                };
                 let candidate = crate::builder::case_when(
-                    vec![(completion::closed_return(receipt.clone(), &classes), success.clone())],
+                    vec![(
+                        completion::closed_return(receipt.clone(), &classes),
+                        success.clone(),
+                    )],
                     failure.clone(),
                 );
                 if crate::canonical_order_compare(&candidate, expression, context).is_lt() {
@@ -175,7 +243,9 @@ pub(crate) fn canonicalize_binary_case(
         return None;
     }
     if let Some(op) = selection_comparison(condition, yes, no) {
-        if !has_total_number_selection_evidence(yes, context) || !has_total_number_selection_evidence(no, context) {
+        if !has_total_number_selection_evidence(yes, context)
+            || !has_total_number_selection_evidence(no, context)
+        {
             return None;
         }
         // Under a proven reachable equality domain, the two equivalent
@@ -183,30 +253,48 @@ pub(crate) fn canonicalize_binary_case(
         // Run the candidate selection before ordinary guard simplification.
         // A single equality of two direct exact inputs is reachable; don't
         // infer reachability from a general implication on an unknown domain.
-        if direct_exact_number(yes) && direct_exact_number(no)
-            && parent.and_then(Expr::as_binop).is_some_and(|(op, left, right)|
-                op == BinOpKind::Eq && ((left == yes && right == no) || (left == no && right == yes)))
+        if direct_exact_number(yes)
+            && direct_exact_number(no)
+            && parent
+                .and_then(Expr::as_binop)
+                .is_some_and(|(op, left, right)| {
+                    op == BinOpKind::Eq
+                        && ((left == yes && right == no) || (left == no && right == yes))
+                })
         {
-            let selected = if crate::canonical_order_compare(yes, no, context).is_gt() { no } else { yes };
+            let selected = if crate::canonical_order_compare(yes, no, context).is_gt() {
+                no
+            } else {
+                yes
+            };
             return Some(selected.clone());
         }
         let canonical = order_selection(op, yes, no, context)?;
         return (canonical != *expression).then_some(canonical);
     }
     let literal_point = |value: &Expr| value.as_lit()?.as_integer();
-    if let Some((source, literal, when_true_is_source)) = match (literal_point(yes), literal_point(no)) {
-        (None, Some(point)) => Some((yes, (no, point), true)),
-        (Some(point), None) => Some((no, (yes, point), false)),
-        _ => None,
-    } {
+    if let Some((source, literal, when_true_is_source)) =
+        match (literal_point(yes), literal_point(no)) {
+            (None, Some(point)) => Some((yes, (no, point), true)),
+            (Some(point), None) => Some((no, (yes, point), false)),
+            _ => None,
+        }
+    {
         let (literal, point) = literal;
         if let Some(op) = crate::normalize::integer_ranges::integer_selection(
-            condition, source, &point, when_true_is_source, parent,
+            condition,
+            source,
+            &point,
+            when_true_is_source,
+            parent,
         ) {
             let candidate = order_selection(op, source, literal, context)?;
             return (candidate != *expression).then_some(candidate);
         }
     }
     let complement = preferred_complement_for_case(condition, yes, no, context)?;
-    Some(crate::builder::case_when(vec![(complement, no.clone())], yes.clone()))
+    Some(crate::builder::case_when(
+        vec![(complement, no.clone())],
+        yes.clone(),
+    ))
 }

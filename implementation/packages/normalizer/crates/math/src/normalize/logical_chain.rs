@@ -3,7 +3,10 @@
 //! Keep terms in source order. Sorting, dropping terms and proving that a
 //! rewrite preserves short-circuit evaluation belong to each caller.
 
-use crate::{builder, expr::{BinOpKind, Expr}};
+use crate::{
+    builder,
+    expr::{BinOpKind, Expr},
+};
 
 pub(super) fn flatten_and(expr: &Expr) -> Vec<Expr> {
     flatten(expr, BinOpKind::And)

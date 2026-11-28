@@ -13,7 +13,11 @@ pub(crate) struct FixedFor<'a> {
 }
 
 fn literal(expr: &E) -> Option<i128> {
-    if let E::UnaryOp { op: U::Neg, operand } = expr {
+    if let E::UnaryOp {
+        op: U::Neg,
+        operand,
+    } = expr
+    {
         literal(operand).map(|value| -value)
     } else {
         super::integer_token(expr).map(i128::from)
@@ -21,10 +25,17 @@ fn literal(expr: &E) -> Option<i128> {
 }
 
 pub(super) fn assignment_init(init: &S) -> Option<(&str, &E, &E)> {
-    let S::ExprStmt(E::Assign { target, value, is_compound: false }) = init else {
+    let S::ExprStmt(E::Assign {
+        target,
+        value,
+        is_compound: false,
+    }) = init
+    else {
         return None;
     };
-    let E::Ident(name) = target.as_ref() else { return None; };
+    let E::Ident(name) = target.as_ref() else {
+        return None;
+    };
     Some((name, target, value))
 }
 
@@ -33,19 +44,37 @@ pub(super) fn assignment_init(init: &S) -> Option<(&str, &E, &E)> {
 // their own proof rather than inheriting this one.
 pub(super) fn closed_assignment_counter(body: &[S], counter: &str, mutable_counter: bool) -> bool {
     body.iter().all(|statement| match statement {
-        S::Assign { target: E::Ident(name), value, .. } => name != counter
-            || mutable_counter && literal(value).is_some(),
+        S::Assign {
+            target: E::Ident(name),
+            value,
+            ..
+        } => name != counter || mutable_counter && literal(value).is_some(),
         S::Return(_) => true,
         S::Block(body) => closed_assignment_counter(body, counter, mutable_counter),
-        S::If { then_block, else_block, .. } =>
+        S::If {
+            then_block,
+            else_block,
+            ..
+        } => {
             closed_assignment_counter(then_block, counter, mutable_counter)
-                && else_block.as_deref().is_none_or(|body| closed_assignment_counter(body, counter, mutable_counter)),
+                && else_block
+                    .as_deref()
+                    .is_none_or(|body| closed_assignment_counter(body, counter, mutable_counter))
+        }
         _ => false,
     })
 }
 
 fn declares_counter(statement: &S) -> Option<(&str, &JavaType, &E)> {
-    let S::VarDecl { java_type, name, initializer: Some(value), .. } = statement else { return None; };
+    let S::VarDecl {
+        java_type,
+        name,
+        initializer: Some(value),
+        ..
+    } = statement
+    else {
+        return None;
+    };
     Some((name, java_type, value))
 }
 
@@ -54,8 +83,19 @@ fn is_counter(expr: &E, name: &str) -> bool {
 }
 
 // Return the bound, unit step and whether the bound is included.
-fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<(&'a E, i128, bool)> {
-    let (E::BinOp { op, left, right }, E::UnaryOp { op: change, operand }) = (cond?, update?) else {
+fn induction<'a>(
+    name: &str,
+    cond: Option<&'a E>,
+    update: Option<&E>,
+) -> Option<(&'a E, i128, bool)> {
+    let (
+        E::BinOp { op, left, right },
+        E::UnaryOp {
+            op: change,
+            operand,
+        },
+    ) = (cond?, update?)
+    else {
         return None;
     };
     if !is_counter(operand, name) {
@@ -64,10 +104,16 @@ fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<
     let (bound, op) = if is_counter(left, name) {
         (right.as_ref(), *op)
     } else if is_counter(right, name) {
-        (left.as_ref(), match op {
-            B::Lt => B::Gt, B::Le => B::Ge, B::Gt => B::Lt, B::Ge => B::Le,
-            _ => return None,
-        })
+        (
+            left.as_ref(),
+            match op {
+                B::Lt => B::Gt,
+                B::Le => B::Ge,
+                B::Gt => B::Lt,
+                B::Ge => B::Le,
+                _ => return None,
+            },
+        )
     } else {
         return None;
     };
@@ -84,32 +130,42 @@ fn induction<'a>(name: &str, cond: Option<&'a E>, update: Option<&E>) -> Option<
 impl<'a> FixedFor<'a> {
     pub fn from_header(init: Option<&'a S>, cond: Option<&E>, update: Option<&E>) -> Option<Self> {
         let init = init?;
-        let eligible_type = |ty: &JavaType|
-            matches!(ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long"));
-        let (name, value, assigns_outer, declarations) = if let Some((name, ty, value)) = declares_counter(init) {
-            if !eligible_type(ty) { return None; }
-            (name, value, false, None)
-        } else if let S::Block(declarations) = init {
-            let E::UnaryOp { operand, .. } = update? else { return None; };
-            let E::Ident(induction_name) = operand.as_ref() else { return None; };
-            let mut induction = None;
-            for declaration in declarations {
-                let (name, ty, value) = declares_counter(declaration)?;
-                if !eligible_type(ty) { return None; }
-                if name == induction_name {
-                    if induction.replace((name, value)).is_some() { return None; }
-                } else if literal(value).is_none() && !matches!(value, E::Ident(_)) {
-                    // Extra declarators may use an earlier local, but may not
-                    // reassign the counter or have other execution effects.
+        let eligible_type = |ty: &JavaType| matches!(ty, JavaType::Primitive(ty) if matches!(ty.as_str(), "int" | "long"));
+        let (name, value, assigns_outer, declarations) =
+            if let Some((name, ty, value)) = declares_counter(init) {
+                if !eligible_type(ty) {
                     return None;
                 }
-            }
-            let (name, value) = induction?;
-            (name, value, false, Some(declarations.as_slice()))
-        } else {
-            let (name, _, value) = assignment_init(init)?;
-            (name, value, true, None)
-        };
+                (name, value, false, None)
+            } else if let S::Block(declarations) = init {
+                let E::UnaryOp { operand, .. } = update? else {
+                    return None;
+                };
+                let E::Ident(induction_name) = operand.as_ref() else {
+                    return None;
+                };
+                let mut induction = None;
+                for declaration in declarations {
+                    let (name, ty, value) = declares_counter(declaration)?;
+                    if !eligible_type(ty) {
+                        return None;
+                    }
+                    if name == induction_name {
+                        if induction.replace((name, value)).is_some() {
+                            return None;
+                        }
+                    } else if literal(value).is_none() && !matches!(value, E::Ident(_)) {
+                        // Extra declarators may use an earlier local, but may not
+                        // reassign the counter or have other execution effects.
+                        return None;
+                    }
+                }
+                let (name, value) = induction?;
+                (name, value, false, Some(declarations.as_slice()))
+            } else {
+                let (name, _, value) = assignment_init(init)?;
+                (name, value, true, None)
+            };
         let (bound, step, inclusive) = induction(name, cond, update)?;
         let start = literal(value)?;
         let end = literal(bound)?;
@@ -146,18 +202,31 @@ enum Transfer {
 
 fn inductive_guard(expr: &E, counter: &str, index: i128) -> Option<bool> {
     use simulator_parser::JavaLit;
-    let value = |expr: &E| if is_counter(expr, counter) {
-        Some(index)
-    } else {
-        literal(expr)
+    let value = |expr: &E| {
+        if is_counter(expr, counter) {
+            Some(index)
+        } else {
+            literal(expr)
+        }
     };
     match expr {
         E::Lit(JavaLit::Bool(b)) => Some(*b),
-        E::UnaryOp { op: U::Not, operand } => Some(!inductive_guard(operand, counter, index)?),
-        E::BinOp { op: op @ (B::And | B::Or), left, right } => {
+        E::UnaryOp {
+            op: U::Not,
+            operand,
+        } => Some(!inductive_guard(operand, counter, index)?),
+        E::BinOp {
+            op: op @ (B::And | B::Or),
+            left,
+            right,
+        } => {
             let left = inductive_guard(left, counter, index)?;
             let right = inductive_guard(right, counter, index)?;
-            Some(if *op == B::And { left && right } else { left || right })
+            Some(if *op == B::And {
+                left && right
+            } else {
+                left || right
+            })
         }
         E::BinOp { op, left, right } => {
             let (left, right) = (value(left)?, value(right)?);
@@ -176,12 +245,16 @@ fn inductive_guard(expr: &E, counter: &str, index: i128) -> Option<bool> {
 }
 
 fn closed_integer_value(expr: &E) -> bool {
-    literal(expr).is_some() || match expr {
-        E::Ident(_) => true,
-        E::BinOp { op: B::Add | B::Sub | B::Mul, left, right } =>
-            closed_integer_value(left) && closed_integer_value(right),
-        _ => false,
-    }
+    literal(expr).is_some()
+        || match expr {
+            E::Ident(_) => true,
+            E::BinOp {
+                op: B::Add | B::Sub | B::Mul,
+                left,
+                right,
+            } => closed_integer_value(left) && closed_integer_value(right),
+            _ => false,
+        }
 }
 
 /// Check every source path, not only the paths visited during a prefix. No
@@ -193,31 +266,54 @@ fn closed_loop_control(body: &[S], counter: &str, bound: Option<&str>) -> Option
         has_transfer |= match statement {
             S::LoopBreak | S::LoopContinue => true,
             S::Block(body) => closed_loop_control(body, counter, bound)?,
-            S::If { cond, then_block, else_block } => {
+            S::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
                 inductive_guard(cond, counter, 0)?;
                 closed_loop_control(then_block, counter, bound)?
-                    | closed_loop_control(else_block.as_deref().unwrap_or_default(), counter, bound)?
+                    | closed_loop_control(
+                        else_block.as_deref().unwrap_or_default(),
+                        counter,
+                        bound,
+                    )?
             }
-            S::Assign { target: E::Ident(name), value, .. }
-                if name != counter && bound != Some(name.as_str()) && closed_integer_value(value) => false,
+            S::Assign {
+                target: E::Ident(name),
+                value,
+                ..
+            } if name != counter && bound != Some(name.as_str()) && closed_integer_value(value) => {
+                false
+            }
             _ => return None,
         };
     }
     Some(has_transfer)
 }
 
-fn loop_prefix<'a>(body: &'a [S], counter: &str, index: i128, statements: &mut Vec<&'a S>) -> Transfer {
+fn loop_prefix<'a>(
+    body: &'a [S],
+    counter: &str,
+    index: i128,
+    statements: &mut Vec<&'a S>,
+) -> Transfer {
     for statement in body {
         let outcome = match statement {
             S::LoopBreak => Transfer::Exit,
             S::LoopContinue => Transfer::Next,
             S::Block(body) => loop_prefix(body, counter, index, statements),
-            S::If { cond, then_block, else_block } => {
-                let selected = if inductive_guard(cond, counter, index).expect("closed induction guard") {
-                    then_block
-                } else {
-                    else_block.as_deref().unwrap_or_default()
-                };
+            S::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                let selected =
+                    if inductive_guard(cond, counter, index).expect("closed induction guard") {
+                        then_block
+                    } else {
+                        else_block.as_deref().unwrap_or_default()
+                    };
                 loop_prefix(selected, counter, index, statements)
             }
             S::Assign { .. } => {
@@ -226,44 +322,76 @@ fn loop_prefix<'a>(body: &'a [S], counter: &str, index: i128, statements: &mut V
             }
             _ => unreachable!("closed native loop prefix"),
         };
-        if outcome != Transfer::Fallthrough { return outcome; }
+        if outcome != Transfer::Fallthrough {
+            return outcome;
+        }
     }
     Transfer::Fallthrough
 }
 
 impl<'a> BoundedControlFor<'a> {
     pub fn from_for(statement: &'a S) -> Option<Self> {
-        let S::For { init, cond, update, body } = statement else { return None; };
+        let S::For {
+            init,
+            cond,
+            update,
+            body,
+        } = statement
+        else {
+            return None;
+        };
         let (counter, ty, initial) = declares_counter(init.as_deref()?)?;
-        let JavaType::Primitive(host) = ty else { return None; };
+        let JavaType::Primitive(host) = ty else {
+            return None;
+        };
         let fits = |value| match host.as_str() {
             "int" => i32::try_from(value).is_ok(),
             "long" => i64::try_from(value).is_ok(),
             _ => false,
         };
         let start = literal(initial)?;
-        if !fits(start) { return None; }
-        let (end, 1, inclusive) = induction(counter, cond.as_ref(), update.as_ref())? else { return None; };
+        if !fits(start) {
+            return None;
+        }
+        let (end, 1, inclusive) = induction(counter, cond.as_ref(), update.as_ref())? else {
+            return None;
+        };
         let (bound, literal_end) = match end {
             E::Ident(name) if name != counter => (Some(name.as_str()), None),
             value => (None, Some(literal(value)?)),
         };
-        if !closed_loop_control(body, counter, bound)? { return None; }
+        if !closed_loop_control(body, counter, bound)? {
+            return None;
+        }
         let mut iterations = Vec::new();
         let mut work = 0usize;
         for offset in 0..=PREFIX_LIMIT {
             let index = start + offset as i128;
             if literal_end.is_some_and(|end| index > end || (index == end && !inclusive)) {
-                return Some(Self { counter, bound, inclusive, iterations });
+                return Some(Self {
+                    counter,
+                    bound,
+                    inclusive,
+                    iterations,
+                });
             }
-            if offset == PREFIX_LIMIT || !fits(index) { return None; }
+            if offset == PREFIX_LIMIT || !fits(index) {
+                return None;
+            }
             let mut statements = Vec::new();
             let transfer = loop_prefix(body, counter, index, &mut statements);
             work = work.checked_add(statements.len())?;
-            if work > 4096 { return None; }
+            if work > 4096 {
+                return None;
+            }
             iterations.push((index, statements));
             if transfer == Transfer::Exit {
-                return Some(Self { counter, bound, inclusive, iterations });
+                return Some(Self {
+                    counter,
+                    bound,
+                    inclusive,
+                    iterations,
+                });
             }
         }
         None
@@ -286,23 +414,58 @@ pub(crate) struct FixedFieldFor<'a> {
 impl<'a> FixedFieldFor<'a> {
     pub fn from_for(statement: &'a S) -> Option<Self> {
         fn field(expr: &E) -> Option<(&str, &str)> {
-            let E::FieldAccess { target, field } = expr else { return None; };
-            let E::Ident(receiver) = target.as_ref() else { return None; };
+            let E::FieldAccess { target, field } = expr else {
+                return None;
+            };
+            let E::Ident(receiver) = target.as_ref() else {
+                return None;
+            };
             Some((receiver, field))
         }
-        let S::For { init, cond, update, body } = statement else { return None; };
-        let S::ExprStmt(E::Assign { target, value, is_compound: false }) = init.as_deref()? else { return None; };
+        let S::For {
+            init,
+            cond,
+            update,
+            body,
+        } = statement
+        else {
+            return None;
+        };
+        let S::ExprStmt(E::Assign {
+            target,
+            value,
+            is_compound: false,
+        }) = init.as_deref()?
+        else {
+            return None;
+        };
         let (start_root, member) = field(target)?;
-        let E::BinOp { op, left, right } = cond.as_ref()? else { return None; };
+        let E::BinOp { op, left, right } = cond.as_ref()? else {
+            return None;
+        };
         let ((test_root, tested), op, end) = if let Some(field) = field(left) {
             (field, *op, literal(right)?)
         } else {
-            let swap = match op { B::Lt => B::Gt, B::Le => B::Ge, B::Gt => B::Lt, B::Ge => B::Le, _ => return None };
+            let swap = match op {
+                B::Lt => B::Gt,
+                B::Le => B::Ge,
+                B::Gt => B::Lt,
+                B::Ge => B::Le,
+                _ => return None,
+            };
             (field(right)?, swap, literal(left)?)
         };
-        let E::UnaryOp { op: change, operand } = update.as_ref()? else { return None; };
+        let E::UnaryOp {
+            op: change,
+            operand,
+        } = update.as_ref()?
+        else {
+            return None;
+        };
         let (step_root, stepped) = field(operand)?;
-        if member != tested || member != stepped { return None; }
+        if member != tested || member != stepped {
+            return None;
+        }
         let (step, inclusive) = match (op, change) {
             (B::Lt, U::PostInc | U::PreInc) => (1, false),
             (B::Le, U::PostInc | U::PreInc) => (1, true),
@@ -312,13 +475,21 @@ impl<'a> FixedFieldFor<'a> {
         };
         let receivers = [start_root, test_root, step_root];
         fn integer_scalar(expr: &E, receivers: [&str; 3], member: &str) -> bool {
-            if literal(expr).is_some() { return true; }
+            if literal(expr).is_some() {
+                return true;
+            }
             match expr {
                 E::Ident(name) => !receivers.contains(&name.as_str()),
-                E::FieldAccess { .. } => field(expr).is_some_and(|(root, access)|
-                    receivers.contains(&root) && access == member),
-                E::BinOp { op: B::Add | B::Sub | B::Mul, left, right } =>
-                    integer_scalar(left, receivers, member) && integer_scalar(right, receivers, member),
+                E::FieldAccess { .. } => field(expr)
+                    .is_some_and(|(root, access)| receivers.contains(&root) && access == member),
+                E::BinOp {
+                    op: B::Add | B::Sub | B::Mul,
+                    left,
+                    right,
+                } => {
+                    integer_scalar(left, receivers, member)
+                        && integer_scalar(right, receivers, member)
+                }
                 _ => false,
             }
         }
@@ -336,7 +507,11 @@ impl<'a> FixedFieldFor<'a> {
         Some(Self {
             initial_target: target,
             initial_value: value,
-            receivers, field: member, start, step, count,
+            receivers,
+            field: member,
+            start,
+            step,
+            count,
         })
     }
 }
@@ -352,26 +527,58 @@ impl<'a> RectangularCounter<'a> {
     pub fn from_for(mut statement: &'a S) -> Option<Self> {
         let mut bounds = Vec::new();
         let mut counters = std::collections::BTreeSet::<&str>::new();
-        while let S::For { init, cond, update, body } = statement {
+        while let S::For {
+            init,
+            cond,
+            update,
+            body,
+        } = statement
+        {
             let (name, ty, start) = declares_counter(init.as_deref()?)?;
-            if !super::integral(ty) || literal(start)? != 0 { return None; }
+            if !super::integral(ty) || literal(start)? != 0 {
+                return None;
+            }
             // Lexical binding uniqueness is checked once by source
             // admission. This set is only for proving independence.
             counters.insert(name);
-            let (E::Ident(end), 1, inclusive) =
-                induction(name, cond.as_ref(), update.as_ref())?
-            else { return None; };
+            let (E::Ident(end), 1, inclusive) = induction(name, cond.as_ref(), update.as_ref())?
+            else {
+                return None;
+            };
             bounds.push((end.as_str(), inclusive));
-            let [inner] = body.as_slice() else { return None; };
+            let [inner] = body.as_slice() else {
+                return None;
+            };
             statement = inner;
         }
-        let S::Assign { target: E::Ident(target), value: E::BinOp { op: B::Add, left, right }, .. } = statement else { return None; };
-        let offset = (bounds.len() >= 2 && !counters.contains(target.as_str())
-            && bounds.iter().all(|(end, _)| !counters.contains(end) && end != target))
-            .then(|| [(left, right), (right, left)]
+        let S::Assign {
+            target: E::Ident(target),
+            value:
+                E::BinOp {
+                    op: B::Add,
+                    left,
+                    right,
+                },
+            ..
+        } = statement
+        else {
+            return None;
+        };
+        let offset = (bounds.len() >= 2
+            && !counters.contains(target.as_str())
+            && bounds
+                .iter()
+                .all(|(end, _)| !counters.contains(end) && end != target))
+        .then(|| {
+            [(left, right), (right, left)]
                 .into_iter()
-                .find_map(|(acc, offset)| is_counter(acc, target).then_some(offset)))??;
+                .find_map(|(acc, offset)| is_counter(acc, target).then_some(offset))
+        })??;
         let increment = literal(offset)?;
-        Some(Self { bounds, target, increment: increment.try_into().ok()? })
+        Some(Self {
+            bounds,
+            target,
+            increment: increment.try_into().ok()?,
+        })
     }
 }

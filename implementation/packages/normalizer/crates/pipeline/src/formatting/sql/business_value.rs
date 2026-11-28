@@ -8,46 +8,79 @@ fn direct_input(value: &Expr, ctx: &FormatCtx) -> bool {
 }
 
 fn total_value(value: &Expr, ctx: &FormatCtx, row: Option<&str>) -> bool {
-    if value.as_lit().is_some() || direct_input(value, ctx) { return true; }
-    if let Some(alias) = value.as_row_value() { return row == Some(alias); }
-    if let Some((_, operand)) = value.as_unary_op() { return total_value(operand, ctx, row); }
+    if value.as_lit().is_some() || direct_input(value, ctx) {
+        return true;
+    }
+    if let Some(alias) = value.as_row_value() {
+        return row == Some(alias);
+    }
+    if let Some((_, operand)) = value.as_unary_op() {
+        return total_value(operand, ctx, row);
+    }
     if let Some((_, left, right)) = value.as_binop() {
         return total_value(left, ctx, row) && total_value(right, ctx, row);
     }
     if let Some((arms, otherwise)) = value.as_total_case_when() {
-        return arms.iter().all(|(guard, value)| total_value(guard, ctx, row) && total_value(value, ctx, row))
+        return arms
+            .iter()
+            .all(|(guard, value)| total_value(guard, ctx, row) && total_value(value, ctx, row))
             && total_value(otherwise, ctx, row);
     }
-    value.as_array_lit().is_some_and(|items| items.iter().all(|item| total_value(item, ctx, row)))
+    value
+        .as_array_lit()
+        .is_some_and(|items| items.iter().all(|item| total_value(item, ctx, row)))
 }
 
 pub(super) fn closed_candidate(value: &Expr, ctx: &FormatCtx) -> bool {
     use math::{domains::relation::RelationExpr, RelationAggregateKind};
-    if total_value(value, ctx, None) { return true; }
+    if total_value(value, ctx, None) {
+        return true;
+    }
     // A SUM can be shared as a whole only over the exact same acquired
     // input sequence. Its row binder never participates in outer sharing.
-    if let Some((RelationAggregateKind::Sum, RelationExpr::Base { name, alias, snapshot: None }, Some(select), None)) =
-        value.as_relation_aggregate()
+    if let Some((
+        RelationAggregateKind::Sum,
+        RelationExpr::Base {
+            name,
+            alias,
+            snapshot: None,
+        },
+        Some(select),
+        None,
+    )) = value.as_relation_aggregate()
     {
-        return !name.starts_with('$') && ctx.scalar_arrays.contains(name)
+        return !name.starts_with('$')
+            && ctx.scalar_arrays.contains(name)
             && total_value(select, ctx, Some(alias));
     }
     false
 }
 
-fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&Expr, &mut FormatCtx) -> String) -> String {
-    if ctx.business_inputs.is_none() || (!value.has_case_when() && ctx.relation_scope.slots.is_empty()) {
+fn with_value_plan(
+    value: &Expr,
+    ctx: &mut FormatCtx,
+    render: impl FnOnce(&Expr, &mut FormatCtx) -> String,
+) -> String {
+    if ctx.business_inputs.is_none()
+        || (!value.has_case_when() && ctx.relation_scope.slots.is_empty())
+    {
         return render(value, ctx);
     }
     let external = ctx.observation_identities().clone();
     let first = ctx.scoped_plans.is_none();
     if first {
         ctx.scoped_plans = Some(super::scoped_relation::ScopedPlans {
-            external: external.clone(), plans: Default::default(),
+            external: external.clone(),
+            plans: Default::default(),
         });
     }
-    let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| b::lit_bool(true));
-    let plan = ctx.canonical_value_plan(value, &external, &domain, &ctx.relation_scope.member_order);
+    let domain = ctx
+        .relation_scope
+        .active
+        .clone()
+        .unwrap_or_else(|| b::lit_bool(true));
+    let plan =
+        ctx.canonical_value_plan(value, &external, &domain, &ctx.relation_scope.member_order);
     let mut definitions = Vec::new();
     for (slot, expression) in plan.definitions.into_iter().enumerate() {
         let name = format!("$l_{slot}");
@@ -57,10 +90,17 @@ fn with_value_plan(value: &Expr, ctx: &mut FormatCtx, render: impl FnOnce(&Expr,
     // Choose bindings from the pre-rewrite value. A simplifying rule can
     // replace a member-dependent result without changing its acquisition.
     let result = ctx.in_relation_scope(value, |ctx| render(&plan.payload, ctx));
-    for _ in &definitions { ctx.forget_business_value(); }
-    if first { ctx.scoped_plans = None; }
-    if definitions.is_empty() { result }
-    else { format!("{}\nIN {result}", definitions.join("\n")) }
+    for _ in &definitions {
+        ctx.forget_business_value();
+    }
+    if first {
+        ctx.scoped_plans = None;
+    }
+    if definitions.is_empty() {
+        result
+    } else {
+        format!("{}\nIN {result}", definitions.join("\n"))
+    }
 }
 
 pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
@@ -71,11 +111,15 @@ pub(crate) fn format_value(value: &Expr, ctx: &mut FormatCtx) -> String {
 /// equivalent on total Boolean values.
 pub(super) fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
     use math::domains::completion;
-    let proves = |requirement: &Expr| requirement.as_bool() == Some(true)
-        || domain.is_some_and(|active| b::path_implies(active, requirement));
+    let proves = |requirement: &Expr| {
+        requirement.as_bool() == Some(true)
+            || domain.is_some_and(|active| b::path_implies(active, requirement))
+    };
     let mut available = true;
     value.walk_pruned(&mut |node| {
-        if !available { return false; }
+        if !available {
+            return false;
+        }
         if let Some(SymVarOrigin::External { binding_id, .. }) = node.as_sym_var() {
             if let Some(issued) = ctx.business_receipt_guards.get(binding_id) {
                 available &= proves(issued);
@@ -92,7 +136,9 @@ pub(super) fn receipts_available(value: &Expr, domain: Option<&Expr>, ctx: &Form
                     }
                 }
                 ("completion.payload", _) => {
-                    if let Some((_, receipt, class)) = completion::class_observation(&registered, args) {
+                    if let Some((_, receipt, class)) =
+                        completion::class_observation(&registered, args)
+                    {
                         available &= proves(&completion::is_throw(receipt.clone(), class));
                     }
                 }
@@ -136,7 +182,8 @@ fn is_safe(value: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> bool {
         return true;
     }
     value.as_binop().is_some_and(|(op, left, right)| {
-        ShortCircuit::from_op(op).is_some_and(|op| lazy_operands(op, left, right, domain, ctx).is_some())
+        ShortCircuit::from_op(op)
+            .is_some_and(|op| lazy_operands(op, left, right, domain, ctx).is_some())
     })
 }
 
@@ -161,7 +208,11 @@ fn lazy_operands<'a>(
 /// Decompose a positive failure conjunction in acquisition order. Each
 /// proposed early exit is the exact complement of an acquired singleton
 /// failure, not a catch predicate or the negation of an unissued receipt.
-fn protected_failure_prefix(test: &Expr, domain: Option<&Expr>, ctx: &FormatCtx) -> Option<Vec<Expr>> {
+fn protected_failure_prefix(
+    test: &Expr,
+    domain: Option<&Expr>,
+    ctx: &FormatCtx,
+) -> Option<Vec<Expr>> {
     if let Some((BinOpKind::And, left, right)) = test.as_binop() {
         let (test, rest, selected) = lazy_operands(ShortCircuit::And, left, right, domain, ctx)?;
         let mut prefix = protected_failure_prefix(test, domain, ctx)?;
@@ -172,9 +223,12 @@ fn protected_failure_prefix(test: &Expr, domain: Option<&Expr>, ctx: &FormatCtx)
         let mut remaining = domain.cloned().unwrap_or_else(|| b::lit_bool(true));
         let mut prefix = Vec::new();
         for (test, stopped) in arms {
-            if stopped.as_bool() != Some(false) || test.may_observe_sql_unknown()
+            if stopped.as_bool() != Some(false)
+                || test.may_observe_sql_unknown()
                 || !receipts_available(test, Some(&remaining), ctx)
-            { return None; }
+            {
+                return None;
+            }
             remaining = b::first_match_domains(remaining, test).1;
             prefix.push(test.clone());
         }
@@ -186,8 +240,8 @@ fn protected_failure_prefix(test: &Expr, domain: Option<&Expr>, ctx: &FormatCtx)
         return None;
     };
     let normal = ctx.business_normal_completions.get(binding_id)?;
-    (math::normalize(b::not(test.clone())) == *normal
-        && receipts_available(test, domain, ctx)).then(|| vec![normal.clone()])
+    (math::normalize(b::not(test.clone())) == *normal && receipts_available(test, domain, ctx))
+        .then(|| vec![normal.clone()])
 }
 
 /// The shared math tree has no operation ledger: a Boolean expression can
@@ -218,11 +272,19 @@ pub(crate) fn format_guarded_boolean(
     let lazy = b::case_when(vec![(guard.clone(), yes)], no);
     if matches!(op, ShortCircuit::And) {
         if !receipts_available(guard, domain, ctx) || guard.as_case_when().is_some() {
-            if let Some(tests) = protected_failure_prefix(guard, domain, ctx).filter(|tests| tests.len() > 1) {
+            if let Some(tests) =
+                protected_failure_prefix(guard, domain, ctx).filter(|tests| tests.len() > 1)
+            {
                 // The legal nested form repeats an ELSE across protected
                 // CASEs. The first-match list uses fewer arms, with exactly
                 // the same next acquisition on each continuing path.
-                let flat = b::case_when(tests.into_iter().map(|test| (test, b::lit_bool(false))).collect(), value.clone());
+                let flat = b::case_when(
+                    tests
+                        .into_iter()
+                        .map(|test| (test, b::lit_bool(false)))
+                        .collect(),
+                    value.clone(),
+                );
                 return Some(super::format_expr_with_ctx(&flat, ctx));
             }
         }
@@ -231,12 +293,20 @@ pub(crate) fn format_guarded_boolean(
         // The guard proof above determines the lazy region. Let the same
         // CASE selector used by the kernel choose its representation, not a
         // second polarity rule tied to the rendered truth token.
-        let completions = ctx.business_normal_completions.iter().filter_map(|(&id, normal)| {
-            if ctx.business_receipt_guards.contains_key(&id) { return None; }
-            let (math::UnaryOpKind::Not, failure) = normal.as_unary_op()? else { return None; };
-            let (_, class) = math::domains::completion::throw_tag(failure)?;
-            Some((id, vec![class]))
-        }).collect();
+        let completions = ctx
+            .business_normal_completions
+            .iter()
+            .filter_map(|(&id, normal)| {
+                if ctx.business_receipt_guards.contains_key(&id) {
+                    return None;
+                }
+                let (math::UnaryOpKind::Not, failure) = normal.as_unary_op()? else {
+                    return None;
+                };
+                let (_, class) = math::domains::completion::throw_tag(failure)?;
+                Some((id, vec![class]))
+            })
+            .collect();
         let mut order = ctx.bound_order();
         order.completion_classes = Some(&completions);
         math::normalize_with(lazy, &order)
@@ -247,9 +317,8 @@ pub(crate) fn format_guarded_boolean(
     // A non-CASE rewrite would reenter Boolean rendering without the
     // acquisition proof above. Retain the guarded expression instead.
     let guard_text = super::format_expr_with_ctx(guard, ctx);
-    let value_text = ctx.with_business_evaluation_guard(&selected, |ctx| {
-        super::format_expr_with_ctx(value, ctx)
-    });
+    let value_text = ctx
+        .with_business_evaluation_guard(&selected, |ctx| super::format_expr_with_ctx(value, ctx));
     let (yes, no) = if matches!(op, ShortCircuit::And) {
         (value_text.as_str(), "false")
     } else {
@@ -261,22 +330,36 @@ pub(crate) fn format_guarded_boolean(
     let guard_text = guard_text.replace('\n', "\n  ");
     let yes = yes.replace('\n', "\n  ");
     let no = no.replace('\n', "\n  ");
-    Some(format!("CASE\n  WHEN {guard_text} THEN {yes}\n  ELSE {no}\nEND"))
+    Some(format!(
+        "CASE\n  WHEN {guard_text} THEN {yes}\n  ELSE {no}\nEND"
+    ))
 }
 
-pub(crate) fn format_record(expression: &Expr, fields: &[(String, Expr)], ctx: &mut FormatCtx) -> String {
+pub(crate) fn format_record(
+    expression: &Expr,
+    fields: &[(String, Expr)],
+    ctx: &mut FormatCtx,
+) -> String {
     with_value_plan(expression, ctx, |value, ctx| {
         let values = value.as_array_lit().expect("declared record projection");
         if ctx.relation_scope.member_order.len() > 1 {
-            let pairs = fields.iter().zip(values).map(|((name, _), value)| {
-                format!("{name}: {}", super::format_expr_with_ctx(value, ctx))
-            }).collect::<Vec<_>>();
+            let pairs = fields
+                .iter()
+                .zip(values)
+                .map(|((name, _), value)| {
+                    format!("{name}: {}", super::format_expr_with_ctx(value, ctx))
+                })
+                .collect::<Vec<_>>();
             return format!("{{{}}}", pairs.join(", "));
         }
-        let lines: Vec<_> = fields.iter().zip(values).map(|((name, _), value)| {
-            let value = super::format_expr_with_ctx(value, ctx);
-            format!("  {name}: {}", value.replace('\n', "\n  "))
-        }).collect();
+        let lines: Vec<_> = fields
+            .iter()
+            .zip(values)
+            .map(|((name, _), value)| {
+                let value = super::format_expr_with_ctx(value, ctx);
+                format!("  {name}: {}", value.replace('\n', "\n  "))
+            })
+            .collect();
         format!("{{\n{}\n}}", lines.join(",\n"))
     })
 }

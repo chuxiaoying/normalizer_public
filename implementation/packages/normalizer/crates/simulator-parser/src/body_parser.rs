@@ -39,7 +39,9 @@ pub(crate) fn parse_constructor_body_text(
     let mut seen_invocation = false;
     loop {
         p.skip_ws();
-        if p.peek().is_none() { break; }
+        if p.peek().is_none() {
+            break;
+        }
         let at = p.pos;
         let same_class = p.eat_keyword("this");
         let object_parent = !same_class && implicit_object_parent && p.eat_keyword("super");
@@ -47,15 +49,23 @@ pub(crate) fn parse_constructor_body_text(
         if (same_class || object_parent) && p.peek() == Some(b'(') {
             p.reject_after_direct_return(&body)?;
             if seen_invocation {
-                return Err(p.err_at(at, "[JAVA-CONSTRUCTOR-DELEGATION] duplicate explicit constructor invocation"));
+                return Err(p.err_at(
+                    at,
+                    "[JAVA-CONSTRUCTOR-DELEGATION] duplicate explicit constructor invocation",
+                ));
             }
             let args = p.parse_arg_list()?;
             p.require_semicolon("explicit constructor invocation")?;
             if object_parent && !args.is_empty() {
-                return Err(p.err("[JAVA-CONSTRUCTOR-DELEGATION] Object has only a zero-argument constructor"));
+                return Err(p.err(
+                    "[JAVA-CONSTRUCTOR-DELEGATION] Object has only a zero-argument constructor",
+                ));
             }
-            body.push(if same_class { JavaStatement::ThisConstructor(args) }
-                else { JavaStatement::ObjectSuperConstructor });
+            body.push(if same_class {
+                JavaStatement::ThisConstructor(args)
+            } else {
+                JavaStatement::ObjectSuperConstructor
+            });
             seen_invocation = true;
         } else {
             p.pos = at;
@@ -85,27 +95,44 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let body_at = self.pos + 1;
         let text = self.skip_balanced_braces()?;
-        parse_method_body_text(text, &self.file, self.surrogates.subspan(body_at), self.static_context, self.official_n, &self.imports).map_err(|error| self.rebase_slice(body_at, error))
+        parse_method_body_text(
+            text,
+            &self.file,
+            self.surrogates.subspan(body_at),
+            self.static_context,
+            self.official_n,
+            &self.imports,
+        )
+        .map_err(|error| self.rebase_slice(body_at, error))
     }
 
     fn reject_after_direct_return(&self, earlier: &[JavaStatement]) -> Result<(), ParseError> {
         if matches!(earlier.last(), Some(JavaStatement::Return(_))) {
-            return Err(self.err("[JAVA-UNREACHABLE-STATEMENT] statement after unconditional return"));
+            return Err(
+                self.err("[JAVA-UNREACHABLE-STATEMENT] statement after unconditional return")
+            );
         }
         Ok(())
     }
 
     /// Return the last statement from this source position. A local declaration
     /// with commas inserts earlier declarators into the same statement list.
-    fn parse_statement(&mut self, earlier: &mut Vec<JavaStatement>) -> Result<JavaStatement, ParseError> {
+    fn parse_statement(
+        &mut self,
+        earlier: &mut Vec<JavaStatement>,
+    ) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
         self.reject_after_direct_return(earlier)?;
 
         if let Some(start) = self.local_ir_start() {
-            let end = self.source.as_bytes()[start..].windows(2).position(|part| part == b"*/")
-                .map(|offset| start + offset).ok_or_else(|| self.err("unterminated @normalizer-ir comment"))?;
+            let end = self.source.as_bytes()[start..]
+                .windows(2)
+                .position(|part| part == b"*/")
+                .map(|offset| start + offset)
+                .ok_or_else(|| self.err("unterminated @normalizer-ir comment"))?;
             let source = &self.source[start..end];
-            let directive = normalizer_ir::local::parse(source).map_err(|error| self.err(&format!("invalid @normalizer-ir: {error}")))?;
+            let directive = normalizer_ir::local::parse(source)
+                .map_err(|error| self.err(&format!("invalid @normalizer-ir: {error}")))?;
             self.pos = end + 2;
             return Ok(JavaStatement::LocalIr(directive));
         }
@@ -141,7 +168,10 @@ impl<'a> Parser<'a> {
         }
         let synchronized_at = self.pos;
         if self.eat_keyword("synchronized") {
-            return Err(self.err_at(synchronized_at, "[JAVA-MONITOR] synchronized block requires explicit preprocessing"));
+            return Err(self.err_at(
+                synchronized_at,
+                "[JAVA-MONITOR] synchronized block requires explicit preprocessing",
+            ));
         }
         if self.eat_keyword("switch") {
             return self.parse_switch();
@@ -185,7 +215,12 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         // 赋值表达式在 statement 位置仍归一为 JavaStatement::Assign，
         // 让 loop lift / 静态分析等 statement-level 语义继续看到赋值信号。
-        if let JavaExpr::Assign { target, value, is_compound } = expr {
+        if let JavaExpr::Assign {
+            target,
+            value,
+            is_compound,
+        } = expr
+        {
             self.require_semicolon("assignment")?;
             return Ok(JavaStatement::Assign {
                 target: *target,
@@ -260,7 +295,9 @@ impl<'a> Parser<'a> {
                 let mut group = Vec::new();
                 loop {
                     group.push(self.parse_switch_label(&mut seen, &mut seen_text)?);
-                    if !self.eat_char(b',') { break; }
+                    if !self.eat_char(b',') {
+                        break;
+                    }
                 }
                 Some(group)
             } else if self.eat_keyword("default") {
@@ -273,29 +310,47 @@ impl<'a> Parser<'a> {
             };
             self.skip_ws();
             let arrow = self.starts_with("->");
-            if arrow { self.pos += 2; }
-            else { self.require_delimiter(b':', "expected ':' or '->' after switch label")?; }
+            if arrow {
+                self.pos += 2;
+            } else {
+                self.require_delimiter(b':', "expected ':' or '->' after switch label")?;
+            }
             if rule_style.is_some_and(|previous| previous != arrow) {
                 return Err(self.err("[JAVA-SWITCH] cannot mix ':' and '->' switch groups"));
             }
             rule_style = Some(arrow);
-            let (mut body, enters_next) = if arrow { (self.parse_switch_rule()?, false) }
-                else { self.parse_switch_colon_group()? };
+            let (mut body, enters_next) = if arrow {
+                (self.parse_switch_rule()?, false)
+            } else {
+                self.parse_switch_colon_group()?
+            };
             bind_switch_breaks(&mut body);
-            if let Some(labels) = labels { cases.push((labels, body)); }
-            else {
+            if let Some(labels) = labels {
+                cases.push((labels, body));
+            } else {
                 default = Some(body);
                 default_position = Some(continues.len());
             }
             continues.push(enters_next);
         }
-        let fall_through = continues.iter().any(|&next| next)
-            .then_some(SwitchFallThrough { default_position, continues });
-        Ok(JavaStatement::Switch { selector, cases, default: default.unwrap_or_default(), fall_through })
+        let fall_through = continues
+            .iter()
+            .any(|&next| next)
+            .then_some(SwitchFallThrough {
+                default_position,
+                continues,
+            });
+        Ok(JavaStatement::Switch {
+            selector,
+            cases,
+            default: default.unwrap_or_default(),
+            fall_through,
+        })
     }
 
     fn parse_switch_label(
-        &mut self, seen: &mut std::collections::BTreeSet<i32>,
+        &mut self,
+        seen: &mut std::collections::BTreeSet<i32>,
         seen_text: &mut std::collections::BTreeSet<Vec<u16>>,
     ) -> Result<JavaExpr, ParseError> {
         let expression = self.parse_expression()?;
@@ -327,8 +382,10 @@ impl<'a> Parser<'a> {
         match expression {
             JavaExpr::Lit(JavaLit::Int(value)) => Some(*value),
             JavaExpr::Lit(JavaLit::Char(value)) => Some(i32::from(*value)),
-            JavaExpr::UnaryOp { op: JavaUnaryOp::Neg, operand } =>
-                Self::fold_int_switch_label(operand)?.checked_neg(),
+            JavaExpr::UnaryOp {
+                op: JavaUnaryOp::Neg,
+                operand,
+            } => Self::fold_int_switch_label(operand)?.checked_neg(),
             JavaExpr::BinOp { op, left, right } => {
                 let left = Self::fold_int_switch_label(left)?;
                 let right = Self::fold_int_switch_label(right)?;
@@ -353,8 +410,16 @@ impl<'a> Parser<'a> {
         }
         let expr = self.parse_expression()?;
         use JavaUnaryOp::{PostDec, PostInc, PreDec, PreInc};
-        if !matches!(expr, JavaExpr::Assign { .. } | JavaExpr::MethodCall { .. } | JavaExpr::New { .. }
-            | JavaExpr::UnaryOp { op: PreInc | PreDec | PostInc | PostDec, .. }) {
+        if !matches!(
+            expr,
+            JavaExpr::Assign { .. }
+                | JavaExpr::MethodCall { .. }
+                | JavaExpr::New { .. }
+                | JavaExpr::UnaryOp {
+                    op: PreInc | PreDec | PostInc | PostDec,
+                    ..
+                }
+        ) {
             return Err(self.err("[JAVA-SWITCH] arrow in a switch statement requires a block, throw or statement expression"));
         }
         Ok(vec![self.finish_expression_statement(expr)?])
@@ -367,9 +432,12 @@ impl<'a> Parser<'a> {
             self.skip_ws();
             let next = self.pos;
             let boundary = self.peek() == Some(b'}')
-                || self.eat_keyword("case") || self.eat_keyword("default");
+                || self.eat_keyword("case")
+                || self.eat_keyword("default");
             self.pos = next;
-            if boundary { break; }
+            if boundary {
+                break;
+            }
             if self.eat_keyword("break") {
                 self.reject_after_direct_return(&body)?;
                 self.require_semicolon("switch break")?;
@@ -379,15 +447,21 @@ impl<'a> Parser<'a> {
             let statement = self.parse_statement(&mut body)?;
             body.push(statement);
         }
-        if body.iter().any(|statement| matches!(statement, JavaStatement::VarDecl { .. })) {
+        if body
+            .iter()
+            .any(|statement| matches!(statement, JavaStatement::VarDecl { .. }))
+        {
             return Err(self.err("[JAVA-SWITCH] case-local declarations require an explicit block"));
         }
         fn exits(statement: &JavaStatement) -> bool {
             match statement {
                 JavaStatement::Return(_) | JavaStatement::Throw(_) => true,
                 JavaStatement::Block(body) => body.last().is_some_and(exits),
-                JavaStatement::If { then_block, else_block: Some(other), .. } =>
-                    then_block.last().is_some_and(exits) && other.last().is_some_and(exits),
+                JavaStatement::If {
+                    then_block,
+                    else_block: Some(other),
+                    ..
+                } => then_block.last().is_some_and(exits) && other.last().is_some_and(exits),
                 _ => false,
             }
         }
@@ -429,8 +503,11 @@ impl<'a> Parser<'a> {
             } else {
                 // init 可以是 vardecl 或 expression
                 let stmt = if let Some((v, rest)) = self.try_parse_vardecl()? {
-                    if rest.is_empty() { v }
-                    else { JavaStatement::Block(std::iter::once(v).chain(rest).collect()) }
+                    if rest.is_empty() {
+                        v
+                    } else {
+                        JavaStatement::Block(std::iter::once(v).chain(rest).collect())
+                    }
                 } else {
                     let e = self.parse_expression()?;
                     self.skip_ws();
@@ -441,7 +518,11 @@ impl<'a> Parser<'a> {
             }
         };
         self.skip_ws();
-        let condition = if self.peek() == Some(b';') { None } else { Some(self.parse_expression()?) };
+        let condition = if self.peek() == Some(b';') {
+            None
+        } else {
+            Some(self.parse_expression()?)
+        };
         self.skip_ws();
         self.require_semicolon("for condition")?;
         self.skip_ws();
@@ -487,9 +568,9 @@ impl<'a> Parser<'a> {
         let start = self.pos;
         self.skip_ws();
         self.eat_keyword("final");
-        let Some((var_type, var_name)) = self.declaration_head(start, |p, ty, name| {
-            p.eat_char(b':').then_some((ty, name))
-        }) else {
+        let Some((var_type, var_name)) =
+            self.declaration_head(start, |p, ty, name| p.eat_char(b':').then_some((ty, name)))
+        else {
             return Ok(None);
         };
         self.require_local_binding_name(&var_name)?;
@@ -500,7 +581,9 @@ impl<'a> Parser<'a> {
 
     fn parse_return(&mut self) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
-        if self.eat_char(b';') { return Ok(JavaStatement::Return(None)); }
+        if self.eat_char(b';') {
+            return Ok(JavaStatement::Return(None));
+        }
         let expr = self.parse_expression()?;
         self.skip_ws();
         self.require_semicolon("return value")?;
@@ -518,15 +601,31 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let resource = if self.eat_char(b'(') {
             self.eat_keyword("final");
-            let java_type = parse_type(self).ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource type"))?;
-            let name = self.read_ident().ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource binding"))?;
+            let java_type = parse_type(self)
+                .ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource type"))?;
+            let name = self
+                .read_ident()
+                .ok_or_else(|| self.err("[JAVA-RESOURCE] expected resource binding"))?;
             self.require_local_binding_name(&name)?;
-            self.require_delimiter(b'=', "[JAVA-RESOURCE] expected one initialized local resource")?;
+            self.require_delimiter(
+                b'=',
+                "[JAVA-RESOURCE] expected one initialized local resource",
+            )?;
             let initializer = self.parse_expression()?;
             self.eat_char(b';');
-            self.require_delimiter(b')', "[JAVA-RESOURCE] expected ')' after the local resource")?;
-            Some(Box::new(JavaStatement::VarDecl { java_type, name, initializer: Some(initializer), is_final: true }))
-        } else { None };
+            self.require_delimiter(
+                b')',
+                "[JAVA-RESOURCE] expected ')' after the local resource",
+            )?;
+            Some(Box::new(JavaStatement::VarDecl {
+                java_type,
+                name,
+                initializer: Some(initializer),
+                is_final: true,
+            }))
+        } else {
+            None
+        };
         let try_body = self.parse_braced_statements()?;
 
         let mut catches = Vec::new();
@@ -545,7 +644,9 @@ impl<'a> Parser<'a> {
                     _ => return Err(self.err("catch requires an exception class name")),
                 };
                 exception_classes.push(name);
-                if !self.eat_char(b'|') { break; }
+                if !self.eat_char(b'|') {
+                    break;
+                }
             }
             let var_name = self
                 .read_ident()
@@ -572,7 +673,8 @@ impl<'a> Parser<'a> {
         }
 
         Ok(JavaStatement::Try {
-            resource, body: try_body,
+            resource,
+            body: try_body,
             catches,
             finally_block: finally,
         })
@@ -586,7 +688,9 @@ impl<'a> Parser<'a> {
             let mut body = Vec::new();
             let stmt = self.parse_statement(&mut body)?;
             if matches!(stmt, JavaStatement::VarDecl { .. }) {
-                return Err(self.err("[JAVA-LOCAL-SCOPE] a controlled local declaration requires braces"));
+                return Err(
+                    self.err("[JAVA-LOCAL-SCOPE] a controlled local declaration requires braces")
+                );
             }
             body.push(stmt);
             Ok(body)
@@ -615,9 +719,16 @@ impl<'a> Parser<'a> {
         self.parse_expression()
     }
 
-    fn parse_optional_initializer(&mut self, ty: &JavaType) -> Result<Option<JavaExpr>, ParseError> {
-        if !self.eat_char(b'=') { return Ok(None); }
-        if let Some(lambda) = self.parse_local_lambda()? { return Ok(Some(lambda)); }
+    fn parse_optional_initializer(
+        &mut self,
+        ty: &JavaType,
+    ) -> Result<Option<JavaExpr>, ParseError> {
+        if !self.eat_char(b'=') {
+            return Ok(None);
+        }
+        if let Some(lambda) = self.parse_local_lambda()? {
+            return Ok(Some(lambda));
+        }
         self.parse_initializer_expr(ty).map(Some)
     }
 
@@ -629,10 +740,18 @@ impl<'a> Parser<'a> {
         if self.eat_char(b'(') {
             if !self.eat_char(b')') {
                 loop {
-                    let Some(name) = self.read_ident() else { self.pos = start; return Ok(None); };
+                    let Some(name) = self.read_ident() else {
+                        self.pos = start;
+                        return Ok(None);
+                    };
                     parameters.push(name);
-                    if self.eat_char(b')') { break; }
-                    if !self.eat_char(b',') { self.pos = start; return Ok(None); }
+                    if self.eat_char(b')') {
+                        break;
+                    }
+                    if !self.eat_char(b',') {
+                        self.pos = start;
+                        return Ok(None);
+                    }
                 }
             }
         } else if let Some(name) = self.read_ident() {
@@ -642,28 +761,44 @@ impl<'a> Parser<'a> {
             return Ok(None);
         }
         self.skip_ws();
-        if !self.starts_with("->") { self.pos = start; return Ok(None); }
+        if !self.starts_with("->") {
+            self.pos = start;
+            return Ok(None);
+        }
         self.pos += 2;
-        for name in &parameters { self.require_local_binding_name(name)?; }
+        for name in &parameters {
+            self.require_local_binding_name(name)?;
+        }
         self.skip_ws();
         let value = if self.peek() == Some(b'{') {
             let body = self.parse_braced_statements()?;
             let [JavaStatement::Return(Some(value))] = body.as_slice() else {
-                return Err(self.err("[JAVA-LAMBDA-BODY] expected a single value-return in the local lambda block"));
+                return Err(self.err(
+                    "[JAVA-LAMBDA-BODY] expected a single value-return in the local lambda block",
+                ));
             };
             value.clone()
-        } else { self.parse_expression()? };
-        Ok(Some(JavaExpr::LocalLambda { parameters, value: Box::new(value) }))
+        } else {
+            self.parse_expression()?
+        };
+        Ok(Some(JavaExpr::LocalLambda {
+            parameters,
+            value: Box::new(value),
+        }))
     }
 
     fn require_local_binding_name(&self, name: &str) -> Result<(), ParseError> {
         if super::parser::is_reserved_identifier(name) {
-            return Err(self.err(&format!("[JAVA-RESERVED-LOCAL-NAME] {name} cannot declare a local binding")));
+            return Err(self.err(&format!(
+                "[JAVA-RESERVED-LOCAL-NAME] {name} cannot declare a local binding"
+            )));
         }
         Ok(())
     }
 
-    fn try_parse_vardecl(&mut self) -> Result<Option<(JavaStatement, Vec<JavaStatement>)>, ParseError> {
+    fn try_parse_vardecl(
+        &mut self,
+    ) -> Result<Option<(JavaStatement, Vec<JavaStatement>)>, ParseError> {
         let save = self.pos;
         self.skip_ws();
         let annotation_at = self.pos;
@@ -673,14 +808,23 @@ impl<'a> Parser<'a> {
             annotations.extend(self.read_annotations()?);
         }
         let nullable_marker = |annotation: &AnnotationRef| {
-            !annotation.has_arguments() && (annotation.name() == "normalizer.intrinsics.N.Nullable"
-                || (self.official_n && annotation.name() == "N.Nullable"))
+            !annotation.has_arguments()
+                && (annotation.name() == "normalizer.intrinsics.N.Nullable"
+                    || (self.official_n && annotation.name() == "N.Nullable"))
         };
-        let nullable_count = annotations.iter().filter(|annotation| nullable_marker(annotation)).count();
-        if nullable_count > 1 || annotations.iter().any(|annotation| {
-            annotation.name() != "java.lang.SuppressWarnings" && !nullable_marker(annotation)
-        }) {
-            return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] unsupported local variable annotation"));
+        let nullable_count = annotations
+            .iter()
+            .filter(|annotation| nullable_marker(annotation))
+            .count();
+        if nullable_count > 1
+            || annotations.iter().any(|annotation| {
+                annotation.name() != "java.lang.SuppressWarnings" && !nullable_marker(annotation)
+            })
+        {
+            return Err(self.err_at(
+                annotation_at,
+                "[JAVA-LOCAL-ANNOTATION] unsupported local variable annotation",
+            ));
         }
         let Some((base_ty, name, ty)) = self.declaration_head(save, |p, base_ty, name| {
             let ty = parse_array_type_suffix(p, base_ty.clone())?;
@@ -693,7 +837,10 @@ impl<'a> Parser<'a> {
         // This marker describes the local's reference domain and does not
         // initialize it. Assignment and normal branch selection remain required.
         if nullable_count == 1 && matches!(ty, JavaType::Primitive(_)) {
-            return Err(self.err_at(annotation_at, "[JAVA-LOCAL-ANNOTATION] nullable local requires a reference type"));
+            return Err(self.err_at(
+                annotation_at,
+                "[JAVA-LOCAL-ANNOTATION] nullable local requires a reference type",
+            ));
         }
         self.require_local_binding_name(&name)?;
         let init = self.parse_optional_initializer(&ty)?;
@@ -798,20 +945,37 @@ impl<'a> Parser<'a> {
                 }
                 self.skip_ws();
                 let type_at = self.pos;
-                let target = parse_type(self)
-                    .ok_or_else(|| self.err_at(type_at, "[JAVA-INSTANCEOF] expected a reference type after instanceof"))?;
+                let target = parse_type(self).ok_or_else(|| {
+                    self.err_at(
+                        type_at,
+                        "[JAVA-INSTANCEOF] expected a reference type after instanceof",
+                    )
+                })?;
                 if !matches!(target, JavaType::Class(_) | JavaType::Array(_)) {
-                    return Err(self.err_at(type_at, "[JAVA-INSTANCEOF] expected a reference type after instanceof"));
+                    return Err(self.err_at(
+                        type_at,
+                        "[JAVA-INSTANCEOF] expected a reference type after instanceof",
+                    ));
                 }
                 let binding_at = self.pos;
                 let binding = self.read_ident();
-                if binding.as_deref().is_some_and(super::parser::is_reserved_identifier) {
-                    return Err(self.err_at(binding_at, "[JAVA-INSTANCEOF] invalid pattern variable"));
+                if binding
+                    .as_deref()
+                    .is_some_and(super::parser::is_reserved_identifier)
+                {
+                    return Err(
+                        self.err_at(binding_at, "[JAVA-INSTANCEOF] invalid pattern variable")
+                    );
                 }
-                left = JavaExpr::InstanceOf { value: Box::new(left), target, binding };
+                left = JavaExpr::InstanceOf {
+                    value: Box::new(left),
+                    target,
+                    binding,
+                };
                 continue;
             }
-            if self.starts_with("<<") || self.starts_with(">>")
+            if self.starts_with("<<")
+                || self.starts_with(">>")
                 || matches!(self.peek(), Some(b'^'))
                 || (self.peek() == Some(b'|') && !self.starts_with("||"))
                 || (self.peek() == Some(b'&') && !self.starts_with("&&"))
@@ -952,9 +1116,20 @@ impl<'a> Parser<'a> {
             if digits.last().is_some_and(u8::is_ascii_digit) {
                 let long = matches!(self.peek(), Some(b'L' | b'l'));
                 let next = if long { self.peek_at(1) } else { self.peek() };
-                if !next.is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'.')) {
-                    let magnitude = if long { b"9223372036854775808".as_slice() } else { b"2147483648".as_slice() };
-                    if digits.iter().copied().filter(|c| *c != b'_').eq(magnitude.iter().copied()) {
+                if !next
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'.'))
+                {
+                    let magnitude = if long {
+                        b"9223372036854775808".as_slice()
+                    } else {
+                        b"2147483648".as_slice()
+                    };
+                    if digits
+                        .iter()
+                        .copied()
+                        .filter(|c| *c != b'_')
+                        .eq(magnitude.iter().copied())
+                    {
                         let literal = if long {
                             self.pos += 1;
                             JavaLit::Long(i64::MIN)
@@ -1023,7 +1198,12 @@ impl<'a> Parser<'a> {
         // parenthesized name precedes '+' or '-', let binary/postfix parsing
         // continue instead of consuming the operator as a cast operand.
         let is_expr_start = match self.peek() {
-            Some(c) if c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'(' | b'"' | b'\'' | b'!' | b'~') => true,
+            Some(c)
+                if c.is_ascii_alphanumeric()
+                    || matches!(c, b'_' | b'$' | b'(' | b'"' | b'\'' | b'!' | b'~') =>
+            {
+                true
+            }
             Some(b'.') => self.peek_at(1).is_some_and(|digit| digit.is_ascii_digit()),
             _ => false,
         };
@@ -1127,8 +1307,10 @@ impl<'a> Parser<'a> {
                     )));
                 }
                 if keyword == "this" && self.static_context {
-                    return Err(self.err_at(receiver_at,
-                        "[JAVA-STATIC-THIS] this is not available in a static context"));
+                    return Err(self.err_at(
+                        receiver_at,
+                        "[JAVA-STATIC-THIS] this is not available in a static context",
+                    ));
                 }
                 return Ok(JavaExpr::Ident(keyword.into()));
             }
@@ -1164,14 +1346,20 @@ impl<'a> Parser<'a> {
             if self.eat_char(b']') {
                 let mut element_type = ty;
                 while self.eat_char(b'[') {
-                    self.require_delimiter(b']', "expected empty dimension before array initializer")?;
+                    self.require_delimiter(
+                        b']',
+                        "expected empty dimension before array initializer",
+                    )?;
                     element_type = JavaType::Array(Box::new(element_type));
                 }
                 return self.parse_array_initializer(&element_type);
             }
             let length = Box::new(self.parse_expression()?);
             self.require_delimiter(b']', "expected ']' in new array")?;
-            return Ok(JavaExpr::ArrayAllocation { element_type: ty, length });
+            return Ok(JavaExpr::ArrayAllocation {
+                element_type: ty,
+                length,
+            });
         }
 
         // 构造器调用 new Type(args)
@@ -1195,8 +1383,9 @@ impl<'a> Parser<'a> {
         let mut elements = Vec::new();
         while !self.eat_char(b'}') {
             let value = match element_type {
-                JavaType::Array(inner) if self.peek() == Some(b'{') =>
-                    self.parse_array_initializer(inner)?,
+                JavaType::Array(inner) if self.peek() == Some(b'{') => {
+                    self.parse_array_initializer(inner)?
+                }
                 _ => self.parse_expression()?,
             };
             elements.push(value);
@@ -1206,7 +1395,10 @@ impl<'a> Parser<'a> {
             self.require_delimiter(b'}', "expected ',' or '}' in array initializer")?;
             break;
         }
-        Ok(JavaExpr::ArrayInitializer { element_type: element_type.clone(), elements })
+        Ok(JavaExpr::ArrayInitializer {
+            element_type: element_type.clone(),
+            elements,
+        })
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<JavaExpr>, ParseError> {
@@ -1233,9 +1425,7 @@ impl<'a> Parser<'a> {
     fn try_parse_literal(&mut self) -> Result<Option<JavaLit>, ParseError> {
         self.skip_ws();
         match self.peek() {
-            Some(b'"') => {
-                Ok(Some(self.read_string_literal()?))
-            }
+            Some(b'"') => Ok(Some(self.read_string_literal()?)),
             Some(b'\'') => {
                 let c = self.read_char_literal()?;
                 Ok(Some(JavaLit::Char(c)))
@@ -1260,7 +1450,9 @@ impl<'a> Parser<'a> {
     }
 
     fn read_literal_escape(&mut self) -> Result<char, ParseError> {
-        let escaped = self.peek().ok_or_else(|| self.err("unexpected end in literal escape"))?;
+        let escaped = self
+            .peek()
+            .ok_or_else(|| self.err("unexpected end in literal escape"))?;
         self.pos += 1;
         match escaped {
             b'b' => Ok('\u{0008}'),
@@ -1276,7 +1468,9 @@ impl<'a> Parser<'a> {
                 let mut value = leading - b'0';
                 let remaining = if leading <= b'3' { 2 } else { 1 };
                 for _ in 0..remaining {
-                    let Some(digit @ b'0'..=b'7') = self.peek() else { break };
+                    let Some(digit @ b'0'..=b'7') = self.peek() else {
+                        break;
+                    };
                     self.pos += 1;
                     value = value * 8 + (digit - b'0');
                 }
@@ -1290,7 +1484,9 @@ impl<'a> Parser<'a> {
         if self.surrogates.at(self.pos).is_some() {
             return Err(self.err("[JAVA-UNICODE-REPRESENTATION] isolated UTF-16 code unit has no current scalar text representation"));
         }
-        let value = self.source.get(self.pos..)
+        let value = self
+            .source
+            .get(self.pos..)
             .and_then(|rest| rest.chars().next())
             .ok_or_else(|| self.err("unexpected end in Java literal"))?;
         match value {
@@ -1348,7 +1544,12 @@ impl<'a> Parser<'a> {
 
     fn scan_numeric_digits(&mut self, hex: bool) {
         while self.peek().is_some_and(|c| {
-            c == b'_' || if hex { c.is_ascii_hexdigit() } else { c.is_ascii_digit() }
+            c == b'_'
+                || if hex {
+                    c.is_ascii_hexdigit()
+                } else {
+                    c.is_ascii_digit()
+                }
         }) {
             self.pos += 1;
         }
@@ -1367,16 +1568,24 @@ impl<'a> Parser<'a> {
     // The radix/significand readers validate their own digits and type suffix.
     // Neither may leave an adjacent identifier character after the number.
     fn check_numeric_suffix(&self, trailing_separator: bool) -> Result<(), ParseError> {
-        if trailing_separator || self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$') {
+        if trailing_separator
+            || self
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'$')
+        {
             return Err(self.err("invalid numeric literal suffix"));
         }
         Ok(())
     }
 
     fn read_decimal_literal(
-        &mut self, start: usize, digits_start: usize, hex: bool,
+        &mut self,
+        start: usize,
+        digits_start: usize,
+        hex: bool,
     ) -> Result<JavaLit, ParseError> {
-        let has_whole = self.checked_ieee_digits(digits_start, "invalid numeric literal significand")?;
+        let has_whole =
+            self.checked_ieee_digits(digits_start, "invalid numeric literal significand")?;
         let whole_end = self.pos;
         let mut fraction = whole_end..whole_end;
         if self.peek() == Some(b'.') {
@@ -1390,8 +1599,11 @@ impl<'a> Parser<'a> {
             return Err(self.err("invalid numeric literal significand"));
         }
 
-        let exponent = if hex { matches!(self.peek(), Some(b'p' | b'P')) }
-            else { matches!(self.peek(), Some(b'e' | b'E')) };
+        let exponent = if hex {
+            matches!(self.peek(), Some(b'p' | b'P'))
+        } else {
+            matches!(self.peek(), Some(b'e' | b'E'))
+        };
         let mut power = 0;
         if exponent {
             self.pos += 1;
@@ -1404,8 +1616,15 @@ impl<'a> Parser<'a> {
             if !self.checked_ieee_digits(from, "invalid numeric literal exponent")? {
                 return Err(self.err("invalid numeric literal exponent"));
             }
-            power = self.source[power_start..self.pos].replace('_', "").parse::<i32>()
-                .map_err(|_| self.err_at(start, "exact decimal exponent exceeds source resource limits"))?;
+            power = self.source[power_start..self.pos]
+                .replace('_', "")
+                .parse::<i32>()
+                .map_err(|_| {
+                    self.err_at(
+                        start,
+                        "exact decimal exponent exceeds source resource limits",
+                    )
+                })?;
         } else if hex {
             return Err(self.err("hexadecimal floating literal is missing binary exponent"));
         }
@@ -1422,11 +1641,22 @@ impl<'a> Parser<'a> {
         }
         let fraction = self.source[fraction].replace('_', "");
         let scale = fraction.len() as i32 * if hex { 4 } else { 1 };
-        let Some(power) = power.checked_sub(scale).filter(|p| (-4096..=4096).contains(p)) else {
-            return Err(self.err_at(start, "exact decimal exponent exceeds source resource limits"));
+        let Some(power) = power
+            .checked_sub(scale)
+            .filter(|p| (-4096..=4096).contains(p))
+        else {
+            return Err(self.err_at(
+                start,
+                "exact decimal exponent exceeds source resource limits",
+            ));
         };
         let digits = self.source[digits_start..whole_end].replace('_', "") + &fraction;
-        Ok(JavaLit::Decimal { digits, radix: if hex { 16 } else { 10 }, power, single })
+        Ok(JavaLit::Decimal {
+            digits,
+            radix: if hex { 16 } else { 10 },
+            power,
+            single,
+        })
     }
 
     fn read_number_literal(&mut self) -> Result<JavaLit, ParseError> {
@@ -1453,8 +1683,7 @@ impl<'a> Parser<'a> {
             return self.read_decimal_literal(start, digits_start, radix == 16);
         }
 
-        if radix != 10
-            && (self.pos == digits_start || self.source.as_bytes()[digits_start] == b'_')
+        if radix != 10 && (self.pos == digits_start || self.source.as_bytes()[digits_start] == b'_')
         {
             return Err(self.err("expected digit after integer radix prefix"));
         }
@@ -1472,7 +1701,11 @@ impl<'a> Parser<'a> {
         if radix != 10 || (cleaned.starts_with('0') && cleaned.len() > 1) {
             // Java's nondecimal tokens encode the source integer's bit pattern.
             // Decode that pattern before handing off to exact business arithmetic.
-            let (digits, radix) = if radix == 10 { (cleaned.as_str(), 8) } else { (&cleaned[2..], radix) };
+            let (digits, radix) = if radix == 10 {
+                (cleaned.as_str(), 8)
+            } else {
+                (&cleaned[2..], radix)
+            };
             let value = u64::from_str_radix(digits, radix)
                 .map_err(|_| self.err("invalid nondecimal integer literal"))?;
             if is_long {
@@ -1497,7 +1730,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-
 // Each inner switch has already bound its own breaks. The other three
 // breakable statement forms retain their loop transfers.
 fn bind_switch_breaks(body: &mut [JavaStatement]) {
@@ -1506,14 +1738,29 @@ fn bind_switch_breaks(body: &mut [JavaStatement]) {
         match statement {
             LoopBreak => *statement = SwitchBreak,
             Block(body) => bind_switch_breaks(body),
-            If { then_block, else_block, .. } => {
+            If {
+                then_block,
+                else_block,
+                ..
+            } => {
                 bind_switch_breaks(then_block);
-                if let Some(body) = else_block { bind_switch_breaks(body); }
+                if let Some(body) = else_block {
+                    bind_switch_breaks(body);
+                }
             }
-            Try { body, catches, finally_block, .. } => {
+            Try {
+                body,
+                catches,
+                finally_block,
+                ..
+            } => {
                 bind_switch_breaks(body);
-                for catch in catches { bind_switch_breaks(&mut catch.body); }
-                if let Some(body) = finally_block { bind_switch_breaks(body); }
+                for catch in catches {
+                    bind_switch_breaks(&mut catch.body);
+                }
+                if let Some(body) = finally_block {
+                    bind_switch_breaks(body);
+                }
             }
             _ => {}
         }

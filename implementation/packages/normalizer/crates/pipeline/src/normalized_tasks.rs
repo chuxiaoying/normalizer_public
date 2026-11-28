@@ -14,7 +14,9 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
         | Node::Lt { left, right }
         | Node::Eq { left, right }
         | Node::TextEqual { left, right }
-        | Node::TextConcat { left, right } => expression_is_closed(left) && expression_is_closed(right),
+        | Node::TextConcat { left, right } => {
+            expression_is_closed(left) && expression_is_closed(right)
+        }
         Node::If {
             cond,
             then,
@@ -30,7 +32,9 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
 pub(super) struct SettledSteps(Vec<Action>);
 
 impl SettledSteps {
-    pub(super) fn as_slice(&self) -> &[Action] { &self.0 }
+    pub(super) fn as_slice(&self) -> &[Action] {
+        &self.0
+    }
 }
 
 impl<'de> Deserialize<'de> for SettledSteps {
@@ -46,8 +50,13 @@ pub(super) fn read_sync_steps<'de, D: serde::Deserializer<'de>>(
     reader: D,
 ) -> std::result::Result<Vec<Action>, D::Error> {
     let steps = Vec::<Action>::deserialize(reader)?;
-    if steps.iter().any(|action| !matches!(action, Action::Let { .. } | Action::Return { .. })) {
-        return Err(serde::de::Error::custom("synchronous projection accepts only local bindings and return"));
+    if steps
+        .iter()
+        .any(|action| !matches!(action, Action::Let { .. } | Action::Return { .. }))
+    {
+        return Err(serde::de::Error::custom(
+            "synchronous projection accepts only local bindings and return",
+        ));
     }
     Ok(steps)
 }
@@ -59,8 +68,10 @@ fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
             Action::ReadInput { .. } | Action::Rethrow | Action::LocalIr { .. } => {}
             Action::CallSync { condition, .. }
                 if condition.as_ref().is_none_or(expression_is_closed) => {}
-            Action::WriteState { value, condition, .. }
-                if expression_is_closed(value) && condition.as_ref().is_none_or(expression_is_closed) => {}
+            Action::WriteState {
+                value, condition, ..
+            } if expression_is_closed(value)
+                && condition.as_ref().is_none_or(expression_is_closed) => {}
             Action::ThrowUninitializedCallback { condition: value }
             | Action::Let { value, .. }
             | Action::Return { value }
@@ -93,7 +104,10 @@ fn validate_settled_scope(mut steps: &[Action]) -> Result<()> {
 
 impl Engine<'_> {
     fn task_outcome(&self, bind: u64) -> Result<Completion> {
-        let spec = self.pending_completions.get(&bind).ok_or_else(|| fail("unknown task handle"))?;
+        let spec = self
+            .pending_completions
+            .get(&bind)
+            .ok_or_else(|| fail("unknown task handle"))?;
         let response = b::external_completion(bind);
         let mut outcome = Completion::Continue;
         for (class, guard, payload) in spec.throw_variants(&response) {

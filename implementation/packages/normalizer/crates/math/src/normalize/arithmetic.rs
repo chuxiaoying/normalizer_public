@@ -91,9 +91,15 @@ fn simplify_identity(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> 
 /// Remove one exact summand from a normalized sum without distributing any
 /// multiplication. The caller has proved both totality and exact integers.
 fn remove_additive_term(sum: &Expr, term: &Expr) -> Option<Expr> {
-    let (BinOpKind::Add, left, right) = sum.as_binop()? else { return None; };
-    if left == term { return Some(right.clone()); }
-    if right == term { return Some(left.clone()); }
+    let (BinOpKind::Add, left, right) = sum.as_binop()? else {
+        return None;
+    };
+    if left == term {
+        return Some(right.clone());
+    }
+    if right == term {
+        return Some(left.clone());
+    }
     if let Some(rest) = remove_additive_term(left, term) {
         return Some(crate::builder::add(rest, right.clone()));
     }
@@ -103,16 +109,29 @@ fn remove_additive_term(sum: &Expr, term: &Expr) -> Option<Expr> {
 // The exact row subject stays inside the same ordered query. Combine
 // acquired literal offsets without lifting the row out of its scope.
 fn combine_acquired_row_literals(left: &Expr, right: &Expr) -> Option<Expr> {
-    let (BinOpKind::Add, base, left_literal) = left.as_binop()? else { return None; };
+    let (BinOpKind::Add, base, left_literal) = left.as_binop()? else {
+        return None;
+    };
     let right = right.as_lit()?.as_integer()?;
     let left = left_literal.as_lit()?.as_integer()?;
     let mut has_acquired_row = false;
     base.walk(&mut |node| {
-        has_acquired_row |= matches!(node.kind(), ExprKind::RowValue { acquired_integer: true, .. });
+        has_acquired_row |= matches!(
+            node.kind(),
+            ExprKind::RowValue {
+                acquired_integer: true,
+                ..
+            }
+        );
     });
-    if !has_acquired_row { return None; }
+    if !has_acquired_row {
+        return None;
+    }
     let rest = left - right;
-    Some(crate::builder::add(base.clone(), crate::builder::lit_integer(rest)))
+    Some(crate::builder::add(
+        base.clone(),
+        crate::builder::lit_integer(rest),
+    ))
 }
 
 fn is_lit_int_one(expr: &Expr) -> bool {
@@ -142,7 +161,12 @@ fn simplify_reflexive_equality(expr: &Expr) -> Option<Expr> {
         BinOpKind::Ne => Some(crate::builder::lit_bool(false)),
         BinOpKind::Le | BinOpKind::Ge | BinOpKind::Lt | BinOpKind::Gt
             if left.has_exact_numeric_order() =>
-                Some(crate::builder::lit_bool(matches!(op, BinOpKind::Le | BinOpKind::Ge))),
+        {
+            Some(crate::builder::lit_bool(matches!(
+                op,
+                BinOpKind::Le | BinOpKind::Ge
+            )))
+        }
         _ => None,
     }
 }
@@ -158,7 +182,11 @@ fn simplify_reference_comparison(expr: &Expr) -> Option<Expr> {
     // Orient the pair for the decision without rebuilding it. The earlier
     // reflexive rule already handled null/null and equal allocation IDs.
     let swapped = left.is_null();
-    let (subject, other) = if swapped { (right, left) } else { (left, right) };
+    let (subject, other) = if swapped {
+        (right, left)
+    } else {
+        (left, right)
+    };
     if positive(subject) && (other.is_null() || positive(other)) {
         return Some(crate::builder::lit_bool(op == BinOpKind::Ne));
     }
@@ -182,7 +210,9 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
     fn decompose(e: &Expr) -> (&Expr, num_bigint::BigInt) {
         if let ExprKind::BinOp { op, left, right } = e.kind() {
             if let Some(c) = right.as_lit().and_then(Lit::as_integer) {
-                if *op == BinOpKind::Add { return (left, c); }
+                if *op == BinOpKind::Add {
+                    return (left, c);
+                }
             }
         }
         (e, 0.into())
@@ -192,7 +222,9 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
     if base_l != base_r || !super::integer_ac::total_integer(base_l) {
         return None;
     }
-    Some(crate::builder::lit_bool(op.comparison_test()?(&off_l, &off_r)))
+    Some(crate::builder::lit_bool(op.comparison_test()?(
+        &off_l, &off_r,
+    )))
 }
 
 /// `(x - y) op 0 → x op y`。
@@ -200,10 +232,9 @@ fn simplify_same_subject_offset_comparison(expr: &Expr) -> Option<Expr> {
 /// 支持比较运算符：`> / < / >= / <= / == / !=`。
 /// 对称形式先规范化方向：`0 < (x - y)` → `(x - y) > 0`。
 fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
-    let (cmp_op, lhs, ()) = super::constraint::comparison_literal_rhs(
-        expr.as_binop()?,
-        |term| is_lit_int_zero(term).then_some(()),
-    )?;
+    let (cmp_op, lhs, ()) = super::constraint::comparison_literal_rhs(expr.as_binop()?, |term| {
+        is_lit_int_zero(term).then_some(())
+    })?;
     let ExprKind::BinOp {
         op: BinOpKind::Sub,
         left: x,
@@ -213,7 +244,9 @@ fn simplify_sub_compare_zero(expr: &Expr) -> Option<Expr> {
         return None;
     };
 
-    if !x.has_exact_numeric_order() || !y.has_exact_numeric_order() { return None; }
+    if !x.has_exact_numeric_order() || !y.has_exact_numeric_order() {
+        return None;
+    }
     Some(crate::builder::binop_public(cmp_op, x.clone(), y.clone()))
 }
 

@@ -1,9 +1,7 @@
 //! Canonical AC trees for proven total exact integers. Type and definedness
 //! evidence precedes sorting; Add also represents Java text concatenation.
 //! No source names, fixture names or rendered expressions choose rewrite rules.
-use crate::{
-    builder as b, expr::ExprKind, BinOpKind as B, Expr, Lit, SortContext, SymVarOrigin,
-};
+use crate::{builder as b, expr::ExprKind, BinOpKind as B, Expr, Lit, SortContext, SymVarOrigin};
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
 
@@ -13,17 +11,45 @@ pub(super) fn total_integer(value: &Expr) -> bool {
 
 pub(super) fn total_with_temporals(value: &Expr, ctx: &dyn SortContext) -> bool {
     match value.kind() {
-        ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
-            primitive_type == "integer" && (ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
-                || (ctx.temporal_is_total(*binding_id)
-                    && crate::canonical_order::comparison_operands_are_bound(value, ctx))),
-        ExprKind::SymVar { origin: SymVarOrigin::External { binding_id, path, primitive_type } } =>
-            primitive_type == "integer" && path.is_empty()
-                && ctx.observation_identities().and_then(|identities| identities.get(binding_id))
-                    .is_some_and(|identity| matches!(identity, crate::ObservationIdentity::EntrySnapshot(_))),
+        ExprKind::SymVar {
+            origin:
+                SymVarOrigin::Temporal {
+                    binding_id,
+                    primitive_type,
+                },
+        } => {
+            primitive_type == "integer"
+                && (ctx
+                    .choice_slots()
+                    .is_some_and(|slots| slots.contains_key(binding_id))
+                    || (ctx.temporal_is_total(*binding_id)
+                        && crate::canonical_order::comparison_operands_are_bound(value, ctx)))
+        }
+        ExprKind::SymVar {
+            origin:
+                SymVarOrigin::External {
+                    binding_id,
+                    path,
+                    primitive_type,
+                },
+        } => {
+            primitive_type == "integer"
+                && path.is_empty()
+                && ctx
+                    .observation_identities()
+                    .and_then(|identities| identities.get(binding_id))
+                    .is_some_and(|identity| {
+                        matches!(identity, crate::ObservationIdentity::EntrySnapshot(_))
+                    })
+        }
         ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_))
-        | ExprKind::RowValue { acquired_integer: true, .. } => true,
-        ExprKind::RowValue { sql: Some(column), .. } => column.scalar_type == "number",
+        | ExprKind::RowValue {
+            acquired_integer: true,
+            ..
+        } => true,
+        ExprKind::RowValue {
+            sql: Some(column), ..
+        } => column.scalar_type == "number",
         ExprKind::SymVar {
             // The typed origin, not its display spelling, establishes input
             // availability. Actual E and temporal values have other origins.
@@ -53,24 +79,45 @@ pub(super) fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> boo
                 SymVarOrigin::Parameter { primitive_type, .. }
                 | SymVarOrigin::External { primitive_type, .. },
         } => primitive_type == "integer",
-        ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, primitive_type } } =>
-            primitive_type == "integer" && ctx.temporal_aliases().is_some_and(|names| names.contains_key(binding_id)),
+        ExprKind::SymVar {
+            origin:
+                SymVarOrigin::Temporal {
+                    binding_id,
+                    primitive_type,
+                },
+        } => {
+            primitive_type == "integer"
+                && ctx
+                    .temporal_aliases()
+                    .is_some_and(|names| names.contains_key(binding_id))
+        }
         ExprKind::BinOp {
             op: B::Add | B::Sub | B::Mul,
             left,
             right,
         } => exact_business_integer(left, ctx) && exact_business_integer(right, ctx),
-        ExprKind::RowValue { acquired_integer: true, .. } => true,
+        ExprKind::RowValue {
+            acquired_integer: true,
+            ..
+        } => true,
         // The current physical SQL number binding is constructed only
         // for a declared exact integer column, not an unchecked number.
-        ExprKind::RowValue { sql: Some(column), .. } => column.scalar_type == "number",
-        ExprKind::Call { key, .. } if crate::domains::completion::output_name(&crate::func_name(*key)) == "completion.value" =>
-            crate::domains::primitive::registry::func_return_type(*key) == Some(crate::Primitive::Number),
+        ExprKind::RowValue {
+            sql: Some(column), ..
+        } => column.scalar_type == "number",
+        ExprKind::Call { key, .. }
+            if crate::domains::completion::output_name(&crate::func_name(*key))
+                == "completion.value" =>
+        {
+            crate::domains::primitive::registry::func_return_type(*key)
+                == Some(crate::Primitive::Number)
+        }
         // A quotient produces an exact integer wherever it is defined.
         // This is not totality: the strict branch below retains both
         // operands and never replaces an unavailable quotient by zero.
-        ExprKind::Call { args, .. } if crate::domains::integer_quotient::is_quotient(value) =>
-            args.iter().all(|arg| exact_business_integer(arg, ctx)),
+        ExprKind::Call { args, .. } if crate::domains::integer_quotient::is_quotient(value) => {
+            args.iter().all(|arg| exact_business_integer(arg, ctx))
+        }
         ExprKind::Call { .. } => crate::domains::composite::field_projection(value)
             .is_some_and(|(_, _, ty)| ty == crate::Primitive::Number),
         // Strict addition/multiplication require both operands on the
@@ -78,25 +125,43 @@ pub(super) fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> boo
         // evidence does not authorize dropping an operand or its guard.
         ExprKind::CaseWhen { .. } => value.as_total_case_when().is_some_and(|(arms, fallback)| {
             exact_business_integer(fallback, ctx)
-                && arms.iter().all(|(_, result)| exact_business_integer(result, ctx))
+                && arms
+                    .iter()
+                    .all(|(_, result)| exact_business_integer(result, ctx))
         }),
-        ExprKind::RelationAggregate { kind: crate::RelationAggregateKind::Count, .. } => true,
-        ExprKind::RelationAggregate { kind: crate::RelationAggregateKind::Sum | crate::RelationAggregateKind::FirstValue,
-            select_expr: Some(selected), default_expr, .. } =>
-            exact_business_integer(selected, ctx) && default_expr.as_ref().is_none_or(|value|
-                value.as_lit() == Some(&Lit::Null) || exact_business_integer(value, ctx)),
+        ExprKind::RelationAggregate {
+            kind: crate::RelationAggregateKind::Count,
+            ..
+        } => true,
+        ExprKind::RelationAggregate {
+            kind: crate::RelationAggregateKind::Sum | crate::RelationAggregateKind::FirstValue,
+            select_expr: Some(selected),
+            default_expr,
+            ..
+        } => {
+            exact_business_integer(selected, ctx)
+                && default_expr.as_ref().is_none_or(|value| {
+                    value.as_lit() == Some(&Lit::Null) || exact_business_integer(value, ctx)
+                })
+        }
         _ => false,
     }
 }
 
 pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
-    let ExprKind::BinOp { op: op @ (B::Add | B::Sub | B::Mul), left, right } = expr.kind() else {
+    let ExprKind::BinOp {
+        op: op @ (B::Add | B::Sub | B::Mul),
+        left,
+        right,
+    } = expr.kind()
+    else {
         return expr.clone();
     };
     if *op == B::Sub {
         match (literal_offset(left), literal_offset(right)) {
             (Some((left_base, left_offset)), Some((right_base, right_offset)))
-                if total_with_temporals(left_base, ctx) && total_with_temporals(right_base, ctx) =>
+                if total_with_temporals(left_base, ctx)
+                    && total_with_temporals(right_base, ctx) =>
             {
                 let offset = left_offset - right_offset;
                 if left_base == right_base {
@@ -104,10 +169,12 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
                 }
                 return apply_offset(&b::sub(left_base.clone(), right_base.clone()), offset);
             }
-            (Some((base, offset)), _) if base == right && total_with_temporals(base, ctx) =>
-                return b::lit_integer(offset),
-            (_, Some((base, offset))) if left == base && total_with_temporals(base, ctx) =>
-                return b::lit_integer(-offset),
+            (Some((base, offset)), _) if base == right && total_with_temporals(base, ctx) => {
+                return b::lit_integer(offset)
+            }
+            (_, Some((base, offset))) if left == base && total_with_temporals(base, ctx) => {
+                return b::lit_integer(-offset)
+            }
             (Some((base, offset)), _) if exact_business_integer(base, ctx) => {
                 // The strict base is retained exactly once; only integer
                 // literals are combined, even if that base is not total.
@@ -142,7 +209,12 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
 }
 
 fn simplify_admitted(
-    expr: &Expr, op: B, left: &Expr, right: &Expr, total: bool, ctx: &dyn SortContext,
+    expr: &Expr,
+    op: B,
+    left: &Expr,
+    right: &Expr,
+    total: bool,
+    ctx: &dyn SortContext,
 ) -> Expr {
     if !total {
         if !exact_business_integer(expr, ctx)
@@ -166,12 +238,14 @@ fn simplify_admitted(
         let mut leaves = Vec::new();
         strict_leaves(expr, op, &mut leaves);
         leaves.sort_by_cached_key(|value| crate::canonical_order_key(value, ctx));
-        return leaves.into_iter().reduce(|left, right| b::binop_public(op, left, right))
+        return leaves
+            .into_iter()
+            .reduce(|left, right| b::binop_public(op, left, right))
             .expect("binary exact arithmetic has operands");
     }
     if op == B::Add {
-        if let Some(offset) = combine_constant_offset(left, right)
-            .or_else(|| combine_constant_offset(right, left))
+        if let Some(offset) =
+            combine_constant_offset(left, right).or_else(|| combine_constant_offset(right, left))
         {
             return offset;
         }
@@ -233,7 +307,8 @@ fn literal_offset(value: &Expr) -> Option<(&Expr, BigInt)> {
     let (op, left, right) = value.as_binop()?;
     let integer = |value: &Expr| value.as_lit()?.as_integer();
     match op {
-        B::Add => integer(right).map(|offset| (left, offset))
+        B::Add => integer(right)
+            .map(|offset| (left, offset))
             .or_else(|| integer(left).map(|offset| (right, offset))),
         B::Sub => integer(right).map(|offset| (left, -offset)),
         _ => None,
@@ -243,7 +318,9 @@ fn literal_offset(value: &Expr) -> Option<(&Expr, BigInt)> {
 // A proven total exact integer base is evaluated once. Combine only the two
 // literal offsets; do not commute subtraction or expand a symbolic sign.
 fn combine_constant_offset(difference: &Expr, addition: &Expr) -> Option<Expr> {
-    let (B::Sub, base, subtraction) = difference.as_binop()? else { return None; };
+    let (B::Sub, base, subtraction) = difference.as_binop()? else {
+        return None;
+    };
     let offset = addition.as_lit()?.as_integer()? - subtraction.as_lit()?.as_integer()?;
     Some(apply_offset(base, offset))
 }

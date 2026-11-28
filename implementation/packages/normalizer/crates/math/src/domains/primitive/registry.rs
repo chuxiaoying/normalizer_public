@@ -104,10 +104,13 @@ fn verify_repeated_contract(
         (Some(registered), Some(supplied)) => Arc::ptr_eq(registered, supplied),
         _ => false,
     };
-    assert!(entry.return_type == return_type
-        && entry.semantics.null_behavior == semantics.null_behavior
-        && same_evaluator,
-        "[NORM-INVARIANT] conflicting contracts for canonical operation {}", entry.name);
+    assert!(
+        entry.return_type == return_type
+            && entry.semantics.null_behavior == semantics.null_behavior
+            && same_evaluator,
+        "[NORM-INVARIANT] conflicting contracts for canonical operation {}",
+        entry.name
+    );
 }
 
 /// 注册有明确值合同的原生运算。
@@ -136,9 +139,16 @@ pub fn register_func(
         verify_repeated_contract(&writer.entries[key.0 as usize], return_type, &semantics);
         return key;
     }
-    let key = FuncKey(u32::try_from(writer.entries.len())
-        .expect("[NORM-ANALYSIS-INCOMPLETE] primitive contract registry exhausted"));
-    writer.entries.push(FuncEntry { name: name.to_owned(), param_types, return_type, semantics });
+    let key = FuncKey(
+        u32::try_from(writer.entries.len())
+            .expect("[NORM-ANALYSIS-INCOMPLETE] primitive contract registry exhausted"),
+    );
+    writer.entries.push(FuncEntry {
+        name: name.to_owned(),
+        param_types,
+        return_type,
+        semantics,
+    });
     writer.name_arity_index.insert(key_hint, key);
     key
 }
@@ -163,8 +173,14 @@ pub fn func_semantics(key: FuncKey) -> FuncSemantics {
     r.entries[key.0 as usize].semantics.clone()
 }
 
-pub(crate) fn func_signature(key: FuncKey) -> (String, Vec<crate::Primitive>, Option<crate::Primitive>) {
+pub(crate) fn func_signature(
+    key: FuncKey,
+) -> (String, Vec<crate::Primitive>, Option<crate::Primitive>) {
     let registry = registry().read().unwrap();
     let entry = &registry.entries[key.0 as usize];
-    (entry.name.clone(), entry.param_types.clone(), entry.return_type)
+    (
+        entry.name.clone(),
+        entry.param_types.clone(),
+        entry.return_type,
+    )
 }

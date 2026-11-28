@@ -5,7 +5,9 @@ use crate::domains::relation::RelationExpr;
 use crate::normalize::relation::relation_count_bound;
 
 pub(super) fn conjunction_implies(conjs_left: &[Expr], conjs_right: &[Expr]) -> bool {
-    conjs_right.iter().all(|right| expr_is_true_under_and_context(right, conjs_left))
+    conjs_right
+        .iter()
+        .all(|right| expr_is_true_under_and_context(right, conjs_left))
 }
 
 pub(super) fn profile_pair_can_skip_proof_check(left: &Expr, right: &Expr) -> bool {
@@ -34,23 +36,28 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
 /// The empty member of an exact cardinality interval is the length-zero
 /// observation of the same acquired relation, not an independent failure.
 pub(super) fn empty_relation_is_within_count(empty: &Expr, count: &Expr) -> bool {
-    let empty = empty.as_not().and_then(|present| {
-        relation_exists_true_relation(present).or_else(|| {
-            let (op, relation, bound) = relation_count_bound(present)?;
-            (matches!(op, BinOpKind::Gt | BinOpKind::Ne) && bound == 0.into()).then_some(relation)
+    let empty = empty
+        .as_not()
+        .and_then(|present| {
+            relation_exists_true_relation(present).or_else(|| {
+                let (op, relation, bound) = relation_count_bound(present)?;
+                (matches!(op, BinOpKind::Gt | BinOpKind::Ne) && bound == 0.into())
+                    .then_some(relation)
+            })
         })
-    }).or_else(|| {
+        .or_else(|| {
             let (op, relation, bound) = relation_count_bound(empty)?;
             (matches!(op, BinOpKind::Eq | BinOpKind::Le) && bound == 0.into()).then_some(relation)
         });
-    let (Some(empty), Some((op, relation, bound))) =
-        (empty, relation_count_bound(count))
-    else { return false; };
-    empty == relation && match op {
-        BinOpKind::Lt => bound > 0.into(),
-        BinOpKind::Le => bound >= 0.into(),
-        _ => false,
-    }
+    let (Some(empty), Some((op, relation, bound))) = (empty, relation_count_bound(count)) else {
+        return false;
+    };
+    empty == relation
+        && match op {
+            BinOpKind::Lt => bound > 0.into(),
+            BinOpKind::Le => bound >= 0.into(),
+            _ => false,
+        }
 }
 
 /// A selection of an empty input is empty.
@@ -58,19 +65,24 @@ pub(super) fn empty_input_implies_empty_selection(left: &Expr, right: &Expr) -> 
     fn empty_relation(expr: &Expr) -> Option<&RelationExpr> {
         let exists = expr.as_not()?;
         let (RelationAggregateKind::Exists, input, Some(value), None) =
-            exists.as_relation_aggregate()? else { return None };
+            exists.as_relation_aggregate()?
+        else {
+            return None;
+        };
         (value.as_bool() == Some(true)).then_some(input)
     }
 
-    let (Some(source), Some(candidate)) = (empty_relation(left), empty_relation(right))
-    else { return false };
+    let (Some(source), Some(candidate)) = (empty_relation(left), empty_relation(right)) else {
+        return false;
+    };
     matches!(candidate, RelationExpr::Select { input, .. } if input.as_ref() == source)
 }
 
-pub(super) fn relation_exists_true_relation(
-    expr: &Expr,
-) -> Option<&RelationExpr> {
+pub(super) fn relation_exists_true_relation(expr: &Expr) -> Option<&RelationExpr> {
     let (RelationAggregateKind::Exists, relation, Some(value), None) =
-        expr.as_relation_aggregate()? else { return None; };
+        expr.as_relation_aggregate()?
+    else {
+        return None;
+    };
     (value.as_bool() == Some(true)).then_some(relation)
 }

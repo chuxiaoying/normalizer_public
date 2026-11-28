@@ -8,10 +8,7 @@ use crate::{builder as b, Expr, FuncSemantics, Primitive};
 pub fn output_name(name: &str) -> &str {
     match name.split_once('@') {
         Some((base, "number" | "boolean" | "string" | "identity" | "composite"))
-            if matches!(
-                base,
-                "completion.value" | "completion.payload"
-            ) =>
+            if matches!(base, "completion.value" | "completion.payload") =>
         {
             base
         }
@@ -19,15 +16,22 @@ pub fn output_name(name: &str) -> &str {
     }
 }
 /// The class-bearing completion operations share the same checked operand shape.
-pub fn class_observation<'a>(registered_name: &str, args: &'a [Expr]) -> Option<(&'static str, &'a Expr, &'a str)> {
+pub fn class_observation<'a>(
+    registered_name: &str,
+    args: &'a [Expr],
+) -> Option<(&'static str, &'a Expr, &'a str)> {
     let operation = match output_name(registered_name) {
         "completion.is_throw" => "completion.is_throw",
         "completion.is_return" => "completion.is_return",
         "completion.payload" => "completion.payload",
         _ => return None,
     };
-    let [receipt, class] = args else { return None; };
-    let crate::Lit::Str(class) = class.as_lit()? else { return None; };
+    let [receipt, class] = args else {
+        return None;
+    };
+    let crate::Lit::Str(class) = class.as_lit()? else {
+        return None;
+    };
     Some((operation, receipt, class))
 }
 
@@ -49,7 +53,9 @@ pub fn throw_tag(test: &Expr) -> Option<(&Expr, &str)> {
 pub(crate) fn different_throw_tags(left: &Expr, right: &Expr) -> bool {
     let (Some((left_receipt, left_class)), Some((right_receipt, right_class))) =
         (throw_tag(left), throw_tag(right))
-    else { return false; };
+    else {
+        return false;
+    };
     left_receipt == right_receipt && left_class != right_class
 }
 
@@ -58,24 +64,26 @@ pub(crate) fn different_throw_tags(left: &Expr, right: &Expr) -> bool {
 /// be checked in the fallback without inspecting the later receipt.
 pub(crate) fn factor_terminal_tag_guard(value: &Expr) -> Option<Expr> {
     use crate::BinOpKind::{And, Or};
-    let (Or, left, right) = value.as_binop()? else { return None; };
+    let (Or, left, right) = value.as_binop()? else {
+        return None;
+    };
     for (earlier, guarded) in [(left, right), (right, left)] {
-        let Some((And, a, z)) = guarded.as_binop() else { continue; };
+        let Some((And, a, z)) = guarded.as_binop() else {
+            continue;
+        };
         for (tag, rest) in [(a, z), (z, a)] {
             if different_throw_tags(earlier, tag) {
-                return Some(b::case_when(vec![(tag.clone(), rest.clone())], earlier.clone()));
+                return Some(b::case_when(
+                    vec![(tag.clone(), rest.clone())],
+                    earlier.clone(),
+                ));
             }
         }
     }
     None
 }
 
-fn typed(
-    name: &str,
-    args: Vec<Expr>,
-    params: Vec<Primitive>,
-    result: Primitive,
-) -> Expr {
+fn typed(name: &str, args: Vec<Expr>, params: Vec<Primitive>, result: Primitive) -> Expr {
     let key = crate::register_func(
         &format!("{name}@{}", result.algebra_name()),
         params,
@@ -95,13 +103,19 @@ pub fn is_throw(value: Expr, class: &str) -> Expr {
 }
 /// All positive thrown-class terms in a guard must belong to one receipt.
 pub(crate) fn failure_partition(test: &Expr) -> Option<(&Expr, Vec<&str>)> {
-    fn visit<'a>(test: &'a Expr, receipt: &mut Option<&'a Expr>, classes: &mut Vec<&'a str>) -> Option<()> {
+    fn visit<'a>(
+        test: &'a Expr,
+        receipt: &mut Option<&'a Expr>,
+        classes: &mut Vec<&'a str>,
+    ) -> Option<()> {
         if let Some((crate::BinOpKind::Or, left, right)) = test.as_binop() {
             visit(left, receipt, classes)?;
             return visit(right, receipt, classes);
         }
         let (value, class) = throw_tag(test)?;
-        if receipt.is_some_and(|earlier| earlier != value) { return None; }
+        if receipt.is_some_and(|earlier| earlier != value) {
+            return None;
+        }
         *receipt = Some(value);
         classes.push(class);
         Some(())
@@ -115,21 +129,39 @@ pub(crate) fn failure_partition(test: &Expr) -> Option<(&Expr, Vec<&str>)> {
 }
 
 pub(crate) fn closed_return(receipt: Expr, classes: &[&str]) -> Expr {
-    if let [class] = classes { return singleton_return(receipt, class); }
+    if let [class] = classes {
+        return singleton_return(receipt, class);
+    }
     let key = crate::register_func(
-        "completion.is_return", vec![Primitive::Composite, Primitive::Composite],
-        Some(Primitive::Boolean), FuncSemantics::pure_function(),
+        "completion.is_return",
+        vec![Primitive::Composite, Primitive::Composite],
+        Some(Primitive::Boolean),
+        FuncSemantics::pure_function(),
     );
-    b::call(key, vec![receipt, b::array_lit(classes.iter().map(|class| b::lit_str(*class)).collect())])
+    b::call(
+        key,
+        vec![
+            receipt,
+            b::array_lit(classes.iter().map(|class| b::lit_str(*class)).collect()),
+        ],
+    )
 }
 
 pub fn multi_failure_return<'a>(name: &str, args: &'a [Expr]) -> Option<(&'a Expr, Vec<&'a str>)> {
-    if name != "completion.is_return" { return None; }
-    let [receipt, classes] = args else { return None; };
-    let classes = classes.as_array_lit()?.iter().map(|class| match class.as_lit()? {
-        crate::Lit::Str(name) => Some(name.as_str()),
-        _ => None,
-    }).collect::<Option<Vec<_>>>()?;
+    if name != "completion.is_return" {
+        return None;
+    }
+    let [receipt, classes] = args else {
+        return None;
+    };
+    let classes = classes
+        .as_array_lit()?
+        .iter()
+        .map(|class| match class.as_lit()? {
+            crate::Lit::Str(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some((receipt, classes))
 }
 
@@ -152,9 +184,11 @@ fn singleton_return_tag(test: &Expr) -> Option<(&Expr, &str)> {
 }
 
 pub(crate) fn single_failure_complement(a: &Expr, b: &Expr) -> bool {
-    [(a, b), (b, a)].into_iter().any(|(success, failure)|
-        singleton_return_tag(success).zip(throw_tag(failure))
-            .is_some_and(|(a, b)| a == b))
+    [(a, b), (b, a)].into_iter().any(|(success, failure)| {
+        singleton_return_tag(success)
+            .zip(throw_tag(failure))
+            .is_some_and(|(a, b)| a == b)
+    })
 }
 
 pub(crate) fn failure_domain_of_typed_return(expr: &Expr) -> Option<Expr> {
@@ -163,8 +197,13 @@ pub(crate) fn failure_domain_of_typed_return(expr: &Expr) -> Option<Expr> {
     }
     let (key, args) = expr.as_call()?;
     let (receipt, classes) = multi_failure_return(&crate::func_name(key), args)?;
-    Some(classes.into_iter().fold(b::lit_bool(false), |guard, class|
-        b::or(guard, is_throw(receipt.clone(), class))))
+    Some(
+        classes
+            .into_iter()
+            .fold(b::lit_bool(false), |guard, class| {
+                b::or(guard, is_throw(receipt.clone(), class))
+            }),
+    )
 }
 
 pub fn value(completion: Expr, ty: Primitive) -> Expr {

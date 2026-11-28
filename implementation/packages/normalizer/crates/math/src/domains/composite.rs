@@ -30,8 +30,12 @@ pub fn field_intrinsic_result(key: crate::FuncKey) -> Option<Primitive> {
 pub fn field_projection(expr: &Expr) -> Option<(&Expr, &str, Primitive)> {
     let (key, args) = expr.as_call()?;
     let result = field_intrinsic_result(key)?;
-    let [record, field] = args else { return None; };
-    let crate::Lit::Str(name) = field.as_lit()? else { return None; };
+    let [record, field] = args else {
+        return None;
+    };
+    let crate::Lit::Str(name) = field.as_lit()? else {
+        return None;
+    };
     Some((record, name.as_str(), result))
 }
 
@@ -50,31 +54,47 @@ pub fn field(record: Expr, name: &str, result: Primitive) -> Expr {
 static VALUE_INPUT: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
 
 pub fn input(name: &str) -> Expr {
-    let key = *VALUE_INPUT.get_or_init(|| crate::register_func(
-        "value.input", vec![Primitive::String], Some(Primitive::Composite), FuncSemantics::pure_function(),
-    ));
+    let key = *VALUE_INPUT.get_or_init(|| {
+        crate::register_func(
+            "value.input",
+            vec![Primitive::String],
+            Some(Primitive::Composite),
+            FuncSemantics::pure_function(),
+        )
+    });
     crate::normalize(b::call(key, vec![b::lit_str(name)]))
 }
 // Provenance is kept at the intrinsic, separate from opaque function names.
 static VECTOR_LENGTH: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
 
 pub fn certified_vector_length(input: Expr) -> Expr {
-    let key = *VECTOR_LENGTH.get_or_init(|| crate::register_func(
-        "value.vector_length", vec![Primitive::Composite], Some(Primitive::Number),
-        FuncSemantics::pure_function(),
-    ));
+    let key = *VECTOR_LENGTH.get_or_init(|| {
+        crate::register_func(
+            "value.vector_length",
+            vec![Primitive::Composite],
+            Some(Primitive::Number),
+            FuncSemantics::pure_function(),
+        )
+    });
     b::call(key, vec![input])
 }
 
 pub fn vector_length_input(expr: &Expr) -> Option<&Expr> {
     let (key, args) = expr.as_call()?;
-    let [input] = args else { return None; };
+    let [input] = args else {
+        return None;
+    };
     (VECTOR_LENGTH.get() == Some(&key)).then_some(input)
 }
 pub fn input_name(expr: &Expr) -> Option<&str> {
     let (key, args) = expr.as_call()?;
-    if VALUE_INPUT.get() != Some(&key) { return None; }
-    match args.first()?.as_lit()? { crate::Lit::Str(name) => Some(name), _ => None }
+    if VALUE_INPUT.get() != Some(&key) {
+        return None;
+    }
+    match args.first()?.as_lit()? {
+        crate::Lit::Str(name) => Some(name),
+        _ => None,
+    }
 }
 
 pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
@@ -108,7 +128,6 @@ pub(crate) fn fold_vector_length_predicate(expr: &Expr) -> Option<Expr> {
         _ => return None,
     };
     (canonical != *expr).then_some(canonical)
-
 }
 
 // Only acquired, total values are eligible for changing a Vector's CASE
@@ -119,7 +138,11 @@ fn total_integer(expr: &Expr) -> bool {
     if expr.as_lit().and_then(crate::Lit::as_integer).is_some() {
         return true;
     }
-    if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
+    if let Some(SymVarOrigin::Parameter {
+        name,
+        primitive_type,
+    }) = expr.as_sym_var()
+    {
         return primitive_type == "integer" && direct_parameter(name);
     }
     if let Some((BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right)) = expr.as_binop() {
@@ -127,7 +150,9 @@ fn total_integer(expr: &Expr) -> bool {
     }
     expr.as_total_case_when().is_some_and(|(arms, fallback)| {
         total_integer(fallback)
-            && arms.iter().all(|(guard, value)| total_guard(guard) && total_integer(value))
+            && arms
+                .iter()
+                .all(|(guard, value)| total_guard(guard) && total_integer(value))
     })
 }
 
@@ -141,7 +166,11 @@ fn total_guard(expr: &Expr) -> bool {
     if expr.as_bool().is_some() {
         return true;
     }
-    if let Some(SymVarOrigin::Parameter { name, primitive_type }) = expr.as_sym_var() {
+    if let Some(SymVarOrigin::Parameter {
+        name,
+        primitive_type,
+    }) = expr.as_sym_var()
+    {
         return primitive_type == "boolean" && direct_parameter(name);
     }
     if let Some((UnaryOpKind::Not, operand)) = expr.as_unary_op() {
@@ -184,9 +213,9 @@ fn shared_vector_choice(items: &[Expr]) -> Option<Expr> {
     for item in items {
         if let Some((candidate, then_value, else_value)) = binary_slot(item) {
             if !total_guard(candidate)
-                || ![then_value, else_value].into_iter().all(|value| {
-                    !value.has_case_when() && total_integer(value)
-                })
+                || ![then_value, else_value]
+                    .into_iter()
+                    .all(|value| !value.has_case_when() && total_integer(value))
             {
                 return None;
             }
@@ -223,10 +252,7 @@ fn shared_vector_choice(items: &[Expr]) -> Option<Expr> {
 /// Multiple varying slots retain the one shared selector.
 pub fn number_vector_choice(guard: &Expr, yes: &Expr, no: &Expr) -> Option<Expr> {
     let (yes, no) = (yes.as_array_lit()?, no.as_array_lit()?);
-    if yes.len() != no.len()
-        || !total_guard(guard)
-        || !yes.iter().chain(no).all(total_integer)
-    {
+    if yes.len() != no.len() || !total_guard(guard) || !yes.iter().chain(no).all(total_integer) {
         return None;
     }
     let mut differences = yes.iter().zip(no).enumerate().filter(|(_, (a, b))| a != b);
@@ -248,17 +274,25 @@ pub fn number_vector_choice(guard: &Expr, yes: &Expr, no: &Expr) -> Option<Expr>
 static ORDERED_TEXT_MAP: std::sync::OnceLock<crate::FuncKey> = std::sync::OnceLock::new();
 
 fn ordered_text_map(entries: Vec<Expr>) -> Expr {
-    let key = *ORDERED_TEXT_MAP.get_or_init(|| crate::register_func(
-        "value.ordered_text_map", vec![Primitive::Composite], Some(Primitive::Composite),
-        FuncSemantics::pure_function(),
-    ));
+    let key = *ORDERED_TEXT_MAP.get_or_init(|| {
+        crate::register_func(
+            "value.ordered_text_map",
+            vec![Primitive::Composite],
+            Some(Primitive::Composite),
+            FuncSemantics::pure_function(),
+        )
+    });
     b::call(key, vec![b::array_lit(entries)])
 }
 
 pub fn ordered_text_map_entries(expr: &Expr) -> Option<&[Expr]> {
     let (key, args) = expr.as_call()?;
-    let [entries] = args else { return None; };
-    if ORDERED_TEXT_MAP.get() != Some(&key) { return None; }
+    let [entries] = args else {
+        return None;
+    };
+    if ORDERED_TEXT_MAP.get() != Some(&key) {
+        return None;
+    }
     entries.as_array_lit()
 }
 
@@ -305,20 +339,36 @@ pub fn lifted_ordered_text_map(entries: &[(Expr, Expr)]) -> Result<Expr, &'stati
                     Presence::Known(include) => *include,
                     Presence::Decision(index) => present & (1 << index) != 0,
                 };
-                if !include { continue; }
+                if !include {
+                    continue;
+                }
                 // Map.set replaces a value without moving the original key slot.
-                if let Some((_, acquired)) = ordered.iter_mut().find(|(existing, _)| *existing == key) {
+                if let Some((_, acquired)) =
+                    ordered.iter_mut().find(|(existing, _)| *existing == key)
+                {
                     *acquired = value;
                 } else {
                     ordered.push((key, value));
                 }
             }
-            return ordered_text_map(ordered.into_iter().map(|(key, value)|
-                b::array_lit(vec![key.clone(), value.clone()])).collect());
+            return ordered_text_map(
+                ordered
+                    .into_iter()
+                    .map(|(key, value)| b::array_lit(vec![key.clone(), value.clone()]))
+                    .collect(),
+            );
         };
         let without = lift(entries, selectors, decisions, depth + 1, present);
-        let with = lift(entries, selectors, decisions, depth + 1, present | (1 << depth));
+        let with = lift(
+            entries,
+            selectors,
+            decisions,
+            depth + 1,
+            present | (1 << depth),
+        );
         b::case_when(vec![(guard.clone(), without)], with)
     }
-    Ok(crate::normalize(lift(entries, &selectors, &decisions, 0, 0)))
+    Ok(crate::normalize(lift(
+        entries, &selectors, &decisions, 0, 0,
+    )))
 }

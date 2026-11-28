@@ -1,13 +1,13 @@
 //! Typed, closed semantic definitions lowered into the existing math IR.
 //! No library inference, executable plugins, opaque function summaries or samples
 //! participate in normalization. Every supplied method/definition is checked.
+use crate::runtime_heap::Heap;
 use math::{
     builder as b,
     domains::relation::{self as r, RelationExpr},
     BinOpKind, Expr, ScalarSymbolType, SymVarOrigin,
 };
 use serde::Deserialize;
-use crate::runtime_heap::Heap;
 #[path = "normalized_actions.rs"]
 mod actions;
 #[path = "kernel_execution.rs"]
@@ -89,17 +89,23 @@ impl Ty {
             _ => return Err(fail(format!("unsupported type {s}"))),
         })
     }
-
 }
 #[derive(Clone, PartialEq)]
 enum Value {
     Term(Ty, Expr),
     /// A host-proven lower bound, never inferred from the displayed Expr.
-    IntegerFloor { value: Expr, lower: math::Integer, domain: Expr },
+    IntegerFloor {
+        value: Expr,
+        lower: math::Integer,
+        domain: Expr,
+    },
     Rows(Box<business_relation::Rows>),
     LocalIntArray(source_arrays::LocalIntArray),
     LocalTextMap(source_map::LocalTextMap),
-    EagerIntProjection { source: String, field: String },
+    EagerIntProjection {
+        source: String,
+        field: String,
+    },
     Sequence {
         item: Ty,
         java_component: Option<String>,
@@ -109,8 +115,12 @@ enum Value {
     },
 }
 fn primitive_array_component(ty: &JavaType) -> Option<&str> {
-    let JavaType::Array(component) = ty else { return None; };
-    let JavaType::Primitive(name) = component.as_ref() else { return None; };
+    let JavaType::Array(component) = ty else {
+        return None;
+    };
+    let JavaType::Primitive(name) = component.as_ref() else {
+        return None;
+    };
     Some(name)
 }
 
@@ -125,7 +135,9 @@ impl Value {
 
     fn check_java_array_component(&self, expected: Option<&str>) -> Result<()> {
         need(
-            expected.zip(self.java_array_component()).is_none_or(|(expected, actual)| expected == actual),
+            expected
+                .zip(self.java_array_component())
+                .is_none_or(|(expected, actual)| expected == actual),
             "Java array element type differs from the declared array",
         )
     }
@@ -136,14 +148,19 @@ impl Value {
             Self::IntegerFloor { .. } => Ty::Integer,
             Self::Rows(_) => Ty::LocalRelation,
             Self::LocalTextMap(_) => Ty::LocalTextMap,
-            Self::LocalIntArray(_) | Self::EagerIntProjection { .. } => Ty::Seq(Box::new(Ty::Integer)),
+            Self::LocalIntArray(_) | Self::EagerIntProjection { .. } => {
+                Ty::Seq(Box::new(Ty::Integer))
+            }
             Self::Sequence { item, .. } => Ty::Seq(Box::new(item.clone())),
         }
     }
     fn certified_integer_floor(&self, path: &Expr) -> Option<math::Integer> {
         match self {
             Self::IntegerFloor { lower, domain, .. }
-                if path.as_bool() != Some(false) && b::path_implies(path, domain) => Some(lower.clone()),
+                if path.as_bool() != Some(false) && b::path_implies(path, domain) =>
+            {
+                Some(lower.clone())
+            }
             Self::Term(Ty::Integer, value) => value.as_lit()?.as_integer(),
             _ => None,
         }
@@ -190,7 +207,6 @@ pub struct Project {
     result_value_types: BTreeMap<String, String>,
     #[serde(default)]
     parameter_value_types: BTreeMap<String, BTreeMap<String, String>>,
-
 }
 struct AdmittedMethod<'a> {
     syntax: &'a JavaMethod,
@@ -201,7 +217,9 @@ struct AdmittedMethod<'a> {
 
 impl AdmittedMethod<'_> {
     fn parameter_types(&self) -> &[Ty] {
-        self.binding.as_ref().map_or(self.defaults.as_slice(), |binding| &binding.parameters)
+        self.binding
+            .as_ref()
+            .map_or(self.defaults.as_slice(), |binding| &binding.parameters)
     }
 }
 
@@ -292,26 +310,38 @@ impl TryFrom<WireConstant> for AdmittedConstant {
         let value = match (&ty, raw.value) {
             (Ty::Unit, serde_json::Value::Null) => b::lit_null(),
             (Ty::Bool, serde_json::Value::Bool(value)) => b::lit_bool(value),
-            (Ty::Integer, serde_json::Value::Number(value)) =>
-                b::lit_int(value.as_i64().ok_or("integer range")?),
+            (Ty::Integer, serde_json::Value::Number(value)) => {
+                b::lit_int(value.as_i64().ok_or("integer range")?)
+            }
             (Ty::Integer, serde_json::Value::String(value)) => {
                 // The source adapter uses a canonical decimal string so the
                 // JSON transport cannot round an admitted integer.
                 let digits = value.strip_prefix('-').unwrap_or(&value);
-                need(!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
-                    && (!digits.starts_with('0') || value == "0"), "invalid exact integer constant")?;
-                b::lit_integer(value.parse::<math::Integer>().map_err(|_| "invalid exact integer constant")?)
-            },
+                need(
+                    !digits.is_empty()
+                        && digits.bytes().all(|byte| byte.is_ascii_digit())
+                        && (!digits.starts_with('0') || value == "0"),
+                    "invalid exact integer constant",
+                )?;
+                b::lit_integer(
+                    value
+                        .parse::<math::Integer>()
+                        .map_err(|_| "invalid exact integer constant")?,
+                )
+            }
             (Ty::Text, serde_json::Value::Null) if raw.typ == "text?" => b::lit_null(),
             (Ty::Text, value) => serde_json::from_value::<WireText>(value)
-                .map_err(|_| "invalid text constant")?.to_expression(),
+                .map_err(|_| "invalid text constant")?
+                .to_expression(),
             _ => return Err("invalid constant".into()),
         };
         Ok(Self { ty, value })
     }
 }
 
-fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::result::Result<Ty, D::Error> {
+fn read_action_return<'de, D: serde::Deserializer<'de>>(
+    reader: D,
+) -> std::result::Result<Ty, D::Error> {
     Ty::parse(&String::deserialize(reader)?).map_err(serde::de::Error::custom)
 }
 
@@ -319,27 +349,48 @@ fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::resul
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
     #[serde(rename = "source.native_text_flow")]
-    NativeTextFlow { flow: Box<NativeTextFlow> },
+    NativeTextFlow {
+        flow: Box<NativeTextFlow>,
+    },
     #[serde(rename = "source.throw_unknown_input")]
-    ThrowUnknownInput { name: String },
+    ThrowUnknownInput {
+        name: String,
+    },
     #[serde(rename = "source.clock")]
     ReadClock,
     #[serde(rename = "source.state_value")]
-    ReadState { path: Vec<String> },
+    ReadState {
+        path: Vec<String>,
+    },
     #[serde(rename = "value.observe_tuple")]
     ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.text_equal")]
-    TextEqual { left: Box<Node>, right: Box<Node> },
+    TextEqual {
+        left: Box<Node>,
+        right: Box<Node>,
+    },
     #[serde(rename = "value.text_concat")]
-    TextConcat { left: Box<Node>, right: Box<Node> },
+    TextConcat {
+        left: Box<Node>,
+        right: Box<Node>,
+    },
     #[serde(rename = "value.text_trim")]
-    TrimText { value: Box<Node> },
+    TrimText {
+        value: Box<Node>,
+    },
     #[serde(rename = "value.text_default_if_blank")]
-    DefaultTextIfBlank { value: Box<Node>, fallback: Box<Node> },
+    DefaultTextIfBlank {
+        value: Box<Node>,
+        fallback: Box<Node>,
+    },
     #[serde(rename = "value.number_vector")]
-    NumberVector { items: Vec<Node> },
+    NumberVector {
+        items: Vec<Node>,
+    },
     #[serde(rename = "value.ordered_text_map")]
-    OrderedTextMap { entries: Vec<OrderedMapEntry> },
+    OrderedTextMap {
+        entries: Vec<OrderedMapEntry>,
+    },
     #[serde(rename = "value.field")]
     Field {
         value: Box<Node>,
@@ -415,13 +466,20 @@ fn read(path: &Path) -> Result<String> {
     let file = std::fs::File::open(path).map_err(|e| fail(e.to_string()))?;
     let metadata = file.metadata().map_err(|e| fail(e.to_string()))?;
     need(metadata.is_file(), "project input must be a regular file")?;
-    need(metadata.len() <= MAX_PROJECT_FILE_BYTES, "file exceeds 32 MiB")?;
+    need(
+        metadata.len() <= MAX_PROJECT_FILE_BYTES,
+        "file exceeds 32 MiB",
+    )?;
     // Check the actual snapshot too; the observed length can change while
     // reading. Never pass a truncated prefix off as the complete source.
     let mut bytes = Vec::new();
-    file.take(MAX_PROJECT_FILE_BYTES + 1).read_to_end(&mut bytes)
+    file.take(MAX_PROJECT_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
         .map_err(|e| fail(e.to_string()))?;
-    need(bytes.len() as u64 <= MAX_PROJECT_FILE_BYTES, "file exceeds 32 MiB")?;
+    need(
+        bytes.len() as u64 <= MAX_PROJECT_FILE_BYTES,
+        "file exceeds 32 MiB",
+    )?;
     String::from_utf8(bytes).map_err(|e| fail(e.to_string()))
 }
 fn emit_stage_profile(stage: &str, started: Instant, detail: impl AsRef<str>) {
@@ -452,8 +510,11 @@ impl Project {
             if matches!(t, JavaType::Class(name) if name == "java.lang.String") {
                 return Ok(Ty::Text);
             }
-            if crate::normalized::calendar_date_type(t) { return Ok(Ty::CalendarDate); }
-            if crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t) {
+            if crate::normalized::calendar_date_type(t) {
+                return Ok(Ty::CalendarDate);
+            }
+            if crate::normalized::exact_decimal_type(t) || crate::normalized::native_decimal_type(t)
+            {
                 return Ok(Ty::Decimal);
             }
         }
@@ -462,8 +523,11 @@ impl Project {
             JavaType::Array(item) => {
                 let ty = match item.as_ref() {
                     _ if self.direct_source && crate::normalized::integral(item) => Ty::Integer,
-                    JavaType::Array(element) if self.direct_source && crate::normalized::integral(element) =>
-                        Ty::Seq(Box::new(Ty::Integer)),
+                    JavaType::Array(element)
+                        if self.direct_source && crate::normalized::integral(element) =>
+                    {
+                        Ty::Seq(Box::new(Ty::Integer))
+                    }
                     _ if self.direct_source && self.source_owner(item).is_some() => Ty::Ref,
                     _ => return Err(fail("unsupported Java array type")),
                 };
@@ -480,8 +544,12 @@ impl Project {
         if let Some((owner, _)) = self.source_layouts.get_key_value(name) {
             return Some(owner.as_str());
         }
-        if self.source_names_are_linked { return None; }
-        let mut candidates = self.source_layouts.keys()
+        if self.source_names_are_linked {
+            return None;
+        }
+        let mut candidates = self
+            .source_layouts
+            .keys()
             .filter(|owner| owner.rsplit('.').next() == Some(name.as_str()));
         let owner = candidates.next()?;
         // An unqualified name without lexical evidence is insufficient
@@ -489,7 +557,8 @@ impl Project {
         candidates.next().is_none().then_some(owner.as_str())
     }
     fn parameter_type(&self, t: &JavaType) -> Result<Ty> {
-        if matches!(t, JavaType::Class(n) if self.source_ports.values().any(|port| &port.interface == n)) {
+        if matches!(t, JavaType::Class(n) if self.source_ports.values().any(|port| &port.interface == n))
+        {
             return Ok(Ty::Ref);
         }
         if self.source_owner(t).is_some() {
@@ -498,8 +567,11 @@ impl Project {
         self.java_type(t)
     }
     fn parameter_override(&self, method: &str, name: &str) -> Result<Option<Ty>> {
-        self.parameter_value_types.get(method).and_then(|params| params.get(name))
-            .map(|ty| Ty::parse(ty)).transpose()
+        self.parameter_value_types
+            .get(method)
+            .and_then(|params| params.get(name))
+            .map(|ty| Ty::parse(ty))
+            .transpose()
     }
     fn declared_result_type(&self, t: &JavaType) -> Result<Ty> {
         if self.source_owner(t).is_some() {
@@ -518,7 +590,11 @@ impl Loaded {
         Self::admit_source(program, &target, resolved)
     }
 
-    fn admit_source(program: JavaProgram, entry: &str, source_entry: source_entry::SourceEntry) -> Result<Self> {
+    fn admit_source(
+        program: JavaProgram,
+        entry: &str,
+        source_entry: source_entry::SourceEntry,
+    ) -> Result<Self> {
         let receiver = source_entry.receiver.as_ref();
         let crate::normalized::SourceEvidence {
             layouts: source_layouts,
@@ -527,14 +603,20 @@ impl Loaded {
             ports: source_ports,
             nullable_entry_parameters: source_nullable_entry_parameters,
         } = crate::normalized::validate_with_receiver(
-            &program, entry, receiver, Some(source_entry.locator.as_str()),
+            &program,
+            entry,
+            receiver,
+            Some(source_entry.locator.as_str()),
         )?;
         let ports = source_ports::contracts(&program, &source_ports)?;
         // A Java throws clause binds the exception declaration. A class
         // may contain a field named payload, but that alone does not say
         // what an external transport supplies on this particular call.
-        let exceptions = source_exception_parents.keys().cloned()
-            .map(|name| (name, "unit".into())).collect();
+        let exceptions = source_exception_parents
+            .keys()
+            .cloned()
+            .map(|name| (name, "unit".into()))
+            .collect();
         let heap_fields = source_layouts
             .values()
             .flat_map(|fields| fields.iter())
@@ -544,7 +626,10 @@ impl Loaded {
             .collect();
         let project = Project {
             direct_source: true,
-            source_names_are_linked: program.classes().iter().any(|class| !class.package().is_empty()),
+            source_names_are_linked: program
+                .classes()
+                .iter()
+                .any(|class| !class.package().is_empty()),
             entry_contexts: BTreeMap::new(),
             source_layouts,
             source_ports,
@@ -565,7 +650,11 @@ impl Loaded {
         // The source gate already checked syntax, calls and cycles. Only
         // normalize(entry) executes code, with the actual entry arguments and
         // receiver; auditing a constructor as a stand-alone call has no meaning.
-        Ok(Self { project, program, source_entry: Some(source_entry) })
+        Ok(Self {
+            project,
+            program,
+            source_entry: Some(source_entry),
+        })
     }
     fn read_adapter_project(path: &Path) -> Result<Self> {
         let load_started = Instant::now();
@@ -577,10 +666,16 @@ impl Loaded {
             load_started,
             format!("input_bytes={}", project_text.len()),
         );
-        let project: Project = serde_json::from_str(&project_text).map_err(|error| fail(error.to_string()))?;
-        need(project.entries.len() == project.entry_contexts.len()
-                && project.entries.iter().all(|name| project.entry_contexts.contains_key(name)),
-                "business source contexts must cover each selected entry")?;
+        let project: Project =
+            serde_json::from_str(&project_text).map_err(|error| fail(error.to_string()))?;
+        need(
+            project.entries.len() == project.entry_contexts.len()
+                && project
+                    .entries
+                    .iter()
+                    .all(|name| project.entry_contexts.contains_key(name)),
+            "business source contexts must cover each selected entry",
+        )?;
         emit_stage_profile(
             "project_deserialize",
             load_started,
@@ -643,7 +738,11 @@ impl Loaded {
             load_started,
             format!("classes={}", program.classes().len()),
         );
-        Ok(Self { project, program, source_entry: None })
+        Ok(Self {
+            project,
+            program,
+            source_entry: None,
+        })
     }
     fn engine<'a>(
         &'a self,
@@ -663,9 +762,18 @@ impl Loaded {
             active: BTreeSet::new(),
             steps: 0,
             selected_entry,
-            public_source_entry: self.source_entry.as_ref().map(|source| source.locator.as_str()),
-            source_root: self.source_entry.as_ref().map(|source| source.project_root.as_path()),
-            source_assembly: self.source_entry.as_ref().and_then(|source| source.receiver.as_ref()),
+            public_source_entry: self
+                .source_entry
+                .as_ref()
+                .map(|source| source.locator.as_str()),
+            source_root: self
+                .source_entry
+                .as_ref()
+                .map(|source| source.project_root.as_path()),
+            source_assembly: self
+                .source_entry
+                .as_ref()
+                .and_then(|source| source.receiver.as_ref()),
             active_static_receiver: None,
             entry_context: self.project.entry_contexts.get(selected_entry.id),
             state_roots: BTreeMap::new(),
@@ -728,20 +836,26 @@ impl Loaded {
                         "result value alias requires a declared empty carrier class and approved value type")?;
                 }
             }
-            if self.project.direct_source && crate::normalized::generic_product::prove(c).is_some() {
+            if self.project.direct_source && crate::normalized::generic_product::prove(c).is_some()
+            {
                 // Pure product constructors are instantiated at their typed
                 // allocation sites, never registered as bare erased methods.
                 continue;
             }
             for (index, m) in c.methods().iter().enumerate() {
-                if c.is_interface() && !m.is_default() { continue; }
+                if c.is_interface() && !m.is_default() {
+                    continue;
+                }
                 let id = if self.project.direct_source {
                     crate::normalized::method_key(c, index, m)
                 } else {
                     format!("{}.{}", c.full_name(), m.name())
                 };
                 if !self.project.direct_source {
-                    need(m.body().is_none(), "adapter signature carriers must not contain Java method bodies")?;
+                    need(
+                        m.body().is_none(),
+                        "adapter signature carriers must not contain Java method bodies",
+                    )?;
                     need(m.annotations().is_empty(), "unsupported method shape")?;
                     need(!methods.contains_key(&id), "duplicate/overloaded method")?;
                 }
@@ -750,24 +864,42 @@ impl Loaded {
                     JavaType::Class(name) if !self.project.direct_source => adapter_alias(name)?,
                     _ => None,
                 };
-                let returns = alias.map_or_else(|| self.project.declared_result_type(return_type), Ok)?;
+                let returns =
+                    alias.map_or_else(|| self.project.declared_result_type(return_type), Ok)?;
                 let defaults = if self.project.direct_source {
-                    m.params().iter().map(|(ty, _)| self.project.parameter_type(ty))
+                    m.params()
+                        .iter()
+                        .map(|(ty, _)| self.project.parameter_type(ty))
                         .collect::<Result<Vec<_>>>()?
                 } else {
-                    let (types, spellings): (Vec<_>, Vec<_>) = m.params().iter()
-                        .map(|(ty, _)| adapter_parameter(ty)).collect::<Result<Vec<_>>>()?
-                        .into_iter().unzip();
+                    let (types, spellings): (Vec<_>, Vec<_>) = m
+                        .params()
+                        .iter()
+                        .map(|(ty, _)| adapter_parameter(ty))
+                        .collect::<Result<Vec<_>>>()?
+                        .into_iter()
+                        .unzip();
                     adapter_signatures.insert(id.clone(), format!("{})", spellings.join(",")));
                     types
                 };
-                methods.insert(id, AdmittedMethod { syntax: m, defaults, returns, binding: None });
+                methods.insert(
+                    id,
+                    AdmittedMethod {
+                        syntax: m,
+                        defaults,
+                        returns,
+                        binding: None,
+                    },
+                );
             }
         }
         // Source admission already owns executable/native declaration
         // validity. Semantic bindings only exist on signature-only adapters.
         if self.project.direct_source {
-            return Ok(PreparedExecution { methods, checked_ports });
+            return Ok(PreparedExecution {
+                methods,
+                checked_ports,
+            });
         }
         for name in self.project.result_value_types.keys() {
             need(
@@ -780,28 +912,39 @@ impl Loaded {
                 .java
                 .split_once('(')
                 .ok_or_else(|| fail("binding requires full signature"))?;
-            let declared = methods.get_mut(id)
+            let declared = methods
+                .get_mut(id)
                 .ok_or_else(|| fail(format!("binding has no Java declaration: {id}")))?;
             let m = declared.syntax;
             need(signature.ends_with(')'), "invalid signature")?;
-            need(adapter_signatures.get(id).is_some_and(|admitted| admitted == signature),
-                "Java parameter signature mismatch")?;
             need(
-                f.params.len() == m.params().len()
-                    && Ty::parse(&f.returns)? == declared.returns,
+                adapter_signatures
+                    .get(id)
+                    .is_some_and(|admitted| admitted == signature),
+                "Java parameter signature mismatch",
+            )?;
+            need(
+                f.params.len() == m.params().len() && Ty::parse(&f.returns)? == declared.returns,
                 "semantic return/arity mismatch",
             )?;
             // Matching the declaration in slot order also proves uniqueness.
             let mut parameters = Vec::with_capacity(f.params.len());
-            for ((p, (_, java_name)), fallback) in f.params.iter().zip(m.params()).zip(&declared.defaults) {
+            for ((p, (_, java_name)), fallback) in
+                f.params.iter().zip(m.params()).zip(&declared.defaults)
+            {
+                need(identifier(&p.name), "duplicate/invalid parameter")?;
                 need(
-                    identifier(&p.name),
-                    "duplicate/invalid parameter",
+                    &p.name == java_name,
+                    "binding parameters must match the Java declaration",
                 )?;
-                need(&p.name == java_name, "binding parameters must match the Java declaration")?;
                 let ty = Ty::parse(&p.typ)?;
-                let override_type = self.project.parameter_override(id.rsplit('.').next().unwrap_or(id), &p.name)?;
-                need(ty == *override_type.as_ref().unwrap_or(fallback), "semantic parameter type mismatch")?;
+                let override_type = self
+                    .project
+                    .parameter_override(id.rsplit('.').next().unwrap_or(id), &p.name)?;
+                need(
+                    ty == *override_type.as_ref().unwrap_or(fallback),
+                    "semantic parameter type mismatch",
+                )?;
                 if ty == Ty::UnknownInput {
                     let entry_context = self.project.entry_contexts.get(id);
                     let single_input = parameters.is_empty() && f.params.len() == 1;
@@ -821,22 +964,34 @@ impl Loaded {
                 parameters.push(ty);
             }
             if declared.returns == Ty::UnknownInput {
-                need(parameters.as_slice() == [Ty::UnknownInput]
-                    && matches!(&f.body, Node::Var { name } if name == &f.params[0].name),
-                    "unknown result must preserve the exact original source value")?;
+                need(
+                    parameters.as_slice() == [Ty::UnknownInput]
+                        && matches!(&f.body, Node::Var { name } if name == &f.params[0].name),
+                    "unknown result must preserve the exact original source value",
+                )?;
             }
             if let Some(context) = self.project.entry_contexts.get(id) {
                 context.validate_carrier_domains(m, &parameters, &declared.returns)?;
             }
             need(
-                declared.binding.replace(Rc::new(CheckedBinding { name, function: f, parameters })).is_none(),
+                declared
+                    .binding
+                    .replace(Rc::new(CheckedBinding {
+                        name,
+                        function: f,
+                        parameters,
+                    }))
+                    .is_none(),
                 "duplicate binding",
             )?;
         }
         for method in methods.values() {
             need(method.binding.is_some(), "unbound bodyless method")?;
         }
-        Ok(PreparedExecution { methods, checked_ports })
+        Ok(PreparedExecution {
+            methods,
+            checked_ports,
+        })
     }
     fn normalize(&self, entry: &str) -> Result<ExecutionResult> {
         let adapter_prepare = (!self.project.direct_source).then(Instant::now);
@@ -847,12 +1002,30 @@ impl Loaded {
             for id in &self.project.entries {
                 need(prepared.methods.contains_key(id), "entry missing")?;
             }
-            emit_stage_profile("prepare", started, format!("methods={}", prepared.methods.len()));
+            emit_stage_profile(
+                "prepare",
+                started,
+                format!("methods={}", prepared.methods.len()),
+            );
         }
-        let selected = self.project.entries.iter().find(|s| *s == entry)
+        let selected = self
+            .project
+            .entries
+            .iter()
+            .find(|s| *s == entry)
             .ok_or_else(|| fail("entry not declared"))?;
-        let m = prepared.methods.get(entry).ok_or_else(|| fail("entry method missing"))?.syntax;
-        let mut e = self.engine(prepared, kernel_execution::SelectedEntry { id: selected.as_str(), syntax: m });
+        let m = prepared
+            .methods
+            .get(entry)
+            .ok_or_else(|| fail("entry method missing"))?
+            .syntax;
+        let mut e = self.engine(
+            prepared,
+            kernel_execution::SelectedEntry {
+                id: selected.as_str(),
+                syntax: m,
+            },
+        );
         let args = m
             .params()
             .iter()
@@ -862,35 +1035,46 @@ impl Loaded {
                 let nullable = if self.project.direct_source {
                     self.project.source_nullable_entry_parameters.contains(n)
                 } else {
-                    let owner = entry.rsplit_once('.').ok_or_else(|| fail("missing entry owner"))?.0;
-                    let class = e.program.find_class(owner).ok_or_else(|| fail("entry owner missing"))?;
+                    let owner = entry
+                        .rsplit_once('.')
+                        .ok_or_else(|| fail("missing entry owner"))?
+                        .0;
+                    let class = e
+                        .program
+                        .find_class(owner)
+                        .ok_or_else(|| fail("entry owner missing"))?;
                     crate::normalized::source_nullable_parameter(class, m, n, t)?
-                        || self.project.entry_contexts.get(entry).and_then(|ctx| ctx.binding(n).ok())
+                        || self
+                            .project
+                            .entry_contexts
+                            .get(entry)
+                            .and_then(|ctx| ctx.binding(n).ok())
                             .is_some_and(|(_, ty)| ty == "text?")
                 };
                 e.entry_argument(n, t, &expected, nullable)
             })
             .collect::<Result<_>>()?;
         let entry_started = Instant::now();
-        let value = if self.source_entry.as_ref().is_some_and(|source| source.receiver.is_some()) {
+        let value = if self
+            .source_entry
+            .as_ref()
+            .is_some_and(|source| source.receiver.is_some())
+        {
             e.java_call_on_certified_entry_receiver(entry, args, b::lit_bool(true))?
         } else {
             e.java_call(entry, args, b::lit_bool(true))?
         };
-        e.emit_stage_profile(
-            "entry_execute",
-            entry_started,
-            "completed_entry_execute",
-        );
+        e.emit_stage_profile("entry_execute", entry_started, "completed_entry_execute");
         let source_record_return = if e.realtime_completion.is_always_throwing() {
             None
         } else {
             e.source_record(m.return_type(), &value)?
         };
-        let realtime_completion = e.realtime_completion.replace_continue(
-            realtime_state::Completion::Return(value.scalar()?),
-        );
-        let mut terminal = realtime_completion.terminal_alternatives()
+        let realtime_completion = e
+            .realtime_completion
+            .replace_continue(realtime_state::Completion::Return(value.scalar()?));
+        let mut terminal = realtime_completion
+            .terminal_alternatives()
             .ok_or_else(|| fail("entry has incomplete control flow"))?;
         if e.realtime_effects.events().is_empty() {
             terminal.normalize_pure_return_choices(&mut e.temporal_definitions);
@@ -909,28 +1093,31 @@ impl Loaded {
         })
     }
 }
-mod member_choice;
-mod temporal_graph;
 mod business_entry;
+mod member_choice;
 mod source_entry;
-pub(crate) use source_entry::{assembly_allocation as inert_data_allocation, inert_singleton, inert_instance_method, SourceReceiver};
+mod temporal_graph;
+pub(crate) use source_entry::{
+    assembly_allocation as inert_data_allocation, inert_instance_method, inert_singleton,
+    SourceReceiver,
+};
 mod business_event;
 pub(crate) mod business_relation;
-mod source_control;
-pub(crate) mod port_completion;
 mod business_sql;
-mod source_objects;
+pub(crate) mod port_completion;
 mod source_arrays;
-mod source_map;
-mod source_range;
-mod tuple_observation;
+mod source_control;
 mod source_decimal;
+mod source_map;
+mod source_objects;
+mod source_range;
 mod source_text_flow;
+mod tuple_observation;
 use source_text_flow::NativeTextFlow;
-pub mod standalone_closure;
-mod source_ports;
 #[path = "kernel_result.rs"]
 mod kernel_result;
+mod source_ports;
+pub mod standalone_closure;
 use kernel_result::ExecutionResult;
 
 fn identifier(s: &str) -> bool {
@@ -943,7 +1130,9 @@ fn java_carrier_atom(t: &JavaType) -> Option<(Ty, &str)> {
     match t {
         JavaType::Primitive(name) if crate::normalized::integral(t) => Some((Ty::Integer, name)),
         JavaType::Primitive(name) if name == "boolean" => Some((Ty::Bool, name)),
-        JavaType::Class(name) if name == "Object" || name == "java.lang.Object" => Some((Ty::Ref, name)),
+        JavaType::Class(name) if name == "Object" || name == "java.lang.Object" => {
+            Some((Ty::Ref, name))
+        }
         JavaType::Class(name) if name == "String" => Some((Ty::Text, name)),
         _ => None,
     }
@@ -962,8 +1151,8 @@ fn adapter_parameter(t: &JavaType) -> Result<(Ty, String)> {
         return Ok((ty, spelling.to_owned()));
     }
     if let JavaType::Array(item) = t {
-        let spelling = adapter_integer_component(item)
-            .ok_or_else(|| fail("unsupported Java array type"))?;
+        let spelling =
+            adapter_integer_component(item).ok_or_else(|| fail("unsupported Java array type"))?;
         return Ok((Ty::Seq(Box::new(Ty::Integer)), format!("{spelling}[]")));
     }
     Err(fail("unsupported Java type"))
@@ -979,8 +1168,12 @@ fn host_input_symbol(name: &str) -> String {
 
 fn temporal_definition_id(expr: &Expr) -> Option<u64> {
     match expr.as_sym_var() {
-        Some(SymVarOrigin::Temporal { binding_id, primitive_type })
-            if matches!(primitive_type.as_str(), "integer" | b::RECORD_TEMPORAL_TAG) => Some(*binding_id),
+        Some(SymVarOrigin::Temporal {
+            binding_id,
+            primitive_type,
+        }) if matches!(primitive_type.as_str(), "integer" | b::RECORD_TEMPORAL_TAG) => {
+            Some(*binding_id)
+        }
         _ => None,
     }
 }
@@ -997,35 +1190,40 @@ fn record_choice_projection(expr: &Expr) -> Option<&Expr> {
 
 fn integer_definition_id(expr: &Expr) -> Option<u64> {
     match expr.as_sym_var() {
-        Some(SymVarOrigin::Temporal { binding_id, primitive_type }) if primitive_type == "integer" => Some(*binding_id),
+        Some(SymVarOrigin::Temporal {
+            binding_id,
+            primitive_type,
+        }) if primitive_type == "integer" => Some(*binding_id),
         _ => None,
     }
 }
 
 fn symbolic(name: &str, t: &Ty, heap: &mut Heap, declared: Option<&JavaType>) -> Result<Value> {
     Ok(match t {
-        Ty::Vector(_) | Ty::Record(_) => Value::Term(
-            t.clone(),
-            math::domains::composite::input(name),
-        ),
+        Ty::Vector(_) | Ty::Record(_) => {
+            Value::Term(t.clone(), math::domains::composite::input(name))
+        }
         Ty::Seq(item) => Value::Sequence {
             item: *item.clone(),
-            java_component: declared.and_then(primitive_array_component).map(str::to_owned),
+            java_component: declared
+                .and_then(primitive_array_component)
+                .map(str::to_owned),
             name: name.into(),
             null: b::lit_bool(false),
         },
-        Ty::Ref => Value::Term(
-            Ty::Ref,
-            b::heap_ref(heap.new_path_object().id()),
+        Ty::Ref => Value::Term(Ty::Ref, b::heap_ref(heap.new_path_object().id())),
+        Ty::UnknownInput => Value::Term(
+            t.clone(),
+            b::param(name, ScalarSymbolType::UntrustedSourceValue),
         ),
-        Ty::UnknownInput => Value::Term(t.clone(), b::param(name, ScalarSymbolType::UntrustedSourceValue)),
         Ty::Bool => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Boolean)),
         Ty::Integer => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Integer)),
         Ty::Decimal => Value::Term(t.clone(), b::param(name, ScalarSymbolType::ExactDecimal)),
         Ty::CalendarDate => Value::Term(t.clone(), b::param(name, ScalarSymbolType::CalendarDate)),
         Ty::Text => Value::Term(t.clone(), b::param(name, ScalarSymbolType::Text)),
-        Ty::Unit | Ty::Task(_) | Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation =>
-            return Err(fail("this value type has no input symbol contract")),
+        Ty::Unit | Ty::Task(_) | Ty::OrderedTextMap | Ty::LocalTextMap | Ty::LocalRelation => {
+            return Err(fail("this value type has no input symbol contract"))
+        }
     })
 }
 type Env = BTreeMap<String, Value>;
@@ -1035,16 +1233,23 @@ fn select(c: Expr, yes: Value, no: Value) -> Result<Value> {
     let else_ty = no.ty();
     need(then_ty == else_ty, "branch result type mismatch")?;
     let (yes, no) = match (yes, no) {
-        (Value::LocalTextMap(yes), Value::LocalTextMap(no)) =>
-            return Ok(Value::LocalTextMap(yes.join(c, no))),
-        (Value::LocalIntArray(yes), Value::LocalIntArray(no)) =>
-            return Ok(Value::LocalIntArray(source_arrays::LocalIntArray::select(c, yes, no))),
+        (Value::LocalTextMap(yes), Value::LocalTextMap(no)) => {
+            return Ok(Value::LocalTextMap(yes.join(c, no)))
+        }
+        (Value::LocalIntArray(yes), Value::LocalIntArray(no)) => {
+            return Ok(Value::LocalIntArray(source_arrays::LocalIntArray::select(
+                c, yes, no,
+            )))
+        }
         other => other,
     };
     let ty = then_ty;
     if ty == Ty::Integer {
         if let Some(extremum) = math::case_orientation::ordered_number_selection(
-            &c, &yes.scalar()?, &no.scalar()?, &math::DefaultSortContext,
+            &c,
+            &yes.scalar()?,
+            &no.scalar()?,
+            &math::DefaultSortContext,
         ) {
             return Ok(Value::Term(ty, math::normalize(extremum)));
         }

@@ -4,16 +4,26 @@ use super::*;
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum WirePlan {
-    Literal { items: Vec<Slot> },
-    Branch { cond: Box<Node>, yes: Box<WirePlan>, no: Box<WirePlan> },
+    Literal {
+        items: Vec<Slot>,
+    },
+    Branch {
+        cond: Box<Node>,
+        yes: Box<WirePlan>,
+        no: Box<WirePlan>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Slot {
     Undefined,
-    Text { value: String },
-    Record { fields: BTreeMap<String, ScalarField> },
+    Text {
+        value: String,
+    },
+    Record {
+        fields: BTreeMap<String, ScalarField>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -26,10 +36,23 @@ enum ScalarField {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Binding {
-    IsUndefined { name: String, index: usize },
-    SlotTruth { name: String, index: usize },
-    OptionalFlag { name: String, index: usize, field: String },
-    RestLength { name: String, from: usize },
+    IsUndefined {
+        name: String,
+        index: usize,
+    },
+    SlotTruth {
+        name: String,
+        index: usize,
+    },
+    OptionalFlag {
+        name: String,
+        index: usize,
+        field: String,
+    },
+    RestLength {
+        name: String,
+        from: usize,
+    },
 }
 
 #[derive(Deserialize)]
@@ -50,7 +73,11 @@ pub(super) struct Observation {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Plan {
     Literal(Vec<(String, Ty, Expr)>),
-    Branch { cond: Box<Node>, yes: Box<Plan>, no: Box<Plan> },
+    Branch {
+        cond: Box<Node>,
+        yes: Box<Plan>,
+        no: Box<Plan>,
+    },
 }
 
 fn admit_plan(plan: WirePlan, observations: &[Binding]) -> Result<Plan> {
@@ -66,40 +93,47 @@ fn admit_plan(plan: WirePlan, observations: &[Binding]) -> Result<Plan> {
             }
         }
         WirePlan::Literal { items } => {
-            let fields = observations.iter().map(|binding| {
-                let field = match binding {
-                    Binding::IsUndefined { name, index } => {
-                        let flag = matches!(items.get(*index), None | Some(Slot::Undefined));
-                        (name, Ty::Bool, b::lit_bool(flag))
-                    }
-                    Binding::SlotTruth { name, index } => {
-                        let flag = match items.get(*index) {
-                            None | Some(Slot::Undefined) => false,
-                            Some(Slot::Text { value }) => !value.is_empty(),
-                            Some(Slot::Record { .. }) => true,
-                        };
-                        (name, Ty::Bool, b::lit_bool(flag))
-                    }
-                    Binding::OptionalFlag { name, index, field } => {
-                        let flag = match items.get(*index) {
-                            None | Some(Slot::Undefined) => false,
-                            Some(Slot::Record { fields }) => match fields.get(field) {
-                                None => false,
-                                Some(ScalarField::Flag(value)) => *value,
-                                Some(ScalarField::Text(_)) => return Err("optional tuple property is not Boolean".into()),
-                            },
-                            _ => return Err("optional tuple receiver is not a record".to_owned()),
-                        };
-                        (name, Ty::Bool, b::lit_bool(flag))
-                    }
-                    Binding::RestLength { name, from } => {
-                        let count = i64::try_from(items.get(*from..).unwrap_or_default().len())
-                            .map_err(|_| "tuple length range".to_owned())?;
-                        (name, Ty::Integer, b::lit_int(count))
-                    }
-                };
-                Ok((field.0.clone(), field.1, field.2))
-            }).collect::<Result<_>>()?;
+            let fields = observations
+                .iter()
+                .map(|binding| {
+                    let field = match binding {
+                        Binding::IsUndefined { name, index } => {
+                            let flag = matches!(items.get(*index), None | Some(Slot::Undefined));
+                            (name, Ty::Bool, b::lit_bool(flag))
+                        }
+                        Binding::SlotTruth { name, index } => {
+                            let flag = match items.get(*index) {
+                                None | Some(Slot::Undefined) => false,
+                                Some(Slot::Text { value }) => !value.is_empty(),
+                                Some(Slot::Record { .. }) => true,
+                            };
+                            (name, Ty::Bool, b::lit_bool(flag))
+                        }
+                        Binding::OptionalFlag { name, index, field } => {
+                            let flag = match items.get(*index) {
+                                None | Some(Slot::Undefined) => false,
+                                Some(Slot::Record { fields }) => match fields.get(field) {
+                                    None => false,
+                                    Some(ScalarField::Flag(value)) => *value,
+                                    Some(ScalarField::Text(_)) => {
+                                        return Err("optional tuple property is not Boolean".into())
+                                    }
+                                },
+                                _ => {
+                                    return Err("optional tuple receiver is not a record".to_owned())
+                                }
+                            };
+                            (name, Ty::Bool, b::lit_bool(flag))
+                        }
+                        Binding::RestLength { name, from } => {
+                            let count = i64::try_from(items.get(*from..).unwrap_or_default().len())
+                                .map_err(|_| "tuple length range".to_owned())?;
+                            (name, Ty::Integer, b::lit_int(count))
+                        }
+                    };
+                    Ok((field.0.clone(), field.1, field.2))
+                })
+                .collect::<Result<_>>()?;
             Plan::Literal(fields)
         }
     })
@@ -112,13 +146,20 @@ impl TryFrom<WireObservation> for Observation {
         if !super::tasks::expression_is_closed(&raw.body) {
             return Err("tuple observation requires a pure scalar body".into());
         }
-        Ok(Self { tuple: admit_plan(raw.tuple, &raw.observations)?, body: raw.body })
+        Ok(Self {
+            tuple: admit_plan(raw.tuple, &raw.observations)?,
+            body: raw.body,
+        })
     }
 }
 
 impl Engine<'_> {
     pub(super) fn observe_tuple(
-        &mut self, plan: &Plan, body: &Node, env: &Env, path: Expr,
+        &mut self,
+        plan: &Plan,
+        body: &Node,
+        env: &Env,
+        path: Expr,
     ) -> Result<Value> {
         self.budget()?;
         match plan {
@@ -129,8 +170,10 @@ impl Engine<'_> {
                 if let Some(taken) = condition.as_bool() {
                     return self.observe_tuple(if taken { yes } else { no }, body, env, path);
                 }
-                let a = self.observe_tuple(yes, body, env, b::and(path.clone(), condition.clone()))?;
-                let z = self.observe_tuple(no, body, env, b::and(path, b::not(condition.clone())))?;
+                let a =
+                    self.observe_tuple(yes, body, env, b::and(path.clone(), condition.clone()))?;
+                let z =
+                    self.observe_tuple(no, body, env, b::and(path, b::not(condition.clone())))?;
                 self.choose(condition, a, z)
             }
             Plan::Literal(fields) => {

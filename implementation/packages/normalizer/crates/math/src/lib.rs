@@ -12,30 +12,33 @@
 
 pub mod builder;
 mod cache;
+pub mod canonical_order;
 pub mod case_orientation;
 pub mod domains;
 pub mod expr;
 pub mod normalize;
-pub mod canonical_order;
 pub mod primitive_enum;
 mod profile;
 pub mod sort_context;
 pub mod symvar;
 
+pub use canonical_order::{
+    canonical_let_plan, canonical_order_compare, canonical_order_key,
+    canonical_order_ordered_comparison, let_arithmetic_needs_swap, let_eager_children,
+    named_parameter_key, wrap_choices, CanonicalKey, ChoiceOperands, ValuePlan,
+};
 pub use domains::primitive::registry::{
-    func_name, func_semantics, register_func,
-    FuncKey, FuncSemantics,
+    func_name, func_semantics, register_func, FuncKey, FuncSemantics,
 };
 pub use expr::{BinOpKind, Expr, Lit, RelationAggregateKind, UnaryOpKind};
 pub use normalize::{
-    canonicalize_bound_integer_ops, normalize, normalize_with, try_normalize_with, BudgetKind, NormalizationLimit,
-};
-pub use canonical_order::{
-    canonical_order_compare, canonical_order_key, canonical_order_ordered_comparison, CanonicalKey,
-    canonical_let_plan, let_arithmetic_needs_swap, let_eager_children, named_parameter_key, wrap_choices, ChoiceOperands, ValuePlan,
+    canonicalize_bound_integer_ops, normalize, normalize_with, try_normalize_with, BudgetKind,
+    NormalizationLimit,
 };
 pub use primitive_enum::Primitive;
-pub use sort_context::{CaseArmKeys, DefaultSortContext, HeapBindingIdentity, ObservationIdentity, SortContext};
+pub use sort_context::{
+    CaseArmKeys, DefaultSortContext, HeapBindingIdentity, ObservationIdentity, SortContext,
+};
 pub use symvar::{ScalarSymbolType, SymVarOrigin};
 
 /// Exact mathematical integer, distinct from source-language machine words.

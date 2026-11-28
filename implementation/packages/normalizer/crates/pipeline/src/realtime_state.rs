@@ -5,8 +5,8 @@
 //! It is used by both source execution and normalized action execution so the
 //! earliest branch join has one implementation and one simplification boundary.
 
-use math::{builder as b, Expr};
 use super::port_completion::PortSpec;
+use math::{builder as b, Expr};
 use std::sync::Arc;
 
 /// The completion channel carried by a real-time execution state.
@@ -21,7 +21,10 @@ pub(crate) enum Completion {
     Continue,
     SwitchBreak,
     Return(Expr),
-    Throw { class: String, payload: Option<Expr> },
+    Throw {
+        class: String,
+        payload: Option<Expr>,
+    },
     ThrowValue(Expr),
     Guarded(Vec<CompletionAlternative>),
 }
@@ -37,7 +40,10 @@ pub(crate) enum CompletionOutcome {
     Continue,
     SwitchBreak,
     Return(Expr),
-    Throw { class: String, payload: Option<Expr> },
+    Throw {
+        class: String,
+        payload: Option<Expr>,
+    },
     ThrowValue(Expr),
 }
 
@@ -48,7 +54,10 @@ pub(crate) struct TerminalAlternative {
 
 pub(crate) enum TerminalOutcome {
     Return(Expr),
-    Throw { class: String, payload: Option<Expr> },
+    Throw {
+        class: String,
+        payload: Option<Expr>,
+    },
     ThrowValue(Expr),
 }
 
@@ -57,15 +66,24 @@ pub(crate) struct TerminalAlternatives(Vec<TerminalAlternative>);
 impl TerminalAlternatives {
     pub(crate) fn is_always_throwing(&self) -> bool {
         // The completion proof already rejects an empty domain.
-        self.0.iter().all(|a| matches!(a.outcome, TerminalOutcome::Throw { .. } | TerminalOutcome::ThrowValue(_)))
+        self.0.iter().all(|a| {
+            matches!(
+                a.outcome,
+                TerminalOutcome::Throw { .. } | TerminalOutcome::ThrowValue(_)
+            )
+        })
     }
 
-    pub(crate) fn as_slice(&self) -> &[TerminalAlternative] { &self.0 }
+    pub(crate) fn as_slice(&self) -> &[TerminalAlternative] {
+        &self.0
+    }
     pub(crate) fn total_return_value(&self) -> Option<&Expr> {
         // The only Guarded constructor already collapses this exact form.
         match self.as_slice() {
-            [TerminalAlternative { guard, outcome: TerminalOutcome::Return(value) }]
-                if guard.as_bool() == Some(true) => Some(value),
+            [TerminalAlternative {
+                guard,
+                outcome: TerminalOutcome::Return(value),
+            }] if guard.as_bool() == Some(true) => Some(value),
             _ => None,
         }
     }
@@ -80,8 +98,12 @@ impl TerminalAlternatives {
         returns.all(|other| other == value).then_some(value)
     }
 
-    pub(super) fn normalize_pure_return_choices(&mut self, definitions: &mut Vec<super::temporal_graph::Definition>) {
-        if let Some(value) = self.total_return_value()
+    pub(super) fn normalize_pure_return_choices(
+        &mut self,
+        definitions: &mut Vec<super::temporal_graph::Definition>,
+    ) {
+        if let Some(value) = self
+            .total_return_value()
             .and_then(|value| super::temporal_graph::same_support_choice(value, definitions))
         {
             self.0[0].outcome = TerminalOutcome::Return(value);
@@ -92,7 +114,9 @@ impl TerminalAlternatives {
     /// alternatives leave their domain absent from the CASE expression, which
     /// matches the PERS convention that `R` is defined only on normal return.
     pub(crate) fn normal_return_value(&self) -> Option<Expr> {
-        let mut returns = self.0.iter()
+        let mut returns = self
+            .0
+            .iter()
             .filter_map(|alternative| match &alternative.outcome {
                 TerminalOutcome::Return(value) => Some((alternative.guard.clone(), value.clone())),
                 TerminalOutcome::Throw { .. } | TerminalOutcome::ThrowValue(_) => None,
@@ -100,7 +124,10 @@ impl TerminalAlternatives {
             .collect::<Vec<_>>();
         let last = returns.pop()?;
         if returns.iter().all(|(_, value)| value == &last.1) {
-            let value = returns.into_iter().next().map_or(last.1, |(_, value)| value);
+            let value = returns
+                .into_iter()
+                .next()
+                .map_or(last.1, |(_, value)| value);
             return Some(canonicalize_realtime_case(value));
         }
         if let [first] = returns.as_slice() {
@@ -117,21 +144,29 @@ impl TerminalAlternatives {
     /// and throws are published separately, the last normal arm is exhaustive
     /// on that observation domain. Its guard need not retest a failed call.
     pub(crate) fn value_on_normal_exit(&self) -> Option<Expr> {
-        let mut returns: Vec<_> = self.0.iter().filter_map(|alt| {
-            if let TerminalOutcome::Return(value) = &alt.outcome {
-                Some((alt.guard.clone(), value.clone()))
-            } else {
-                None
-            }
-        }).collect();
+        let mut returns: Vec<_> = self
+            .0
+            .iter()
+            .filter_map(|alt| {
+                if let TerminalOutcome::Return(value) = &alt.outcome {
+                    Some((alt.guard.clone(), value.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
         let (last_guard, fallback) = returns.pop()?;
         if let [first] = returns.as_slice() {
-            if let Some(expression) = native_text_partition(first, &(last_guard.clone(), fallback.clone())) {
+            if let Some(expression) =
+                native_text_partition(first, &(last_guard.clone(), fallback.clone()))
+            {
                 return Some(canonicalize_realtime_case(expression));
             }
         }
         Self::strip_suffix_acquired_tags(&mut returns, &last_guard);
-        Some(canonicalize_realtime_case(math::normalize(b::case_when(returns, fallback))))
+        Some(canonicalize_realtime_case(math::normalize(b::case_when(
+            returns, fallback,
+        ))))
     }
 
     fn strip_suffix_acquired_tags(returns: &mut [(Expr, Expr)], last_guard: &Expr) {
@@ -139,21 +174,27 @@ impl TerminalAlternatives {
         // earlier normal outcomes and every throw. An occurrence tag shared
         // by all remaining normal alternatives need not be checked again.
         // Preserve it if even one remaining normal outcome does not prove it.
-        let normal_guards: Vec<_> = returns.iter().map(|(guard, _)| guard.clone())
-            .chain(std::iter::once(last_guard.clone())).collect();
+        let normal_guards: Vec<_> = returns
+            .iter()
+            .map(|(guard, _)| guard.clone())
+            .chain(std::iter::once(last_guard.clone()))
+            .collect();
         for (i, (guard, _)) in returns.iter_mut().enumerate() {
             let mut terms = Vec::new();
             guard.for_each_conjunct(|term| {
                 let scoped = (i > 0 && math::domains::completion::throw_tag(term).is_some())
                     || math::domains::source_type_guard::is_positive_text_guard(term);
                 let redundant = scoped
-                    && normal_guards[i..].iter().all(|alternative| b::path_implies(alternative, term));
-                if !redundant { terms.push(term.clone()); }
+                    && normal_guards[i..]
+                        .iter()
+                        .all(|alternative| b::path_implies(alternative, term));
+                if !redundant {
+                    terms.push(term.clone());
+                }
             });
             *guard = terms.into_iter().fold(b::lit_bool(true), b::and);
         }
     }
-
 }
 
 /// Two different exact text members of one acquired native operand cannot
@@ -163,11 +204,18 @@ fn native_text_partition(first: &(Expr, Expr), last: &(Expr, Expr)) -> Option<Ex
     fn tests(guard: &Expr) -> Vec<(Expr, Expr, Expr)> {
         let mut result = Vec::new();
         guard.for_each_conjunct(|term| {
-            let Some((math::BinOpKind::Eq, a, z)) = term.as_binop() else { return; };
+            let Some((math::BinOpKind::Eq, a, z)) = term.as_binop() else {
+                return;
+            };
             let unknown = math::domains::source_type_guard::is_native_unknown_parameter;
             let text = |expr: &Expr| expr.as_lit().is_some_and(math::Lit::is_text);
-            let (input, literal) = if unknown(a) && text(z) { (a, z) }
-                else if unknown(z) && text(a) { (z, a) } else { return; };
+            let (input, literal) = if unknown(a) && text(z) {
+                (a, z)
+            } else if unknown(z) && text(a) {
+                (z, a)
+            } else {
+                return;
+            };
             result.push((input.clone(), literal.clone(), term.clone()));
         });
         result
@@ -175,8 +223,13 @@ fn native_text_partition(first: &(Expr, Expr), last: &(Expr, Expr)) -> Option<Ex
     let last_tests = tests(&last.0);
     let mut best = None;
     for (input, literal, test) in tests(&first.0) {
-        for (_, _, opposite) in last_tests.iter().filter(|(other, value, _)| other == &input && value != &literal) {
-            for (test, taken, fallback) in [(&test, &first.1, &last.1), (opposite, &last.1, &first.1)] {
+        for (_, _, opposite) in last_tests
+            .iter()
+            .filter(|(other, value, _)| other == &input && value != &literal)
+        {
+            for (test, taken, fallback) in
+                [(&test, &first.1, &last.1), (opposite, &last.1, &first.1)]
+            {
                 let candidate = b::case_when(vec![(test.clone(), taken.clone())], fallback.clone());
                 let key = math::canonical_order_key(&candidate, &math::DefaultSortContext);
                 if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
@@ -193,25 +246,35 @@ impl Completion {
     pub(crate) fn continuing_guard(&self) -> Expr {
         match self {
             Self::Continue => b::lit_bool(true),
-            Self::SwitchBreak | Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => b::lit_bool(false),
-            Self::Guarded(alternatives) => math::normalize(alternatives.iter()
-                .filter(|a| a.outcome == CompletionOutcome::Continue)
-                .fold(b::lit_bool(false), |guard, a| b::or(guard, a.guard.clone()))),
+            Self::SwitchBreak | Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => {
+                b::lit_bool(false)
+            }
+            Self::Guarded(alternatives) => math::normalize(
+                alternatives
+                    .iter()
+                    .filter(|a| a.outcome == CompletionOutcome::Continue)
+                    .fold(b::lit_bool(false), |guard, a| b::or(guard, a.guard.clone())),
+            ),
         }
     }
 
     /// A break stops the current switch but its locals are still observable
     /// after that switch, unlike locals on a return or throw path.
     pub(crate) fn has_pending_switch_break(&self) -> bool {
-        matches!(self, Self::SwitchBreak) || matches!(self, Self::Guarded(alternatives)
+        matches!(self, Self::SwitchBreak)
+            || matches!(self, Self::Guarded(alternatives)
             if alternatives.iter().any(|item| item.outcome == CompletionOutcome::SwitchBreak))
     }
 
     pub(crate) fn may_resume_with_locals(&self) -> bool {
         match self {
             Self::Continue | Self::SwitchBreak => true,
-            Self::Guarded(alternatives) => alternatives.iter().any(|item|
-                matches!(item.outcome, CompletionOutcome::Continue | CompletionOutcome::SwitchBreak)),
+            Self::Guarded(alternatives) => alternatives.iter().any(|item| {
+                matches!(
+                    item.outcome,
+                    CompletionOutcome::Continue | CompletionOutcome::SwitchBreak
+                )
+            }),
             _ => false,
         }
     }
@@ -219,14 +282,23 @@ impl Completion {
     pub(crate) fn finish_switch(self) -> Self {
         match self {
             Self::SwitchBreak => Self::Continue,
-            Self::Guarded(alternatives) if alternatives.iter().any(|item|
-                item.outcome == CompletionOutcome::SwitchBreak) =>
-                Self::from_alternatives(alternatives.into_iter().map(|mut item| {
-                    if item.outcome == CompletionOutcome::SwitchBreak {
-                        item.outcome = CompletionOutcome::Continue;
-                    }
-                    item
-                }).collect()),
+            Self::Guarded(alternatives)
+                if alternatives
+                    .iter()
+                    .any(|item| item.outcome == CompletionOutcome::SwitchBreak) =>
+            {
+                Self::from_alternatives(
+                    alternatives
+                        .into_iter()
+                        .map(|mut item| {
+                            if item.outcome == CompletionOutcome::SwitchBreak {
+                                item.outcome = CompletionOutcome::Continue;
+                            }
+                            item
+                        })
+                        .collect(),
+                )
+            }
             other => other,
         }
     }
@@ -235,21 +307,32 @@ impl Completion {
     /// current domain. A guarded set with a fallthrough path is still an
     /// intermediate block state and cannot be rendered as a function result.
     pub(crate) fn terminal_alternatives(&self) -> Option<TerminalAlternatives> {
-        let alternatives = self.clone().alternatives().into_iter().map(|alternative| {
-            let outcome = match alternative.outcome {
-                CompletionOutcome::Continue | CompletionOutcome::SwitchBreak => return None,
-                CompletionOutcome::Return(value) => TerminalOutcome::Return(value),
-                CompletionOutcome::Throw { class, payload } => TerminalOutcome::Throw { class, payload },
-                CompletionOutcome::ThrowValue(value) => TerminalOutcome::ThrowValue(value),
-            };
-            Some(TerminalAlternative { guard: alternative.guard, outcome })
-        }).collect::<Option<Vec<_>>>()?;
+        let alternatives = self
+            .clone()
+            .alternatives()
+            .into_iter()
+            .map(|alternative| {
+                let outcome = match alternative.outcome {
+                    CompletionOutcome::Continue | CompletionOutcome::SwitchBreak => return None,
+                    CompletionOutcome::Return(value) => TerminalOutcome::Return(value),
+                    CompletionOutcome::Throw { class, payload } => {
+                        TerminalOutcome::Throw { class, payload }
+                    }
+                    CompletionOutcome::ThrowValue(value) => TerminalOutcome::ThrowValue(value),
+                };
+                Some(TerminalAlternative {
+                    guard: alternative.guard,
+                    outcome,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
         covers_terminal_domain(alternatives.iter().map(|alternative| &alternative.guard))
             .then_some(TerminalAlternatives(alternatives))
     }
 
     pub(crate) fn is_always_throwing(&self) -> bool {
-        self.terminal_alternatives().is_some_and(|alternatives| alternatives.is_always_throwing())
+        self.terminal_alternatives()
+            .is_some_and(|alternatives| alternatives.is_always_throwing())
     }
 
     pub(crate) fn normal_return_value(&self) -> Option<Expr> {
@@ -297,7 +380,8 @@ impl Completion {
         if alternatives.len() == 1 && alternatives[0].guard.as_bool() == Some(true) {
             return outcome_to_completion(alternatives.into_iter().next().unwrap().outcome);
         }
-        let covered = covers_terminal_domain(alternatives.iter().map(|alternative| &alternative.guard));
+        let covered =
+            covers_terminal_domain(alternatives.iter().map(|alternative| &alternative.guard));
         if covered
             && alternatives
                 .iter()
@@ -308,11 +392,16 @@ impl Completion {
         if covered {
             // Certify and extract in one pass. Non-return alternatives never
             // enter the return-only collapse, even on a covered domain.
-            let returns = alternatives.iter().map(|alternative| match &alternative.outcome {
-                CompletionOutcome::Return(value) => Some((&alternative.guard, value)),
-                _ => None,
-            }).collect::<Option<Vec<_>>>();
-            if let Some(value) = returns.and_then(|returns| collapse_return_values(returns.into_iter())) {
+            let returns = alternatives
+                .iter()
+                .map(|alternative| match &alternative.outcome {
+                    CompletionOutcome::Return(value) => Some((&alternative.guard, value)),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(value) =
+                returns.and_then(|returns| collapse_return_values(returns.into_iter()))
+            {
                 return Self::Return(value);
             }
         }
@@ -420,9 +509,11 @@ fn covers_terminal_domain<'a>(guards: impl Iterator<Item = &'a Expr>) -> bool {
     // partition. Expand it exclusively for this coverage certificate,
     // never for execution, publication, or observation ordering.
     fn proof_boolean(value: &Expr) -> bool {
-        value.as_bool().is_some() || matches!(value.as_unary_op(), Some((math::UnaryOpKind::Not, _)))
-            || value.as_binop().is_some_and(|(op, _, _)| matches!(op, And | Or)
-                || op.swapped_comparison().is_some())
+        value.as_bool().is_some()
+            || matches!(value.as_unary_op(), Some((math::UnaryOpKind::Not, _)))
+            || value.as_binop().is_some_and(|(op, _, _)| {
+                matches!(op, And | Or) || op.swapped_comparison().is_some()
+            })
             || matches!(value.as_sym_var(),
                 Some(math::SymVarOrigin::Parameter { primitive_type, .. }
                     | math::SymVarOrigin::External { primitive_type, .. }
@@ -439,12 +530,20 @@ fn covers_terminal_domain<'a>(guards: impl Iterator<Item = &'a Expr>) -> bool {
                 if let Some(bit) = yes.as_bool() {
                     let condition = proof_guard(condition, budget);
                     let no = proof_guard(no, budget);
-                    return if bit { b::or(condition, no) } else { b::and(b::not(condition), no) };
+                    return if bit {
+                        b::or(condition, no)
+                    } else {
+                        b::and(b::not(condition), no)
+                    };
                 }
                 if let Some(bit) = no.as_bool() {
                     let condition = proof_guard(condition, budget);
                     let yes = proof_guard(yes, budget);
-                    return if bit { b::or(b::not(condition), yes) } else { b::and(condition, yes) };
+                    return if bit {
+                        b::or(b::not(condition), yes)
+                    } else {
+                        b::and(condition, yes)
+                    };
                 }
             }
         }
@@ -467,8 +566,14 @@ fn covers_terminal_domain<'a>(guards: impl Iterator<Item = &'a Expr>) -> bool {
         return false;
     }
     let mut budget = 32;
-    let proof = guards.iter().map(|guard| proof_guard(guard, &mut budget)).collect::<Vec<_>>();
-    proof.iter().zip(guards).any(|(candidate, original)| candidate != original)
+    let proof = guards
+        .iter()
+        .map(|guard| proof_guard(guard, &mut budget))
+        .collect::<Vec<_>>();
+    proof
+        .iter()
+        .zip(guards)
+        .any(|(candidate, original)| candidate != original)
         && coverage(proof.iter()).as_bool() == Some(true)
 }
 
@@ -479,14 +584,21 @@ fn collapse_return_values<'a>(
     // Coverage was proved for the whole ordered set. Normalize one CASE
     // in that scope, not a right-fold of artificial binary domains whose
     // fallback would also run on a previously matched path.
-    let branches: Vec<_> = returns.map(|(guard, value)| (guard.clone(), value.clone())).collect();
+    let branches: Vec<_> = returns
+        .map(|(guard, value)| (guard.clone(), value.clone()))
+        .collect();
     // With exactly two covered outcomes the first guard and its fallback
     // really are a complete binary choice, so CF-04 applies directly.
     if let [(condition, value)] = branches.as_slice() {
-        return Some(join_value(condition.clone(), value.clone(), last_value.clone()));
+        return Some(join_value(
+            condition.clone(),
+            value.clone(),
+            last_value.clone(),
+        ));
     }
     Some(math::normalize(b::normal_return_case_when(
-        branches, (last_guard.clone(), last_value.clone()),
+        branches,
+        (last_guard.clone(), last_value.clone()),
     )))
 }
 
@@ -518,17 +630,27 @@ pub(crate) struct EffectReceipt {
 
 impl EffectReceipt {
     pub(super) fn tagged(binding_id: u64) -> Self {
-        Self { binding_id, response: b::external_completion(binding_id) }
+        Self {
+            binding_id,
+            response: b::external_completion(binding_id),
+        }
     }
 
-    pub(super) fn binding_id(&self) -> u64 { self.binding_id }
-    pub(super) fn response(&self) -> &Expr { &self.response }
+    pub(super) fn binding_id(&self) -> u64 {
+        self.binding_id
+    }
+    pub(super) fn response(&self) -> &Expr {
+        &self.response
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Acquisition {
     Clock,
-    Sql { source: String, after: Vec<(u64, Expr)> },
+    Sql {
+        source: String,
+        after: Vec<(u64, Expr)>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -539,16 +661,29 @@ pub(crate) enum FieldWriteTarget {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectOperation {
-    Acquire { acquisition: Acquisition, binding_id: u64 },
+    Acquire {
+        acquisition: Acquisition,
+        binding_id: u64,
+    },
     Port {
         id: String,
         receipt: EffectReceipt,
         completion: Arc<PortSpec>,
         source_identity: Option<String>,
     },
-    Sql { statement: super::business_sql::SqlEffect, receipt: EffectReceipt },
-    StateWrite { target: FieldWriteTarget, value: Expr },
-    ArrayWrite { root: String, index: i64, value: Expr },
+    Sql {
+        statement: super::business_sql::SqlEffect,
+        receipt: EffectReceipt,
+    },
+    StateWrite {
+        target: FieldWriteTarget,
+        value: Expr,
+    },
+    ArrayWrite {
+        root: String,
+        index: i64,
+        value: Expr,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -563,9 +698,11 @@ pub(crate) struct EffectEvent {
 impl EffectEvent {
     pub(crate) fn arguments(&self) -> &[Expr] {
         match &self.operation {
-            EffectOperation::StateWrite { value, .. } | EffectOperation::ArrayWrite { value, .. } =>
-                std::slice::from_ref(value),
-            EffectOperation::Port { .. } | EffectOperation::Sql { .. } | EffectOperation::Acquire { .. } => &self.args,
+            EffectOperation::StateWrite { value, .. }
+            | EffectOperation::ArrayWrite { value, .. } => std::slice::from_ref(value),
+            EffectOperation::Port { .. }
+            | EffectOperation::Sql { .. }
+            | EffectOperation::Acquire { .. } => &self.args,
         }
     }
 }
@@ -586,9 +723,14 @@ impl EffectSequence {
 
     pub(super) fn acquire(&mut self, guard: Expr, acquisition: Acquisition, binding_id: u64) {
         self.push_live(EffectEvent {
-            sequence: self.events.len(), guard,
-            operation: EffectOperation::Acquire { acquisition, binding_id },
-            callsite: String::new(), args: vec![],
+            sequence: self.events.len(),
+            guard,
+            operation: EffectOperation::Acquire {
+                acquisition,
+                binding_id,
+            },
+            callsite: String::new(),
+            args: vec![],
         });
     }
 
@@ -601,30 +743,68 @@ impl EffectSequence {
         receipt: EffectReceipt,
         completion: Arc<PortSpec>,
     ) {
-        self.record_port_occurrence(guard, operation.into(), callsite.into(), args, receipt, completion, None);
+        self.record_port_occurrence(
+            guard,
+            operation.into(),
+            callsite.into(),
+            args,
+            receipt,
+            completion,
+            None,
+        );
     }
 
     pub(super) fn record_source_port(
-        &mut self, guard: Expr, id: &str, args: Vec<Expr>, receipt: EffectReceipt,
-        completion: Arc<PortSpec>, source_identity: Option<String>,
+        &mut self,
+        guard: Expr,
+        id: &str,
+        args: Vec<Expr>,
+        receipt: EffectReceipt,
+        completion: Arc<PortSpec>,
+        source_identity: Option<String>,
     ) {
-        self.record_port_occurrence(guard, id.into(), id.into(), args, receipt, completion, source_identity);
+        self.record_port_occurrence(
+            guard,
+            id.into(),
+            id.into(),
+            args,
+            receipt,
+            completion,
+            source_identity,
+        );
     }
 
     fn record_port_occurrence(
-        &mut self, guard: Expr, id: String, callsite: String, args: Vec<Expr>,
-        receipt: EffectReceipt, completion: Arc<PortSpec>, source_identity: Option<String>,
+        &mut self,
+        guard: Expr,
+        id: String,
+        callsite: String,
+        args: Vec<Expr>,
+        receipt: EffectReceipt,
+        completion: Arc<PortSpec>,
+        source_identity: Option<String>,
     ) {
         self.push_live(EffectEvent {
             guard,
             sequence: self.events.len(),
-            operation: EffectOperation::Port { id, receipt, completion, source_identity },
+            operation: EffectOperation::Port {
+                id,
+                receipt,
+                completion,
+                source_identity,
+            },
             callsite,
             args,
         });
     }
 
-    pub(super) fn record_sql(&mut self, guard: Expr, statement: super::business_sql::SqlEffect, args: Vec<Expr>, receipt: EffectReceipt) {
+    pub(super) fn record_sql(
+        &mut self,
+        guard: Expr,
+        statement: super::business_sql::SqlEffect,
+        args: Vec<Expr>,
+        receipt: EffectReceipt,
+    ) {
         self.push_live(EffectEvent {
             sequence: self.events.len(),
             guard,
@@ -665,8 +845,13 @@ impl EffectSequence {
     /// Simplify the new effects at a control-flow join. Previously observed
     /// events remain an immutable prefix shared by other live paths.
     pub(super) fn merge_writes_since(&mut self, start: usize) {
-        if !self.events[start..].iter().any(|event| matches!(event.operation, EffectOperation::StateWrite { .. })) { return; }
-        let mut previous_writes = std::collections::BTreeMap::<FieldWriteTarget,usize>::new();
+        if !self.events[start..]
+            .iter()
+            .any(|event| matches!(event.operation, EffectOperation::StateWrite { .. }))
+        {
+            return;
+        }
+        let mut previous_writes = std::collections::BTreeMap::<FieldWriteTarget, usize>::new();
         let suffix = self.events.split_off(start);
         for mut event in suffix {
             if let EffectOperation::StateWrite { target, .. } = &event.operation {
@@ -674,14 +859,19 @@ impl EffectSequence {
                     let prior = &self.events[previous];
                     // Moving this write earlier is valid only when every
                     // intervening event is absent on this write's path.
-                    if prior.arguments() == event.arguments() && self.events[previous..].iter().all(|other| {
-                        math::normalize(b::and(other.guard.clone(),event.guard.clone())).as_bool() == Some(false)
-                    }) {
-                        self.events[previous].guard = math::normalize(b::or(prior.guard.clone(),event.guard));
+                    if prior.arguments() == event.arguments()
+                        && self.events[previous..].iter().all(|other| {
+                            math::normalize(b::and(other.guard.clone(), event.guard.clone()))
+                                .as_bool()
+                                == Some(false)
+                        })
+                    {
+                        self.events[previous].guard =
+                            math::normalize(b::or(prior.guard.clone(), event.guard));
                         continue;
                     }
                 }
-                previous_writes.insert(target.clone(),self.events.len());
+                previous_writes.insert(target.clone(), self.events.len());
             } else {
                 // Calls can observe the state at their original position.
                 previous_writes.clear();
@@ -693,33 +883,54 @@ impl EffectSequence {
 
     /// Slots count acquired observations of either kind, not writes that
     /// may be coalesced at joins. Extending the ledger preserves its prefix.
-    pub(super) fn observation_identities(&self) -> impl Iterator<Item = (u64, math::ObservationIdentity)> + '_ {
-        self.events.iter().filter_map(|event| match &event.operation {
-            EffectOperation::Acquire { binding_id, .. } => Some((*binding_id, false)),
-            EffectOperation::Port { receipt, .. } | EffectOperation::Sql { receipt, .. } =>
-                Some((receipt.binding_id(), true)),
-            EffectOperation::StateWrite { .. } | EffectOperation::ArrayWrite { .. } => None,
-        }).enumerate().map(|(slot, (id, receipt))| {
-            let identity = if receipt { math::ObservationIdentity::Receipt(slot) }
-                else { math::ObservationIdentity::RuntimeObservation(slot) };
-            (id, identity)
-        })
+    pub(super) fn observation_identities(
+        &self,
+    ) -> impl Iterator<Item = (u64, math::ObservationIdentity)> + '_ {
+        self.events
+            .iter()
+            .filter_map(|event| match &event.operation {
+                EffectOperation::Acquire { binding_id, .. } => Some((*binding_id, false)),
+                EffectOperation::Port { receipt, .. } | EffectOperation::Sql { receipt, .. } => {
+                    Some((receipt.binding_id(), true))
+                }
+                EffectOperation::StateWrite { .. } | EffectOperation::ArrayWrite { .. } => None,
+            })
+            .enumerate()
+            .map(|(slot, (id, receipt))| {
+                let identity = if receipt {
+                    math::ObservationIdentity::Receipt(slot)
+                } else {
+                    math::ObservationIdentity::RuntimeObservation(slot)
+                };
+                (id, identity)
+            })
     }
 
     pub(crate) fn total_failure_contracts(&self) -> impl Iterator<Item = (u64, Vec<&str>)> + '_ {
         self.events.iter().filter_map(|event| {
-            if event.guard.as_bool() != Some(true) { return None; }
+            if event.guard.as_bool() != Some(true) {
+                return None;
+            }
             match &event.operation {
-                EffectOperation::Port { receipt, completion, .. } if !completion.exceptions.is_empty() =>
-                    Some((receipt.binding_id(), completion.exceptions.keys().map(String::as_str).collect())),
-                EffectOperation::Sql { statement, receipt } => Some((receipt.binding_id(), vec![statement.exception()])),
+                EffectOperation::Port {
+                    receipt,
+                    completion,
+                    ..
+                } if !completion.exceptions.is_empty() => Some((
+                    receipt.binding_id(),
+                    completion.exceptions.keys().map(String::as_str).collect(),
+                )),
+                EffectOperation::Sql { statement, receipt } => {
+                    Some((receipt.binding_id(), vec![statement.exception()]))
+                }
                 _ => None,
             }
         })
     }
 
     pub(crate) fn total_failure_classes(&self, binding: u64) -> Option<Vec<&str>> {
-        self.total_failure_contracts().find_map(|(id, class)| (id == binding).then_some(class))
+        self.total_failure_contracts()
+            .find_map(|(id, class)| (id == binding).then_some(class))
     }
 
     pub(crate) fn events(&self) -> &[EffectEvent] {
@@ -728,7 +939,6 @@ impl EffectSequence {
 }
 
 impl SymbolicStore {
-
     pub(crate) fn store_guarded(
         &mut self,
         guard: Expr,
@@ -744,7 +954,6 @@ impl SymbolicStore {
         });
     }
 
-
     pub(crate) fn read_on_path(&self, reference: &Expr, field: &str, path: &Expr) -> Option<Expr> {
         let (mut branches, fallback) = self.reaching_writes(field, path, |candidate| {
             (candidate == reference).then(|| b::lit_bool(true))
@@ -756,7 +965,9 @@ impl SymbolicStore {
                 // object has no initial field on this path.
                 let oldest = branches.last()?.1.clone();
                 let covered = coverage(branches.iter().map(|(guard, _)| guard));
-                if !b::path_implies(path, &covered) { return None; }
+                if !b::path_implies(path, &covered) {
+                    return None;
+                }
                 branches.pop();
                 oldest
             }
@@ -766,7 +977,11 @@ impl SymbolicStore {
 
     // A declared initial value exists even when no write reaches the read.
     pub(crate) fn read_with_initial(
-        &self, reference: &Expr, field: &str, path: &Expr, initial: Expr,
+        &self,
+        reference: &Expr,
+        field: &str,
+        path: &Expr,
+        initial: Expr,
     ) -> Expr {
         self.read_matching_with_initial(field, path, initial, |candidate| {
             (candidate == reference).then(|| b::lit_bool(true))
@@ -774,7 +989,10 @@ impl SymbolicStore {
     }
 
     pub(crate) fn read_matching_with_initial(
-        &self, field: &str, path: &Expr, initial: Expr,
+        &self,
+        field: &str,
+        path: &Expr,
+        initial: Expr,
         aliases: impl FnMut(&Expr) -> Option<Expr>,
     ) -> Expr {
         let (branches, fallback) = self.reaching_writes(field, path, aliases);
@@ -784,11 +1002,21 @@ impl SymbolicStore {
     // A write reaches a read only when the same field, source identity and
     // path all match. Newest writes take priority over earlier ones.
     fn reaching_writes(
-        &self, field: &str, path: &Expr, mut aliases: impl FnMut(&Expr) -> Option<Expr>,
+        &self,
+        field: &str,
+        path: &Expr,
+        mut aliases: impl FnMut(&Expr) -> Option<Expr>,
     ) -> (Vec<(Expr, Expr)>, Option<Expr>) {
         let mut branches = Vec::new();
-        for entry in self.entries.iter().rev().filter(|entry| entry.field == field) {
-            let Some(identity) = aliases(&entry.reference) else { continue; };
+        for entry in self
+            .entries
+            .iter()
+            .rev()
+            .filter(|entry| entry.field == field)
+        {
+            let Some(identity) = aliases(&entry.reference) else {
+                continue;
+            };
             let guard = math::normalize(b::and(entry.guard.clone(), identity));
             if guard.as_bool() == Some(false) || b::path_implies(path, &b::not(guard.clone())) {
                 continue;
@@ -802,9 +1030,10 @@ impl SymbolicStore {
     }
 
     fn apply_writes(branches: Vec<(Expr, Expr)>, initial: Expr) -> Expr {
-        branches.into_iter().rev().fold(initial, |old, (guard, value)| {
-            join_value(guard, value, old)
-        })
+        branches
+            .into_iter()
+            .rev()
+            .fold(initial, |old, (guard, value)| join_value(guard, value, old))
     }
 
     pub(crate) fn suffix_from(&self, start: usize) -> Self {
@@ -820,7 +1049,6 @@ impl SymbolicStore {
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
-
 
     pub(crate) fn entries(&self) -> &[StoreEntry] {
         &self.entries
@@ -852,24 +1080,69 @@ fn canonicalize_realtime_case(expression: Expr) -> Expr {
 // possibly out-of-bounds slot observation outside the success arm.
 fn factor_array_sum_delta(expression: &Expr) -> Option<Expr> {
     use math::domains::relation::RelationExpr;
-    use math::{BinOpKind::{Add, Sub}, RelationAggregateKind::{FirstValue, NthValue, Sum}};
-    let ([(guard, yes)], no) = expression.as_total_case_when()? else { return None; };
+    use math::{
+        BinOpKind::{Add, Sub},
+        RelationAggregateKind::{FirstValue, NthValue, Sum},
+    };
+    let ([(guard, yes)], no) = expression.as_total_case_when()? else {
+        return None;
+    };
     let ctx = &math::DefaultSortContext;
     let mut best = None;
-    for (adjusted, original, enabled) in [(yes, no, guard.clone()), (no, yes, b::not(guard.clone()))] {
-        let Some((Sum, RelationExpr::Base { name, alias, snapshot: None }, Some(row), None)) = original.as_relation_aggregate() else { continue; };
-        if alias != "value" || row.as_row_value() != Some("value") { continue; }
-        let Some((Add, left, right)) = adjusted.as_binop() else { continue; };
+    for (adjusted, original, enabled) in
+        [(yes, no, guard.clone()), (no, yes, b::not(guard.clone()))]
+    {
+        let Some((
+            Sum,
+            RelationExpr::Base {
+                name,
+                alias,
+                snapshot: None,
+            },
+            Some(row),
+            None,
+        )) = original.as_relation_aggregate()
+        else {
+            continue;
+        };
+        if alias != "value" || row.as_row_value() != Some("value") {
+            continue;
+        }
+        let Some((Add, left, right)) = adjusted.as_binop() else {
+            continue;
+        };
         for (remainder, replacement) in [(left, right), (right, left)] {
-            let Some((Sub, total, slot)) = remainder.as_binop() else { continue; };
-            if total != original { continue; }
-            let Some((FirstValue | NthValue, RelationExpr::Base { name: source, alias, snapshot: None }, _, _)) =
-                slot.as_relation_aggregate() else { continue; };
-            if source != name || alias != "value" { continue; }
-            let delta = b::case_when(vec![(enabled.clone(), b::sub(replacement.clone(), slot.clone()))], b::lit_int(0));
+            let Some((Sub, total, slot)) = remainder.as_binop() else {
+                continue;
+            };
+            if total != original {
+                continue;
+            }
+            let Some((
+                FirstValue | NthValue,
+                RelationExpr::Base {
+                    name: source,
+                    alias,
+                    snapshot: None,
+                },
+                _,
+                _,
+            )) = slot.as_relation_aggregate()
+            else {
+                continue;
+            };
+            if source != name || alias != "value" {
+                continue;
+            }
+            let delta = b::case_when(
+                vec![(enabled.clone(), b::sub(replacement.clone(), slot.clone()))],
+                b::lit_int(0),
+            );
             let candidate = math::normalize(b::add(original.clone(), delta));
             if math::canonical_order::canonical_cost_compare(&candidate, expression, ctx).is_lt()
-                && best.as_ref().is_none_or(|old| math::canonical_order_compare(&candidate, old, ctx).is_lt())
+                && best
+                    .as_ref()
+                    .is_none_or(|old| math::canonical_order_compare(&candidate, old, ctx).is_lt())
             {
                 best = Some(candidate);
             }

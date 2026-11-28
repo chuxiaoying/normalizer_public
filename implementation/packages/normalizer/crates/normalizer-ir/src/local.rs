@@ -1,17 +1,36 @@
 //! Source-independent syntax and typed operations of a local semantic declaration.
 use std::collections::BTreeSet;
 
-pub mod relation;
 pub mod decimal;
+pub mod relation;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalIr {
     SqlWrite(SqlWrite),
-    LocalMapEmpty { binding: String },
-    LocalMapPut { binding: String, key: String, value: MapText },
-    LocalMapGet { binding: String, source: String, key: String, fallback: MapText },
-    ProjectedUnionCount { binding: String, first: (String, String), remaining: Vec<(String, String)> },
-    MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
+    LocalMapEmpty {
+        binding: String,
+    },
+    LocalMapPut {
+        binding: String,
+        key: String,
+        value: MapText,
+    },
+    LocalMapGet {
+        binding: String,
+        source: String,
+        key: String,
+        fallback: MapText,
+    },
+    ProjectedUnionCount {
+        binding: String,
+        first: (String, String),
+        remaining: Vec<(String, String)>,
+    },
+    MemberChoice {
+        binding: String,
+        members: String,
+        empty: MemberChoiceFallback,
+    },
     IntegerRange(relation::IntegerRange),
     Relation(relation::Query),
     Decimal(decimal::Assignment),
@@ -29,8 +48,12 @@ pub struct SqlWrite {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SqlOperation {
     Insert,
-    Update { predicates: Vec<(String, ScalarOperand)> },
-    Delete { predicates: Vec<(String, ScalarOperand)> },
+    Update {
+        predicates: Vec<(String, ScalarOperand)>,
+    },
+    Delete {
+        predicates: Vec<(String, ScalarOperand)>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -93,11 +116,16 @@ impl<'a> Tokens<'a> {
     }
 
     fn end(&self, diagnostic: &str) -> Result<(), String> {
-        self.rest().is_empty().then_some(()).ok_or_else(|| diagnostic.into())
+        self.rest()
+            .is_empty()
+            .then_some(())
+            .ok_or_else(|| diagnostic.into())
     }
 
     fn bound(&mut self, expected: &str, diagnostic: &str) -> Result<(), String> {
-        (self.name()? == expected).then_some(()).ok_or_else(|| diagnostic.into())
+        (self.name()? == expected)
+            .then_some(())
+            .ok_or_else(|| diagnostic.into())
     }
 
     fn name(&mut self) -> Result<String, String> {
@@ -164,12 +192,16 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         return Err("[NORM-UNSUPPORTED-LOCAL-IR] a local definition requires = or +=".into());
     }
     if !accumulate {
-        let mut exact = Tokens { source: tokens.source };
+        let mut exact = Tokens {
+            source: tokens.source,
+        };
         if let Some(assignment) = decimal::parse(&binding, &mut exact)? {
             return Ok(LocalIr::Decimal(assignment));
         }
     }
-    if let Some(source) = tokens.rest().strip_prefix("value")
+    if let Some(source) = tokens
+        .rest()
+        .strip_prefix("value")
         .and_then(|tail| tail.trim_start().strip_prefix('.'))
     {
         let mut map = Tokens { source };
@@ -185,18 +217,27 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         };
         let operation = match map.name().ok().as_deref() {
             Some("map_empty") => {
-                map.expect("(")?; map.expect("text")?; map.expect(",")?;
-                map.expect("text")?; map.expect("?")?;
+                map.expect("(")?;
+                map.expect("text")?;
+                map.expect(",")?;
+                map.expect("text")?;
+                map.expect("?")?;
                 LocalIr::LocalMapEmpty { binding }
             }
             Some("map_put") => {
                 map.expect("(")?;
                 let target = map.name()?;
-                if target != binding { return Err("local map update cannot alias to another binding".into()); }
+                if target != binding {
+                    return Err("local map update cannot alias to another binding".into());
+                }
                 map.expect(",")?;
                 let key = key(&mut map)?;
                 map.expect(",")?;
-                LocalIr::LocalMapPut { binding, key, value: value(&mut map)? }
+                LocalIr::LocalMapPut {
+                    binding,
+                    key,
+                    value: value(&mut map)?,
+                }
             }
             Some("map_get_or") => {
                 map.expect("(")?;
@@ -204,51 +245,84 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
                 map.expect(",")?;
                 let key = key(&mut map)?;
                 map.expect(",")?;
-                LocalIr::LocalMapGet { binding, source, key, fallback: value(&mut map)? }
+                LocalIr::LocalMapGet {
+                    binding,
+                    source,
+                    key,
+                    fallback: value(&mut map)?,
+                }
             }
-            _ if accumulate => return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown accumulating local operation".into()),
+            _ if accumulate => {
+                return Err(
+                    "[NORM-UNSUPPORTED-LOCAL-IR] unknown accumulating local operation".into(),
+                )
+            }
             _ => return Err("[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation".into()),
         };
         map.expect(")")?;
-        if accumulate || !map.rest().is_empty() { return Err("local map requires a closed = definition".into()); }
+        if accumulate || !map.rest().is_empty() {
+            return Err("local map requires a closed = definition".into());
+        }
         return Ok(operation);
     }
-    let mut union = Tokens { source: tokens.source };
+    let mut union = Tokens {
+        source: tokens.source,
+    };
     if union.take("count") && union.take("distinct") && union.take("union") {
-        if accumulate { return Err("projected union initializes its count with =".into()); }
+        if accumulate {
+            return Err("projected union initializes its count with =".into());
+        }
         let projection = |tokens: &mut Tokens<'_>| -> Result<(String, String), String> {
             let source = tokens.name()?;
             tokens.expect(".")?;
             Ok((source, tokens.name()?))
         };
         let first = projection(&mut union)?;
-        if !union.take(",") { return Err("projected union needs at least two closed branches".into()); }
+        if !union.take(",") {
+            return Err("projected union needs at least two closed branches".into());
+        }
         let mut remaining = Vec::new();
         loop {
             remaining.push(projection(&mut union)?);
-            if !union.take(",") { break; }
+            if !union.take(",") {
+                break;
+            }
         }
         if !union.rest().is_empty() {
             return Err("projected union needs at least two closed branches".into());
         }
-        return Ok(LocalIr::ProjectedUnionCount { binding, first, remaining });
+        return Ok(LocalIr::ProjectedUnionCount {
+            binding,
+            first,
+            remaining,
+        });
     }
-    let mut range = Tokens { source: tokens.source };
+    let mut range = Tokens {
+        source: tokens.source,
+    };
     if let Some(query) = relation::parse_range(&binding, accumulate, &mut range)? {
         return Ok(LocalIr::IntegerRange(query));
     }
     if tokens.take("choose") {
-        if accumulate { return Err("member choice must initialize its binding with =".into()); }
+        if accumulate {
+            return Err("member choice must initialize its binding with =".into());
+        }
         tokens.expect("from")?;
         let members = tokens.name()?;
         tokens.expect("else")?;
         let empty = match tokens.value()? {
             ScalarOperand::Local(name) => MemberChoiceFallback::Local(name),
             ScalarOperand::Integer(value) => MemberChoiceFallback::Integer(value),
-            ScalarOperand::Text(_) => return Err("member choice requires one integer empty fallback".into()),
+            ScalarOperand::Text(_) => {
+                return Err("member choice requires one integer empty fallback".into())
+            }
         };
         tokens.end("trailing member choice clauses")?;
-        return Ok(LocalIr::MemberChoice { binding, members, empty });
+        return Ok(LocalIr::MemberChoice {
+            binding,
+            members,
+            empty,
+        });
     }
     if let Some(query) = relation::parse(binding.clone(), accumulate, &mut tokens)? {
         return Ok(LocalIr::Relation(query));
@@ -259,11 +333,20 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
     let insert = tokens.take("insert");
     let delete = !insert && tokens.take("delete");
     if !insert && !delete && !tokens.take("update") {
-        let operation = tokens.name().map(|name| format!(": {name}")).unwrap_or_default();
-        return Err(format!("[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation{operation}"));
+        let operation = tokens
+            .name()
+            .map(|name| format!(": {name}"))
+            .unwrap_or_default();
+        return Err(format!(
+            "[NORM-UNSUPPORTED-LOCAL-IR] unknown local operation{operation}"
+        ));
     }
-    if insert { tokens.expect("into")?; }
-    if delete { tokens.expect("from")?; }
+    if insert {
+        tokens.expect("into")?;
+    }
+    if delete {
+        tokens.expect("from")?;
+    }
     let table = tokens.name()?;
     let alias = if !insert && tokens.take("as") {
         tokens.name()?
@@ -305,7 +388,9 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
             }
         }
         if delete {
-            if predicates.is_empty() { return Err("delete requires an explicit predicate".into()); }
+            if predicates.is_empty() {
+                return Err("delete requires an explicit predicate".into());
+            }
             SqlOperation::Delete { predicates }
         } else {
             SqlOperation::Update { predicates }

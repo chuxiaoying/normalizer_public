@@ -120,28 +120,47 @@ pub enum BinOpKind {
 /// The closed comparison subset of binary operators.
 #[derive(Clone, Copy)]
 pub(crate) enum Comparison {
-    Eq, Ne, Lt, Le, Gt, Ge,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 impl Comparison {
     pub(crate) fn swapped(self) -> Self {
         use Comparison::*;
         match self {
-            Lt => Gt, Le => Ge, Gt => Lt, Ge => Le, Eq | Ne => self,
+            Lt => Gt,
+            Le => Ge,
+            Gt => Lt,
+            Ge => Le,
+            Eq | Ne => self,
         }
     }
 
     fn complemented(self) -> Self {
         use Comparison::*;
         match self {
-            Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Le => Gt, Gt => Le,
+            Eq => Ne,
+            Ne => Eq,
+            Lt => Ge,
+            Ge => Lt,
+            Le => Gt,
+            Gt => Le,
         }
     }
 
     fn test<T: Ord>(self) -> fn(&T, &T) -> bool {
         use Comparison::*;
         match self {
-            Eq => T::eq, Ne => T::ne, Lt => T::lt, Le => T::le, Gt => T::gt, Ge => T::ge,
+            Eq => T::eq,
+            Ne => T::ne,
+            Lt => T::lt,
+            Le => T::le,
+            Gt => T::gt,
+            Ge => T::ge,
         }
     }
 }
@@ -150,8 +169,12 @@ impl From<Comparison> for BinOpKind {
     fn from(comparison: Comparison) -> Self {
         use Comparison::*;
         match comparison {
-            Eq => Self::Eq, Ne => Self::Ne, Lt => Self::Lt, Le => Self::Le,
-            Gt => Self::Gt, Ge => Self::Ge,
+            Eq => Self::Eq,
+            Ne => Self::Ne,
+            Lt => Self::Lt,
+            Le => Self::Le,
+            Gt => Self::Gt,
+            Ge => Self::Ge,
         }
     }
 }
@@ -160,8 +183,12 @@ impl BinOpKind {
     pub(crate) fn comparison(self) -> Option<Comparison> {
         use BinOpKind::*;
         Some(match self {
-            Eq => Comparison::Eq, Ne => Comparison::Ne, Lt => Comparison::Lt,
-            Le => Comparison::Le, Gt => Comparison::Gt, Ge => Comparison::Ge,
+            Eq => Comparison::Eq,
+            Ne => Comparison::Ne,
+            Lt => Comparison::Lt,
+            Le => Comparison::Le,
+            Gt => Comparison::Gt,
+            Ge => Comparison::Ge,
             Add | Sub | Mul | And | Or => return None,
         })
     }
@@ -221,7 +248,11 @@ pub(crate) enum ExprKind {
     /// primitive type.  It denotes the current row value/path inside a Relation
     /// Calculus predicate or projection, e.g. `$e_0.item` rendered as SQL alias
     /// `p` under relation formatting scope.
-    RowValue { alias: String, acquired_integer: bool, sql: Option<SqlColumnBinding> },
+    RowValue {
+        alias: String,
+        acquired_integer: bool,
+        sql: Option<SqlColumnBinding>,
+    },
 
     /// 调用签名由 FuncKey 唯一决定。
     Call { key: FuncKey, args: Vec<Expr> },
@@ -286,19 +317,19 @@ impl PartialEq for ExprKind {
             (Lit(a), Lit(b)) => a == b,
             (SymVar { origin: a }, SymVar { origin: b }) => a == b,
             (HeapRef(a), HeapRef(b)) => a == b,
-            (RowValue { alias: a, acquired_integer: left, sql: sql_left },
-                RowValue { alias: b, acquired_integer: right, sql: sql_right }) =>
-                a == b && left == right && sql_left == sql_right,
             (
-                Call {
-                    key: k1,
-                    args: a1,
+                RowValue {
+                    alias: a,
+                    acquired_integer: left,
+                    sql: sql_left,
                 },
-                Call {
-                    key: k2,
-                    args: a2,
+                RowValue {
+                    alias: b,
+                    acquired_integer: right,
+                    sql: sql_right,
                 },
-            ) => k1 == k2 && a1 == a2,
+            ) => a == b && left == right && sql_left == sql_right,
+            (Call { key: k1, args: a1 }, Call { key: k2, args: a2 }) => k1 == k2 && a1 == a2,
             (
                 BinOp {
                     op: o1,
@@ -484,7 +515,10 @@ impl Expr {
     /// Return the Boolean NOT operand, never a numeric negation operand.
     pub(crate) fn as_not(&self) -> Option<&Expr> {
         match self.kind() {
-            ExprKind::UnaryOp { op: UnaryOpKind::Not, operand } => Some(operand),
+            ExprKind::UnaryOp {
+                op: UnaryOpKind::Not,
+                operand,
+            } => Some(operand),
             _ => None,
         }
     }
@@ -497,8 +531,11 @@ impl Expr {
         use BinOpKind::*;
         match op {
             Eq | Ne => op.complemented_comparison(),
-            Lt | Le | Gt | Ge if left.has_exact_numeric_order() && right.has_exact_numeric_order() =>
-                op.complemented_comparison(),
+            Lt | Le | Gt | Ge
+                if left.has_exact_numeric_order() && right.has_exact_numeric_order() =>
+            {
+                op.complemented_comparison()
+            }
             _ => None,
         }
     }
@@ -509,17 +546,37 @@ impl Expr {
         use crate::domains::decimal::{self, View};
         match self.kind() {
             ExprKind::Lit(Lit::Int(_) | Lit::BigInt(_)) => true,
-            ExprKind::SymVar { origin } =>
-                matches!(origin.primitive_type(), "integer" | decimal::VALUE_TAG),
-            ExprKind::RowValue { acquired_integer, sql, .. } =>
-                *acquired_integer || sql.as_ref().is_some_and(|column| column.scalar_type == "number"),
-            ExprKind::UnaryOp { op: UnaryOpKind::Neg, operand } => operand.has_exact_numeric_order(),
-            ExprKind::BinOp { op: BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul, left, right } =>
-                left.has_exact_numeric_order() && right.has_exact_numeric_order(),
-            ExprKind::RelationAggregate { kind: RelationAggregateKind::Count, .. } => true,
+            ExprKind::SymVar { origin } => {
+                matches!(origin.primitive_type(), "integer" | decimal::VALUE_TAG)
+            }
+            ExprKind::RowValue {
+                acquired_integer,
+                sql,
+                ..
+            } => {
+                *acquired_integer
+                    || sql
+                        .as_ref()
+                        .is_some_and(|column| column.scalar_type == "number")
+            }
+            ExprKind::UnaryOp {
+                op: UnaryOpKind::Neg,
+                operand,
+            } => operand.has_exact_numeric_order(),
+            ExprKind::BinOp {
+                op: BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul,
+                left,
+                right,
+            } => left.has_exact_numeric_order() && right.has_exact_numeric_order(),
+            ExprKind::RelationAggregate {
+                kind: RelationAggregateKind::Count,
+                ..
+            } => true,
             ExprKind::Call { .. } => match decimal::view(self) {
                 Some(View::Literal(..)) => true,
-                Some(View::Multiply(left, right)) => left.has_exact_numeric_order() && right.has_exact_numeric_order(),
+                Some(View::Multiply(left, right)) => {
+                    left.has_exact_numeric_order() && right.has_exact_numeric_order()
+                }
                 Some(View::Round(value, ..)) => value.has_exact_numeric_order(),
                 None => crate::domains::composite::vector_length_input(self).is_some(),
             },
@@ -531,22 +588,39 @@ impl Expr {
     /// aggregate/relationship boundaries: an acquired COUNT is not a row value.
     pub fn may_observe_sql_unknown(&self) -> bool {
         let mut nullable = false;
-        let sql_column = |value: &Expr| matches!(value.kind(), ExprKind::RowValue { sql: Some(_), .. });
-        let nullable_symbol = |value: &Expr| value.as_sym_var()
-            .is_some_and(|symbol| symbol.primitive_type() == "text?");
+        let sql_column =
+            |value: &Expr| matches!(value.kind(), ExprKind::RowValue { sql: Some(_), .. });
+        let nullable_symbol = |value: &Expr| {
+            value
+                .as_sym_var()
+                .is_some_and(|symbol| symbol.primitive_type() == "text?")
+        };
         self.walk_pruned(&mut |node| match node.kind() {
             ExprKind::RelationAggregate { .. } | ExprKind::Relation(_) => false,
-            ExprKind::BinOp { op: BinOpKind::Eq | BinOpKind::Ne, left, right }
-                if (left.is_null() && matches!(right.kind(), ExprKind::RowValue { sql: Some(_), .. }))
-                    || (right.is_null() && matches!(left.kind(), ExprKind::RowValue { sql: Some(_), .. })) =>
+            ExprKind::BinOp {
+                op: BinOpKind::Eq | BinOpKind::Ne,
+                left,
+                right,
+            } if (left.is_null()
+                && matches!(right.kind(), ExprKind::RowValue { sql: Some(_), .. }))
+                || (right.is_null()
+                    && matches!(left.kind(), ExprKind::RowValue { sql: Some(_), .. })) =>
             {
                 // The relational front end encodes the explicit IS [NOT]
                 // NULL predicate this way. It is total over nullable columns,
                 // unlike SQL equality with an arbitrary nullable operand.
                 false
             }
-            ExprKind::BinOp { op, left, right } if matches!(op, BinOpKind::Eq | BinOpKind::Ne | BinOpKind::Gt | BinOpKind::Lt | BinOpKind::Ge | BinOpKind::Le)
-                && ((sql_column(left) && nullable_symbol(right))
+            ExprKind::BinOp { op, left, right }
+                if matches!(
+                    op,
+                    BinOpKind::Eq
+                        | BinOpKind::Ne
+                        | BinOpKind::Gt
+                        | BinOpKind::Lt
+                        | BinOpKind::Ge
+                        | BinOpKind::Le
+                ) && ((sql_column(left) && nullable_symbol(right))
                     || (sql_column(right) && nullable_symbol(left))) =>
             {
                 // A non-null physical column can still compare to a
@@ -554,7 +628,9 @@ impl Expr {
                 nullable = true;
                 false
             }
-            ExprKind::RowValue { sql: Some(column), .. } => {
+            ExprKind::RowValue {
+                sql: Some(column), ..
+            } => {
                 nullable |= column.scalar_type.ends_with('?');
                 false
             }
@@ -566,9 +642,15 @@ impl Expr {
     /// Complementary tokens are not an exhaustive Boolean partition when
     /// comparison of the same operands can produce SQL UNKNOWN.
     pub(crate) fn is_comparison_complement(&self, other: &Expr) -> bool {
-        let Some((_, left, right)) = self.as_binop() else { return false; };
-        let Some((b, other_left, other_right)) = other.as_binop() else { return false; };
-        left == other_left && right == other_right && self.comparison_complement_operator() == Some(b)
+        let Some((_, left, right)) = self.as_binop() else {
+            return false;
+        };
+        let Some((b, other_left, other_right)) = other.as_binop() else {
+            return false;
+        };
+        left == other_left
+            && right == other_right
+            && self.comparison_complement_operator() == Some(b)
             && !self.may_observe_sql_unknown()
     }
 
@@ -678,12 +760,17 @@ impl Expr {
 
     /// Walk all sub-expressions (including self) depth-first, calling `f` on each.
     pub fn walk<F: FnMut(&Expr)>(&self, f: &mut F) {
-        self.walk_pruned(&mut |node| { f(node); true });
+        self.walk_pruned(&mut |node| {
+            f(node);
+            true
+        });
     }
 
     /// Walk depth-first, descending only when the visitor accepts this node.
     pub fn walk_pruned<F: FnMut(&Expr) -> bool>(&self, f: &mut F) {
-        if !f(self) { return; }
+        if !f(self) {
+            return;
+        }
         match self.kind() {
             ExprKind::Lit(_)
             | ExprKind::SymVar { .. }
@@ -734,13 +821,22 @@ impl Expr {
 }
 
 /// Walk all Expr nodes inside a RelationExpr.
-fn walk_relation_expr<F: FnMut(&Expr) -> bool>(rel: &crate::domains::relation::RelationExpr, f: &mut F) {
+fn walk_relation_expr<F: FnMut(&Expr) -> bool>(
+    rel: &crate::domains::relation::RelationExpr,
+    f: &mut F,
+) {
     use crate::domains::relation::RelationExpr;
     match rel {
-        RelationExpr::Empty | RelationExpr::Base { .. }
-        | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. } => {}
-        RelationExpr::ProjectedUnion(branches) => branches.iter().for_each(|branch|
-            branch.filters.iter().for_each(|predicate| predicate.walk_pruned(f))),
+        RelationExpr::Empty
+        | RelationExpr::Base { .. }
+        | RelationExpr::Grouped(_)
+        | RelationExpr::RecordProjection { .. } => {}
+        RelationExpr::ProjectedUnion(branches) => branches.iter().for_each(|branch| {
+            branch
+                .filters
+                .iter()
+                .for_each(|predicate| predicate.walk_pruned(f))
+        }),
         RelationExpr::Vector { value, .. } => value.walk_pruned(f),
         RelationExpr::Select { predicate, input } => {
             predicate.walk_pruned(f);
@@ -841,14 +937,27 @@ impl ExprProfile {
                 p.vars.insert(alias.clone());
                 p
             }
-            R::Select { predicate: value, input } | R::Project { value, input, .. } => {
+            R::Select {
+                predicate: value,
+                input,
+            }
+            | R::Project { value, input, .. } => {
                 let mut parent = Self::relation(input).wrapped();
                 parent.include_child(value.1.as_ref());
                 parent
             }
             R::Distinct(input) => Self::relation(input).wrapped(),
-            R::Join { left, right, on, filters } => {
-                let mut p = Self::from_children(std::iter::once(on).chain(filters).map(|term| term.1.as_ref()));
+            R::Join {
+                left,
+                right,
+                on,
+                filters,
+            } => {
+                let mut p = Self::from_children(
+                    std::iter::once(on)
+                        .chain(filters)
+                        .map(|term| term.1.as_ref()),
+                );
                 for (table, alias) in [left, right] {
                     p.vars.insert(table.name.clone());
                     p.vars.insert(alias.clone());
@@ -864,15 +973,23 @@ impl ExprProfile {
             R::Grouped(group) => {
                 let mut p = Self::leaf();
                 p.vars.insert(group.table().name.clone());
-                p.vars.extend(group.columns().map(|column| format!("{}.{column}", group.table().name)));
+                p.vars.extend(
+                    group
+                        .columns()
+                        .map(|column| format!("{}.{column}", group.table().name)),
+                );
                 p
             }
             R::ProjectedUnion(columns) => {
                 let mut parent = Self::leaf();
                 for branch in columns.iter() {
                     parent.vars.insert(branch.table.name.clone());
-                    parent.vars.insert(format!("{}.{}", branch.table.name, branch.column));
-                    for predicate in &branch.filters { parent.include_child(predicate.1.as_ref()); }
+                    parent
+                        .vars
+                        .insert(format!("{}.{}", branch.table.name, branch.column));
+                    for predicate in &branch.filters {
+                        parent.include_child(predicate.1.as_ref());
+                    }
                 }
                 parent
             }
@@ -885,14 +1002,18 @@ impl ExprProfile {
             ExprKind::SymVar { origin } => Self::sym_var(origin),
             ExprKind::HeapRef(_) => Self::heap_ref(),
             ExprKind::RowValue { alias, .. } => Self::row_value(alias),
-            ExprKind::Call { args, .. } | ExprKind::ArrayLit(args) =>
-                Self::from_children(args.iter().map(|arg| arg.1.as_ref())),
-            ExprKind::BinOp { left, right, .. } =>
-                Self::from_children([left.1.as_ref(), right.1.as_ref()]),
+            ExprKind::Call { args, .. } | ExprKind::ArrayLit(args) => {
+                Self::from_children(args.iter().map(|arg| arg.1.as_ref()))
+            }
+            ExprKind::BinOp { left, right, .. } => {
+                Self::from_children([left.1.as_ref(), right.1.as_ref()])
+            }
             ExprKind::UnaryOp { operand, .. } => Self::from_children([operand.1.as_ref()]),
             ExprKind::CaseWhen { branches } => {
                 let mut p = Self::from_children(
-                    branches.iter().flat_map(|(c, v)| [c.1.as_ref(), v.1.as_ref()]),
+                    branches
+                        .iter()
+                        .flat_map(|(c, v)| [c.1.as_ref(), v.1.as_ref()]),
                 );
                 p.has_case_when = true;
                 p
@@ -939,16 +1060,17 @@ fn structural_hash_from_kind(kind: &ExprKind) -> u64 {
             2u8.hash(&mut h);
             id.hash(&mut h);
         }
-        RowValue { alias, acquired_integer, sql } => {
+        RowValue {
+            alias,
+            acquired_integer,
+            sql,
+        } => {
             11u8.hash(&mut h);
             alias.hash(&mut h);
             acquired_integer.hash(&mut h);
             sql.hash(&mut h);
         }
-        Call {
-            key,
-            args,
-        } => {
+        Call { key, args } => {
             3u8.hash(&mut h);
             key.hash(&mut h);
             for arg in args {

@@ -21,7 +21,6 @@ pub enum Primitive {
 
     /// 布尔
     Boolean,
-
 }
 
 impl Primitive {

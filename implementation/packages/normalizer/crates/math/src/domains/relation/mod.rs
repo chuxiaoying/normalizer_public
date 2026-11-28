@@ -17,8 +17,9 @@ pub mod positional;
 pub use order_by::{order_by, order_components, order_value_components};
 
 use crate::{
-    Expr, builder,
+    builder,
     expr::{ExprKind, RelationAggregateKind},
+    Expr,
 };
 use crate::{canonical_order_key, DefaultSortContext};
 
@@ -48,14 +49,25 @@ impl ProjectedColumns {
 
     pub(crate) fn new(mut columns: Vec<ProjectedColumn>) -> Self {
         for branch in &mut columns {
-            branch.filters.retain(|predicate| predicate.as_bool() != Some(true));
-            branch.filters.sort_by_cached_key(|predicate| canonical_order_key(predicate, &DefaultSortContext));
+            branch
+                .filters
+                .retain(|predicate| predicate.as_bool() != Some(true));
+            branch.filters.sort_by_cached_key(|predicate| {
+                canonical_order_key(predicate, &DefaultSortContext)
+            });
             branch.filters.dedup();
         }
-        columns.sort_by_cached_key(|branch| (
-            branch.table.clone(), branch.column.clone(),
-            branch.filters.iter().map(|predicate| canonical_order_key(predicate, &DefaultSortContext)).collect::<Vec<_>>(),
-        ));
+        columns.sort_by_cached_key(|branch| {
+            (
+                branch.table.clone(),
+                branch.column.clone(),
+                branch
+                    .filters
+                    .iter()
+                    .map(|predicate| canonical_order_key(predicate, &DefaultSortContext))
+                    .collect::<Vec<_>>(),
+            )
+        });
         columns.dedup();
         Self(columns)
     }
@@ -70,7 +82,9 @@ pub struct GroupedColumns {
 }
 
 impl GroupedColumns {
-    pub fn table(&self) -> &TableSource { &self.table }
+    pub fn table(&self) -> &TableSource {
+        &self.table
+    }
 
     pub fn columns(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.first.as_str()).chain(self.remaining.iter().map(String::as_str))
@@ -108,7 +122,10 @@ pub enum RelationExpr {
     ProjectedUnion(ProjectedColumns),
     Grouped(GroupedColumns),
     /// Eager projection of a validated integer field path from an ordered record array.
-    RecordProjection { source: String, field: String },
+    RecordProjection {
+        source: String,
+        field: String,
+    },
     /// Inner join of two bound table aliases. Predicates remain separate
     /// so a generic nested SUM cannot masquerade as an authored join.
     Join {
@@ -157,29 +174,44 @@ impl RelationExpr {
         first: ProjectedColumn,
         remaining: impl IntoIterator<Item = ProjectedColumn>,
     ) -> Self {
-        Self::ProjectedUnion(ProjectedColumns::new(std::iter::once(first).chain(remaining).collect()))
+        Self::ProjectedUnion(ProjectedColumns::new(
+            std::iter::once(first).chain(remaining).collect(),
+        ))
     }
 
     pub fn grouped(table: TableSource, first: String, remaining: Vec<String>) -> Self {
-        Self::Grouped(GroupedColumns { table, first, remaining })
+        Self::Grouped(GroupedColumns {
+            table,
+            first,
+            remaining,
+        })
     }
 
     /// Visit the identities of concrete table reads carried by this relation.
     /// Child scalar expressions are visited separately by Expr's walker.
     pub fn visit_acquisitions(&self, visit: &mut impl FnMut(u64)) {
         match self {
-            Self::Base { snapshot: Some(id), .. } => visit(*id),
-            Self::Select { input, .. } | Self::Project { input, .. } | Self::Distinct(input) =>
-                input.visit_acquisitions(visit),
+            Self::Base {
+                snapshot: Some(id), ..
+            } => visit(*id),
+            Self::Select { input, .. } | Self::Project { input, .. } | Self::Distinct(input) => {
+                input.visit_acquisitions(visit)
+            }
             Self::ProjectedUnion(columns) => columns.iter().for_each(|branch| {
-                if let Some(id) = branch.table.snapshot { visit(id); }
+                if let Some(id) = branch.table.snapshot {
+                    visit(id);
+                }
             }),
             Self::Grouped(group) => {
-                if let Some(id) = group.table().snapshot { visit(id); }
+                if let Some(id) = group.table().snapshot {
+                    visit(id);
+                }
             }
             Self::Join { left, right, .. } => {
                 for (table, _) in [left, right] {
-                    if let Some(id) = table.snapshot { visit(id); }
+                    if let Some(id) = table.snapshot {
+                        visit(id);
+                    }
                 }
             }
             _ => {}
@@ -256,19 +288,41 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
             value: crate::normalize(value),
             alias,
         },
-        RelationExpr::Join { left, right, on, filters } => {
+        RelationExpr::Join {
+            left,
+            right,
+            on,
+            filters,
+        } => {
             let on = crate::normalize(on);
-            let where_all = crate::normalize(filters.into_iter().fold(builder::lit_bool(true), builder::and));
-            if crate::normalize(builder::and(on.clone(), where_all.clone())).as_bool() == Some(false) {
+            let where_all = crate::normalize(
+                filters
+                    .into_iter()
+                    .fold(builder::lit_bool(true), builder::and),
+            );
+            if crate::normalize(builder::and(on.clone(), where_all.clone())).as_bool()
+                == Some(false)
+            {
                 return RelationExpr::Empty;
             }
             let mut filters = Vec::new();
             where_all.for_each_conjunct(|term| {
-                if term.as_bool() != Some(true) { filters.push(term.clone()); }
+                if term.as_bool() != Some(true) {
+                    filters.push(term.clone());
+                }
             });
-            RelationExpr::Join { left, right, on, filters }
+            RelationExpr::Join {
+                left,
+                right,
+                on,
+                filters,
+            }
         }
-        leaf @ (RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::ProjectedUnion(_) | RelationExpr::Grouped(_) | RelationExpr::RecordProjection { .. }) => leaf,
+        leaf @ (RelationExpr::Empty
+        | RelationExpr::Base { .. }
+        | RelationExpr::ProjectedUnion(_)
+        | RelationExpr::Grouped(_)
+        | RelationExpr::RecordProjection { .. }) => leaf,
     }
 }
 
@@ -276,15 +330,27 @@ fn normalize_relation_children(expr: RelationExpr) -> RelationExpr {
 /// join. The snapshot stays fixed and only the lexical row slot changes.
 /// No predicate may read through a different source or a nested binder.
 pub fn rebind_join_predicate(
-    value: &Expr, table: &TableSource, row_slot: usize, alias: &str,
+    value: &Expr,
+    table: &TableSource,
+    row_slot: usize,
+    alias: &str,
 ) -> Option<Expr> {
     Some(match value.kind() {
-        ExprKind::RowValue { sql: Some(column), .. } if &column.table == table && column.row_slot == 0 =>
-            builder::sql_column(alias, table.clone(), row_slot, &column.column, column.scalar_type),
+        ExprKind::RowValue {
+            sql: Some(column), ..
+        } if &column.table == table && column.row_slot == 0 => builder::sql_column(
+            alias,
+            table.clone(),
+            row_slot,
+            &column.column,
+            column.scalar_type,
+        ),
         ExprKind::Lit(_) | ExprKind::SymVar { .. } => value.clone(),
-        ExprKind::BinOp { op, left, right } =>
-            builder::binop_public(*op, rebind_join_predicate(left, table, row_slot, alias)?,
-                rebind_join_predicate(right, table, row_slot, alias)?),
+        ExprKind::BinOp { op, left, right } => builder::binop_public(
+            *op,
+            rebind_join_predicate(left, table, row_slot, alias)?,
+            rebind_join_predicate(right, table, row_slot, alias)?,
+        ),
         _ => return None,
     })
 }

@@ -10,9 +10,9 @@
 //! - Call(key, args) → "funcName(arg1, arg2)"（用 math::func_name 反查）
 //! - HeapRef(id) → verified business identity, or internal debug representation
 
+pub(crate) mod business_value;
 mod relation_query;
 pub(crate) mod scoped_relation;
-pub(crate) mod business_value;
 
 use crate::canonical_names::CanonicalNames;
 use std::collections::HashMap;
@@ -34,17 +34,16 @@ pub struct FormatCtx {
     scoped_plans: Option<scoped_relation::ScopedPlans>,
     business_identities: std::collections::BTreeMap<i64, String>,
     heap_bindings: std::collections::BTreeMap<i64, math::HeapBindingIdentity>,
-    business_projections: Vec<(Expr,String)>,
-    business_states: std::collections::BTreeMap<u64,String>,
+    business_projections: Vec<(Expr, String)>,
+    business_states: std::collections::BTreeMap<u64, String>,
     observation_identities: std::collections::BTreeMap<u64, math::ObservationIdentity>,
-    business_acquisitions: std::collections::BTreeMap<u64,String>,
+    business_acquisitions: std::collections::BTreeMap<u64, String>,
     business_receipt_guards: std::collections::BTreeMap<u64, Expr>,
     business_normal_completions: std::collections::BTreeMap<u64, Expr>,
     business_observation_projections: Vec<(Expr, String)>,
     business_evaluation_guard: Option<Expr>,
     /// Public receipt ordinal; the raw binding ID remains an internal identity.
     e_renumber: HashMap<u64, usize>,
-
 }
 
 impl Default for FormatCtx {
@@ -78,11 +77,16 @@ impl Default for FormatCtx {
 
 impl FormatCtx {
     fn projected_column_label<'a>(&self, path: &'a str) -> &'a str {
-        if let (Some(table), Some((owner, column))) = (&self.projected_table, path.split_once('.')) {
-            let conflicts = self.business_inputs.as_ref().is_some_and(|names|
-                names.values().any(|name| name == column))
+        if let (Some(table), Some((owner, column))) = (&self.projected_table, path.split_once('.'))
+        {
+            let conflicts = self
+                .business_inputs
+                .as_ref()
+                .is_some_and(|names| names.values().any(|name| name == column))
                 || self.business_states.values().any(|name| name == column);
-            if owner == table && !conflicts { return column; }
+            if owner == table && !conflicts {
+                return column;
+            }
         }
         path
     }
@@ -91,13 +95,21 @@ impl FormatCtx {
         self.nested_arrays = arrays;
     }
     pub(crate) fn display_business_value(&mut self, value: Expr, label: String) {
-        self.business_projections.push((value,label));
+        self.business_projections.push((value, label));
     }
-    pub(crate) fn forget_business_value(&mut self) { self.business_projections.pop(); }
+    pub(crate) fn forget_business_value(&mut self) {
+        self.business_projections.pop();
+    }
     pub(crate) fn display_business_observation(&mut self, value: Expr, label: String) {
         self.business_observation_projections.push((value, label));
     }
-    pub(crate) fn bind_business_event(&mut self, id: u64, position: usize, identity: math::ObservationIdentity, guard: Expr) {
+    pub(crate) fn bind_business_event(
+        &mut self,
+        id: u64,
+        position: usize,
+        identity: math::ObservationIdentity,
+        guard: Expr,
+    ) {
         self.e_renumber.insert(id, position);
         self.observation_identities.insert(id, identity);
         if guard.as_bool() != Some(true) {
@@ -106,10 +118,18 @@ impl FormatCtx {
     }
 
     pub(crate) fn bind_normal_completion(&mut self, id: u64, guard: Expr) {
-        if guard.as_bool() != Some(true) { self.business_normal_completions.insert(id, guard); }
+        if guard.as_bool() != Some(true) {
+            self.business_normal_completions.insert(id, guard);
+        }
     }
 
-    pub(crate) fn bind_acquisition(&mut self, id: u64, label: String, identity: math::ObservationIdentity, guard: Expr) {
+    pub(crate) fn bind_acquisition(
+        &mut self,
+        id: u64,
+        label: String,
+        identity: math::ObservationIdentity,
+        guard: Expr,
+    ) {
         self.business_acquisitions.insert(id, label);
         self.observation_identities.insert(id, identity);
         if guard.as_bool() != Some(true) {
@@ -122,28 +142,39 @@ impl FormatCtx {
     }
 
     pub(crate) fn receipt_name(&self, id: u64) -> Option<String> {
-        self.e_renumber.get(&id).map(|position| format!("$e_{position}"))
+        self.e_renumber
+            .get(&id)
+            .map(|position| format!("$e_{position}"))
     }
 
     pub(crate) fn receipt_count(&self) -> usize {
         self.e_renumber.len()
     }
 
-    pub(crate) fn observation_identities(&self) -> &std::collections::BTreeMap<u64, math::ObservationIdentity> {
+    pub(crate) fn observation_identities(
+        &self,
+    ) -> &std::collections::BTreeMap<u64, math::ObservationIdentity> {
         &self.observation_identities
     }
 
-    pub(crate) fn set_captured_parameters(&mut self, parameters: std::collections::BTreeMap<String, String>) {
+    pub(crate) fn set_captured_parameters(
+        &mut self,
+        parameters: std::collections::BTreeMap<String, String>,
+    ) {
         self.captured_parameters = parameters;
     }
-    pub(crate) fn captured_parameters(&self) -> Option<&std::collections::BTreeMap<String, String>> {
+    pub(crate) fn captured_parameters(
+        &self,
+    ) -> Option<&std::collections::BTreeMap<String, String>> {
         (!self.captured_parameters.is_empty()).then_some(&self.captured_parameters)
     }
 
     pub(crate) fn bound_order(&self) -> CanonicalNames<'_> {
         let external = self.observation_identities();
         CanonicalNames {
-            heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
+            heap: &self.heap_bindings,
+            captured: self.captured_parameters(),
+            completion_classes: None,
             external: (!external.is_empty()).then_some(external),
             total_temporals: None,
             temporals: (!self.temporal_names.is_empty()).then_some(&self.temporal_names),
@@ -163,7 +194,11 @@ impl FormatCtx {
 
     fn uncaptured_name(&self, namespace: &str, name: &str) -> String {
         let root = name.split('.').next().unwrap_or(name);
-        if self.relation_scope.members.values().any(|member| member == root)
+        if self
+            .relation_scope
+            .members
+            .values()
+            .any(|member| member == root)
         {
             format!("{namespace}.{name}")
         } else {
@@ -186,8 +221,12 @@ impl FormatCtx {
         use scoped_relation::Slot;
         let slots = self.relation_scope.slots.clone();
         match &slots[slot] {
-            Slot::Choice { .. } => self.relation_scope.members.get(&slot)
-                .expect("choice must be bound in its certified acquisition domain").clone(),
+            Slot::Choice { .. } => self
+                .relation_scope
+                .members
+                .get(&slot)
+                .expect("choice must be bound in its certified acquisition domain")
+                .clone(),
         }
     }
 
@@ -195,12 +234,12 @@ impl FormatCtx {
         format!("LET {name} = {}", format_expr_with_ctx(expression, self))
     }
 
-    fn eligible_choices(
-        &self, expression: &Expr, active: &Expr, bound: &[usize],
-    ) -> Vec<usize> {
+    fn eligible_choices(&self, expression: &Expr, active: &Expr, bound: &[usize]) -> Vec<usize> {
         let mut needed = std::collections::BTreeSet::new();
         let slots = self.relation_scope.slots.clone();
-        if slots.is_empty() { return vec![]; }
+        if slots.is_empty() {
+            return vec![];
+        }
         expression.walk(&mut |part| {
             if let Some(SymVarOrigin::Temporal { binding_id, .. }) = part.as_sym_var() {
                 if let Some(&slot) = self.temporal_names.get(binding_id) {
@@ -208,92 +247,162 @@ impl FormatCtx {
                 }
             }
         });
-        needed.into_iter().filter(|slot| matches!(&slots[*slot], scoped_relation::Slot::Choice { guard, .. }
-            if !bound.contains(slot) && math::builder::path_implies(active, guard))).collect()
+        needed
+            .into_iter()
+            .filter(|slot| {
+                matches!(&slots[*slot], scoped_relation::Slot::Choice { guard, .. }
+            if !bound.contains(slot) && math::builder::path_implies(active, guard))
+            })
+            .collect()
     }
 
     fn choice_keys(&self, order: &[usize]) -> std::collections::BTreeMap<u64, usize> {
-        self.temporal_names.iter().filter_map(|(&id, &slot)| {
-            order.iter().position(|&active| active == slot).map(|position| (id, position))
-        }).collect()
+        self.temporal_names
+            .iter()
+            .filter_map(|(&id, &slot)| {
+                order
+                    .iter()
+                    .position(|&active| active == slot)
+                    .map(|position| (id, position))
+            })
+            .collect()
     }
 
     fn canonical_value_plan(
-        &self, value: &Expr, external: &std::collections::BTreeMap<u64, math::ObservationIdentity>, active: &Expr, bound: &[usize],
+        &self,
+        value: &Expr,
+        external: &std::collections::BTreeMap<u64, math::ObservationIdentity>,
+        active: &Expr,
+        bound: &[usize],
     ) -> math::ValuePlan {
         let location = scoped_relation::ValueLocation {
-            value: value.clone(), domain: active.clone(), members: bound.to_vec(),
+            value: value.clone(),
+            domain: active.clone(),
+            members: bound.to_vec(),
         };
-        let cache = self.scoped_plans.as_ref().filter(|plans| &plans.external == external).map(|plans| &plans.plans);
-        if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
+        let cache = self
+            .scoped_plans
+            .as_ref()
+            .filter(|plans| &plans.external == external)
+            .map(|plans| &plans.plans);
+        if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) {
+            return plan;
+        }
         let keys = self.prepare_value_keys(value, external, active, bound, true);
         let compare = crate::canonical_names::ScopedValueKeys {
-            base: CanonicalNames { heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
-                external: (!external.is_empty()).then_some(external), total_temporals: Some(&self.total_temporals),
-                temporals: Some(&self.temporal_names) },
-            slots: &keys.lexical, cases: &keys.cases,
+            base: CanonicalNames {
+                heap: &self.heap_bindings,
+                captured: self.captured_parameters(),
+                completion_classes: None,
+                external: (!external.is_empty()).then_some(external),
+                total_temporals: Some(&self.total_temporals),
+                temporals: Some(&self.temporal_names),
+            },
+            slots: &keys.lexical,
+            cases: &keys.cases,
         };
         let payload = math::canonicalize_bound_integer_ops(value, &compare);
-        let plan = math::canonical_let_plan(&payload, &compare, &keys.prefix,
-            |expr| business_value::closed_candidate(expr, self))
-            .unwrap_or_else(|failure| panic!("{failure}"));
-        if let Some(cache) = cache { cache.borrow_mut().insert(location, plan.clone()); }
+        let plan = math::canonical_let_plan(&payload, &compare, &keys.prefix, |expr| {
+            business_value::closed_candidate(expr, self)
+        })
+        .unwrap_or_else(|failure| panic!("{failure}"));
+        if let Some(cache) = cache {
+            cache.borrow_mut().insert(location, plan.clone());
+        }
         plan
     }
 
     fn prepare_value_keys(
-        &self, expression: &Expr, external: &std::collections::BTreeMap<u64, math::ObservationIdentity>,
-        active: &Expr, bound: &[usize], enter: bool,
+        &self,
+        expression: &Expr,
+        external: &std::collections::BTreeMap<u64, math::ObservationIdentity>,
+        active: &Expr,
+        bound: &[usize],
+        enter: bool,
     ) -> scoped_relation::ValueKeys {
         use scoped_relation::{Slot, ValueKeys};
         let mut order = bound.to_vec();
-        let mut prepared = ValueKeys { lexical: self.choice_keys(&order), ..ValueKeys::default() };
+        let mut prepared = ValueKeys {
+            lexical: self.choice_keys(&order),
+            ..ValueKeys::default()
+        };
         let empty_cases = HashMap::new();
-        let base = || CanonicalNames { heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
-            external: (!external.is_empty()).then_some(external), total_temporals: None,
-            temporals: Some(&self.temporal_names) };
+        let base = || CanonicalNames {
+            heap: &self.heap_bindings,
+            captured: self.captured_parameters(),
+            completion_classes: None,
+            external: (!external.is_empty()).then_some(external),
+            total_temporals: None,
+            temporals: Some(&self.temporal_names),
+        };
         if enter {
             for slot in self.eligible_choices(expression, active, bound) {
                 let Slot::Choice { shape, .. } = &self.relation_scope.slots[slot];
                 let compare = crate::canonical_names::ScopedValueKeys {
-                    base: base(), slots: &prepared.lexical, cases: &empty_cases,
-                        };
-                prepared.prefix.push((shape.source.key(&compare), shape.fallback.key(&compare)));
+                    base: base(),
+                    slots: &prepared.lexical,
+                    cases: &empty_cases,
+                };
+                prepared
+                    .prefix
+                    .push((shape.source.key(&compare), shape.fallback.key(&compare)));
                 order.push(slot);
                 prepared.lexical = self.choice_keys(&order);
             }
         }
-        if !expression.has_case_when() || self.business_inputs.is_none() { return prepared; }
+        if !expression.has_case_when() || self.business_inputs.is_none() {
+            return prepared;
+        }
         // Visit each CASE only from its enclosing scope. A structurally equal
         // CASE under a different arm has different availability and keys.
         expression.walk_pruned(&mut |part| {
-            let Some(branches) = part.as_case_when() else { return part.has_case_when(); };
-            if prepared.cases.contains_key(part) { return false; }
+            let Some(branches) = part.as_case_when() else {
+                return part.has_case_when();
+            };
+            if prepared.cases.contains_key(part) {
+                return false;
+            }
             let guard_key = |child: &Expr, domain: &Expr| {
                 let inner = self.prepare_value_keys(child, external, domain, &order, false);
                 let compare = crate::canonical_names::ScopedValueKeys {
-                    base: base(), slots: &inner.lexical, cases: &inner.cases,
-                        };
+                    base: base(),
+                    slots: &inner.lexical,
+                    cases: &inner.cases,
+                };
                 math::canonical_order_key(child, &compare)
             };
             let mut remaining = active.clone();
-            let arms = branches.iter().map(|(guard, value)| {
-                let (selected, next) = observation_arm_domains(&remaining, guard);
-                // A guard uses the enclosing bindings. Starting a new
-                // choice in the guard would not bind its selected arm.
-                let pair = (guard_key(guard, &remaining),
-                    self.canonical_value_plan(value, external, &selected, &order).key);
-                remaining = next;
-                pair
-            }).collect();
+            let arms = branches
+                .iter()
+                .map(|(guard, value)| {
+                    let (selected, next) = observation_arm_domains(&remaining, guard);
+                    // A guard uses the enclosing bindings. Starting a new
+                    // choice in the guard would not bind its selected arm.
+                    let pair = (
+                        guard_key(guard, &remaining),
+                        self.canonical_value_plan(value, external, &selected, &order)
+                            .key,
+                    );
+                    remaining = next;
+                    pair
+                })
+                .collect();
             prepared.cases.insert(part.clone(), arms);
             false
         });
         prepared
     }
 
-    pub(crate) fn in_relation_scope(&mut self, expression: &Expr, render: impl FnOnce(&mut Self) -> String) -> String {
-        let active = self.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
+    pub(crate) fn in_relation_scope(
+        &mut self,
+        expression: &Expr,
+        render: impl FnOnce(&mut Self) -> String,
+    ) -> String {
+        let active = self
+            .relation_scope
+            .active
+            .clone()
+            .unwrap_or_else(|| math::builder::lit_bool(true));
         let needed = self.eligible_choices(expression, &active, &self.relation_scope.member_order);
         let slots = self.relation_scope.slots.clone();
         let mut bindings = Vec::new();
@@ -305,7 +414,10 @@ impl FormatCtx {
                 let name = format!("member{}", self.relation_scope.members.len());
                 self.relation_scope.members.insert(slot, name.clone());
                 self.relation_scope.member_order.push(slot);
-                bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD")));
+                bindings.push((
+                    slot,
+                    format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD"),
+                ));
             }
         }
         let block_yield = expression.as_array_lit().is_some();
@@ -315,13 +427,16 @@ impl FormatCtx {
             self.relation_scope.member_order.pop();
             value = if block_yield || depth > 0 {
                 format!("{prefix}\n  {})", value.replace('\n', "\n  "))
-            } else { format!("{prefix} {value})") };
+            } else {
+                format!("{prefix} {value})")
+            };
         }
         value
     }
 
     pub(crate) fn set_business_identities(
-        &mut self, roots: std::collections::BTreeMap<i64, String>,
+        &mut self,
+        roots: std::collections::BTreeMap<i64, String>,
         bindings: std::collections::BTreeMap<i64, math::HeapBindingIdentity>,
     ) {
         self.business_identities = roots;
@@ -333,12 +448,18 @@ impl FormatCtx {
     }
 
     pub(crate) fn declare_nullable_columns(
-        &mut self, tables: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+        &mut self,
+        tables: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
     ) {
-        self.nullable_columns = tables.iter().flat_map(|(table, columns)| {
-            columns.iter().filter(|(_, ty)| ty.ends_with('?'))
-                .map(move |(column, _)| format!("{table}.{column}"))
-        }).collect();
+        self.nullable_columns = tables
+            .iter()
+            .flat_map(|(table, columns)| {
+                columns
+                    .iter()
+                    .filter(|(_, ty)| ty.ends_with('?'))
+                    .map(move |(column, _)| format!("{table}.{column}"))
+            })
+            .collect();
     }
 
     pub(crate) fn set_scalar_arrays(&mut self, arrays: std::collections::BTreeSet<String>) {
@@ -361,10 +482,21 @@ impl FormatCtx {
         business_states: std::collections::BTreeMap<u64, String>,
         state_roots: &std::collections::BTreeMap<u64, String>,
     ) -> Self {
-        let observation_identities = state_roots.iter().map(|(&id, root)| {
-            (id, math::ObservationIdentity::EntrySnapshot(vec![root.clone()]))
-        }).collect();
-        Self { business_inputs: Some(inputs), business_states, observation_identities, ..Self::default() }
+        let observation_identities = state_roots
+            .iter()
+            .map(|(&id, root)| {
+                (
+                    id,
+                    math::ObservationIdentity::EntrySnapshot(vec![root.clone()]),
+                )
+            })
+            .collect();
+        Self {
+            business_inputs: Some(inputs),
+            business_states,
+            observation_identities,
+            ..Self::default()
+        }
     }
     pub fn new() -> Self {
         Self::default()
@@ -374,8 +506,6 @@ impl FormatCtx {
     pub(crate) fn e_slot(&self, raw: u64) -> Option<usize> {
         self.e_renumber.get(&raw).copied()
     }
-
-
 }
 
 /// Expr → 类 SQL 字符串（单入口，默认新建 ctx，无 heap）
@@ -386,14 +516,28 @@ pub fn format_expr_sql(expr: &Expr) -> String {
 
 /// Expr → 类 SQL 字符串（带 ctx，外部复用编号/heap）
 pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
-    if let Some((_, label)) = ctx.business_projections.iter().rev().find(|(value, _)| value == expr) {
+    if let Some((_, label)) = ctx
+        .business_projections
+        .iter()
+        .rev()
+        .find(|(value, _)| value == expr)
+    {
         return label.clone();
     }
     // Observation aliases remain visible in a selected arm. Unlike a
     // lexical LET alias they do not enlarge the value's acquisition domain.
-    if let Some((_, label)) = ctx.business_observation_projections.iter().rev()
-        .find(|(value, _)| value == expr
-            && business_value::receipts_available(value, ctx.business_evaluation_guard.as_ref(), ctx))
+    if let Some((_, label)) =
+        ctx.business_observation_projections
+            .iter()
+            .rev()
+            .find(|(value, _)| {
+                value == expr
+                    && business_value::receipts_available(
+                        value,
+                        ctx.business_evaluation_guard.as_ref(),
+                        ctx,
+                    )
+            })
     {
         return label.clone();
     }
@@ -411,7 +555,10 @@ pub fn format_expr_with_ctx(expr: &Expr, ctx: &mut FormatCtx) -> String {
 fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
     if ctx.business_inputs.is_some() {
         if let Some(entries) = math::domains::composite::ordered_text_map_entries(expr) {
-            let rows = entries.iter().map(|entry| format_expr_with_ctx(entry, ctx)).collect::<Vec<_>>();
+            let rows = entries
+                .iter()
+                .map(|entry| format_expr_with_ctx(entry, ctx))
+                .collect::<Vec<_>>();
             return format!("MAP([{}])", rows.join(", "));
         }
         if let Some(vector) = math::domains::composite::vector_length_input(expr) {
@@ -423,17 +570,26 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some(operation) = math::domains::decimal::view(expr) {
             use math::domains::decimal::View;
             return match operation {
-                View::Literal(value, scale) => math::domains::decimal::display_literal(value, scale),
+                View::Literal(value, scale) => {
+                    math::domains::decimal::display_literal(value, scale)
+                }
                 View::Multiply(a, b) => {
                     let format_operand = |operand: &Expr, ctx: &mut FormatCtx| {
                         let value = format_expr_with_ctx(operand, ctx);
-                        if operand.as_case_when().is_some() { format!("({value})") } else { value }
+                        if operand.as_case_when().is_some() {
+                            format!("({value})")
+                        } else {
+                            value
+                        }
                     };
                     format!("{} * {}", format_operand(a, ctx), format_operand(b, ctx))
                 }
-                View::Round(value, scale, mode) =>
-                    format!("N.round({}, {}, N.{})", format_expr_with_ctx(value, ctx),
-                        format_expr_with_ctx(scale, ctx), mode.name()),
+                View::Round(value, scale, mode) => format!(
+                    "N.round({}, {}, N.{})",
+                    format_expr_with_ctx(value, ctx),
+                    format_expr_with_ctx(scale, ctx),
+                    mode.name()
+                ),
             };
         }
     }
@@ -467,7 +623,11 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
     }
     if let Some(id) = expr.as_heap_ref() {
         // Business projection verifies named identities before rendering.
-        return ctx.business_identities.get(&id).cloned().unwrap_or_else(|| format!("{expr:?}"));
+        return ctx
+            .business_identities
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("{expr:?}"));
     }
     if let Some((op, operand)) = expr.as_unary_op() {
         match op {
@@ -490,30 +650,58 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         if let Some(rendered) = business_value::format_guarded_boolean(op, left, right, ctx) {
             return rendered;
         }
-        let domain = ctx.relation_scope.active.clone().unwrap_or_else(|| math::builder::lit_bool(true));
-        let external = ctx.scoped_plans.as_ref().map_or(ctx.observation_identities(), |plans| &plans.external);
-        let let_arithmetic = !ctx.business_projections.is_empty() && matches!(op, BinOpKind::Add | BinOpKind::Mul);
+        let domain = ctx
+            .relation_scope
+            .active
+            .clone()
+            .unwrap_or_else(|| math::builder::lit_bool(true));
+        let external = ctx
+            .scoped_plans
+            .as_ref()
+            .map_or(ctx.observation_identities(), |plans| &plans.external);
+        let let_arithmetic =
+            !ctx.business_projections.is_empty() && matches!(op, BinOpKind::Add | BinOpKind::Mul);
         let keys = if op.swapped_comparison().is_some() || let_arithmetic {
-            ctx.prepare_value_keys(expr, external, &domain, &ctx.relation_scope.member_order, false)
+            ctx.prepare_value_keys(
+                expr,
+                external,
+                &domain,
+                &ctx.relation_scope.member_order,
+                false,
+            )
         } else {
             scoped_relation::ValueKeys::default()
         };
-        let public = crate::canonical_names::ScopedValueKeys { base: CanonicalNames {
-            heap: &ctx.heap_bindings, captured: ctx.captured_parameters(), completion_classes: None,
-            external: (!external.is_empty()).then_some(external),
-            total_temporals: None,
-            temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-        }, slots: &keys.lexical, cases: &keys.cases };
+        let public = crate::canonical_names::ScopedValueKeys {
+            base: CanonicalNames {
+                heap: &ctx.heap_bindings,
+                captured: ctx.captured_parameters(),
+                completion_classes: None,
+                external: (!external.is_empty()).then_some(external),
+                total_temporals: None,
+                temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
+            },
+            slots: &keys.lexical,
+            cases: &keys.cases,
+        };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.
         let let_bindings = if let_arithmetic {
-            ctx.business_projections.iter().map(|(expr, _)| expr.clone()).collect()
-        } else { Vec::new() };
-        let (op, left, right) = match math::canonical_order_ordered_comparison(op, left, right, &public) {
-            Some((reversed, true)) => (reversed, right, left),
-            _ if math::let_arithmetic_needs_swap(expr, &let_bindings, &public) => (op, right, left),
-            _ => (op, left, right),
+            ctx.business_projections
+                .iter()
+                .map(|(expr, _)| expr.clone())
+                .collect()
+        } else {
+            Vec::new()
         };
+        let (op, left, right) =
+            match math::canonical_order_ordered_comparison(op, left, right, &public) {
+                Some((reversed, true)) => (reversed, right, left),
+                _ if math::let_arithmetic_needs_swap(expr, &let_bindings, &public) => {
+                    (op, right, left)
+                }
+                _ => (op, left, right),
+            };
         let l = format_binop_child_with_precedence(op, left, false, ctx);
         let r = format_binop_child_with_precedence(op, right, true, ctx);
         let token = match (op, ctx.business_inputs.is_some()) {
@@ -535,8 +723,12 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
     };
     let registered_name = math::func_name(key);
     if math::domains::integer_quotient::is_quotient(expr) {
-        return format!("{}({}, {})", math::domains::integer_quotient::OUTPUT_NAME,
-            format_expr_with_ctx(&args[0], ctx), format_expr_with_ctx(&args[1], ctx));
+        return format!(
+            "{}({}, {})",
+            math::domains::integer_quotient::OUTPUT_NAME,
+            format_expr_with_ctx(&args[0], ctx),
+            format_expr_with_ctx(&args[1], ctx)
+        );
     }
     if ctx.business_inputs.is_some() {
         if let [value] = args {
@@ -547,26 +739,40 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
                 return format_expr_with_ctx(value, ctx);
             }
         }
-        if let Some((root, position, field, _)) = math::domains::relation::positional::field_projection(expr) {
+        if let Some((root, position, field, _)) =
+            math::domains::relation::positional::field_projection(expr)
+        {
             let position = format_expr_with_ctx(position, ctx);
             return format!("{}[{position}].{field}", array_name(root, ctx));
         }
-        if let Some((response, _)) = math::domains::completion::multi_failure_return(&registered_name, args) {
-            return format!("completion.is_return({})", format_expr_with_ctx(response, ctx));
+        if let Some((response, _)) =
+            math::domains::completion::multi_failure_return(&registered_name, args)
+        {
+            return format!(
+                "completion.is_return({})",
+                format_expr_with_ctx(response, ctx)
+            );
         }
-        if let Some((operation, response, class)) = math::domains::completion::class_observation(&registered_name, args) {
+        if let Some((operation, response, class)) =
+            math::domains::completion::class_observation(&registered_name, args)
+        {
             let response = format_expr_with_ctx(response, ctx);
             return if operation == "completion.is_return" {
                 format!("{operation}({response})")
-            } else { format!("{operation}({response}, {class})") };
+            } else {
+                format!("{operation}({response}, {class})")
+            };
         }
         match (registered_name.as_str(), args) {
             (crate::normalized_text::TRIM_KEY, [value]) => {
                 return format!("N.trim({})", format_expr_with_ctx(value, ctx));
             }
             (crate::normalized_text::DEFAULT_IF_BLANK_KEY, [value, fallback]) => {
-                return format!("N.defaultIfBlank({}, {})",
-                    format_expr_with_ctx(value, ctx), format_expr_with_ctx(fallback, ctx));
+                return format!(
+                    "N.defaultIfBlank({}, {})",
+                    format_expr_with_ctx(value, ctx),
+                    format_expr_with_ctx(fallback, ctx)
+                );
             }
             _ => {}
         }
@@ -602,7 +808,11 @@ fn try_format_not_exists_as_count_zero(expr: &Expr, ctx: &FormatCtx) -> Option<S
 }
 
 fn array_name(raw: &str, ctx: &FormatCtx) -> String {
-    let name = ctx.business_inputs.as_ref().and_then(|names| names.get(raw)).map_or(raw, String::as_str);
+    let name = ctx
+        .business_inputs
+        .as_ref()
+        .and_then(|names| names.get(raw))
+        .map_or(raw, String::as_str);
     ctx.uncaptured_name("P", name)
 }
 
@@ -616,20 +826,35 @@ pub(crate) fn format_array_failure_union(expr: &Expr, ctx: &FormatCtx) -> Option
             return (left == right).then_some((left, lower.max(upper)));
         }
         if let Some((UnaryOpKind::Not, exists)) = expr.as_unary_op() {
-            return Some((array_cardinality_name(exists, RelationAggregateKind::Exists)?, 0));
+            return Some((
+                array_cardinality_name(exists, RelationAggregateKind::Exists)?,
+                0,
+            ));
         }
-        let (op @ (BinOpKind::Le | BinOpKind::Eq), len, index) = expr.as_binop()? else { return None };
+        let (op @ (BinOpKind::Le | BinOpKind::Eq), len, index) = expr.as_binop()? else {
+            return None;
+        };
         let name = array_cardinality_name(len, RelationAggregateKind::Count)?;
-        let Some(Lit::Int(i)) = index.as_lit() else { return None };
+        let Some(Lit::Int(i)) = index.as_lit() else {
+            return None;
+        };
         (*i >= 0 && (op == BinOpKind::Le || *i == 0)).then_some((name, *i))
     }
-    if !matches!(expr.as_binop(), Some((BinOpKind::Or, ..))) { return None; }
+    if !matches!(expr.as_binop(), Some((BinOpKind::Or, ..))) {
+        return None;
+    }
     let (name, upper) = extract(expr)?;
-    if !ctx.scalar_arrays.contains(name) { return None; }
+    if !ctx.scalar_arrays.contains(name) {
+        return None;
+    }
     Some(if upper == 0 {
         format!("0 == LENGTH({})", array_name(name, ctx))
     } else {
-        format!("{} > LENGTH({})", math::Integer::from(upper) + 1, array_name(name, ctx))
+        format!(
+            "{} > LENGTH({})",
+            math::Integer::from(upper) + 1,
+            array_name(name, ctx)
+        )
     })
 }
 
@@ -640,15 +865,17 @@ fn format_scalar_array_observation(expr: &Expr, ctx: &mut FormatCtx) -> Option<S
         return None;
     };
     if !ctx.scalar_arrays.contains(name) {
-        return (ctx.record_arrays.contains(name) && matches!((kind, select, default), (Count, None, None)))
-            .then(|| format!("LENGTH({})", array_name(name, ctx)));
+        return (ctx.record_arrays.contains(name)
+            && matches!((kind, select, default), (Count, None, None)))
+        .then(|| format!("LENGTH({})", array_name(name, ctx)));
     }
     let array = array_name(name, ctx).to_owned();
     match (kind, select, default) {
         (Count, None, None) => Some(format!("LENGTH({array})")),
         (Exists, _, None) => Some(format!("0 < LENGTH({array})")),
-        (NthValue, Some(index), _) =>
-            Some(format!("{array}[{}]", format_expr_with_ctx(index, ctx))),
+        (NthValue, Some(index), _) => {
+            Some(format!("{array}[{}]", format_expr_with_ctx(index, ctx)))
+        }
         _ => None,
     }
 }
@@ -704,8 +931,13 @@ fn format_binop_child_with_precedence(
 fn observation_arm_domains(remaining: &Expr, guard: &Expr) -> (Expr, Expr) {
     use math::builder as b;
     if guard.may_observe_sql_unknown() {
-        (math::normalize(b::and(remaining.clone(), guard.clone())), remaining.clone())
-    } else { b::first_match_domains(remaining.clone(), guard) }
+        (
+            math::normalize(b::and(remaining.clone(), guard.clone())),
+            remaining.clone(),
+        )
+    } else {
+        b::first_match_domains(remaining.clone(), guard)
+    }
 }
 
 fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
@@ -722,43 +954,65 @@ fn format_case_when(branches: &[(Expr, Expr)], ctx: &mut FormatCtx) -> String {
         let (text, test) = if business {
             let (selected, next) = observation_arm_domains(&remaining, guard);
             ctx.relation_scope.active = Some(selected.clone());
-            let text = ctx.with_business_evaluation_guard(&selected, |ctx|
-                business_value::format_value(value, ctx));
+            let text = ctx.with_business_evaluation_guard(&selected, |ctx| {
+                business_value::format_value(value, ctx)
+            });
             ctx.relation_scope.active = Some(remaining.clone());
-            let test = (guard.as_bool() != Some(true)).then(||
-                ctx.with_business_evaluation_guard(&remaining, |ctx| format_expr_with_ctx(guard, ctx)));
+            let test = (guard.as_bool() != Some(true)).then(|| {
+                ctx.with_business_evaluation_guard(&remaining, |ctx| {
+                    format_expr_with_ctx(guard, ctx)
+                })
+            });
             remaining = next;
             (text, test)
         } else {
-            (format_expr_with_ctx(value, ctx),
-                (guard.as_bool() != Some(true)).then(|| format_expr_with_ctx(guard, ctx)))
+            (
+                format_expr_with_ctx(value, ctx),
+                (guard.as_bool() != Some(true)).then(|| format_expr_with_ctx(guard, ctx)),
+            )
         };
-        if let Some(test) = test { parts.push(format!("WHEN {test} THEN {text}")); }
-        else {
+        if let Some(test) = test {
+            parts.push(format!("WHEN {test} THEN {text}"));
+        } else {
             parts.push(format!("ELSE {text}"));
             break;
         }
     }
     ctx.relation_scope.active = outer_domain;
-    let array_index_arm = business && branches.len() == 2
-        && branches.iter().any(|(_, value)| value.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
+    let array_index_arm = business
+        && branches.len() == 2
+        && branches.iter().any(|(_, value)| {
+            value.as_relation_aggregate().is_some_and(|(kind, relation, _, _)| {
             kind == RelationAggregateKind::NthValue
                 && matches!(relation, math::domains::relation::RelationExpr::Base { name, .. }
                     if ctx.scalar_arrays.contains(name))
-        }));
-    if business && branches.len() == 2 && !parts.iter().any(|part| part.contains("\nLET") || part.contains("THEN LET") || part.contains("ELSE LET"))
-        && (scoped || branches[0].0.as_sym_var().is_some() || array_index_arm) {
+        })
+        });
+    if business
+        && branches.len() == 2
+        && !parts.iter().any(|part| {
+            part.contains("\nLET") || part.contains("THEN LET") || part.contains("ELSE LET")
+        })
+        && (scoped || branches[0].0.as_sym_var().is_some() || array_index_arm)
+    {
         parts.push("END".into());
         return parts.join(" ");
     }
     let parts = if business {
-        parts.into_iter().map(|part| {
-            if part.contains("THEN LET ") || part.starts_with("ELSE LET ") {
-                // A LET/IN block owns its own alignment and lexical scope.
-                part
-            } else { part.replace('\n', "\n  ") }
-        }).collect::<Vec<_>>()
-    } else { parts };
+        parts
+            .into_iter()
+            .map(|part| {
+                if part.contains("THEN LET ") || part.starts_with("ELSE LET ") {
+                    // A LET/IN block owns its own alignment and lexical scope.
+                    part
+                } else {
+                    part.replace('\n', "\n  ")
+                }
+            })
+            .collect::<Vec<_>>()
+    } else {
+        parts
+    };
     format!("{}\nEND", parts.join("\n  "))
 }
 
@@ -775,7 +1029,7 @@ fn format_lit(lit: &Lit) -> String {
             }
             quoted.push('"');
             quoted
-        },
+        }
         Lit::Bool(b) => b.to_string(),
         Lit::Null => "null".to_string(),
     }
@@ -784,18 +1038,30 @@ fn format_lit(lit: &Lit) -> String {
 fn format_sym_var(origin: &SymVarOrigin, ctx: &mut FormatCtx) -> String {
     match origin {
         SymVarOrigin::Parameter { name, .. } => {
-            let display = ctx.business_inputs.as_ref().and_then(|names| names.get(name)).map_or(name.as_str(), String::as_str);
+            let display = ctx
+                .business_inputs
+                .as_ref()
+                .and_then(|names| names.get(name))
+                .map_or(name.as_str(), String::as_str);
             ctx.uncaptured_name("P", display)
         }
         SymVarOrigin::External {
             binding_id, path, ..
         } => {
-            if let Some(root) = ctx.business_states.get(binding_id).or_else(|| ctx.business_acquisitions.get(binding_id)) {
+            if let Some(root) = ctx
+                .business_states
+                .get(binding_id)
+                .or_else(|| ctx.business_acquisitions.get(binding_id))
+            {
                 let root = ctx.uncaptured_name("E", root);
-                return std::iter::once(root.as_str()).chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join(".");
+                return std::iter::once(root.as_str())
+                    .chain(path.iter().map(String::as_str))
+                    .collect::<Vec<_>>()
+                    .join(".");
             }
             let n = if ctx.business_inputs.is_some() {
-                ctx.e_slot(*binding_id).expect("PERS invariant: unbound receipt or acquisition") as u64
+                ctx.e_slot(*binding_id)
+                    .expect("PERS invariant: unbound receipt or acquisition") as u64
             } else {
                 *binding_id
             };
@@ -805,10 +1071,22 @@ fn format_sym_var(origin: &SymVarOrigin, ctx: &mut FormatCtx) -> String {
                 format!("$e_{}.{}", n, path.join("."))
             }
         }
-        SymVarOrigin::Temporal { binding_id, primitive_type } => {
-            let slot = if matches!(primitive_type.as_str(), "integer" | math::builder::RECORD_TEMPORAL_TAG) && ctx.business_inputs.is_some() {
-                ctx.temporal_names.get(binding_id).copied().expect("closed temporal definition")
-            } else { *binding_id as usize };
+        SymVarOrigin::Temporal {
+            binding_id,
+            primitive_type,
+        } => {
+            let slot = if matches!(
+                primitive_type.as_str(),
+                "integer" | math::builder::RECORD_TEMPORAL_TAG
+            ) && ctx.business_inputs.is_some()
+            {
+                ctx.temporal_names
+                    .get(binding_id)
+                    .copied()
+                    .expect("closed temporal definition")
+            } else {
+                *binding_id as usize
+            };
             if ctx.business_inputs.is_some() && ctx.temporal_names.contains_key(binding_id) {
                 ctx.relation_slot(slot)
             } else {

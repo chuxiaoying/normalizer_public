@@ -20,7 +20,10 @@ pub fn order_by(
         Some(Primitive::Composite),
         crate::domains::primitive::registry::FuncSemantics::pure_function(),
     );
-    let args = std::iter::once(relation_expr(input)).chain([first]).chain(remaining).collect();
+    let args = std::iter::once(relation_expr(input))
+        .chain([first])
+        .chain(remaining)
+        .collect();
     RelationExpr::vector(b::call(op, args), "ordered")
 }
 

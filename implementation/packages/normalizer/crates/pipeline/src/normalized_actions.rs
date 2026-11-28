@@ -29,8 +29,12 @@ impl DeclaredPortType {
                 // Source records have one level of scalar fields. Retain the
                 // field-name admission formerly enforced by the wire parser.
                 if let Ty::Record(fields) = typ {
-                    need(fields.iter().all(|(name, field)| values::valid_record_field(name, field)),
-                        "invalid/duplicate record field")?;
+                    need(
+                        fields
+                            .iter()
+                            .all(|(name, field)| values::valid_record_field(name, field)),
+                        "invalid/duplicate record field",
+                    )?;
                 }
                 Ok(typ.clone())
             }
@@ -45,7 +49,9 @@ impl<'de> Deserialize<'de> for ImmutablePortObservation {
     fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> std::result::Result<Self, D::Error> {
         match String::deserialize(decoder)?.as_str() {
             "immutable_value" => Ok(Self),
-            _ => Err(serde::de::Error::custom("unsupported port observation contract")),
+            _ => Err(serde::de::Error::custom(
+                "unsupported port observation contract",
+            )),
         }
     }
 }
@@ -67,7 +73,11 @@ pub(super) struct Port {
 
 impl Port {
     pub(super) fn parameter_type(&self, position: usize) -> Result<Ty> {
-        self.params.get(position).ok_or_else(|| fail("missing port parameter"))?.typ.resolve()
+        self.params
+            .get(position)
+            .ok_or_else(|| fail("missing port parameter"))?
+            .typ
+            .resolve()
     }
 
     pub(super) fn from_source(
@@ -80,9 +90,13 @@ impl Port {
         Self {
             origin,
             endpoint,
-            params: params.into_iter().map(|param| Parameter {
-                name: param.name, typ: DeclaredPortType::Source(param.typ),
-            }).collect(),
+            params: params
+                .into_iter()
+                .map(|param| Parameter {
+                    name: param.name,
+                    typ: DeclaredPortType::Source(param.typ),
+                })
+                .collect(),
             returns: DeclaredPortType::Source(returns),
             throws,
             _heap_effect: PortHeapEffect::None,
@@ -90,7 +104,6 @@ impl Port {
             effect: "sync".into(),
         }
     }
-
 }
 /// One admitted signature, used by both producers and the effect renderer.
 pub(super) struct CheckedPort {
@@ -164,12 +177,14 @@ where
         Bare(String),
     }
     let (source, location) = match Source::deserialize(decoder)? {
-        Source::Located {text, location} => (text, format!(" at {location}")),
+        Source::Located { text, location } => (text, format!(" at {location}")),
         Source::Bare(text) => (text, String::new()),
     };
     match parse(&source) {
         Ok(LocalIr::Relation(query)) => Ok(Box::new(query)),
-        Ok(_) => Err(serde::de::Error::custom(format!("expected a typed relation @normalizer-ir query{location}"))),
+        Ok(_) => Err(serde::de::Error::custom(format!(
+            "expected a typed relation @normalizer-ir query{location}"
+        ))),
         Err(error) => Err(serde::de::Error::custom(format!(
             "expected a typed relation @normalizer-ir query{location}: {error}"
         ))),
@@ -225,7 +240,9 @@ impl Project {
             let returns = p.returns.resolve()?;
             // Void is a normal completion without a value, not a value
             // type available to either parameters or composite fields.
-            if returns != Ty::Unit { validate(&returns)?; }
+            if returns != Ty::Unit {
+                validate(&returns)?;
+            }
             let mut names = BTreeSet::new();
             let mut parameters = Vec::with_capacity(p.params.len());
             for a in &p.params {
@@ -240,16 +257,27 @@ impl Project {
             let mut exceptions = BTreeMap::new();
             for exception in &p.throws {
                 need(
-                    (builtin_exception(exception) || exception_types.contains_key(exception.as_str()))
+                    (builtin_exception(exception)
+                        || exception_types.contains_key(exception.as_str()))
                         && !exceptions.contains_key(exception),
                     "unknown/duplicate port exception",
                 )?;
-                let payload = exception_types.get(exception.as_str()).cloned().unwrap_or(Ty::Unit);
+                let payload = exception_types
+                    .get(exception.as_str())
+                    .cloned()
+                    .unwrap_or(Ty::Unit);
                 exceptions.insert(exception.clone(), payload);
             }
-            ports.insert(name.clone(), CheckedPort {
-                parameters, completion: std::sync::Arc::new(port_completion::PortSpec { returns, exceptions }),
-            });
+            ports.insert(
+                name.clone(),
+                CheckedPort {
+                    parameters,
+                    completion: std::sync::Arc::new(port_completion::PortSpec {
+                        returns,
+                        exceptions,
+                    }),
+                },
+            );
         }
         Ok(ports)
     }
@@ -296,7 +324,9 @@ impl Engine<'_> {
             // The checked source action has acquired this value on its
             // continuing path. Canonicalize it with the real completion and
             // observation evidence before it enters a local or an effect.
-            Value::Term(ty, expression) => Value::Term(ty, self.normalize_execution_value(expression)),
+            Value::Term(ty, expression) => {
+                Value::Term(ty, self.normalize_execution_value(expression))
+            }
             value => value,
         })
     }
@@ -309,20 +339,26 @@ impl Engine<'_> {
         settled: bool,
     ) -> Result<Value> {
         let parent_completion = std::mem::replace(
-            &mut self.realtime_completion, realtime_state::Completion::Continue,
+            &mut self.realtime_completion,
+            realtime_state::Completion::Continue,
         );
         let caller_action_path = std::mem::replace(&mut self.action_path, path);
         let executed = self.action_steps(steps, &mut env.clone(), returns);
         self.action_path = caller_action_path;
         executed?;
         let local_completion = self.realtime_completion.clone();
-        let terminal = local_completion.terminal_alternatives()
+        let terminal = local_completion
+            .terminal_alternatives()
             .ok_or_else(|| fail("action has a normal path without method return"))?;
         let returned = terminal.normal_return_value();
         // A helper returns to the caller on every normal alternative,
         // not only when all alternatives return. Its exceptional paths
         // still propagate; a settled entry keeps its own terminal outputs.
-        let continuation = if settled { local_completion } else { local_completion.resume_after_normal_return() };
+        let continuation = if settled {
+            local_completion
+        } else {
+            local_completion.resume_after_normal_return()
+        };
         self.realtime_completion = parent_completion.replace_continue(continuation);
         match returned {
             Some(value) => Ok(Value::Term(returns.clone(), value)),
@@ -341,10 +377,13 @@ impl Engine<'_> {
             // when choosing the shared minimum/maximum representative.
             let (yes, no) = (yes.scalar()?, no.scalar()?);
             let order = self.execution_order(yes.has_heap_ref() || no.has_heap_ref());
-            if let Some(extremum) = math::case_orientation::ordered_number_selection(
-                &condition, &yes, &no, &order,
-            ) {
-                return Ok(Value::Term(Ty::Integer, math::normalize_with(extremum, &order)));
+            if let Some(extremum) =
+                math::case_orientation::ordered_number_selection(&condition, &yes, &no, &order)
+            {
+                return Ok(Value::Term(
+                    Ty::Integer,
+                    math::normalize_with(extremum, &order),
+                ));
             }
         }
         select(condition, yes, no)
@@ -387,35 +426,63 @@ impl Engine<'_> {
     }
 
     fn call_closed_sync(
-        &mut self, port: Option<&str>, target: &str, site: &str,
-        condition: Option<&Node>, env: &mut Env,
+        &mut self,
+        port: Option<&str>,
+        target: &str,
+        site: &str,
+        condition: Option<&Node>,
+        env: &mut Env,
     ) -> Result<()> {
         let mut guard = self.action_path.clone();
         if let Some(condition) = condition {
             let condition = self.action_value(condition, env)?;
-            need(condition.ty() == Ty::Bool, "sync call requires a Boolean guard")?;
+            need(
+                condition.ty() == Ty::Bool,
+                "sync call requires a Boolean guard",
+            )?;
             guard = math::normalize(b::and(guard, condition.scalar()?));
         }
-        if guard.as_bool() == Some(false) { return Ok(()); }
+        if guard.as_bool() == Some(false) {
+            return Ok(());
+        }
         let entry = self.selected_entry.id;
         let id = port.unwrap_or_else(|| crate::preprocess::out_of_source(entry, target));
-        let contract = self.project.ports.get(id).ok_or_else(|| fail("missing sync call contract"))?;
+        let contract = self
+            .project
+            .ports
+            .get(id)
+            .ok_or_else(|| fail("missing sync call contract"))?;
         let checked = &self.checked_ports[id];
         let spec = &checked.completion;
-        need(identifier(site) && contract.endpoint == target && contract.effect == "sync"
-            && checked.parameters.is_empty()
-            && spec.returns == Ty::Unit && !spec.throwing(),
-            "listener call requires a declared normal zero-argument void sync port")?;
+        need(
+            identifier(site)
+                && contract.endpoint == target
+                && contract.effect == "sync"
+                && checked.parameters.is_empty()
+                && spec.returns == Ty::Unit
+                && !spec.throwing(),
+            "listener call requires a declared normal zero-argument void sync port",
+        )?;
         let completion = spec.clone();
         let binding = self.fresh_binding();
-        self.realtime_effects.record_port(guard, id, site, Vec::new(), realtime_state::EffectReceipt::tagged(binding), completion);
+        self.realtime_effects.record_port(
+            guard,
+            id,
+            site,
+            Vec::new(),
+            realtime_state::EffectReceipt::tagged(binding),
+            completion,
+        );
         Ok(())
     }
 
     fn read_host_input(&mut self, env: &mut Env, name: &str, input: &str) -> Result<()> {
         need(identifier(input), "invalid host input name")?;
-        let context = self.entry_context.ok_or_else(|| fail("host input requires the selected entry context"))?;
-        let domain = context.parameter_type(input)
+        let context = self
+            .entry_context
+            .ok_or_else(|| fail("host input requires the selected entry context"))?;
+        let domain = context
+            .parameter_type(input)
             .ok_or_else(|| fail(format!("host input {input} has no P declaration")))?;
         let ty = adapter_scalar_domain(domain)
             .ok_or_else(|| fail(format!("unsupported host input type: {domain}")))?;
@@ -430,21 +497,36 @@ impl Engine<'_> {
     }
 
     pub(super) fn read_adapter_state(&mut self, target: &[String], guard: &Expr) -> Result<Value> {
-        let (root, fields) = target.split_first().ok_or_else(|| fail("empty state read path"))?;
-        need(target.iter().all(|part| identifier(part)), "invalid state field path")?;
-        let context = self.entry_context.ok_or_else(|| fail("state read requires the selected entry context"))?;
+        let (root, fields) = target
+            .split_first()
+            .ok_or_else(|| fail("empty state read path"))?;
+        need(
+            target.iter().all(|part| identifier(part)),
+            "invalid state field path",
+        )?;
+        let context = self
+            .entry_context
+            .ok_or_else(|| fail("state read requires the selected entry context"))?;
         let domain = context.state_field(root, fields)?;
         let (ty, scalar) = adapter_state_domain(domain)
             .ok_or_else(|| fail("unsupported state field read type"))?;
-        let existing = self.source_objects.state_bindings.iter().find_map(|(&id, name)| (name == root).then_some(id));
-        let binding = if let Some(id) = existing { id } else {
+        let existing = self
+            .source_objects
+            .state_bindings
+            .iter()
+            .find_map(|(&id, name)| (name == root).then_some(id));
+        let binding = if let Some(id) = existing {
+            id
+        } else {
             let id = self.fresh_binding();
             self.source_objects.state_bindings.insert(id, root.clone());
             id
         };
         let initial = b::sym_e_path(binding, fields.to_vec(), scalar);
         let reference = self.adapter_state_reference(root);
-        let value = self.realtime_store.read_with_initial(&reference, &fields.join("."), guard, initial);
+        let value =
+            self.realtime_store
+                .read_with_initial(&reference, &fields.join("."), guard, initial);
         Ok(Value::Term(ty, value))
     }
 
@@ -460,18 +542,30 @@ impl Engine<'_> {
                 entry_path.clone(),
                 self.realtime_completion.continuing_guard(),
             ));
-            if self.action_path.as_bool() == Some(false) { break; }
+            if self.action_path.as_bool() == Some(false) {
+                break;
+            }
             self.budget()?;
             match action {
                 Action::LocalIr { query } => {
                     self.execute_query(query, None, env, &self.action_path.clone())?;
                 }
-                Action::WriteState { target, value, condition } => {
+                Action::WriteState {
+                    target,
+                    value,
+                    condition,
+                } => {
                     if let Some(condition) = condition {
                         let condition = self.action_value(condition, env)?;
-                        need(condition.ty() == Ty::Bool, "state write guard requires a Boolean")?;
-                        self.action_path = math::normalize(b::and(self.action_path.clone(), condition.scalar()?));
-                        if self.action_path.as_bool() == Some(false) { continue; }
+                        need(
+                            condition.ty() == Ty::Bool,
+                            "state write guard requires a Boolean",
+                        )?;
+                        self.action_path =
+                            math::normalize(b::and(self.action_path.clone(), condition.scalar()?));
+                        if self.action_path.as_bool() == Some(false) {
+                            continue;
+                        }
                     }
                     let (root, fields) = target
                         .split_first()
@@ -480,11 +574,17 @@ impl Engine<'_> {
                         target.iter().all(|part| identifier(part)),
                         "invalid state field path",
                     )?;
-                    let context = self.entry_context.ok_or_else(|| fail("state write requires the selected entry context"))?;
-                    let domain = context.state_field(root, fields).map_err(|detail| crate::preprocess::required(
-                        "NORM-STATE-DECLARATION", &format!("{root}.{}", fields.join(".")), &detail,
-                        "请在当前入口声明真实的状态字段和类型。",
-                    ))?;
+                    let context = self
+                        .entry_context
+                        .ok_or_else(|| fail("state write requires the selected entry context"))?;
+                    let domain = context.state_field(root, fields).map_err(|detail| {
+                        crate::preprocess::required(
+                            "NORM-STATE-DECLARATION",
+                            &format!("{root}.{}", fields.join(".")),
+                            &detail,
+                            "请在当前入口声明真实的状态字段和类型。",
+                        )
+                    })?;
                     let (expected, _) = adapter_state_domain(domain)
                         .ok_or_else(|| fail("unsupported state field type"))?;
                     let value = self.action_value(value, env)?;
@@ -496,26 +596,46 @@ impl Engine<'_> {
                     ));
                     if guard.as_bool() != Some(false) {
                         let reference = self.adapter_state_reference(root);
-                        self.realtime_store.store_guarded(guard.clone(), reference, fields.join("."), value.clone());
+                        self.realtime_store.store_guarded(
+                            guard.clone(),
+                            reference,
+                            fields.join("."),
+                            value.clone(),
+                        );
                         self.realtime_effects.write_state(guard, target, value);
                     }
                 }
                 Action::ReadInput { name, input } => self.read_host_input(env, name, input)?,
-                Action::CallSync { port, target, site, condition } => {
+                Action::CallSync {
+                    port,
+                    target,
+                    site,
+                    condition,
+                } => {
                     self.call_closed_sync(port.as_deref(), target, site, condition.as_ref(), env)?;
                 }
                 Action::ThrowUninitializedCallback { condition } => {
                     let condition = self.action_value(condition, env)?;
-                    need(condition.ty() == Ty::Bool, "callback type error requires a Boolean guard")?;
+                    need(
+                        condition.ty() == Ty::Bool,
+                        "callback type error requires a Boolean guard",
+                    )?;
                     let condition = condition.scalar()?;
-                    let guard = math::normalize(b::and(self.action_path.clone(), condition.clone()));
+                    let guard =
+                        math::normalize(b::and(self.action_path.clone(), condition.clone()));
                     if guard.as_bool() != Some(false) {
                         self.realtime_throws.push(guard);
-                        self.realtime_completion = self.realtime_completion
+                        self.realtime_completion = self
+                            .realtime_completion
                             .replace_continue_with_throw(condition, "TypeError", None);
                     }
                 }
-                Action::TaskInvoke { name, port, site, args } => {
+                Action::TaskInvoke {
+                    name,
+                    port,
+                    site,
+                    args,
+                } => {
                     self.task_invoke(name, port, site, args, env)?;
                 }
                 Action::TaskWait { name, task } => self.task_wait(name, task, env)?,
@@ -570,7 +690,11 @@ impl Engine<'_> {
 
                     self.realtime_throws.truncate(prior_realtime_throws);
                     for alt in &exits {
-                        if matches!(alt.outcome, realtime_state::CompletionOutcome::Throw { .. } | realtime_state::CompletionOutcome::ThrowValue(_)) {
+                        if matches!(
+                            alt.outcome,
+                            realtime_state::CompletionOutcome::Throw { .. }
+                                | realtime_state::CompletionOutcome::ThrowValue(_)
+                        ) {
                             let escaped = math::normalize(b::and(path.clone(), alt.guard.clone()));
 
                             self.realtime_throws.push(escaped);
@@ -585,9 +709,9 @@ impl Engine<'_> {
                     let v = self.action_value(value, env)?;
                     need(v.ty() == *returns, "action return type mismatch")?;
                     let value = v.scalar()?;
-                    self.realtime_completion = self.realtime_completion.replace_continue(
-                        realtime_state::Completion::Return(value),
-                    );
+                    self.realtime_completion = self
+                        .realtime_completion
+                        .replace_continue(realtime_state::Completion::Return(value));
                     break;
                 }
                 Action::Rethrow => {

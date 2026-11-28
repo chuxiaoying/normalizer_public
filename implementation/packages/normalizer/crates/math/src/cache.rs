@@ -11,7 +11,11 @@ pub(crate) fn with_entry_budget(weight: usize, insert: impl FnOnce()) {
 }
 
 pub(crate) fn insert_bounded<K: Eq + Hash + Clone, V>(
-    cache: &mut HashMap<K, V>, key: K, value: V, limit: usize, category: &str,
+    cache: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    limit: usize,
+    category: &str,
 ) {
     // Every cache stores a pure result. Which keys are dropped cannot affect
     // the result of normalization, only whether a value must be recomputed.

@@ -67,8 +67,9 @@ pub struct JavaClass {
 }
 
 impl JavaClass {
-
-    pub fn type_parameters(&self) -> &[String] { &self.type_parameters }
+    pub fn type_parameters(&self) -> &[String] {
+        &self.type_parameters
+    }
 
     /// Origin supplied when this declaration was parsed.
     pub fn source_file(&self) -> &str {
@@ -82,12 +83,19 @@ impl JavaClass {
     /// Does the simple name N have the one supported explicit import?
     /// Project-wide source declarations are checked by source admission.
     pub fn imports_normalizer_intrinsics(&self) -> bool {
-        let mut candidates = self.imports.iter().filter(|name| name.rsplit('.').next() == Some("N"));
+        let mut candidates = self
+            .imports
+            .iter()
+            .filter(|name| name.rsplit('.').next() == Some("N"));
         !self.has_unbound_imports
-            && candidates.next().is_some_and(|name| name == NORMALIZER_INTRINSICS_IMPORT)
+            && candidates
+                .next()
+                .is_some_and(|name| name == NORMALIZER_INTRINSICS_IMPORT)
             && candidates.all(|name| name == NORMALIZER_INTRINSICS_IMPORT)
     }
-    pub fn has_unknown_import_origins(&self) -> bool { self.has_unknown_import_origins }
+    pub fn has_unknown_import_origins(&self) -> bool {
+        self.has_unknown_import_origins
+    }
 
     pub fn has_unbound_imports(&self) -> bool {
         self.has_unbound_imports
@@ -107,20 +115,30 @@ impl JavaClass {
     /// default construction. For a named constructor this proof deliberately
     /// requires public visibility; its caller need not guess access rights.
     pub fn has_trivial_noarg_constructor(&self) -> bool {
-        let mut declared = self.methods.iter().filter(|method| method.is_constructor).peekable();
+        let mut declared = self
+            .methods
+            .iter()
+            .filter(|method| method.is_constructor)
+            .peekable();
         if declared.peek().is_none() {
             return !self.is_record || self.fields.is_empty();
         }
         let mut empty_signature = declared.filter(|method| method.params.is_empty());
         empty_signature.next().is_some_and(|method| {
-            method.is_public && !method.is_private && method.throws.is_empty()
-                && method.annotations.is_empty() && method.body.as_ref().is_some_and(Vec::is_empty)
+            method.is_public
+                && !method.is_private
+                && method.throws.is_empty()
+                && method.annotations.is_empty()
+                && method.body.as_ref().is_some_and(Vec::is_empty)
         }) && empty_signature.next().is_none()
     }
 
     pub fn full_name(&self) -> String {
-        if self.package.is_empty() { self.simple_name.clone() }
-        else { format!("{}.{}", self.package, self.simple_name) }
+        if self.package.is_empty() {
+            self.simple_name.clone()
+        } else {
+            format!("{}.{}", self.package, self.simple_name)
+        }
     }
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations
@@ -142,7 +160,10 @@ impl JavaClass {
         self.supertype.as_deref()
     }
     pub fn interface_arguments(&self, name: &str) -> &[JavaType] {
-        self.interface_arguments.get(name).map(Vec::as_slice).unwrap_or_default()
+        self.interface_arguments
+            .get(name)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
     pub fn interfaces(&self) -> &[String] {
         &self.interfaces
@@ -221,17 +242,28 @@ pub struct JavaMethod {
 }
 
 impl JavaMethod {
-    pub fn type_parameters(&self) -> &[String] { &self.type_parameters }
+    pub fn type_parameters(&self) -> &[String] {
+        &self.type_parameters
+    }
 
-    pub fn is_native(&self) -> bool { self.is_native }
-    pub fn is_default(&self) -> bool { self.is_default }
-    pub fn is_local_lambda_helper(&self) -> bool { self.name.starts_with("<lambda:") }
+    pub fn is_native(&self) -> bool {
+        self.is_native
+    }
+    pub fn is_default(&self) -> bool {
+        self.is_default
+    }
+    pub fn is_local_lambda_helper(&self) -> bool {
+        self.name.starts_with("<lambda:")
+    }
 
     pub fn name(&self) -> &str {
         &self.name
     }
     pub fn param_annotations(&self, name: &str) -> &[AnnotationRef] {
-        self.param_annotations.get(name).map(Vec::as_slice).unwrap_or_default()
+        self.param_annotations
+            .get(name)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
     pub fn params(&self) -> &[(JavaType, String)] {
         &self.params
@@ -245,8 +277,12 @@ impl JavaMethod {
     pub fn is_static(&self) -> bool {
         self.is_static
     }
-    pub fn is_public(&self) -> bool { self.is_public }
-    pub fn is_private(&self) -> bool { self.is_private }
+    pub fn is_public(&self) -> bool {
+        self.is_public
+    }
+    pub fn is_private(&self) -> bool {
+        self.is_private
+    }
 
     pub fn is_constructor(&self) -> bool {
         self.is_constructor
@@ -390,29 +426,40 @@ impl JavaStatement {
     /// prove that the unmatched arm cannot fall through and the matched one
     /// can. This is lexical Java reachability, not symbolic feasibility.
     pub fn pattern_in_continuation(
-        matched_when_true: bool, then_block: &[Self], else_block: Option<&[Self]>,
+        matched_when_true: bool,
+        then_block: &[Self],
+        else_block: Option<&[Self]>,
     ) -> bool {
         fn block_completion(body: &[JavaStatement]) -> Option<bool> {
             use JavaStatement::*;
             match body.last() {
-                None | Some(VarDecl { .. } | Assign { .. } | ExprStmt(_) | LocalIr(_)) => Some(true),
+                None | Some(VarDecl { .. } | Assign { .. } | ExprStmt(_) | LocalIr(_)) => {
+                    Some(true)
+                }
                 Some(Return(_) | Throw(_)) => Some(false),
                 Some(Block(inner)) => block_completion(inner),
-                Some(If { else_block: None, .. }) => Some(true),
-                Some(If { then_block, else_block: Some(other), .. }) => {
-                    match (block_completion(then_block), block_completion(other)) {
-                        (Some(true), _) | (_, Some(true)) => Some(true),
-                        (Some(false), Some(false)) => Some(false),
-                        _ => None,
-                    }
-                }
+                Some(If {
+                    else_block: None, ..
+                }) => Some(true),
+                Some(If {
+                    then_block,
+                    else_block: Some(other),
+                    ..
+                }) => match (block_completion(then_block), block_completion(other)) {
+                    (Some(true), _) | (_, Some(true)) => Some(true),
+                    (Some(false), Some(false)) => Some(false),
+                    _ => None,
+                },
                 _ => None,
             }
         }
         let yes = block_completion(then_block);
         let no = block_completion(else_block.unwrap_or_default());
-        if matched_when_true { yes == Some(true) && no == Some(false) }
-        else { no == Some(true) && yes == Some(false) }
+        if matched_when_true {
+            yes == Some(true) && no == Some(false)
+        } else {
+            no == Some(true) && yes == Some(false)
+        }
     }
 }
 
@@ -444,7 +491,10 @@ impl CatchClause {
 #[derive(Debug, Clone)]
 pub enum JavaExpr {
     /// Source-only lambda syntax; the linker must certify it before execution.
-    LocalLambda { parameters: Vec<String>, value: Box<JavaExpr> },
+    LocalLambda {
+        parameters: Vec<String>,
+        value: Box<JavaExpr>,
+    },
     /// 字面量
     Lit(JavaLit),
 
@@ -452,7 +502,11 @@ pub enum JavaExpr {
     Ident(String),
 
     /// Native Java type test, optionally introducing a pattern variable.
-    InstanceOf { value: Box<JavaExpr>, target: JavaType, binding: Option<String> },
+    InstanceOf {
+        value: Box<JavaExpr>,
+        target: JavaType,
+        binding: Option<String>,
+    },
 
     /// 字段访问：`obj.field`
     FieldAccess {
@@ -553,10 +607,20 @@ pub struct JavaTypePattern<'a> {
 impl JavaExpr {
     pub fn direct_type_pattern(&self) -> Option<JavaTypePattern<'_>> {
         match self {
-            Self::InstanceOf { value, target, binding: Some(name) } => Some(JavaTypePattern {
-                operand: value, target, name, matched_when_true: true,
+            Self::InstanceOf {
+                value,
+                target,
+                binding: Some(name),
+            } => Some(JavaTypePattern {
+                operand: value,
+                target,
+                name,
+                matched_when_true: true,
             }),
-            Self::UnaryOp { op: JavaUnaryOp::Not, operand } => {
+            Self::UnaryOp {
+                op: JavaUnaryOp::Not,
+                operand,
+            } => {
                 let mut pattern = operand.direct_type_pattern()?;
                 pattern.matched_when_true = !pattern.matched_when_true;
                 Some(pattern)
@@ -571,7 +635,12 @@ pub enum JavaLit {
     Int(i32),
     Long(i64),
     // Digits are in radix 10 or 16; the power is of 10 or 2 respectively.
-    Decimal { digits: String, radix: u32, power: i32, single: bool },
+    Decimal {
+        digits: String,
+        radix: u32,
+        power: i32,
+        single: bool,
+    },
     Bool(bool),
     Str(String),
     StrUnits(Vec<u16>),

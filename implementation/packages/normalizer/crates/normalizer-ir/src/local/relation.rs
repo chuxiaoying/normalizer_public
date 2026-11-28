@@ -6,17 +6,29 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scalar {
     Path(Vec<String>),
-    Indexed { source: String, index: Box<Scalar>, fields: Vec<String> },
+    Indexed {
+        source: String,
+        index: Box<Scalar>,
+        fields: Vec<String>,
+    },
     Integer(num_bigint::BigInt),
     Text(String),
     Bool(bool),
     IntegerBound(IntegerBound, Vec<Scalar>),
     Binary(Op, Box<Scalar>, Box<Scalar>),
-    NullPredicate { owner: String, column: String, negated: bool },
+    NullPredicate {
+        owner: String,
+        column: String,
+        negated: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum IntegerBound { Min, Max, Length }
+pub enum IntegerBound {
+    Min,
+    Max,
+    Length,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct IntegerRange {
@@ -32,8 +44,15 @@ pub enum RangeOperation {
     Count,
     Sum,
     FilteredCount(RangeScope),
-    ProjectedSum { scope: RangeScope, value: Scalar },
-    First { scope: RangeScope, value: Scalar, fallback: Scalar },
+    ProjectedSum {
+        scope: RangeScope,
+        value: Scalar,
+    },
+    First {
+        scope: RangeScope,
+        value: Scalar,
+        fallback: Scalar,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,21 +83,47 @@ pub enum Clause {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
-    FirstArray { offset: num_bigint::BigUint, fallback: Scalar },
-    NestedSum { alias: String, filters: Vec<Scalar>, value: Scalar },
-    JoinCount { source: String, alias: String, on: Scalar, filters: Vec<Scalar> },
+    FirstArray {
+        offset: num_bigint::BigUint,
+        fallback: Scalar,
+    },
+    NestedSum {
+        alias: String,
+        filters: Vec<Scalar>,
+        value: Scalar,
+    },
+    JoinCount {
+        source: String,
+        alias: String,
+        on: Scalar,
+        filters: Vec<Scalar>,
+    },
     OnRows(RowOperation),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowOperation {
     Project(Vec<(String, Scalar)>),
-    EagerPath { link: String, leaf: String },
+    EagerPath {
+        link: String,
+        leaf: String,
+    },
     Sum(Scalar),
-    Count { distinct: bool },
-    CountProjection { distinct: bool, value: Scalar },
-    GroupCount { first: Scalar, remaining: Vec<Scalar> },
-    FirstValue { value: Scalar, fallback: Scalar },
+    Count {
+        distinct: bool,
+    },
+    CountProjection {
+        distinct: bool,
+        value: Scalar,
+    },
+    GroupCount {
+        first: Scalar,
+        remaining: Vec<Scalar>,
+    },
+    FirstValue {
+        value: Scalar,
+        fallback: Scalar,
+    },
     FirstRow,
 }
 
@@ -136,8 +181,14 @@ fn atom(t: &mut Tokens<'_>) -> Result<Scalar, String> {
                 let index = Box::new(sum(t)?);
                 t.expect("]")?;
                 let mut fields = Vec::new();
-                while t.take(".") { fields.push(t.name()?); }
-                return Ok(Scalar::Indexed { source: n, index, fields });
+                while t.take(".") {
+                    fields.push(t.name()?);
+                }
+                return Ok(Scalar::Indexed {
+                    source: n,
+                    index,
+                    fields,
+                });
             }
             let mut path = vec![n];
             while t.take(".") {
@@ -177,13 +228,20 @@ fn scalar(t: &mut Tokens<'_>) -> Result<Scalar, String> {
     let left = sum(t)?;
     if t.take("IS") || t.take("is") {
         let negated = t.take("NOT") || t.take("not");
-        if !t.take("NULL") { t.expect("null")?; }
+        if !t.take("NULL") {
+            t.expect("null")?;
+        }
         let Scalar::Path(parts) = left else {
             return Err("SQL NULL predicate requires a declared column".into());
         };
-        let [owner, column]: [String; 2] = parts.try_into()
+        let [owner, column]: [String; 2] = parts
+            .try_into()
             .map_err(|_| "SQL NULL predicate requires a bound row column")?;
-        return Ok(Scalar::NullPredicate { owner, column, negated });
+        return Ok(Scalar::NullPredicate {
+            owner,
+            column,
+            negated,
+        });
     }
     for (token, op) in [
         ("==", Op::Eq),
@@ -205,11 +263,18 @@ pub(super) fn parse_range(
     accumulate: bool,
     t: &mut Tokens<'_>,
 ) -> Result<Option<IntegerRange>, String> {
-    let kind = if t.take("count") { Kind::Count }
-        else if t.take("sum") { Kind::Sum }
-        else if t.take("first") { Kind::First }
-        else { return Ok(None); };
-    if !t.take("from") || !t.take("[") { return Ok(None); }
+    let kind = if t.take("count") {
+        Kind::Count
+    } else if t.take("sum") {
+        Kind::Sum
+    } else if t.take("first") {
+        Kind::First
+    } else {
+        return Ok(None);
+    };
+    if !t.take("from") || !t.take("[") {
+        return Ok(None);
+    }
 
     let lower = sum(t)?;
     t.expect(",")?;
@@ -218,35 +283,55 @@ pub(super) fn parse_range(
     let alias = if t.take("as") { Some(t.name()?) } else { None };
     let mut filters = Vec::new();
     if t.take("where") {
-        if alias.is_none() { return Err("range predicates require an index binding".into()); }
+        if alias.is_none() {
+            return Err("range predicates require an index binding".into());
+        }
         filters.push(scalar(t)?);
-        while t.take("and") { filters.push(scalar(t)?); }
+        while t.take("and") {
+            filters.push(scalar(t)?);
+        }
     }
     let select = match (kind, alias) {
         (Kind::Count, _) if filters.is_empty() => RangeOperation::Count,
-        (Kind::Count, Some(alias)) if !accumulate =>
-            RangeOperation::FilteredCount(RangeScope { alias, filters }),
+        (Kind::Count, Some(alias)) if !accumulate => {
+            RangeOperation::FilteredCount(RangeScope { alias, filters })
+        }
         (Kind::Sum, None) => RangeOperation::Sum,
         (Kind::Sum, Some(alias)) => {
             t.expect("yield")?;
             let value = scalar(t)?;
-            if filters.is_empty() && matches!(&value, Scalar::Path(parts)
-                if parts.as_slice() == std::slice::from_ref(&alias)) {
+            if filters.is_empty()
+                && matches!(&value, Scalar::Path(parts)
+                if parts.as_slice() == std::slice::from_ref(&alias))
+            {
                 RangeOperation::Sum
             } else {
-                RangeOperation::ProjectedSum { scope: RangeScope { alias, filters }, value }
+                RangeOperation::ProjectedSum {
+                    scope: RangeScope { alias, filters },
+                    value,
+                }
             }
         }
         (Kind::First, Some(alias)) if !accumulate => {
             t.expect("yield")?;
             let value = scalar(t)?;
             t.expect("else")?;
-            RangeOperation::First { scope: RangeScope { alias, filters }, value, fallback: scalar(t)? }
+            RangeOperation::First {
+                scope: RangeScope { alias, filters },
+                value,
+                fallback: scalar(t)?,
+            }
         }
         _ => return Err("unsupported range operation contract".into()),
     };
     t.end("trailing integer range input")?;
-    Ok(Some(IntegerRange { binding: binding.into(), accumulate, lower, upper, select }))
+    Ok(Some(IntegerRange {
+        binding: binding.into(),
+        accumulate,
+        lower,
+        upper,
+        select,
+    }))
 }
 
 pub(super) fn parse(
@@ -259,8 +344,13 @@ pub(super) fn parse(
     } else if t.take("first") {
         Kind::First
     } else if t.take("count") {
-        if t.take("distinct") { Kind::CountDistinct }
-        else if t.take("groups") { Kind::GroupCount } else { Kind::Count }
+        if t.take("distinct") {
+            Kind::CountDistinct
+        } else if t.take("groups") {
+            Kind::GroupCount
+        } else {
+            Kind::Count
+        }
     } else {
         Kind::Rows
     };
@@ -291,7 +381,9 @@ fn parse_query_tail(
             let ScalarOperand::Integer(offset) = t.value()? else {
                 return Err("expected a nonnegative integer slice offset".into());
             };
-            let offset = offset.to_biguint().ok_or("slice offset must be nonnegative")?;
+            let offset = offset
+                .to_biguint()
+                .ok_or("slice offset must be nonnegative")?;
             t.expect(":")?;
             t.expect("]")?;
             Some(offset)
@@ -303,8 +395,15 @@ fn parse_query_tail(
             let default = scalar(t)?;
             t.end("trailing scalar first input")?;
             return Ok(Query {
-                binding, accumulate, source, alias: String::new(), clauses: vec![],
-                operation: Operation::FirstArray { offset: offset.unwrap_or_default(), fallback: default },
+                binding,
+                accumulate,
+                source,
+                alias: String::new(),
+                clauses: vec![],
+                operation: Operation::FirstArray {
+                    offset: offset.unwrap_or_default(),
+                    fallback: default,
+                },
             });
         }
     }
@@ -318,25 +417,44 @@ fn parse_query_tail(
             remaining.push(scalar(t)?);
         }
         t.end("trailing group key clauses")?;
-        return Ok(Query { binding, accumulate, source, alias, clauses: vec![],
-            operation: Operation::OnRows(RowOperation::GroupCount { first, remaining }) });
+        return Ok(Query {
+            binding,
+            accumulate,
+            source,
+            alias,
+            clauses: vec![],
+            operation: Operation::OnRows(RowOperation::GroupCount { first, remaining }),
+        });
     }
     if kind == Kind::Count && t.take("join") {
         let right = t.name()?;
         t.expect("as")?;
         let right_alias = t.name()?;
-        if right_alias == alias { return Err("join requires two distinct row aliases".into()); }
+        if right_alias == alias {
+            return Err("join requires two distinct row aliases".into());
+        }
         t.expect("on")?;
         let on = scalar(t)?;
         let mut filters = vec![];
         if t.take("where") {
             filters.push(scalar(t)?);
-            while t.take("and") { filters.push(scalar(t)?); }
+            while t.take("and") {
+                filters.push(scalar(t)?);
+            }
         }
         t.end("trailing join count input")?;
         return Ok(Query {
-            binding, accumulate, source, alias, clauses: vec![],
-            operation: Operation::JoinCount { source: right, alias: right_alias, on, filters },
+            binding,
+            accumulate,
+            source,
+            alias,
+            clauses: vec![],
+            operation: Operation::JoinCount {
+                source: right,
+                alias: right_alias,
+                on,
+                filters,
+            },
         });
     }
     let mut clauses = vec![];
@@ -362,12 +480,21 @@ fn parse_query_tail(
         }
     }
     if t.take("OR") || t.take("or") {
-        return Err("OR is not supported in local relation predicates; SQL UNKNOWN must be preserved".into());
+        return Err(
+            "OR is not supported in local relation predicates; SQL UNKNOWN must be preserved"
+                .into(),
+        );
     }
     if matches!(kind, Kind::Count | Kind::CountDistinct) && t.rest().is_empty() {
         return Ok(Query {
-            binding, accumulate, source, alias, clauses,
-            operation: Operation::OnRows(RowOperation::Count { distinct: kind == Kind::CountDistinct }),
+            binding,
+            accumulate,
+            source,
+            alias,
+            clauses,
+            operation: Operation::OnRows(RowOperation::Count {
+                distinct: kind == Kind::CountDistinct,
+            }),
         });
     }
     t.expect("yield")?;
@@ -397,16 +524,36 @@ fn parse_query_tail(
         let inner = parse_query_tail(String::new(), false, t, Kind::Sum, false)?;
         let value = match inner.operation {
             Operation::OnRows(RowOperation::Sum(value))
-                if inner.source == alias && inner.alias != alias => value,
-            _ => return Err("nested sum requires a scalar sum from the outer row with a distinct alias".into()),
+                if inner.source == alias && inner.alias != alias =>
+            {
+                value
+            }
+            _ => {
+                return Err(
+                    "nested sum requires a scalar sum from the outer row with a distinct alias"
+                        .into(),
+                )
+            }
         };
-        let filters = inner.clauses.into_iter().map(|clause| match clause {
-            Clause::Where(predicate) => Ok(predicate),
-            _ => Err("nested sum supports scalar filters only".to_owned()),
-        }).collect::<Result<Vec<_>, _>>()?;
+        let filters = inner
+            .clauses
+            .into_iter()
+            .map(|clause| match clause {
+                Clause::Where(predicate) => Ok(predicate),
+                _ => Err("nested sum supports scalar filters only".to_owned()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         return Ok(Query {
-            binding, accumulate, source, alias, clauses,
-            operation: Operation::NestedSum { alias: inner.alias, filters, value },
+            binding,
+            accumulate,
+            source,
+            alias,
+            clauses,
+            operation: Operation::NestedSum {
+                alias: inner.alias,
+                filters,
+                value,
+            },
         });
     } else {
         Yield::Value(scalar(t)?)
@@ -419,31 +566,51 @@ fn parse_query_tail(
             let Yield::Value(value) = projection else {
                 return Err("scalar first fallback requires a scalar projection".into());
             };
-            Yield::FirstValue { value, fallback: scalar(t)? }
+            Yield::FirstValue {
+                value,
+                fallback: scalar(t)?,
+            }
         }
     } else {
         projection
     };
-    t.end("trailing relation input").map_err(|error| format!("{error}: {}", t.rest()))?;
+    t.end("trailing relation input")
+        .map_err(|error| format!("{error}: {}", t.rest()))?;
     let operation = match (kind, projection) {
         (Kind::Rows, Yield::Fields(fields)) => RowOperation::Project(fields),
         (Kind::Rows, Yield::Value(Scalar::Path(path))) => {
-            let [owner, link, leaf]: [String; 3] = path.try_into()
+            let [owner, link, leaf]: [String; 3] = path
+                .try_into()
                 .map_err(|_| "eager record projection requires one nullable member hop")?;
             if owner != alias || !clauses.is_empty() {
-                return Err("eager record projection requires an unfiltered source-order path".into());
+                return Err(
+                    "eager record projection requires an unfiltered source-order path".into(),
+                );
             }
             RowOperation::EagerPath { link, leaf }
         }
         (Kind::Sum, Yield::Value(value)) => RowOperation::Sum(value),
-        (Kind::Count | Kind::CountDistinct, Yield::Value(value)) =>
-            RowOperation::CountProjection { distinct: kind == Kind::CountDistinct, value },
-        (Kind::First, Yield::FirstValue { value, fallback }) =>
-            RowOperation::FirstValue { value, fallback },
+        (Kind::Count | Kind::CountDistinct, Yield::Value(value)) => RowOperation::CountProjection {
+            distinct: kind == Kind::CountDistinct,
+            value,
+        },
+        (Kind::First, Yield::FirstValue { value, fallback }) => {
+            RowOperation::FirstValue { value, fallback }
+        }
         (Kind::First, Yield::Value(Scalar::Path(path)))
-            if path.as_slice() == std::slice::from_ref(&alias) => RowOperation::FirstRow,
+            if path.as_slice() == std::slice::from_ref(&alias) =>
+        {
+            RowOperation::FirstRow
+        }
         // No input types or acquired values can make this pair legal.
         _ => return Err("incompatible query operation and projection".into()),
     };
-    Ok(Query { binding, accumulate, source, alias, clauses, operation: Operation::OnRows(operation) })
+    Ok(Query {
+        binding,
+        accumulate,
+        source,
+        alias,
+        clauses,
+        operation: Operation::OnRows(operation),
+    })
 }

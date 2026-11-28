@@ -11,9 +11,13 @@ use std::time::Instant;
 
 /// Admit only a bare Count with an exact integer bound. Both source
 /// orientations share the comparison owner and cannot certify projections.
-pub(super) fn relation_count_bound(expr: &Expr) -> Option<(crate::BinOpKind, &RelationExpr, crate::Integer)> {
-    let (op, count, bound) =
-        super::constraint::comparison_literal_rhs(expr.as_binop()?, super::constraint::integer_literal)?;
+pub(super) fn relation_count_bound(
+    expr: &Expr,
+) -> Option<(crate::BinOpKind, &RelationExpr, crate::Integer)> {
+    let (op, count, bound) = super::constraint::comparison_literal_rhs(
+        expr.as_binop()?,
+        super::constraint::integer_literal,
+    )?;
     let (RelationAggregateKind::Count, relation, None, None) = count.as_relation_aggregate()?
     else {
         return None;
@@ -25,7 +29,9 @@ pub(super) fn relation_count_bound(expr: &Expr) -> Option<(crate::BinOpKind, &Re
 fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     use crate::BinOpKind::*;
     let (op, relation, bound) = relation_count_bound(expr)?;
-    if bound != 0.into() { return None; }
+    if bound != 0.into() {
+        return None;
+    }
     let exists = || crate::domains::relation::relation_exists(relation.clone());
     Some(match op {
         Eq | Le => builder::not(exists()),
@@ -88,9 +94,8 @@ fn rewrite_index_zero_as_first(expr: &Expr) -> Option<Expr> {
 /// language.
 pub(crate) fn simplify(expr: &Expr) -> Expr {
     let profile = if crate::profile::enabled() {
-        expr.as_relation_aggregate().map(|(_, relation, _, _)| {
-            (relation_profile_size(relation), Instant::now())
-        })
+        expr.as_relation_aggregate()
+            .map(|(_, relation, _, _)| (relation_profile_size(relation), Instant::now()))
     } else {
         None
     };
@@ -100,7 +105,8 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
         .or_else(|| rewrite_index_zero_as_first(expr))
         .unwrap_or_else(|| expr.clone());
     if let Some((input_size, start)) = profile {
-        let output_size = output.as_relation_aggregate()
+        let output_size = output
+            .as_relation_aggregate()
             .map_or(0, |(_, relation, _, _)| relation_profile_size(relation));
         let skip_reason = (output == *expr).then_some("no_rewrite");
         crate::profile::rule_event(
@@ -116,14 +122,22 @@ pub(crate) fn simplify(expr: &Expr) -> Expr {
 
 fn relation_profile_size(relation: &RelationExpr) -> usize {
     match relation {
-        RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::RecordProjection { .. } => 1,
+        RelationExpr::Empty | RelationExpr::Base { .. } | RelationExpr::RecordProjection { .. } => {
+            1
+        }
         RelationExpr::Vector { value, .. } => 1 + value.size(),
-        RelationExpr::Select { predicate: value, input }
-        | RelationExpr::Project { value, input, .. } => 1 + value.size() + relation_profile_size(input),
+        RelationExpr::Select {
+            predicate: value,
+            input,
+        }
+        | RelationExpr::Project { value, input, .. } => {
+            1 + value.size() + relation_profile_size(input)
+        }
         RelationExpr::Distinct(input) => 1 + relation_profile_size(input),
         RelationExpr::ProjectedUnion(columns) => 1 + columns.iter().len(),
         RelationExpr::Grouped(group) => 1 + group.columns().count(),
-        RelationExpr::Join { on, filters, .. } =>
-            1 + on.size() + filters.iter().map(Expr::size).sum::<usize>(),
+        RelationExpr::Join { on, filters, .. } => {
+            1 + on.size() + filters.iter().map(Expr::size).sum::<usize>()
+        }
     }
 }

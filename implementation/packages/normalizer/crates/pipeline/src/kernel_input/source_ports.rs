@@ -23,8 +23,12 @@ fn domain(ty: &JavaType, program: &JavaProgram) -> Result<Ty> {
                 .find_class(name)
                 .ok_or_else(|| fail("unknown external result domain"))?;
             need(
-                !class.is_interface() && class.fields().iter().any(|field| !field.is_static())
-                    && class.methods().iter().all(|method| crate::normalized::plain_source_data_method(class, method)),
+                !class.is_interface()
+                    && class.fields().iter().any(|field| !field.is_static())
+                    && class
+                        .methods()
+                        .iter()
+                        .all(|method| crate::normalized::plain_source_data_method(class, method)),
                 "port data needs source-declared fields and closed accessors",
             )?;
             let fields = class
@@ -96,16 +100,31 @@ impl Engine<'_> {
         let contract = &self.checked_ports[id];
         if guard.as_bool() == Some(false) {
             // No call occurs, so this carrier cannot denote a receipt.
-            return Ok(Value::Term(contract.completion.returns.clone(), b::lit_null()));
+            return Ok(Value::Term(
+                contract.completion.returns.clone(),
+                b::lit_null(),
+            ));
         }
-        need(args.len() == contract.parameters.len(), "source port argument count mismatch")?;
+        need(
+            args.len() == contract.parameters.len(),
+            "source port argument count mismatch",
+        )?;
         let parameters = contract.parameters.clone();
-        let declarations: Vec<_> = self.project.source_ports[id].params.iter().map(|(ty, _)| ty.clone()).collect();
+        let declarations: Vec<_> = self.project.source_ports[id]
+            .params
+            .iter()
+            .map(|(ty, _)| ty.clone())
+            .collect();
         let mut values = Vec::with_capacity(args.len());
         for ((arg, expected), declared) in args.iter().zip(&parameters).zip(&declarations) {
             if let Ty::Record(fields) = expected {
                 if arg.ty() == Ty::Ref {
-                    values.push(self.freeze_source_port_record(arg.scalar()?, declared, fields, &guard)?);
+                    values.push(self.freeze_source_port_record(
+                        arg.scalar()?,
+                        declared,
+                        fields,
+                        &guard,
+                    )?);
                     continue;
                 }
             }
@@ -116,8 +135,14 @@ impl Engine<'_> {
         let spec = &self.checked_ports[id].completion;
         let receipt = realtime_state::EffectReceipt::tagged(bind);
         let response = receipt.response().clone();
-        self.realtime_effects
-            .record_source_port(guard.clone(), id, values, receipt, spec.clone(), rooted_identity);
+        self.realtime_effects.record_source_port(
+            guard.clone(),
+            id,
+            values,
+            receipt,
+            spec.clone(),
+            rooted_identity,
+        );
         if spec.throwing() {
             // These failures are disjoint tags of this one receipt. Install
             // the partition together: list order is not exception priority.
@@ -136,9 +161,9 @@ impl Engine<'_> {
                 guard: math::normalize(b::not(failure)),
                 outcome: realtime_state::CompletionOutcome::Continue,
             });
-            self.realtime_completion = self.realtime_completion.replace_continue(
-                realtime_state::Completion::from_alternatives(alternatives),
-            );
+            self.realtime_completion = self
+                .realtime_completion
+                .replace_continue(realtime_state::Completion::from_alternatives(alternatives));
         }
         // A non-throwing integer port exposes the acquired numeric value of
         // this receipt, not the completion control token. The identity and

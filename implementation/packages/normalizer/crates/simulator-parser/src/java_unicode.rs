@@ -18,16 +18,27 @@ pub(crate) struct Surrogates<'a> {
 impl Surrogates<'_> {
     pub(crate) fn at(self, offset: usize) -> Option<u16> {
         let key = self.base + offset;
-        let index = self.units.binary_search_by_key(&key, |&(pos, _)| pos).ok()?;
+        let index = self
+            .units
+            .binary_search_by_key(&key, |&(pos, _)| pos)
+            .ok()?;
         Some(self.units[index].1)
     }
 
     pub(crate) fn subspan(self, offset: usize) -> Self {
-        Self { base: self.base + offset, ..self }
+        Self {
+            base: self.base + offset,
+            ..self
+        }
     }
 }
 
-pub(super) fn advance_position(b: u8, previous_cr: bool, row: &mut usize, column: &mut usize) -> bool {
+pub(super) fn advance_position(
+    b: u8,
+    previous_cr: bool,
+    row: &mut usize,
+    column: &mut usize,
+) -> bool {
     if matches!(b, b'\r' | b'\n') {
         *row += usize::from(!(previous_cr && b == b'\n'));
         *column = 1;
@@ -39,7 +50,10 @@ pub(super) fn advance_position(b: u8, previous_cr: bool, row: &mut usize, column
 
 impl Translation {
     pub(super) fn surrogates(&self) -> Surrogates<'_> {
-        Surrogates { units: &self.surrogates, base: 0 }
+        Surrogates {
+            units: &self.surrogates,
+            base: 0,
+        }
     }
 
     pub(super) fn raw_offset(&self, line: usize, col: usize) -> usize {
@@ -56,7 +70,9 @@ impl Translation {
 }
 
 pub(super) fn translate(source: &str) -> Result<Option<Translation>, (usize, &'static str)> {
-    if !source.contains("\\u") { return Ok(None); }
+    if !source.contains("\\u") {
+        return Ok(None);
+    }
 
     let bytes = source.as_bytes();
     let mut units = Vec::new();
@@ -67,18 +83,26 @@ pub(super) fn translate(source: &str) -> Result<Option<Translation>, (usize, &'s
 
     while pos < bytes.len() {
         let start = pos;
-        let escape = bytes[pos] == b'\\' && (last_escaped || !odd_slashes)
+        let escape = bytes[pos] == b'\\'
+            && (last_escaped || !odd_slashes)
             && bytes.get(pos + 1) == Some(&b'u');
         if escape {
             pos += 2;
-            while bytes.get(pos) == Some(&b'u') { pos += 1; }
+            while bytes.get(pos) == Some(&b'u') {
+                pos += 1;
+            }
             let mut value = 0u16;
             for _ in 0..4 {
                 let digit = match bytes.get(pos).copied() {
                     Some(c @ b'0'..=b'9') => c - b'0',
                     Some(c @ b'a'..=b'f') => c - b'a' + 10,
                     Some(c @ b'A'..=b'F') => c - b'A' + 10,
-                    _ => return Err((start, "[JAVA-UNICODE-ESCAPE] expected four hexadecimal digits")),
+                    _ => {
+                        return Err((
+                            start,
+                            "[JAVA-UNICODE-ESCAPE] expected four hexadecimal digits",
+                        ))
+                    }
                 };
                 value = (value << 4) | u16::from(digit);
                 pos += 1;
@@ -88,7 +112,10 @@ pub(super) fn translate(source: &str) -> Result<Option<Translation>, (usize, &'s
             last_escaped = true;
             translated = true;
         } else {
-            let c = source[pos..].chars().next().expect("nonempty UTF-8 source remainder");
+            let c = source[pos..]
+                .chars()
+                .next()
+                .expect("nonempty UTF-8 source remainder");
             units.extend(c.encode_utf16(&mut [0; 2]).iter().map(|&u| (u, start)));
             pos += c.len_utf8();
             odd_slashes = c == '\\' && !odd_slashes;
@@ -96,7 +123,9 @@ pub(super) fn translate(source: &str) -> Result<Option<Translation>, (usize, &'s
         }
     }
 
-    if !translated { return Ok(None); }
+    if !translated {
+        return Ok(None);
+    }
     let mut text = String::with_capacity(bytes.len());
     let mut origins = Vec::with_capacity(bytes.len() + 1);
     let mut surrogates = Vec::new();
@@ -115,5 +144,9 @@ pub(super) fn translate(source: &str) -> Result<Option<Translation>, (usize, &'s
         origins.resize(text.len(), origin);
     }
     origins.push(source.len());
-    Ok(Some(Translation { text, origins, surrogates }))
+    Ok(Some(Translation {
+        text,
+        origins,
+        surrogates,
+    }))
 }

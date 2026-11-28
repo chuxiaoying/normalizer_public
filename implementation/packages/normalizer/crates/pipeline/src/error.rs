@@ -8,7 +8,6 @@ pub enum PipelineError {
     Io(String),
     /// resolve 阶段错误（字符串承载底层错误文本；不得吞错或降级）
     Resolve(String),
-
 }
 
 impl std::fmt::Display for PipelineError {

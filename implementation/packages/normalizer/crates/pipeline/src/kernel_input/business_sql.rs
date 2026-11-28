@@ -1,10 +1,8 @@
 //! Boundary observation of atomic SQL writes. Java owns evaluation of the
 //! containing method and its control flow; the operation binds one completion.
-use super::{
-    fail, need, Engine, Env, Result, Ty, Value,
-};
+use super::{fail, need, Engine, Env, Result, Ty, Value};
 use math::{builder as b, domains::completion, Expr, Lit};
-use normalizer_ir::local::{SqlOperation, ScalarOperand, SqlWrite};
+use normalizer_ir::local::{ScalarOperand, SqlOperation, SqlWrite};
 use serde_json::json;
 use std::collections::{btree_map::Entry, BTreeMap};
 
@@ -23,7 +21,9 @@ pub(super) fn register_column(
     evidence: ColumnEvidence,
 ) -> Result<()> {
     match columns.entry(name.into()) {
-        Entry::Vacant(column) => { column.insert(ty.into()); }
+        Entry::Vacant(column) => {
+            column.insert(ty.into());
+        }
         Entry::Occupied(column) => {
             let prior = column.get().as_str();
             let expected = match evidence {
@@ -31,7 +31,9 @@ pub(super) fn register_column(
                 ColumnEvidence::Operand => prior.strip_suffix('?').unwrap_or(prior),
             };
             if expected != ty {
-                return Err(fail(format!("conflicting physical column type: {table}.{name}")));
+                return Err(fail(format!(
+                    "conflicting physical column type: {table}.{name}"
+                )));
             }
         }
     }
@@ -79,7 +81,13 @@ impl Engine<'_> {
                 ScalarOperand::Text(s) => (Ty::Text, b::lit_str(s)),
             };
             let ty = column_type(&ty, false).ok_or_else(|| fail("unsupported SQL column type"))?;
-            register_column(&mut columns, &write.table, column, ty, ColumnEvidence::Operand)?;
+            register_column(
+                &mut columns,
+                &write.table,
+                column,
+                ty,
+                ColumnEvidence::Operand,
+            )?;
             args.push(value);
         }
         let guard = self.normal_path(path);
@@ -109,7 +117,9 @@ impl Engine<'_> {
         // UPDATE and DELETE expose their actual affected-row receipts.
         let affected = match write.operation {
             SqlOperation::Insert => b::lit_int(1),
-            SqlOperation::Update { .. } | SqlOperation::Delete { .. } => completion::value(response, math::Primitive::Number),
+            SqlOperation::Update { .. } | SqlOperation::Delete { .. } => {
+                completion::value(response, math::Primitive::Number)
+            }
         };
         env.insert(write.binding.clone(), Value::Term(Ty::Integer, affected));
         Ok(())
@@ -117,7 +127,9 @@ impl Engine<'_> {
 }
 
 impl SqlEffect {
-    pub(super) fn table(&self) -> &str { &self.statement.table }
+    pub(super) fn table(&self) -> &str {
+        &self.statement.table
+    }
 
     pub(super) fn exception(&self) -> &str {
         &self.statement.exception
@@ -132,33 +144,62 @@ impl SqlEffect {
     ) -> Result<serde_json::Value> {
         let table = tables.entry(self.statement.table.clone()).or_default();
         for (column, ty) in &self.columns {
-            register_column(table, &self.statement.table, column, ty, ColumnEvidence::Operand)?;
+            register_column(
+                table,
+                &self.statement.table,
+                column,
+                ty,
+                ColumnEvidence::Operand,
+            )?;
         }
-        let operands = args.iter().map(|operand| match operand.as_lit() {
-            Some(Lit::Str(text)) => format!("'{}'", text.replace('\'', "''")),
-            _ => crate::format_expr_with_ctx(operand, ctx),
-        }).collect::<Vec<_>>();
+        let operands = args
+            .iter()
+            .map(|operand| match operand.as_lit() {
+                Some(Lit::Str(text)) => format!("'{}'", text.replace('\'', "''")),
+                _ => crate::format_expr_with_ctx(operand, ctx),
+            })
+            .collect::<Vec<_>>();
         let predicate_order = match &self.statement.operation {
             SqlOperation::Insert => vec![],
             SqlOperation::Update { predicates } | SqlOperation::Delete { predicates } => {
                 let compare = ctx.bound_order();
                 let offset = self.statement.assignments.len();
-                let mut keys = predicates.iter().enumerate().map(|(index, (column, _))| {
-                    let kind = match table[column].as_str() {
-                        "number" => "number",
-                        "text" => "text",
-                        "text?" => "text?",
-                        _ => unreachable!("SQL assignment checked scalar column type"),
-                    };
-                    let slot = b::sql_column(&self.statement.table, math::domains::relation::TableSource {
-                        name: self.statement.table.clone(), snapshot: None,
-                    }, 0, column, kind);
-                    let value = args[offset + index].clone();
-                    let expression = if math::canonical_order_ordered_comparison(
-                        math::BinOpKind::Eq, &slot, &value, &compare,
-                    ).is_some() { b::eq(value, slot) } else { b::eq(slot, value) };
-                    (math::canonical_order_key(&expression, &compare), index)
-                }).collect::<Vec<_>>();
+                let mut keys = predicates
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (column, _))| {
+                        let kind = match table[column].as_str() {
+                            "number" => "number",
+                            "text" => "text",
+                            "text?" => "text?",
+                            _ => unreachable!("SQL assignment checked scalar column type"),
+                        };
+                        let slot = b::sql_column(
+                            &self.statement.table,
+                            math::domains::relation::TableSource {
+                                name: self.statement.table.clone(),
+                                snapshot: None,
+                            },
+                            0,
+                            column,
+                            kind,
+                        );
+                        let value = args[offset + index].clone();
+                        let expression = if math::canonical_order_ordered_comparison(
+                            math::BinOpKind::Eq,
+                            &slot,
+                            &value,
+                            &compare,
+                        )
+                        .is_some()
+                        {
+                            b::eq(value, slot)
+                        } else {
+                            b::eq(slot, value)
+                        };
+                        (math::canonical_order_key(&expression, &compare), index)
+                    })
+                    .collect::<Vec<_>>();
                 keys.sort_by(|a, z| a.0.cmp(&z.0));
                 keys.into_iter().map(|(_, index)| index).collect()
             }
@@ -171,7 +212,11 @@ impl SqlEffect {
     }
 }
 
-fn render_statement(write: &SqlWrite, args: &[String], predicate_order: &[usize]) -> Result<String> {
+fn render_statement(
+    write: &SqlWrite,
+    args: &[String],
+    predicate_order: &[usize],
+) -> Result<String> {
     need(
         write.operands().count() == args.len(),
         "SQL operand count mismatch",

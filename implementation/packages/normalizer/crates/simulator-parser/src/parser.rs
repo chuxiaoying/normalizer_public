@@ -49,14 +49,20 @@ pub fn parse(
     let translated = java_unicode::translate(source)
         .map_err(|(offset, msg)| Parser::new(source, file_hint).err_at(offset, msg))?;
     let input = translated.as_ref().map_or(source, |t| t.text.as_str());
-    let surrogates = translated.as_ref().map_or_else(Surrogates::default, |t| t.surrogates());
+    let surrogates = translated
+        .as_ref()
+        .map_or_else(Surrogates::default, |t| t.surrogates());
     let mut p = Parser::new(input, file_hint).with_surrogates(surrogates);
     let parsed = p.parse_program();
-    let mut prog = p.lexical_error.take().map_or(parsed, Err).map_err(|error| {
-        let Some(t) = &translated else { return error };
-        let ParseError::Syntax { line, col, msg, .. } = error;
-        Parser::new(source, file_hint).err_at(t.raw_offset(line, col), &msg)
-    })?;
+    let mut prog = p
+        .lexical_error
+        .take()
+        .map_or(parsed, Err)
+        .map_err(|error| {
+            let Some(t) = &translated else { return error };
+            let ParseError::Syntax { line, col, msg, .. } = error;
+            Parser::new(source, file_hint).err_at(t.raw_offset(line, col), &msg)
+        })?;
     flatten_inner_classes(&mut prog);
     Ok(prog)
 }
@@ -123,7 +129,12 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn err_at(&self, offset: usize, msg: &str) -> ParseError {
         let (line, col) = self.location(offset);
-        ParseError::Syntax { file: self.file.clone(), line, col, msg: msg.to_string() }
+        ParseError::Syntax {
+            file: self.file.clone(),
+            line,
+            col,
+            msg: msg.to_string(),
+        }
     }
 
     pub(crate) fn err(&self, msg: &str) -> ParseError {
@@ -133,11 +144,18 @@ impl<'a> Parser<'a> {
     // Class and method fragments are parsed with local offsets. Reattach an
     // error to its original source position at every enclosing slice.
     pub(crate) fn rebase_slice(&self, offset: usize, error: ParseError) -> ParseError {
-        let ParseError::Syntax { file, line, col, msg } = error;
+        let ParseError::Syntax {
+            file,
+            line,
+            col,
+            msg,
+        } = error;
         let (start_line, start_col) = self.location(offset);
         ParseError::Syntax {
-            file, line: start_line + line - 1,
-            col: if line == 1 { start_col + col - 1 } else { col }, msg,
+            file,
+            line: start_line + line - 1,
+            col: if line == 1 { start_col + col - 1 } else { col },
+            msg,
         }
     }
 
@@ -153,10 +171,19 @@ impl<'a> Parser<'a> {
 
     /// Leave semantic comments for the statement parser, even when malformed.
     pub(crate) fn local_ir_start(&self) -> Option<usize> {
-        let comment = self.source.as_bytes().get(self.pos..)?.strip_prefix(b"/*")?;
-        let offset = comment.iter().position(|byte| !byte.is_ascii_whitespace())?;
+        let comment = self
+            .source
+            .as_bytes()
+            .get(self.pos..)?
+            .strip_prefix(b"/*")?;
+        let offset = comment
+            .iter()
+            .position(|byte| !byte.is_ascii_whitespace())?;
         let rest = comment[offset..].strip_prefix(b"@normalizer-ir")?;
-        if rest.first().is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_') {
+        if rest
+            .first()
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        {
             return None;
         }
         Some(self.source.len() - rest.len())
@@ -165,7 +192,9 @@ impl<'a> Parser<'a> {
     fn skip_line_comment(&mut self) {
         while let Some(c) = self.peek() {
             self.pos += 1;
-            if matches!(c, b'\r' | b'\n') { break; }
+            if matches!(c, b'\r' | b'\n') {
+                break;
+            }
         }
     }
 
@@ -173,7 +202,9 @@ impl<'a> Parser<'a> {
         let start = self.pos;
         self.pos += 2;
         while self.pos + 1 < self.source.len() {
-            if self.source.as_bytes()[self.pos] == b'*' && self.source.as_bytes()[self.pos + 1] == b'/' {
+            if self.source.as_bytes()[self.pos] == b'*'
+                && self.source.as_bytes()[self.pos + 1] == b'/'
+            {
                 self.pos += 2;
                 return Ok(());
             }
@@ -252,13 +283,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(crate) fn require_delimiter(&mut self, token: u8, expected: &str) -> Result<(), ParseError> {
-        if self.eat_char(token) { return Ok(()); }
+    pub(crate) fn require_delimiter(
+        &mut self,
+        token: u8,
+        expected: &str,
+    ) -> Result<(), ParseError> {
+        if self.eat_char(token) {
+            return Ok(());
+        }
         Err(self.err(expected))
     }
 
     pub(crate) fn require_semicolon(&mut self, position: &str) -> Result<(), ParseError> {
-        if self.eat_char(b';') { return Ok(()); }
+        if self.eat_char(b';') {
+            return Ok(());
+        }
         Err(self.err(&format!("[JAVA-SEMICOLON] expected ';' after {position}")))
     }
 
@@ -301,7 +340,10 @@ impl<'a> Parser<'a> {
 
     // Both callers have consumed their ASCII opener in the decoded source.
     fn skip_balanced_body(
-        &mut self, opening: u8, closing: u8, unclosed: &str,
+        &mut self,
+        opening: u8,
+        closing: u8,
+        unclosed: &str,
     ) -> Result<&'a str, ParseError> {
         let start = self.pos;
         let mut depth = 1i32;
@@ -330,7 +372,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_nominal_base(&mut self) -> Result<String, ParseError> {
-        let name = self.read_qualified_ident()
+        let name = self
+            .read_qualified_ident()
             .ok_or_else(|| self.err("expected nominal supertype"))?;
         self.skip_ws();
         if self.peek() == Some(b'<') {
@@ -342,13 +385,24 @@ impl<'a> Parser<'a> {
     fn parse_class_hierarchy(
         &mut self,
         is_interface: bool,
-    ) -> Result<(Option<String>, Vec<String>, std::collections::BTreeMap<String, Vec<JavaType>>), ParseError> {
+    ) -> Result<
+        (
+            Option<String>,
+            Vec<String>,
+            std::collections::BTreeMap<String, Vec<JavaType>>,
+        ),
+        ParseError,
+    > {
         let supertype = if !is_interface && self.eat_keyword("extends") {
             Some(self.parse_nominal_base()?)
         } else {
             None
         };
-        let interfaces_keyword = if is_interface { "extends" } else { "implements" };
+        let interfaces_keyword = if is_interface {
+            "extends"
+        } else {
+            "implements"
+        };
         let mut interfaces = Vec::new();
         let mut interface_arguments = std::collections::BTreeMap::new();
         if self.eat_keyword(interfaces_keyword) {
@@ -358,7 +412,10 @@ impl<'a> Parser<'a> {
                     Some(JavaType::Generic(name, args)) if !args.is_empty() => (name, args),
                     _ => return Err(self.err("expected declared interface type")),
                 };
-                if interface_arguments.insert(name.clone(), arguments).is_some() {
+                if interface_arguments
+                    .insert(name.clone(), arguments)
+                    .is_some()
+                {
                     return Err(self.err("duplicate interface in class hierarchy"));
                 }
                 interfaces.push(name);
@@ -371,18 +428,29 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_parameters(&mut self) -> Result<Vec<String>, ParseError> {
-        if !self.eat_char(b'<') { return Ok(Vec::new()); }
+        if !self.eat_char(b'<') {
+            return Ok(Vec::new());
+        }
         let mut parameters = Vec::new();
         loop {
             let name_at = self.pos;
-            let name = self.read_ident().filter(|name| !is_reserved_identifier(name))
-                .ok_or_else(|| self.err_at(name_at, "[JAVA-TYPE-PARAMETERS] expected a parameter name"))?;
+            let name = self
+                .read_ident()
+                .filter(|name| !is_reserved_identifier(name))
+                .ok_or_else(|| {
+                    self.err_at(name_at, "[JAVA-TYPE-PARAMETERS] expected a parameter name")
+                })?;
             if parameters.contains(&name) {
                 return Err(self.err_at(name_at, "[JAVA-TYPE-PARAMETERS] duplicate type parameter"));
             }
             parameters.push(name);
-            if self.eat_char(b'>') { return Ok(parameters); }
-            self.require_delimiter(b',', "[JAVA-TYPE-PARAMETERS] expected ',' or '>' after unbounded type parameter")?;
+            if self.eat_char(b'>') {
+                return Ok(parameters);
+            }
+            self.require_delimiter(
+                b',',
+                "[JAVA-TYPE-PARAMETERS] expected ',' or '>' after unbounded type parameter",
+            )?;
         }
     }
 
@@ -407,7 +475,10 @@ impl<'a> Parser<'a> {
             } else {
                 false
             };
-            out.push(AnnotationRef { name, has_arguments });
+            out.push(AnnotationRef {
+                name,
+                has_arguments,
+            });
         }
         Ok(out)
     }
@@ -417,23 +488,29 @@ impl<'a> Parser<'a> {
 
         self.skip_ws();
         let package = if self.eat_keyword("package") {
-            let name = self.read_qualified_ident()
+            let name = self
+                .read_qualified_ident()
                 .filter(|name| !name.split('.').any(is_reserved_identifier))
                 .ok_or_else(|| self.err("[JAVA-PACKAGE] expected a qualified package name"))?;
             self.require_delimiter(b';', "[JAVA-PACKAGE] expected semicolon")?;
             name
-        } else { String::new() };
+        } else {
+            String::new()
+        };
 
         // Keep the exact ordinary imports. The closed input profile only
         // needs the presence, not the strings, of static or wildcard imports.
         while self.eat_keyword("import") {
             let is_static = self.eat_keyword("static");
-            let name = self.read_qualified_ident()
+            let name = self
+                .read_qualified_ident()
                 .ok_or_else(|| self.err("[JAVA-IMPORT] expected a qualified import name"))?;
             let wildcard = if self.eat_char(b'.') {
                 self.require_delimiter(b'*', "[JAVA-IMPORT] expected wildcard after trailing dot")?;
                 true
-            } else { false };
+            } else {
+                false
+            };
             if !wildcard && !name.contains('.') {
                 return Err(self.err("[JAVA-IMPORT] expected a qualified import name"));
             }
@@ -445,10 +522,26 @@ impl<'a> Parser<'a> {
                 let inert_jdk = match (is_static, wildcard) {
                     (false, true) => name == "java.util",
                     (true, true) => name == "java.lang.Math",
-                    (true, false) => name.strip_prefix("java.lang.Math.")
-                        .is_some_and(|member| matches!(member,
-                            "E" | "PI" | "abs" | "min" | "max" | "ceil" | "floor" | "round"
-                            | "sqrt" | "pow" | "sin" | "cos" | "tan" | "exp" | "log" | "random")),
+                    (true, false) => name.strip_prefix("java.lang.Math.").is_some_and(|member| {
+                        matches!(
+                            member,
+                            "E" | "PI"
+                                | "abs"
+                                | "min"
+                                | "max"
+                                | "ceil"
+                                | "floor"
+                                | "round"
+                                | "sqrt"
+                                | "pow"
+                                | "sin"
+                                | "cos"
+                                | "tan"
+                                | "exp"
+                                | "log"
+                                | "random"
+                        )
+                    }),
                     _ => false,
                 };
                 self.has_unknown_import_origins |= !inert_jdk;
@@ -486,12 +579,27 @@ impl<'a> Parser<'a> {
         self.require_delimiter(b'(', "[JAVA-RECORD] expected component header")?;
         let mut components = Vec::new();
         let mut names = std::collections::BTreeSet::new();
-        if self.eat_char(b')') { return Ok(components); }
+        if self.eat_char(b')') {
+            return Ok(components);
+        }
         loop {
-            let ty = parse_type(self).ok_or_else(|| self.err("[JAVA-RECORD] expected component type"))?;
-            let name = self.read_ident().ok_or_else(|| self.err("[JAVA-RECORD] expected component name"))?;
+            let ty = parse_type(self)
+                .ok_or_else(|| self.err("[JAVA-RECORD] expected component type"))?;
+            let name = self
+                .read_ident()
+                .ok_or_else(|| self.err("[JAVA-RECORD] expected component name"))?;
             if is_reserved_identifier(&name)
-                || matches!(name.as_str(), "clone" | "finalize" | "getClass" | "hashCode" | "notify" | "notifyAll" | "toString" | "wait")
+                || matches!(
+                    name.as_str(),
+                    "clone"
+                        | "finalize"
+                        | "getClass"
+                        | "hashCode"
+                        | "notify"
+                        | "notifyAll"
+                        | "toString"
+                        | "wait"
+                )
                 || !names.insert(name.clone())
             {
                 return Err(self.err("[JAVA-RECORD] invalid or repeated component name"));
@@ -506,7 +614,9 @@ impl<'a> Parser<'a> {
                 annotations: Vec::new(),
                 initializer: None,
             });
-            if self.eat_char(b')') { return Ok(components); }
+            if self.eat_char(b')') {
+                return Ok(components);
+            }
             self.require_delimiter(b',', "[JAVA-RECORD] expected component separator")?;
         }
     }
@@ -514,16 +624,24 @@ impl<'a> Parser<'a> {
     fn parse_type_declaration_name(&mut self, owner: Option<&str>) -> Result<String, ParseError> {
         self.skip_ws();
         let at = self.pos;
-        let name = self.read_ident().ok_or_else(|| self.err_at(at, if owner.is_some() {
-            "expected nested class name"
-        } else {
-            "expected class name"
-        }))?;
+        let name = self.read_ident().ok_or_else(|| {
+            self.err_at(
+                at,
+                if owner.is_some() {
+                    "expected nested class name"
+                } else {
+                    "expected class name"
+                },
+            )
+        })?;
         if is_reserved_identifier(&name) {
             let qualified = owner.map_or_else(|| name.clone(), |owner| format!("{owner}.{name}"));
-            return Err(self.err_at(at, &format!(
+            return Err(self.err_at(
+                at,
+                &format!(
                 "[JAVA-RESERVED-TYPE-NAME] {qualified}: reserved keyword used as a Java type name"
-            )));
+            ),
+            ));
         }
         Ok(name)
     }
@@ -531,25 +649,42 @@ impl<'a> Parser<'a> {
     fn parse_class(&mut self, package: &str) -> Result<JavaClass, ParseError> {
         let annotations = self.read_annotations()?;
         let modifiers = [
-            "public", "private", "protected", "static", "final", "abstract", "sealed", "strictfp",
+            "public",
+            "private",
+            "protected",
+            "static",
+            "final",
+            "abstract",
+            "sealed",
+            "strictfp",
         ];
         let mut seen = std::collections::BTreeSet::new();
         while let Some(&keyword) = modifiers.iter().find(|keyword| self.eat_keyword(keyword)) {
             if matches!(keyword, "private" | "protected" | "static") || !seen.insert(keyword) {
-                return Err(self.err("[JAVA-TYPE-MODIFIER] invalid or repeated top-level type modifier"));
+                return Err(
+                    self.err("[JAVA-TYPE-MODIFIER] invalid or repeated top-level type modifier")
+                );
             }
         }
         let is_record = self.eat_keyword("record");
-        let is_interface = if is_record { false } else {
-            self.take_class_kind()?.ok_or_else(|| self.err("expected class or interface declaration"))?
+        let is_interface = if is_record {
+            false
+        } else {
+            self.take_class_kind()?
+                .ok_or_else(|| self.err("expected class or interface declaration"))?
         };
 
         let simple_name = self.parse_type_declaration_name(None)?;
 
         let type_parameters = self.parse_type_parameters()?;
 
-        let fields = if is_record { self.parse_record_components()? } else { Vec::new() };
-        let (supertype, interfaces, interface_arguments) = self.parse_class_hierarchy(is_interface)?;
+        let fields = if is_record {
+            self.parse_record_components()?
+        } else {
+            Vec::new()
+        };
+        let (supertype, interfaces, interface_arguments) =
+            self.parse_class_hierarchy(is_interface)?;
         if is_record && (supertype.is_some() || !interfaces.is_empty()) {
             return Err(self.err("[JAVA-RECORD] a passive record cannot declare inheritance"));
         }
@@ -583,12 +718,21 @@ impl<'a> Parser<'a> {
             let mut body = Parser::new(body_text, &self.file);
             body.skip_ws();
             if body.peek().is_some() {
-                return Err(self.err_at(body_at, "[JAVA-RECORD] only an empty passive record body is supported"));
+                return Err(self.err_at(
+                    body_at,
+                    "[JAVA-RECORD] only an empty passive record body is supported",
+                ));
             }
             return Ok(class);
         }
 
-        parse_class_body(body_text, &mut class, &self.file, self.surrogates.subspan(body_at)).map_err(|error| self.rebase_slice(body_at, error))?;
+        parse_class_body(
+            body_text,
+            &mut class,
+            &self.file,
+            self.surrogates.subspan(body_at),
+        )
+        .map_err(|error| self.rebase_slice(body_at, error))?;
 
         Ok(class)
     }
@@ -601,7 +745,10 @@ fn parse_throws(p: &mut Parser<'_>) -> Result<Vec<String>, ParseError> {
     let mut names = Vec::new();
     loop {
         p.skip_ws();
-        names.push(p.read_qualified_ident().ok_or_else(|| p.err("expected exception type after throws"))?);
+        names.push(
+            p.read_qualified_ident()
+                .ok_or_else(|| p.err("expected exception type after throws"))?,
+        );
         p.skip_ws();
         if !p.eat_char(b',') {
             break;
@@ -613,14 +760,62 @@ fn parse_throws(p: &mut Parser<'_>) -> Result<Vec<String>, ParseError> {
 /// Whether a token cannot serve as an ordinary Java identifier. Contextual
 /// keywords are not blanket reserved; literals and the single underscore are.
 pub(super) fn is_reserved_identifier(name: &str) -> bool {
-    matches!(name,
-        "_" | "abstract" | "assert" | "boolean" | "break" | "byte" | "case" | "catch" |
-        "char" | "class" | "const" | "continue" | "default" | "do" | "double" | "else" |
-        "enum" | "extends" | "final" | "finally" | "float" | "for" | "goto" | "if" |
-        "implements" | "import" | "instanceof" | "int" | "interface" | "long" | "native" |
-        "new" | "package" | "private" | "protected" | "public" | "return" | "short" |
-        "static" | "strictfp" | "super" | "switch" | "synchronized" | "this" | "throw" |
-        "throws" | "transient" | "try" | "void" | "volatile" | "while" | "true" | "false" | "null")
+    matches!(
+        name,
+        "_" | "abstract"
+            | "assert"
+            | "boolean"
+            | "break"
+            | "byte"
+            | "case"
+            | "catch"
+            | "char"
+            | "class"
+            | "const"
+            | "continue"
+            | "default"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "extends"
+            | "final"
+            | "finally"
+            | "float"
+            | "for"
+            | "goto"
+            | "if"
+            | "implements"
+            | "import"
+            | "instanceof"
+            | "int"
+            | "interface"
+            | "long"
+            | "native"
+            | "new"
+            | "package"
+            | "private"
+            | "protected"
+            | "public"
+            | "return"
+            | "short"
+            | "static"
+            | "strictfp"
+            | "super"
+            | "switch"
+            | "synchronized"
+            | "this"
+            | "throw"
+            | "throws"
+            | "transient"
+            | "try"
+            | "void"
+            | "volatile"
+            | "while"
+            | "true"
+            | "false"
+            | "null"
+    )
 }
 
 fn parse_class_body(
@@ -672,7 +867,9 @@ fn parse_class_body(
                 continue;
             }
             if p.eat_keyword("default") {
-                if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] duplicate default modifier")); }
+                if is_default {
+                    return Err(p.err("[JAVA-DECLARATION-DEFAULT] duplicate default modifier"));
+                }
                 is_default = true;
                 continue;
             }
@@ -682,7 +879,9 @@ fn parse_class_body(
                 continue;
             }
             if p.eat_keyword("native") {
-                if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] duplicate native modifier")); }
+                if is_native {
+                    return Err(p.err("[JAVA-NATIVE-DECLARATION] duplicate native modifier"));
+                }
                 is_native = true;
                 continue;
             }
@@ -699,10 +898,17 @@ fn parse_class_body(
 
         p.skip_ws();
         if let Some(at) = synchronized_at.filter(|_| !is_native) {
-            return Err(p.err_at(at, "[JAVA-MONITOR] synchronized method requires explicit preprocessing"));
+            return Err(p.err_at(
+                at,
+                "[JAVA-MONITOR] synchronized method requires explicit preprocessing",
+            ));
         }
         if let Some(nested_is_interface) = p.take_class_kind()? {
-            if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] only instance interface methods may be default")); }
+            if is_default {
+                return Err(p.err(
+                    "[JAVA-DECLARATION-DEFAULT] only instance interface methods may be default",
+                ));
+            }
             if is_native {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] a nested type cannot be native"));
             }
@@ -740,20 +946,34 @@ fn parse_class_body(
                 &mut nested_class,
                 file,
                 p.surrogates.subspan(nested_at),
-            ).map_err(|error| p.rebase_slice(nested_at, error))?;
+            )
+            .map_err(|error| p.rebase_slice(nested_at, error))?;
             class.inner_classes.push(nested_class);
             continue;
         }
 
         if p.peek() == Some(b'{') {
-            if !is_static || is_final || is_native || is_default || native_modifier_conflict || !annotations.is_empty() || class.is_interface {
+            if !is_static
+                || is_final
+                || is_native
+                || is_default
+                || native_modifier_conflict
+                || !annotations.is_empty()
+                || class.is_interface
+            {
                 return Err(p.err("[INITIALIZER-BLOCK-UNSUPPORTED] expected a standalone static initialization block"));
             }
             let body_at = p.pos + 1;
             let text = p.skip_balanced_braces()?;
             let body = crate::body_parser::parse_method_body_text(
-                text, file, p.surrogates.subspan(body_at), true, p.official_n, &p.imports,
-            ).map_err(|error| p.rebase_slice(body_at, error))?;
+                text,
+                file,
+                p.surrogates.subspan(body_at),
+                true,
+                p.official_n,
+                &p.imports,
+            )
+            .map_err(|error| p.rebase_slice(body_at, error))?;
             class.static_initializers.push((class.fields.len(), body));
             continue;
         }
@@ -770,10 +990,17 @@ fn parse_class_body(
                 .unwrap_or(&class.simple_name);
             if p.peek() == Some(b'(') && first == constructor_simple_name {
                 if class.is_interface() {
-                    return Err(p.err_at(save, "[JAVA-CONSTRUCTOR] interface cannot declare a constructor"));
+                    return Err(p.err_at(
+                        save,
+                        "[JAVA-CONSTRUCTOR] interface cannot declare a constructor",
+                    ));
                 }
-                if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] constructor cannot be default")); }
-                if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native")); }
+                if is_default {
+                    return Err(p.err("[JAVA-DECLARATION-DEFAULT] constructor cannot be default"));
+                }
+                if is_native {
+                    return Err(p.err("[JAVA-NATIVE-DECLARATION] constructor cannot be native"));
+                }
                 if is_static || is_final || native_modifier_conflict {
                     return Err(p.err("[JAVA-CONSTRUCTOR] invalid constructor modifier"));
                 }
@@ -784,14 +1011,17 @@ fn parse_class_body(
                 let body = if p.peek() == Some(b'{') {
                     let body_at = p.pos + 1;
                     let text = p.skip_balanced_braces()?;
-                    Some(crate::body_parser::parse_constructor_body_text(
-                        text,
-                        file,
-                        p.surrogates.subspan(body_at),
-                        class.supertype.is_none(),
-                        p.official_n,
-                        &p.imports,
-                    ).map_err(|error| p.rebase_slice(body_at, error))?)
+                    Some(
+                        crate::body_parser::parse_constructor_body_text(
+                            text,
+                            file,
+                            p.surrogates.subspan(body_at),
+                            class.supertype.is_none(),
+                            p.official_n,
+                            &p.imports,
+                        )
+                        .map_err(|error| p.rebase_slice(body_at, error))?,
+                    )
                 } else {
                     return Err(p.err("[JAVA-CONSTRUCTOR] expected constructor body"));
                 };
@@ -836,9 +1066,17 @@ fn parse_class_body(
             if is_reserved_identifier(&member_name) {
                 return Err(p.err_at(member_at, &format!("[JAVA-RESERVED-METHOD-NAME] {}.{}: reserved keyword used as a Java method name", class.full_name(), member_name)));
             }
-            if is_default && (!class.is_interface() || is_static || is_final || is_native
-                || nonpublic_at.is_some() || native_modifier_conflict) {
-                return Err(p.err("[JAVA-DECLARATION-DEFAULT] expected a nonstatic public interface method"));
+            if is_default
+                && (!class.is_interface()
+                    || is_static
+                    || is_final
+                    || is_native
+                    || nonpublic_at.is_some()
+                    || native_modifier_conflict)
+            {
+                return Err(p.err(
+                    "[JAVA-DECLARATION-DEFAULT] expected a nonstatic public interface method",
+                ));
             }
             if is_native && class.is_interface() {
                 return Err(p.err("[JAVA-NATIVE-DECLARATION] interface method cannot be native"));
@@ -853,7 +1091,10 @@ fn parse_class_body(
             let default_at = p.pos;
             if p.eat_keyword("default") {
                 if is_native {
-                    return Err(p.err_at(default_at, "[JAVA-NATIVE-DECLARATION] native method cannot have a default value"));
+                    return Err(p.err_at(
+                        default_at,
+                        "[JAVA-NATIVE-DECLARATION] native method cannot have a default value",
+                    ));
                 }
                 return Err(p.err_at(default_at, "[JAVA-DECLARATION-DEFAULT] method default value requires explicit preprocessing"));
             }
@@ -866,14 +1107,17 @@ fn parse_class_body(
             } else if p.peek() == Some(b'{') {
                 let body_at = p.pos + 1;
                 let text = p.skip_balanced_braces()?;
-                Some(crate::body_parser::parse_method_body_text(
-                    text,
-                    file,
-                    p.surrogates.subspan(body_at),
-                    is_static,
-                    p.official_n,
-                    &p.imports,
-                ).map_err(|error| p.rebase_slice(body_at, error))?)
+                Some(
+                    crate::body_parser::parse_method_body_text(
+                        text,
+                        file,
+                        p.surrogates.subspan(body_at),
+                        is_static,
+                        p.official_n,
+                        &p.imports,
+                    )
+                    .map_err(|error| p.rebase_slice(body_at, error))?,
+                )
             } else {
                 p.require_semicolon("bodyless method declaration")?;
                 None
@@ -897,15 +1141,23 @@ fn parse_class_body(
                 annotations,
                 body,
             });
-
         } else {
             if !type_parameters.is_empty() {
-                return Err(p.err("[JAVA-TYPE-PARAMETERS] type parameters require a method declaration"));
+                return Err(
+                    p.err("[JAVA-TYPE-PARAMETERS] type parameters require a method declaration")
+                );
             }
-            if is_default { return Err(p.err("[JAVA-DECLARATION-DEFAULT] field cannot be default")); }
-            if is_native { return Err(p.err("[JAVA-NATIVE-DECLARATION] field cannot be native")); }
+            if is_default {
+                return Err(p.err("[JAVA-DECLARATION-DEFAULT] field cannot be default"));
+            }
+            if is_native {
+                return Err(p.err("[JAVA-NATIVE-DECLARATION] field cannot be native"));
+            }
             if is_reserved_identifier(&member_name) {
-                return Err(p.err_at(member_at, "[JAVA-RESERVED-FIELD-NAME] reserved keyword used as a Java field name"));
+                return Err(p.err_at(
+                    member_at,
+                    "[JAVA-RESERVED-FIELD-NAME] reserved keyword used as a Java field name",
+                ));
             }
             p.skip_ws();
             // Interface fields are implicitly public static final.
@@ -976,10 +1228,20 @@ fn parse_type_atom(p: &mut Parser, allow_diamond: bool) -> Option<JavaType> {
 
     let name = p.read_qualified_ident()?;
     let name = match name.as_str() {
-        "BigDecimal" if p.imports.iter().any(|import| import == "java.math.BigDecimal") =>
-            "java.math.BigDecimal".into(),
-        "LocalDate" if p.imports.iter().any(|import| import == "java.time.LocalDate") =>
-            "java.time.LocalDate".into(),
+        "BigDecimal"
+            if p.imports
+                .iter()
+                .any(|import| import == "java.math.BigDecimal") =>
+        {
+            "java.math.BigDecimal".into()
+        }
+        "LocalDate"
+            if p.imports
+                .iter()
+                .any(|import| import == "java.time.LocalDate") =>
+        {
+            "java.time.LocalDate".into()
+        }
         _ => name,
     };
     if !p.eat_char(b'<') {
@@ -1000,40 +1262,61 @@ fn parse_type_atom(p: &mut Parser, allow_diamond: bool) -> Option<JavaType> {
 }
 
 /// Parse an ordinary non-variadic method parameter list.
-type ParsedParameters = (Vec<(JavaType, String)>, std::collections::BTreeMap<String, Vec<AnnotationRef>>);
+type ParsedParameters = (
+    Vec<(JavaType, String)>,
+    std::collections::BTreeMap<String, Vec<AnnotationRef>>,
+);
 
 fn parse_params(p: &mut Parser<'_>) -> Result<ParsedParameters, ParseError> {
     let invalid = |p: &Parser<'_>, reason: &str| p.err(&format!("[JAVA-PARAMETER] {reason}"));
     p.pos += 1; // Both declaration dispatches have matched the opening parenthesis.
     let mut params = Vec::new();
     let mut annotations = std::collections::BTreeMap::new();
-    if p.eat_char(b')') { return Ok((params, annotations)); }
+    if p.eat_char(b')') {
+        return Ok((params, annotations));
+    }
     let mut names = std::collections::BTreeSet::new();
     loop {
         let mut attributes = p.read_annotations()?;
-        if p.eat_keyword("final") { attributes.extend(p.read_annotations()?); }
-        let mut ty = parse_type(p).filter(|ty| *ty != JavaType::Void)
+        if p.eat_keyword("final") {
+            attributes.extend(p.read_annotations()?);
+        }
+        let mut ty = parse_type(p)
+            .filter(|ty| *ty != JavaType::Void)
             .ok_or_else(|| invalid(p, "expected a parameter type"))?;
         p.skip_ws();
         let variadic_at = p.starts_with("...").then_some(p.pos);
-        if variadic_at.is_some() { p.pos += 3; }
+        if variadic_at.is_some() {
+            p.pos += 3;
+        }
         p.skip_ws();
         let at = p.pos;
-        let name = p.read_ident().ok_or_else(|| invalid(p, "expected a parameter name"))?;
+        let name = p
+            .read_ident()
+            .ok_or_else(|| invalid(p, "expected a parameter name"))?;
         if is_reserved_identifier(&name) || !names.insert(name.clone()) {
             return Err(p.err_at(at, "[JAVA-PARAMETER] reserved or duplicate parameter name"));
         }
         if let Some(at) = variadic_at {
             if p.eat_char(b')') {
-                return Err(p.err_at(at, "[JAVA-PARAMETER] variadic parameters require explicit preprocessing"));
+                return Err(p.err_at(
+                    at,
+                    "[JAVA-PARAMETER] variadic parameters require explicit preprocessing",
+                ));
             }
             return Err(invalid(p, "varargs must be the final parameter"));
         }
         ty = parse_array_type_suffix(p, ty)
             .ok_or_else(|| invalid(p, "expected a closing array bracket"))?;
-        if !attributes.is_empty() { annotations.insert(name.clone(), attributes); }
+        if !attributes.is_empty() {
+            annotations.insert(name.clone(), attributes);
+        }
         params.push((ty, name));
-        if p.eat_char(b')') { return Ok((params, annotations)); }
-        if !p.eat_char(b',') { return Err(invalid(p, "expected a comma or closing parenthesis")); }
+        if p.eat_char(b')') {
+            return Ok((params, annotations));
+        }
+        if !p.eat_char(b',') {
+            return Err(invalid(p, "expected a comma or closing parenthesis"));
+        }
     }
 }

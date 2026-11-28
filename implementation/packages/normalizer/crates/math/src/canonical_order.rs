@@ -1,6 +1,10 @@
 //! CF-02: structural keys for already bound IR. Constructing a key does not
 //! prove equivalence or normalize a child. Callers prove movement separately.
-use crate::domains::{decimal, primitive::registry, relation::{RelationExpr, TableSource}};
+use crate::domains::{
+    decimal,
+    primitive::registry,
+    relation::{RelationExpr, TableSource},
+};
 use crate::expr::{BinOpKind, Expr, ExprKind, RelationAggregateKind, UnaryOpKind};
 use crate::sort_context::{HeapBindingIdentity, ObservationIdentity, SortContext};
 use crate::symvar::SymVarOrigin;
@@ -8,10 +12,28 @@ use num_bigint::{BigInt, BigUint, Sign};
 use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Class { Reference, Read, Scalar, Relation, Construct, Literal }
+enum Class {
+    Reference,
+    Read,
+    Scalar,
+    Relation,
+    Construct,
+    Literal,
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Operation { Eq, Ne, Gt, Lt, Ge, Le, And, Or, Not, Named(String) }
+enum Operation {
+    Eq,
+    Ne,
+    Gt,
+    Lt,
+    Ge,
+    Le,
+    And,
+    Or,
+    Not,
+    Named(String),
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Payload {
@@ -25,7 +47,10 @@ enum Payload {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct TableKey { path: Vec<String>, snapshot: Option<ObservationIdentity> }
+struct TableKey {
+    path: Vec<String>,
+    snapshot: Option<ObservationIdentity>,
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Identity {
@@ -58,23 +83,41 @@ pub struct CanonicalKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum OperandKind { Boolean, Reference, Null, Other }
+enum OperandKind {
+    Boolean,
+    Reference,
+    Null,
+    Other,
+}
 
 impl CanonicalKey {
     fn operand_kind(&self) -> OperandKind {
         match self.types.first().map(String::as_str) {
-            Some("bool" | "boolean") if self.contract.first().is_none_or(|tag| tag != "sql") =>
-                OperandKind::Boolean,
+            Some("bool" | "boolean") if self.contract.first().is_none_or(|tag| tag != "sql") => {
+                OperandKind::Boolean
+            }
             Some("reference" | "java_reference") => OperandKind::Reference,
             Some("null") => OperandKind::Null,
             None if self.operation == Operation::Not => OperandKind::Boolean,
             None if self.class == Class::Construct && self.operation == named("case") => {
                 // Infer only the common type of CASE results, never from a
                 // guard or from a path proof. Individual slots already have keys.
-                let mut values = self.children.iter().skip(1).step_by(2).flatten().chain(self.tail.iter());
-                let Some(first) = values.next() else { return OperandKind::Other; };
+                let mut values = self
+                    .children
+                    .iter()
+                    .skip(1)
+                    .step_by(2)
+                    .flatten()
+                    .chain(self.tail.iter());
+                let Some(first) = values.next() else {
+                    return OperandKind::Other;
+                };
                 let first = first.operand_kind();
-                if values.all(|value| value.operand_kind() == first) { first } else { OperandKind::Other }
+                if values.all(|value| value.operand_kind() == first) {
+                    first
+                } else {
+                    OperandKind::Other
+                }
             }
             _ => OperandKind::Other,
         }
@@ -82,11 +125,15 @@ impl CanonicalKey {
 }
 
 fn equality_contract(op: BinOpKind, left: &CanonicalKey, right: &CanonicalKey) -> Vec<String> {
-    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) { return vec![]; }
+    if !matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
+        return vec![];
+    }
     use OperandKind::{Boolean, Null, Reference};
     match (left.operand_kind(), right.operand_kind()) {
         (Boolean, Boolean) => vec!["boolean_equality".into()],
-        (Reference, Reference | Null) | (Null, Reference) => vec!["object_identity_equality".into()],
+        (Reference, Reference | Null) | (Null, Reference) => {
+            vec!["object_identity_equality".into()]
+        }
         _ => vec![],
     }
 }
@@ -97,25 +144,50 @@ impl Ord for Exact {
     fn cmp(&self, other: &Self) -> Ordering {
         let (a, b) = (&self.0, &other.0);
         a.sign().cmp(&b.sign()).then_with(|| {
-            if a.sign() == Sign::NoSign { return Ordering::Equal; }
-            let (x, y) = (a.magnitude().to_str_radix(10), b.magnitude().to_str_radix(10));
+            if a.sign() == Sign::NoSign {
+                return Ordering::Equal;
+            }
+            let (x, y) = (
+                a.magnitude().to_str_radix(10),
+                b.magnitude().to_str_radix(10),
+            );
             let cmp = (x.len() as i128 - i128::from(self.1))
                 .cmp(&(y.len() as i128 - i128::from(other.1)))
-                .then_with(|| (0..x.len().max(y.len())).find_map(|i| {
-                    let digit = |s: &str| s.as_bytes().get(i).copied().unwrap_or(b'0');
-                    let result = digit(&x).cmp(&digit(&y));
-                    (!result.is_eq()).then_some(result)
-                }).unwrap_or(Ordering::Equal));
-            if a.sign() == Sign::Minus { cmp.reverse() } else { cmp }
+                .then_with(|| {
+                    (0..x.len().max(y.len()))
+                        .find_map(|i| {
+                            let digit = |s: &str| s.as_bytes().get(i).copied().unwrap_or(b'0');
+                            let result = digit(&x).cmp(&digit(&y));
+                            (!result.is_eq()).then_some(result)
+                        })
+                        .unwrap_or(Ordering::Equal)
+                });
+            if a.sign() == Sign::Minus {
+                cmp.reverse()
+            } else {
+                cmp
+            }
         })
     }
 }
-impl PartialOrd for Exact { fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) } }
-impl PartialEq for Exact { fn eq(&self, other: &Self) -> bool { self.cmp(other).is_eq() } }
+impl PartialOrd for Exact {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl PartialEq for Exact {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
 impl Eq for Exact {}
 
-fn named(name: &str) -> Operation { Operation::Named(name.into()) }
-fn path(name: &str) -> Vec<String> { name.split('.').map(str::to_owned).collect() }
+fn named(name: &str) -> Operation {
+    Operation::Named(name.into())
+}
+fn path(name: &str) -> Vec<String> {
+    name.split('.').map(str::to_owned).collect()
+}
 
 fn value_type_tag(tag: String) -> String {
     match tag.as_str() {
@@ -126,9 +198,15 @@ fn value_type_tag(tag: String) -> String {
 }
 
 fn node(
-    class: Class, operation: Operation, types: Vec<String>, contract: Vec<String>,
-    payload: Vec<Payload>, children: Vec<Option<Rc<CanonicalKey>>>,
-    identity: Option<Identity>, arms: usize, operations: usize,
+    class: Class,
+    operation: Operation,
+    types: Vec<String>,
+    contract: Vec<String>,
+    payload: Vec<Payload>,
+    children: Vec<Option<Rc<CanonicalKey>>>,
+    identity: Option<Identity>,
+    arms: usize,
+    operations: usize,
 ) -> Rc<CanonicalKey> {
     let mut arms = BigUint::from(arms);
     let mut operations = BigUint::from(operations);
@@ -137,16 +215,33 @@ fn node(
         operations += &child.operations;
     }
     let types = types.into_iter().map(value_type_tag).collect();
-    Rc::new(CanonicalKey { arms, operations, class, operation, types, contract, payload, children, tail: None, identity })
+    Rc::new(CanonicalKey {
+        arms,
+        operations,
+        class,
+        operation,
+        types,
+        contract,
+        payload,
+        children,
+        tail: None,
+        identity,
+    })
 }
 
 fn bin_op(op: BinOpKind) -> Operation {
     match op {
-        BinOpKind::Eq => Operation::Eq, BinOpKind::Ne => Operation::Ne,
-        BinOpKind::Gt => Operation::Gt, BinOpKind::Lt => Operation::Lt,
-        BinOpKind::Ge => Operation::Ge, BinOpKind::Le => Operation::Le,
-        BinOpKind::And => Operation::And, BinOpKind::Or => Operation::Or,
-        BinOpKind::Add => named("add"), BinOpKind::Mul => named("mul"), BinOpKind::Sub => named("sub"),
+        BinOpKind::Eq => Operation::Eq,
+        BinOpKind::Ne => Operation::Ne,
+        BinOpKind::Gt => Operation::Gt,
+        BinOpKind::Lt => Operation::Lt,
+        BinOpKind::Ge => Operation::Ge,
+        BinOpKind::Le => Operation::Le,
+        BinOpKind::And => Operation::And,
+        BinOpKind::Or => Operation::Or,
+        BinOpKind::Add => named("add"),
+        BinOpKind::Mul => named("mul"),
+        BinOpKind::Sub => named("sub"),
     }
 }
 
@@ -161,21 +256,46 @@ fn aggregate(kind: RelationAggregateKind) -> (&'static str, &'static str) {
 }
 
 fn observation(ctx: &dyn SortContext, id: u64) -> ObservationIdentity {
-    ctx.observation_identities().and_then(|identities| identities.get(&id)).cloned()
+    ctx.observation_identities()
+        .and_then(|identities| identities.get(&id))
+        .cloned()
         .unwrap_or(ObservationIdentity::Internal(id))
 }
 
 fn physical(table: &TableSource, ctx: &dyn SortContext) -> TableKey {
-    TableKey { path: path(&table.name), snapshot: table.snapshot.map(|id| observation(ctx, id)) }
+    TableKey {
+        path: path(&table.name),
+        snapshot: table.snapshot.map(|id| observation(ctx, id)),
+    }
 }
 
 fn literal(ty: &str, payload: Vec<Payload>) -> Rc<CanonicalKey> {
-    node(Class::Literal, named("literal"), vec![ty.into()], vec![], payload, vec![], None, 0, 0)
+    node(
+        Class::Literal,
+        named("literal"),
+        vec![ty.into()],
+        vec![],
+        payload,
+        vec![],
+        None,
+        0,
+        0,
+    )
 }
 
 fn binding(class: Class, ty: &str, id: Identity) -> Rc<CanonicalKey> {
     let read = usize::from(class == Class::Read);
-    node(class, named(if read == 0 { "binding" } else { "path" }), vec![ty.into()], vec![], vec![], vec![], Some(id), 0, read)
+    node(
+        class,
+        named(if read == 0 { "binding" } else { "path" }),
+        vec![ty.into()],
+        vec![],
+        vec![],
+        vec![],
+        Some(id),
+        0,
+        read,
+    )
 }
 
 struct Keys<'a> {
@@ -185,7 +305,9 @@ struct Keys<'a> {
 
 impl Keys<'_> {
     fn expr(&mut self, expression: &Expr) -> Rc<CanonicalKey> {
-        if let Some(key) = self.memo.get(expression) { return key.clone(); }
+        if let Some(key) = self.memo.get(expression) {
+            return key.clone();
+        }
         let key = self.expr_uncached(expression);
         self.memo.insert(expression.clone(), key.clone());
         key
@@ -197,19 +319,38 @@ impl Keys<'_> {
         // Bare relation existence and emptiness are the exact zero or
         // positive cardinality test used in the business IR. Count the
         // same value and comparison on both sides of a CASE candidate.
-        let negative = expression.as_unary_op().filter(|(op, _)| *op == UnaryOpKind::Not);
+        let negative = expression
+            .as_unary_op()
+            .filter(|(op, _)| *op == UnaryOpKind::Not);
         let cardinality = negative.map_or(expression, |(_, value)| value);
-        if let Some((RelationAggregateKind::Exists, relation @ RelationExpr::Base { .. }, Some(witness), None)) =
-            cardinality.as_relation_aggregate()
+        if let Some((
+            RelationAggregateKind::Exists,
+            relation @ RelationExpr::Base { .. },
+            Some(witness),
+            None,
+        )) = cardinality.as_relation_aggregate()
         {
             if witness.as_bool() == Some(true) {
-                let comparison = if negative.is_some() { BinOpKind::Eq } else { BinOpKind::Lt };
+                let comparison = if negative.is_some() {
+                    BinOpKind::Eq
+                } else {
+                    BinOpKind::Lt
+                };
                 let zero = crate::builder::lit_int(0);
                 let count = crate::domains::relation::relation_count(relation.clone());
                 let left = self.expr(&zero);
                 let right = self.expr(&count);
-                return node(Class::Scalar, bin_op(comparison), vec!["bool".into()], vec![],
-                    vec![], vec![Some(left), Some(right)], None, 0, 1);
+                return node(
+                    Class::Scalar,
+                    bin_op(comparison),
+                    vec!["bool".into()],
+                    vec![],
+                    vec![],
+                    vec![Some(left), Some(right)],
+                    None,
+                    0,
+                    1,
+                );
             }
         }
         if let Some(decimal::View::Literal(coefficient, scale)) = decimal::view(expression) {
@@ -217,41 +358,89 @@ impl Keys<'_> {
         }
         match expression.kind() {
             Lit(value) => match value {
-                crate::Lit::Int(_) | crate::Lit::BigInt(_) =>
-                    literal("number", vec![Payload::Number(Exact(value.as_integer().expect("integer literal"), 0))]),
+                crate::Lit::Int(_) | crate::Lit::BigInt(_) => literal(
+                    "number",
+                    vec![Payload::Number(Exact(
+                        value.as_integer().expect("integer literal"),
+                        0,
+                    ))],
+                ),
                 crate::Lit::Bool(value) => literal("bool", vec![Payload::Bool(*value)]),
-                crate::Lit::Str(value) => literal("text",
-                    vec![Payload::CodePoints(value.chars().map(u32::from).collect())]),
-                crate::Lit::StrUnits(units) => literal("text", vec![Payload::CodePoints(
-                    char::decode_utf16(units.iter().copied()).map(|item| match item {
-                        Ok(point) => u32::from(point),
-                        Err(isolated) => u32::from(isolated.unpaired_surrogate()),
-                    }).collect()
-                )]),
+                crate::Lit::Str(value) => literal(
+                    "text",
+                    vec![Payload::CodePoints(value.chars().map(u32::from).collect())],
+                ),
+                crate::Lit::StrUnits(units) => literal(
+                    "text",
+                    vec![Payload::CodePoints(
+                        char::decode_utf16(units.iter().copied())
+                            .map(|item| match item {
+                                Ok(point) => u32::from(point),
+                                Err(isolated) => u32::from(isolated.unpaired_surrogate()),
+                            })
+                            .collect(),
+                    )],
+                ),
                 crate::Lit::Null => literal("null", vec![]),
             },
             SymVar { origin } => {
                 let (class, id) = match origin {
-                    SymVarOrigin::Parameter { name, primitive_type: _ } => {
-                        let captured = ctx.captured_parameters().and_then(|parameters| parameters.get(name));
+                    SymVarOrigin::Parameter {
+                        name,
+                        primitive_type: _,
+                    } => {
+                        let captured = ctx
+                            .captured_parameters()
+                            .and_then(|parameters| parameters.get(name));
                         let class = if captured.is_none() && name.contains('.') {
                             Class::Read
-                        } else { Class::Reference };
+                        } else {
+                            Class::Reference
+                        };
                         let name = captured.map_or(name.as_str(), String::as_str);
                         (class, Identity::Parameter(path(name)))
-                    },
-                    SymVarOrigin::External { binding_id, path: parts, primitive_type: _ } => {
-                        let id = match observation(ctx, *binding_id) {
-                            ObservationIdentity::EntrySnapshot(mut root) => { root.extend(parts.iter().cloned()); Identity::EntrySnapshot(root) }
-                            ObservationIdentity::Receipt(slot) => Identity::Receipt(slot, parts.clone()),
-                            ObservationIdentity::RuntimeObservation(slot) => Identity::RuntimeObservation(slot, parts.clone()),
-                            ObservationIdentity::Internal(id) => Identity::InternalExternal(id, parts.clone()),
-                        };
-                        (if parts.is_empty() { Class::Reference } else { Class::Read }, id)
                     }
-                    SymVarOrigin::Temporal { binding_id, primitive_type: _ } => {
-                        if let Some(&slot) = ctx.choice_slots().and_then(|slots| slots.get(binding_id)) {
-                            return binding(Class::Reference, origin.primitive_type(), Identity::Local(slot));
+                    SymVarOrigin::External {
+                        binding_id,
+                        path: parts,
+                        primitive_type: _,
+                    } => {
+                        let id = match observation(ctx, *binding_id) {
+                            ObservationIdentity::EntrySnapshot(mut root) => {
+                                root.extend(parts.iter().cloned());
+                                Identity::EntrySnapshot(root)
+                            }
+                            ObservationIdentity::Receipt(slot) => {
+                                Identity::Receipt(slot, parts.clone())
+                            }
+                            ObservationIdentity::RuntimeObservation(slot) => {
+                                Identity::RuntimeObservation(slot, parts.clone())
+                            }
+                            ObservationIdentity::Internal(id) => {
+                                Identity::InternalExternal(id, parts.clone())
+                            }
+                        };
+                        (
+                            if parts.is_empty() {
+                                Class::Reference
+                            } else {
+                                Class::Read
+                            },
+                            id,
+                        )
+                    }
+                    SymVarOrigin::Temporal {
+                        binding_id,
+                        primitive_type: _,
+                    } => {
+                        if let Some(&slot) =
+                            ctx.choice_slots().and_then(|slots| slots.get(binding_id))
+                        {
+                            return binding(
+                                Class::Reference,
+                                origin.primitive_type(),
+                                Identity::Local(slot),
+                            );
                         }
                         (Class::Reference, Identity::InternalTemporal(*binding_id))
                     }
@@ -259,111 +448,274 @@ impl Keys<'_> {
                 binding(class, origin.primitive_type(), id)
             }
             HeapRef(id) => match ctx.heap_binding_identity(*id) {
-                Some(HeapBindingIdentity::Parameter(parts)) =>
-                    binding(if parts.len() == 1 { Class::Reference } else { Class::Read },
-                        "reference", Identity::Parameter(parts.clone())),
-                Some(HeapBindingIdentity::EntrySnapshot(parts)) =>
-                    binding(Class::Reference, "reference", Identity::EntrySnapshot(parts.clone())),
+                Some(HeapBindingIdentity::Parameter(parts)) => binding(
+                    if parts.len() == 1 {
+                        Class::Reference
+                    } else {
+                        Class::Read
+                    },
+                    "reference",
+                    Identity::Parameter(parts.clone()),
+                ),
+                Some(HeapBindingIdentity::EntrySnapshot(parts)) => binding(
+                    Class::Reference,
+                    "reference",
+                    Identity::EntrySnapshot(parts.clone()),
+                ),
                 None => binding(Class::Reference, "reference", Identity::InternalHeap(*id)),
             },
-            RowValue { sql: Some(column), .. } => {
+            RowValue {
+                sql: Some(column), ..
+            } => {
                 // Physical column ownership belongs to stable identity, not
                 // to the comparison type or operation contract. The current
                 // numeric column carrier admits exact integers only.
-                let ty = if column.scalar_type == "number" { "integer" } else { column.scalar_type };
-                binding(Class::Reference, ty,
-                    Identity::SqlColumn(physical(&column.table, ctx), column.row_slot, column.column.clone()))
+                let ty = if column.scalar_type == "number" {
+                    "integer"
+                } else {
+                    column.scalar_type
+                };
+                binding(
+                    Class::Reference,
+                    ty,
+                    Identity::SqlColumn(
+                        physical(&column.table, ctx),
+                        column.row_slot,
+                        column.column.clone(),
+                    ),
+                )
             }
-            RowValue { alias, acquired_integer, sql: None } => binding(if alias.contains('.') { Class::Read } else { Class::Reference },
-                if *acquired_integer { "integer" } else { "row_value" }, Identity::Column(path(alias))),
+            RowValue {
+                alias,
+                acquired_integer,
+                sql: None,
+            } => binding(
+                if alias.contains('.') {
+                    Class::Read
+                } else {
+                    Class::Reference
+                },
+                if *acquired_integer {
+                    "integer"
+                } else {
+                    "row_value"
+                },
+                Identity::Column(path(alias)),
+            ),
             Call { key, args } => {
-                if let Some((source, order)) = crate::domains::relation::order_value_components(expression) {
+                if let Some((source, order)) =
+                    crate::domains::relation::order_value_components(expression)
+                {
                     let children = std::iter::once(Some(self.relation(source)))
-                        .chain(order.iter().map(|key| Some(self.expr(key)))).collect();
-                    return node(Class::Relation, named("order_by"), vec!["relation".into()],
-                        vec!["ascending_non_null_integer_keys".into()], vec![], children, None, 0, 1);
+                        .chain(order.iter().map(|key| Some(self.expr(key))))
+                        .collect();
+                    return node(
+                        Class::Relation,
+                        named("order_by"),
+                        vec!["relation".into()],
+                        vec!["ascending_non_null_integer_keys".into()],
+                        vec![],
+                        children,
+                        None,
+                        0,
+                        1,
+                    );
                 }
-                if let Some((record, field, ty)) = crate::domains::composite::field_projection(expression) {
-                    return node(Class::Read, named("field"), vec![ty.algebra_name().into()],
-                        vec![], vec![Payload::Text(field.into())], vec![Some(self.expr(record))], None, 0, 1);
+                if let Some((record, field, ty)) =
+                    crate::domains::composite::field_projection(expression)
+                {
+                    return node(
+                        Class::Read,
+                        named("field"),
+                        vec![ty.algebra_name().into()],
+                        vec![],
+                        vec![Payload::Text(field.into())],
+                        vec![Some(self.expr(record))],
+                        None,
+                        0,
+                        1,
+                    );
                 }
                 let (name, parameters, result) = registry::func_signature(*key);
                 if crate::domains::completion::output_name(&name) == "completion.value" {
                     if let ([receipt], Some(ty)) = (args.as_slice(), result) {
-                        if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = receipt.as_sym_var() {
+                        if let Some(SymVarOrigin::External {
+                            binding_id,
+                            path,
+                            primitive_type,
+                        }) = receipt.as_sym_var()
+                        {
                             if primitive_type == "normalized.completion" && path.is_empty() {
-                                if let ObservationIdentity::Receipt(slot) = observation(ctx, *binding_id) {
+                                if let ObservationIdentity::Receipt(slot) =
+                                    observation(ctx, *binding_id)
+                                {
                                     // The successful value is a reference to the same acquired
                                     // occurrence, not another operation. Its distinct contract
                                     // retains the requirement of a normal completion.
-                                    return node(Class::Reference, named("binding"), vec![ty.algebra_name().into()],
-                                        vec!["normal_completion_value".into()], vec![], vec![],
-                                        Some(Identity::Receipt(slot, vec![])), 0, 0);
+                                    return node(
+                                        Class::Reference,
+                                        named("binding"),
+                                        vec![ty.algebra_name().into()],
+                                        vec!["normal_completion_value".into()],
+                                        vec![],
+                                        vec![],
+                                        Some(Identity::Receipt(slot, vec![])),
+                                        0,
+                                        0,
+                                    );
                                 }
                             }
                         }
                     }
                 }
-                let ty = result.map(|result| result.algebra_name().into()).into_iter().collect();
-                let signature = parameters.iter().map(|p| value_type_tag(p.algebra_name().into())).collect();
-                if let Some((receipt, exceptions)) = crate::domains::completion::multi_failure_return(&name, args) {
-                    return node(Class::Scalar, named("completion.is_return"), ty, signature,
-                        exceptions.into_iter().map(|exception| Payload::Text(exception.into())).collect(),
-                        vec![Some(self.expr(receipt))], None, 0, 1);
+                let ty = result
+                    .map(|result| result.algebra_name().into())
+                    .into_iter()
+                    .collect();
+                let signature = parameters
+                    .iter()
+                    .map(|p| value_type_tag(p.algebra_name().into()))
+                    .collect();
+                if let Some((receipt, exceptions)) =
+                    crate::domains::completion::multi_failure_return(&name, args)
+                {
+                    return node(
+                        Class::Scalar,
+                        named("completion.is_return"),
+                        ty,
+                        signature,
+                        exceptions
+                            .into_iter()
+                            .map(|exception| Payload::Text(exception.into()))
+                            .collect(),
+                        vec![Some(self.expr(receipt))],
+                        None,
+                        0,
+                        1,
+                    );
                 }
-                if matches!(crate::domains::completion::output_name(&name), "completion.is_throw" | "completion.is_return" | "completion.payload") {
-                    let (operation, receipt, exception) = crate::domains::completion::class_observation(&name, args)
-                        .expect("completion class must be a resolved declaration label");
+                if matches!(
+                    crate::domains::completion::output_name(&name),
+                    "completion.is_throw" | "completion.is_return" | "completion.payload"
+                ) {
+                    let (operation, receipt, exception) =
+                        crate::domains::completion::class_observation(&name, args)
+                            .expect("completion class must be a resolved declaration label");
                     // PERS-07: the receipt is the only evaluated operand.
                     // The class label describes the contract of the operation.
                     let children = vec![Some(self.expr(receipt))];
-                    return node(Class::Scalar, named(operation), ty, signature,
-                        vec![Payload::Text(exception.into())], children, None, 0, 1);
+                    return node(
+                        Class::Scalar,
+                        named(operation),
+                        ty,
+                        signature,
+                        vec![Payload::Text(exception.into())],
+                        children,
+                        None,
+                        0,
+                        1,
+                    );
                 }
                 let class = if crate::domains::composite::field_intrinsic_result(*key).is_some()
                     || crate::domains::composite::vector_length_input(expression).is_some()
                 {
                     Class::Read
-                } else if crate::domains::composite::ordered_text_map_entries(expression).is_some() {
+                } else if crate::domains::composite::ordered_text_map_entries(expression).is_some()
+                {
                     Class::Construct
                 } else {
                     Class::Scalar // Other registered Call nodes are scalar operations.
                 };
                 let args = args.iter().map(|arg| Some(self.expr(arg))).collect();
-                node(class, Operation::Named(name), ty, signature, vec![], args, None, 0, 1)
+                node(
+                    class,
+                    Operation::Named(name),
+                    ty,
+                    signature,
+                    vec![],
+                    args,
+                    None,
+                    0,
+                    1,
+                )
             }
             BinOp { op, left, right } => {
                 let types = match op {
-                    BinOpKind::Eq | BinOpKind::Ne | BinOpKind::Gt | BinOpKind::Lt | BinOpKind::Ge | BinOpKind::Le
-                        | BinOpKind::And | BinOpKind::Or => vec!["bool".into()],
+                    BinOpKind::Eq
+                    | BinOpKind::Ne
+                    | BinOpKind::Gt
+                    | BinOpKind::Lt
+                    | BinOpKind::Ge
+                    | BinOpKind::Le
+                    | BinOpKind::And
+                    | BinOpKind::Or => vec!["bool".into()],
                     BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul => vec![],
                 };
                 let (left, right) = (self.expr(left), self.expr(right));
                 let contract = if expression.may_observe_sql_unknown() {
                     vec!["sql_three_valued".into()]
-                } else { equality_contract(*op, &left, &right) };
-                node(Class::Scalar, bin_op(*op), types, contract, vec![],
-                    vec![Some(left), Some(right)], None, 0, 1)
+                } else {
+                    equality_contract(*op, &left, &right)
+                };
+                node(
+                    Class::Scalar,
+                    bin_op(*op),
+                    types,
+                    contract,
+                    vec![],
+                    vec![Some(left), Some(right)],
+                    None,
+                    0,
+                    1,
+                )
             }
             UnaryOp { op, operand } => {
-                let name = match op { UnaryOpKind::Not => Operation::Not, UnaryOpKind::Neg => named("neg") };
-                node(Class::Scalar, name, vec![], vec![], vec![], vec![Some(self.expr(operand))], None, 0, 1)
+                let name = match op {
+                    UnaryOpKind::Not => Operation::Not,
+                    UnaryOpKind::Neg => named("neg"),
+                };
+                node(
+                    Class::Scalar,
+                    name,
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![Some(self.expr(operand))],
+                    None,
+                    0,
+                    1,
+                )
             }
             CaseWhen { branches } => {
                 let mut slots = Vec::new();
-                let terminal = branches.last().is_some_and(|(guard, _)| guard.as_bool() == Some(true));
+                let terminal = branches
+                    .last()
+                    .is_some_and(|(guard, _)| guard.as_bool() == Some(true));
                 let decision_count = branches.len() - usize::from(terminal);
                 let scoped = ctx.case_arm_keys(expression);
                 for (index, (guard, value)) in branches[..decision_count].iter().enumerate() {
-                    let (guard, value) = scoped.map_or_else(|| (self.expr(guard), self.expr(value)),
-                        |arms| arms[index].clone());
+                    let (guard, value) = scoped.map_or_else(
+                        || (self.expr(guard), self.expr(value)),
+                        |arms| arms[index].clone(),
+                    );
                     slots.extend([Some(guard), Some(value)]);
                 }
-                let mut case = node(Class::Construct, named("case"), vec![], vec![], vec![], slots,
-                    None, branches.len(), 1);
+                let mut case = node(
+                    Class::Construct,
+                    named("case"),
+                    vec![],
+                    vec![],
+                    vec![],
+                    slots,
+                    None,
+                    branches.len(),
+                    1,
+                );
                 if terminal {
-                    let fallback = scoped.map_or_else(|| self.expr(&branches[decision_count].1),
-                        |arms| arms[decision_count].1.clone());
+                    let fallback = scoped.map_or_else(
+                        || self.expr(&branches[decision_count].1),
+                        |arms| arms[decision_count].1.clone(),
+                    );
                     let key = Rc::get_mut(&mut case).expect("new CASE key");
                     key.arms += &fallback.arms;
                     key.operations += &fallback.operations;
@@ -373,15 +725,42 @@ impl Keys<'_> {
             }
             ArrayLit(values) => {
                 let children = values.iter().map(|value| Some(self.expr(value))).collect();
-                node(Class::Construct, named("sequence"), vec![], vec![], vec![], children, None, 0, 1)
+                node(
+                    Class::Construct,
+                    named("sequence"),
+                    vec![],
+                    vec![],
+                    vec![],
+                    children,
+                    None,
+                    0,
+                    1,
+                )
             }
             Relation(relation) => self.relation(relation),
-            RelationAggregate { kind, relation, select_expr, default_expr } => {
+            RelationAggregate {
+                kind,
+                relation,
+                select_expr,
+                default_expr,
+            } => {
                 let (operation, ty) = aggregate(*kind);
-                let children = vec![Some(self.relation(relation)),
+                let children = vec![
+                    Some(self.relation(relation)),
                     select_expr.as_ref().map(|child| self.expr(child)),
-                    default_expr.as_ref().map(|child| self.expr(child))];
-                node(Class::Relation, named(operation), vec![ty.into()], vec![], vec![], children, None, 0, 1)
+                    default_expr.as_ref().map(|child| self.expr(child)),
+                ];
+                node(
+                    Class::Relation,
+                    named(operation),
+                    vec![ty.into()],
+                    vec![],
+                    vec![],
+                    children,
+                    None,
+                    0,
+                    1,
+                )
             }
         }
     }
@@ -389,46 +768,124 @@ impl Keys<'_> {
     fn relation(&mut self, relation: &RelationExpr) -> Rc<CanonicalKey> {
         let (operation, payload, children) = match relation {
             RelationExpr::Empty => ("empty", vec![], vec![]),
-            RelationExpr::Base { name, alias, snapshot } => ("base", vec![
-                Payload::Table(TableKey { path: path(name), snapshot: snapshot.map(|id| observation(self.context, id)) }),
-                Payload::Text(alias.clone()),
-            ], vec![]),
+            RelationExpr::Base {
+                name,
+                alias,
+                snapshot,
+            } => (
+                "base",
+                vec![
+                    Payload::Table(TableKey {
+                        path: path(name),
+                        snapshot: snapshot.map(|id| observation(self.context, id)),
+                    }),
+                    Payload::Text(alias.clone()),
+                ],
+                vec![],
+            ),
             RelationExpr::Vector { value, alias } => {
-                if alias == "ordered" && crate::domains::relation::order_value_components(value).is_some() {
+                if alias == "ordered"
+                    && crate::domains::relation::order_value_components(value).is_some()
+                {
                     // The constructor wraps ORDER BY only to carry it in
                     // RelationExpr. This adapter is not another operation.
                     return self.expr(value);
                 }
-                ("vector", vec![Payload::Text(alias.clone())], vec![Some(self.expr(value))])
+                (
+                    "vector",
+                    vec![Payload::Text(alias.clone())],
+                    vec![Some(self.expr(value))],
+                )
             }
-            RelationExpr::Select { predicate, input } =>
-                ("select", vec![], vec![Some(self.relation(input)), Some(self.expr(predicate))]),
-            RelationExpr::Project { value, alias, input } =>
-                ("project", vec![Payload::Text(alias.clone())], vec![Some(self.relation(input)), Some(self.expr(value))]),
+            RelationExpr::Select { predicate, input } => (
+                "select",
+                vec![],
+                vec![Some(self.relation(input)), Some(self.expr(predicate))],
+            ),
+            RelationExpr::Project {
+                value,
+                alias,
+                input,
+            } => (
+                "project",
+                vec![Payload::Text(alias.clone())],
+                vec![Some(self.relation(input)), Some(self.expr(value))],
+            ),
             RelationExpr::Distinct(input) => ("distinct", vec![], vec![Some(self.relation(input))]),
             RelationExpr::ProjectedUnion(columns) => {
-                let mut branches: Vec<_> = columns.iter().map(|branch| {
-                    let mut filters: Vec<_> = branch.filters.iter().map(|filter| Some(self.expr(filter))).collect();
-                    filters.sort();
-                    node(Class::Relation, named("projected_column"), vec![], vec![],
-                        vec![Payload::Table(physical(&branch.table, self.context)),
-                            Payload::Text(branch.column.clone())], filters, None, 0, 1)
-                }).collect();
+                let mut branches: Vec<_> = columns
+                    .iter()
+                    .map(|branch| {
+                        let mut filters: Vec<_> = branch
+                            .filters
+                            .iter()
+                            .map(|filter| Some(self.expr(filter)))
+                            .collect();
+                        filters.sort();
+                        node(
+                            Class::Relation,
+                            named("projected_column"),
+                            vec![],
+                            vec![],
+                            vec![
+                                Payload::Table(physical(&branch.table, self.context)),
+                                Payload::Text(branch.column.clone()),
+                            ],
+                            filters,
+                            None,
+                            0,
+                            1,
+                        )
+                    })
+                    .collect();
                 branches.sort();
-                ("projected_union", vec![], branches.into_iter().map(Some).collect())
+                (
+                    "projected_union",
+                    vec![],
+                    branches.into_iter().map(Some).collect(),
+                )
             }
-            RelationExpr::Grouped(group) => ("group", vec![
-                Payload::Table(physical(group.table(), self.context)), Payload::Texts(group.columns().map(str::to_owned).collect()),
-            ], vec![]),
-            RelationExpr::RecordProjection { source, field } =>
-                ("record_projection", vec![Payload::Text(source.clone()), Payload::Text(field.clone())], vec![]),
-            RelationExpr::Join { left, right, on, filters } => {
-                let sides = vec![(physical(&left.0, self.context), left.1.clone()), (physical(&right.0, self.context), right.1.clone())];
-                let children = std::iter::once(on).chain(filters).map(|query| Some(self.expr(query))).collect();
+            RelationExpr::Grouped(group) => (
+                "group",
+                vec![
+                    Payload::Table(physical(group.table(), self.context)),
+                    Payload::Texts(group.columns().map(str::to_owned).collect()),
+                ],
+                vec![],
+            ),
+            RelationExpr::RecordProjection { source, field } => (
+                "record_projection",
+                vec![Payload::Text(source.clone()), Payload::Text(field.clone())],
+                vec![],
+            ),
+            RelationExpr::Join {
+                left,
+                right,
+                on,
+                filters,
+            } => {
+                let sides = vec![
+                    (physical(&left.0, self.context), left.1.clone()),
+                    (physical(&right.0, self.context), right.1.clone()),
+                ];
+                let children = std::iter::once(on)
+                    .chain(filters)
+                    .map(|query| Some(self.expr(query)))
+                    .collect();
                 ("join", vec![Payload::Tables(sides)], children)
             }
         };
-        node(Class::Relation, named(operation), vec![], vec![], payload, children, None, 0, 1)
+        node(
+            Class::Relation,
+            named(operation),
+            vec![],
+            vec![],
+            payload,
+            children,
+            None,
+            0,
+            1,
+        )
     }
 }
 
@@ -437,18 +894,33 @@ thread_local! {
 }
 
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
-    let mut keys = Keys { context: ctx, memo: HashMap::new() };
-    if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.observation_identities().is_some()
-        || ctx.has_case_arm_keys() || ctx.choice_slots().is_some()
+    let mut keys = Keys {
+        context: ctx,
+        memo: HashMap::new(),
+    };
+    if expr.has_heap_ref()
+        || ctx.temporal_aliases().is_some()
+        || ctx.observation_identities().is_some()
+        || ctx.has_case_arm_keys()
+        || ctx.choice_slots().is_some()
         || ctx.captured_parameters().is_some()
     {
         return keys.expr(expr);
     }
-    if let Some(key) = CACHE.with(|cache| cache.borrow().get(expr).cloned()) { return key; }
+    if let Some(key) = CACHE.with(|cache| cache.borrow().get(expr).cloned()) {
+        return key;
+    }
     let key = keys.expr(expr);
     crate::cache::with_entry_budget(expr.size(), || {
-        CACHE.with(|cache| crate::cache::insert_bounded(&mut cache.borrow_mut(), expr.clone(), key.clone(),
-            crate::cache::DEFAULT_KEY_LIMIT, "ordering_axiom"));
+        CACHE.with(|cache| {
+            crate::cache::insert_bounded(
+                &mut cache.borrow_mut(),
+                expr.clone(),
+                key.clone(),
+                crate::cache::DEFAULT_KEY_LIMIT,
+                "ordering_axiom",
+            )
+        });
     });
     key
 }
@@ -459,7 +931,10 @@ pub fn canonical_order_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext)
 
 /// Compare only the two components of the CF-02 complexity measure.
 pub fn canonical_cost_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) -> Ordering {
-    let (left, right) = (canonical_order_key(left, ctx), canonical_order_key(right, ctx));
+    let (left, right) = (
+        canonical_order_key(left, ctx),
+        canonical_order_key(right, ctx),
+    );
     (&left.arms, &left.operations).cmp(&(&right.arms, &right.operations))
 }
 
@@ -468,13 +943,24 @@ pub fn canonical_cost_compare(left: &Expr, right: &Expr, ctx: &dyn SortContext) 
 pub(crate) fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) -> bool {
     let mut bound = true;
     expr.walk_pruned(&mut |part| {
-        if !bound || ctx.case_arm_keys(part).is_some() { return false; }
+        if !bound || ctx.case_arm_keys(part).is_some() {
+            return false;
+        }
         match part.kind() {
-            ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, .. } } => {
-                bound = ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id));
+            ExprKind::SymVar {
+                origin: SymVarOrigin::Temporal { binding_id, .. },
+            } => {
+                bound = ctx
+                    .choice_slots()
+                    .is_some_and(|slots| slots.contains_key(binding_id));
             }
-            ExprKind::SymVar { origin: SymVarOrigin::External { binding_id, .. } } =>
-                bound = ctx.observation_identities().is_some_and(|ids| ids.contains_key(binding_id)),
+            ExprKind::SymVar {
+                origin: SymVarOrigin::External { binding_id, .. },
+            } => {
+                bound = ctx
+                    .observation_identities()
+                    .is_some_and(|ids| ids.contains_key(binding_id))
+            }
             ExprKind::HeapRef(id) => bound = ctx.heap_binding_identity(*id).is_some(),
             _ => {}
         }
@@ -486,19 +972,28 @@ pub(crate) fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) 
 /// CF-08: fix operands using the shared key and reverse the comparison token
 /// only if the caller has already established this as a value comparison.
 pub fn canonical_order_ordered_comparison(
-    op: BinOpKind, left: &Expr, right: &Expr, ctx: &dyn SortContext,
+    op: BinOpKind,
+    left: &Expr,
+    right: &Expr,
+    ctx: &dyn SortContext,
 ) -> Option<(BinOpKind, bool)> {
     let opposite = op.swapped_comparison()?;
     if !comparison_operands_are_bound(left, ctx) || !comparison_operands_are_bound(right, ctx) {
         return None;
     }
-    canonical_order_compare(left, right, ctx).is_gt().then_some((opposite, true))
+    canonical_order_compare(left, right, ctx)
+        .is_gt()
+        .then_some((opposite, true))
 }
 
 pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> Expr {
     if let ExprKind::BinOp { op, left, right } = expr.kind() {
         if let Some((op, true)) = canonical_order_ordered_comparison(*op, left, right, ctx) {
-            return Expr::new(ExprKind::BinOp { op, left: right.clone(), right: left.clone() });
+            return Expr::new(ExprKind::BinOp {
+                op,
+                left: right.clone(),
+                right: left.clone(),
+            });
         }
     }
     expr.clone()
@@ -509,28 +1004,56 @@ pub(crate) fn orient_ordered_expression(expr: &Expr, ctx: &dyn SortContext) -> E
 pub fn let_eager_children(expr: &Expr) -> Vec<&Expr> {
     match expr.kind() {
         ExprKind::BinOp {
-            op: BinOpKind::Add | BinOpKind::Mul | BinOpKind::Sub
-                | BinOpKind::Eq | BinOpKind::Ne | BinOpKind::Lt | BinOpKind::Le
-                | BinOpKind::Gt | BinOpKind::Ge,
-            left, right,
+            op:
+                BinOpKind::Add
+                | BinOpKind::Mul
+                | BinOpKind::Sub
+                | BinOpKind::Eq
+                | BinOpKind::Ne
+                | BinOpKind::Lt
+                | BinOpKind::Le
+                | BinOpKind::Gt
+                | BinOpKind::Ge,
+            left,
+            right,
         } => vec![left, right],
-        ExprKind::UnaryOp { op: UnaryOpKind::Neg | UnaryOpKind::Not, operand } => vec![operand],
+        ExprKind::UnaryOp {
+            op: UnaryOpKind::Neg | UnaryOpKind::Not,
+            operand,
+        } => vec![operand],
         ExprKind::ArrayLit(items) => items.iter().collect(),
         _ => vec![],
     }
 }
 
 fn value_key_with_lets(
-    expression: &Expr, inline: &Rc<CanonicalKey>, bindings: &[Expr], uses: &mut [usize],
+    expression: &Expr,
+    inline: &Rc<CanonicalKey>,
+    bindings: &[Expr],
+    uses: &mut [usize],
     ctx: &dyn SortContext,
 ) -> Rc<CanonicalKey> {
-    if let Some(slot) = bindings.iter().position(|definition| definition == expression) {
+    if let Some(slot) = bindings
+        .iter()
+        .position(|definition| definition == expression)
+    {
         uses[slot] += 1;
-        return node(Class::Reference, named("let_reference"), inline.types.clone(), inline.contract.clone(),
-            vec![], vec![], Some(Identity::Local(slot)), 0, 1);
+        return node(
+            Class::Reference,
+            named("let_reference"),
+            inline.types.clone(),
+            inline.contract.clone(),
+            vec![],
+            vec![],
+            Some(Identity::Local(slot)),
+            0,
+            1,
+        );
     }
     let children = let_eager_children(expression);
-    if bindings.is_empty() || children.is_empty() { return inline.clone(); }
+    if bindings.is_empty() || children.is_empty() {
+        return inline.clone();
+    }
     let mut key = inline.as_ref().clone();
     for (index, expr) in children.into_iter().enumerate() {
         let old = inline.children[index].as_ref().expect("eager key slot");
@@ -541,8 +1064,10 @@ fn value_key_with_lets(
         key.operations += &new.operations;
         key.children[index] = Some(new);
     }
-    if matches!(expression.as_binop(), Some((BinOpKind::Add | BinOpKind::Mul, ..)))
-        && crate::normalize::exact_acquired_arithmetic(expression, ctx)
+    if matches!(
+        expression.as_binop(),
+        Some((BinOpKind::Add | BinOpKind::Mul, ..))
+    ) && crate::normalize::exact_acquired_arithmetic(expression, ctx)
         && key.children[0] > key.children[1]
     {
         key.children.swap(0, 1);
@@ -552,12 +1077,32 @@ fn value_key_with_lets(
 
 /// Reorder the two strictly evaluated, exact operands by their actual
 /// output structure, which now contains lexical LET references.
-pub fn let_arithmetic_needs_swap(expression: &Expr, bindings: &[Expr], ctx: &dyn SortContext) -> bool {
-    let Some((BinOpKind::Add | BinOpKind::Mul, left, right)) = expression.as_binop() else { return false; };
-    if bindings.is_empty() || !crate::normalize::exact_acquired_arithmetic(expression, ctx) { return false; }
+pub fn let_arithmetic_needs_swap(
+    expression: &Expr,
+    bindings: &[Expr],
+    ctx: &dyn SortContext,
+) -> bool {
+    let Some((BinOpKind::Add | BinOpKind::Mul, left, right)) = expression.as_binop() else {
+        return false;
+    };
+    if bindings.is_empty() || !crate::normalize::exact_acquired_arithmetic(expression, ctx) {
+        return false;
+    }
     let mut uses = vec![0; bindings.len()];
-    let left = value_key_with_lets(left, &canonical_order_key(left, ctx), bindings, &mut uses, ctx);
-    let right = value_key_with_lets(right, &canonical_order_key(right, ctx), bindings, &mut uses, ctx);
+    let left = value_key_with_lets(
+        left,
+        &canonical_order_key(left, ctx),
+        bindings,
+        &mut uses,
+        ctx,
+    );
+    let right = value_key_with_lets(
+        right,
+        &canonical_order_key(right, ctx),
+        bindings,
+        &mut uses,
+        ctx,
+    );
     left > right
 }
 
@@ -571,8 +1116,17 @@ pub fn named_parameter_key(name: &str, kind: &str) -> Rc<CanonicalKey> {
 
 pub fn wrap_choices(mut value: Rc<CanonicalKey>, prefix: &[ChoiceOperands]) -> Rc<CanonicalKey> {
     for (source, fallback) in prefix.iter().rev() {
-        value = node(Class::Relation, named("choose"), value.types.clone(), value.contract.clone(),
-            vec![], vec![Some(source.clone()), Some(fallback.clone()), Some(value)], None, 0, 1);
+        value = node(
+            Class::Relation,
+            named("choose"),
+            value.types.clone(),
+            value.contract.clone(),
+            vec![],
+            vec![Some(source.clone()), Some(fallback.clone()), Some(value)],
+            None,
+            0,
+            1,
+        );
     }
     value
 }
@@ -589,30 +1143,50 @@ struct LetSearch<'a> {
 }
 
 impl LetSearch<'_> {
-    fn search(&mut self, bindings: &mut Vec<Expr>, definition_keys: &mut Vec<Rc<CanonicalKey>>,
-        definition_uses: &mut Vec<usize>, selected: &mut [bool]) -> Result<(), &'static str>
-    {
+    fn search(
+        &mut self,
+        bindings: &mut Vec<Expr>,
+        definition_keys: &mut Vec<Rc<CanonicalKey>>,
+        definition_uses: &mut Vec<usize>,
+        selected: &mut [bool],
+    ) -> Result<(), &'static str> {
         // Charge owned occurrences, not arena node count; a traversal may
         // visit each syntactically repeated child separately.
-        let work = self.value.size().saturating_add(bindings.iter()
-            .fold(1usize, |sum, expr| sum.saturating_add(expr.size())));
-        self.budget = self.budget.checked_sub(work)
+        let work = self.value.size().saturating_add(
+            bindings
+                .iter()
+                .fold(1usize, |sum, expr| sum.saturating_add(expr.size())),
+        );
+        self.budget = self
+            .budget
+            .checked_sub(work)
             .ok_or("LET candidate budget exhausted; no canonical result was produced")?;
         if !bindings.is_empty() {
             let mut uses = definition_uses.clone();
-            let value = value_key_with_lets(self.value, &self.inline, bindings, &mut uses, self.ctx);
+            let value =
+                value_key_with_lets(self.value, &self.inline, bindings, &mut uses, self.ctx);
             let value = wrap_choices(value, self.choices);
             if uses.iter().all(|&count| count >= 2) {
                 let declarations = definition_keys.iter().cloned().map(Some).collect();
-                let mut key = node(Class::Construct, named("let"), self.inline.types.clone(),
-                    self.inline.contract.clone(), vec![], declarations, None, 0, 0);
+                let mut key = node(
+                    Class::Construct,
+                    named("let"),
+                    self.inline.types.clone(),
+                    self.inline.contract.clone(),
+                    vec![],
+                    declarations,
+                    None,
+                    0,
+                    0,
+                );
                 let result = Rc::get_mut(&mut key).expect("new LET key");
                 result.arms += &value.arms;
                 result.operations += &value.operations;
                 result.tail = Some(value);
                 // The shared structure key only breaks ties between plans
                 // that have already beaten the inline value in complexity.
-                if (&key.arms, &key.operations) < (&self.inline_full.arms, &self.inline_full.operations)
+                if (&key.arms, &key.operations)
+                    < (&self.inline_full.arms, &self.inline_full.operations)
                     && key < self.best.0
                 {
                     self.best = (key, bindings.clone());
@@ -620,13 +1194,26 @@ impl LetSearch<'_> {
             }
         }
         for index in 0..self.candidates.len() {
-            if selected[index] { continue; }
+            if selected[index] {
+                continue;
+            }
             let (expression, inline) = &self.candidates[index];
             let mut uses = definition_uses.clone();
             let body = value_key_with_lets(expression, inline, bindings, &mut uses, self.ctx);
-            if body.arms == BigUint::default() { continue; } // a LET reference does not own a CASE
-            let binding = node(Class::Construct, named("let_binding"), body.types.clone(), body.contract.clone(),
-                vec![], vec![Some(body)], None, 0, 1);
+            if body.arms == BigUint::default() {
+                continue;
+            } // a LET reference does not own a CASE
+            let binding = node(
+                Class::Construct,
+                named("let_binding"),
+                body.types.clone(),
+                body.contract.clone(),
+                vec![],
+                vec![Some(body)],
+                None,
+                0,
+                1,
+            );
             selected[index] = true;
             uses.push(0);
             bindings.push(expression.clone());
@@ -652,16 +1239,26 @@ pub struct ValuePlan {
 /// Eligibility is supplied by the owner of the acquired value. Names are not
 /// part of the search; reference slots are allocated by each candidate order.
 pub fn canonical_let_plan(
-    value: &Expr, ctx: &dyn SortContext, choices: &[ChoiceOperands], eligible: impl Fn(&Expr) -> bool,
+    value: &Expr,
+    ctx: &dyn SortContext,
+    choices: &[ChoiceOperands],
+    eligible: impl Fn(&Expr) -> bool,
 ) -> Result<ValuePlan, &'static str> {
     fn occurrences(
-        expr: &Expr, key: &Rc<CanonicalKey>, eligible: &impl Fn(&Expr) -> bool,
+        expr: &Expr,
+        key: &Rc<CanonicalKey>,
+        eligible: &impl Fn(&Expr) -> bool,
         counts: &mut HashMap<Expr, (usize, Rc<CanonicalKey>)>,
     ) {
         // An acquisition or LET reference owns no expression behind it.
-        if key.arms == BigUint::default() { return; }
+        if key.arms == BigUint::default() {
+            return;
+        }
         if eligible(expr) {
-            counts.entry(expr.clone()).or_insert_with(|| (0, key.clone())).0 += 1;
+            counts
+                .entry(expr.clone())
+                .or_insert_with(|| (0, key.clone()))
+                .0 += 1;
         }
         for (index, child) in let_eager_children(expr).into_iter().enumerate() {
             let slot = key.children[index].as_ref().expect("eager key slot");
@@ -672,19 +1269,44 @@ pub fn canonical_let_plan(
     let inline = canonical_order_key(value, ctx);
     let mut counts = HashMap::new();
     occurrences(value, &inline, &eligible, &mut counts);
-    let mut candidates: Vec<_> = counts.into_iter().filter_map(|(expr, (count, key))|
-        (count >= 2).then_some((expr, key))).collect();
+    let mut candidates: Vec<_> = counts
+        .into_iter()
+        .filter_map(|(expr, (count, key))| (count >= 2).then_some((expr, key)))
+        .collect();
     let inline_full = wrap_choices(inline.clone(), choices);
     if candidates.is_empty() {
-        return Ok(ValuePlan { key: inline_full, payload: value.clone(), definitions: vec![] });
+        return Ok(ValuePlan {
+            key: inline_full,
+            payload: value.clone(),
+            definitions: vec![],
+        });
     }
     candidates.sort_by(|(_, a), (_, b)| a.cmp(b));
     let mut selected = vec![false; candidates.len()];
-    let budget = std::env::var("NORMALIZER_MATH_MAX_CANDIDATE_NODES").ok()
-        .and_then(|raw| raw.parse().ok()).unwrap_or(4_000_000);
-    let mut search = LetSearch { value, ctx, inline, inline_full: inline_full.clone(), choices,
-        candidates, best: (inline_full, vec![]), budget };
-    search.search(&mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut selected)?;
+    let budget = std::env::var("NORMALIZER_MATH_MAX_CANDIDATE_NODES")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(4_000_000);
+    let mut search = LetSearch {
+        value,
+        ctx,
+        inline,
+        inline_full: inline_full.clone(),
+        choices,
+        candidates,
+        best: (inline_full, vec![]),
+        budget,
+    };
+    search.search(
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut selected,
+    )?;
     let (key, definitions) = search.best;
-    Ok(ValuePlan { key, payload: value.clone(), definitions })
+    Ok(ValuePlan {
+        key,
+        payload: value.clone(),
+        definitions,
+    })
 }

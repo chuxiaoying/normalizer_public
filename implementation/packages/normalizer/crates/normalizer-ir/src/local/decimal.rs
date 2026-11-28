@@ -29,12 +29,17 @@ fn decimal(t: &mut Tokens<'_>) -> Result<Decimal, String> {
     }
     let sign = usize::from(input.starts_with('-'));
     let whole_end = sign + input[sign..].bytes().take_while(u8::is_ascii_digit).count();
-    if sign == whole_end { return Err("decimal requires digits".into()); }
-    let fraction = input[whole_end..].strip_prefix('.').map(|tail|
-        tail.bytes().take_while(u8::is_ascii_digit).count());
-    if fraction == Some(0) { return Err("decimal requires digits after the point".into()); }
+    if sign == whole_end {
+        return Err("decimal requires digits".into());
+    }
+    let fraction = input[whole_end..]
+        .strip_prefix('.')
+        .map(|tail| tail.bytes().take_while(u8::is_ascii_digit).count());
+    if fraction == Some(0) {
+        return Err("decimal requires digits after the point".into());
+    }
     let scale = fraction.unwrap_or(0);
-    let end = whole_end + fraction.map_or(0, |n| n+1);
+    let end = whole_end + fraction.map_or(0, |n| n + 1);
     let digits = input[..end].replace('.', "");
     let coefficient = digits.parse().map_err(|_| "invalid decimal literal")?;
     t.source = &input[end..];
@@ -46,12 +51,24 @@ pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignme
     if prefix.take("round") && prefix.take("(") {
         *t = prefix;
         let mut factors = vec![decimal(t)?];
-        while t.take("*") { factors.push(decimal(t)?); }
-        let value = if factors.len() == 1 { factors.pop().unwrap() } else { Decimal::Product(factors) };
+        while t.take("*") {
+            factors.push(decimal(t)?);
+        }
+        let value = if factors.len() == 1 {
+            factors.pop().unwrap()
+        } else {
+            Decimal::Product(factors)
+        };
         t.expect(",")?;
-        let ScalarOperand::Integer(scale) = t.value()? else { return Err("round scale must be an integer literal".into()); };
-        if scale.sign() == num_bigint::Sign::Minus { return Err("round scale must be nonnegative".into()); }
-        if !t.take(",") { return Err("decimal rounding requires an explicit midpoint mode".into()); }
+        let ScalarOperand::Integer(scale) = t.value()? else {
+            return Err("round scale must be an integer literal".into());
+        };
+        if scale.sign() == num_bigint::Sign::Minus {
+            return Err("round scale must be nonnegative".into());
+        }
+        if !t.take(",") {
+            return Err("decimal rounding requires an explicit midpoint mode".into());
+        }
         let mode = match t.name()?.as_str() {
             "HALF_UP" => Mode::HalfUp,
             "HALF_EVEN" => Mode::HalfEven,
@@ -59,14 +76,24 @@ pub(super) fn parse(binding: &str, t: &mut Tokens<'_>) -> Result<Option<Assignme
         };
         t.expect(")")?;
         t.end("trailing decimal round input")?;
-        return Ok(Some(Assignment { binding: binding.into(), value, round: Some((scale, mode)) }));
+        return Ok(Some(Assignment {
+            binding: binding.into(),
+            value,
+            round: Some((scale, mode)),
+        }));
     }
     let mut value = Tokens { source: t.source };
     let parsed = match decimal(&mut value) {
         Ok(parsed) => parsed,
         Err(_) => return Ok(None),
     };
-    if !value.rest().is_empty() { return Ok(None); }
+    if !value.rest().is_empty() {
+        return Ok(None);
+    }
     *t = value;
-    Ok(Some(Assignment { binding: binding.into(), value: parsed, round: None }))
+    Ok(Some(Assignment {
+        binding: binding.into(),
+        value: parsed,
+        round: None,
+    }))
 }

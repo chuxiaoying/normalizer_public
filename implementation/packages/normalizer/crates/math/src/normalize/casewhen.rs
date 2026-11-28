@@ -11,7 +11,9 @@ use crate::expr::{Expr, ExprKind, Lit, UnaryOpKind};
 use std::collections::HashSet;
 
 pub(crate) fn simplify(
-    expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>,
+    expr: &Expr,
+    ctx: &dyn crate::sort_context::SortContext,
+    parent: Option<&Expr>,
 ) -> Expr {
     let Some(branches) = expr.as_case_when() else {
         return expr.clone();
@@ -19,15 +21,24 @@ pub(crate) fn simplify(
     // A WHEN that returns SQL UNKNOWN does not select its arm, but its
     // negation is UNKNOWN as well. A two-valued first-match proof cannot
     // invent either an exhaustive complement or facts for following arms.
-    if branches.iter().any(|(guard, _)| guard.may_observe_sql_unknown()) {
+    if branches
+        .iter()
+        .any(|(guard, _)| guard.may_observe_sql_unknown())
+    {
         let mut unchanged_when = Vec::new();
         for (guard, value) in branches {
-            if guard.as_bool() == Some(false) { continue; }
+            if guard.as_bool() == Some(false) {
+                continue;
+            }
             unchanged_when.push((guard.clone(), value.clone()));
-            if guard.as_bool() == Some(true) { break; }
+            if guard.as_bool() == Some(true) {
+                break;
+            }
         }
         if unchanged_when.len() != branches.len() {
-            return Expr::new(ExprKind::CaseWhen { branches: unchanged_when });
+            return Expr::new(ExprKind::CaseWhen {
+                branches: unchanged_when,
+            });
         }
         return expr.clone();
     }
@@ -64,9 +75,15 @@ fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr
     for (index, ((protected, selected), (null, on_null))) in
         branches.iter().zip(branches.iter().skip(1)).enumerate()
     {
-        let Some((Eq, subject, nil)) = null.as_binop() else { continue; };
-        if subject.as_heap_ref().is_none() || !nil.is_null() { continue; }
-        if !matches!(protected.as_binop(), Some((crate::BinOpKind::And, ..))) { continue; }
+        let Some((Eq, subject, nil)) = null.as_binop() else {
+            continue;
+        };
+        if subject.as_heap_ref().is_none() || !nil.is_null() {
+            continue;
+        }
+        if !matches!(protected.as_binop(), Some((crate::BinOpKind::And, ..))) {
+            continue;
+        }
         // A binary conjunction contributes at least two leaves.
         let parts = flatten_and(protected);
         let (first, rest) = (&parts[0], &parts[1..]);
@@ -84,23 +101,38 @@ fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr
 /// Match the Boolean value of a complete test on either side of one
 /// already acquired reference's null partition.
 fn null_boolean_arms<'a>(condition: &'a Expr, is_null: &Expr) -> Option<(&'a Expr, &'a Expr)> {
-    let ([(test, yes)], no) = condition.as_total_case_when()? else { return None; };
-    if test == is_null { Some((yes, no)) }
-    else if test.is_comparison_complement(is_null) { Some((no, yes)) }
-    else { None }
+    let ([(test, yes)], no) = condition.as_total_case_when()? else {
+        return None;
+    };
+    if test == is_null {
+        Some((yes, no))
+    } else if test.is_comparison_complement(is_null) {
+        Some((no, yes))
+    } else {
+        None
+    }
 }
 
 fn restrict_nonnull_guard(guard: &Expr, is_null: &Expr) -> Expr {
-    use crate::{builder as b, BinOpKind::{And, Or}};
-    if guard == is_null { return b::lit_bool(false); }
-    if guard.is_comparison_complement(is_null) { return b::lit_bool(true); }
+    use crate::{
+        builder as b,
+        BinOpKind::{And, Or},
+    };
+    if guard == is_null {
+        return b::lit_bool(false);
+    }
+    if guard.is_comparison_complement(is_null) {
+        return b::lit_bool(true);
+    }
     if let Some((_, on_nonnull)) = null_boolean_arms(guard, is_null) {
         return restrict_nonnull_guard(on_nonnull, is_null);
     }
     if let Some((op @ (And | Or), left, right)) = guard.as_binop() {
-        return b::binop_public(op,
+        return b::binop_public(
+            op,
             restrict_nonnull_guard(left, is_null),
-            restrict_nonnull_guard(right, is_null));
+            restrict_nonnull_guard(right, is_null),
+        );
     }
     if let Some(operand) = guard.as_not() {
         return b::not(restrict_nonnull_guard(operand, is_null));
@@ -120,18 +152,29 @@ fn factor_short_circuit_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr
         let Some(is_null) = clauses.iter().find(|term| matches!(term.as_binop(), Some((Eq, a, z))
             if (a.as_heap_ref().is_some() && z.is_null()) || (z.as_heap_ref().is_some() && a.is_null())))
         else { continue; };
-        let Some((when_null, when_nonnull)) = null_boolean_arms(protected, is_null) else { continue; };
+        let Some((when_null, when_nonnull)) = null_boolean_arms(protected, is_null) else {
+            continue;
+        };
         if when_null.as_bool() != Some(false)
-            || !clauses.iter().all(|term| term == is_null
-                || null_boolean_arms(term, is_null).is_some_and(|(arm, _)| arm.as_bool() == Some(true)))
+            || !clauses.iter().all(|term| {
+                term == is_null
+                    || null_boolean_arms(term, is_null)
+                        .is_some_and(|(arm, _)| arm.as_bool() == Some(true))
+            })
         {
             continue;
         }
         let mut result = branches[..index].to_vec();
         result.push((is_null.clone(), on_null.clone()));
-        result.push((restrict_nonnull_guard(when_nonnull, is_null), selected.clone()));
+        result.push((
+            restrict_nonnull_guard(when_nonnull, is_null),
+            selected.clone(),
+        ));
         result.extend(branches[index + 2..].iter().map(|(guard, value)| {
-            (crate::normalize(restrict_nonnull_guard(guard, is_null)), value.clone())
+            (
+                crate::normalize(restrict_nonnull_guard(guard, is_null)),
+                value.clone(),
+            )
         }));
         return Some(result);
     }
@@ -145,27 +188,51 @@ fn factor_total_nonnull_tail(expr: &Expr, ctx: &dyn crate::SortContext) -> Optio
     use crate::BinOpKind::{Eq, Ne};
     let (branches, on_null) = expr.as_total_case_when()?;
     let ((nonnull, when_nonnull), earlier) = branches.split_last()?;
-    if earlier.is_empty() { return None; }
-    let (Ne, lhs, rhs) = nonnull.as_binop()? else { return None; };
-    let reference = if lhs.is_null() { rhs } else if rhs.is_null() { lhs } else { return None; };
-    if !super::boolean_casewhen::total_value_with_context(reference, ctx) || reference.as_heap_ref().is_none() {
+    if earlier.is_empty() {
+        return None;
+    }
+    let (Ne, lhs, rhs) = nonnull.as_binop()? else {
+        return None;
+    };
+    let reference = if lhs.is_null() {
+        rhs
+    } else if rhs.is_null() {
+        lhs
+    } else {
+        return None;
+    };
+    if !super::boolean_casewhen::total_value_with_context(reference, ctx)
+        || reference.as_heap_ref().is_none()
+    {
         return None;
     }
     let null = crate::builder::binop_public(Eq, lhs.clone(), rhs.clone());
     let mut parts = vec![(null, on_null.clone())];
     for (guard, value) in earlier {
-        if !super::boolean_casewhen::total_value_with_context(guard, ctx) { return None; }
+        if !super::boolean_casewhen::total_value_with_context(guard, ctx) {
+            return None;
+        }
         let conjunction = flatten_and(guard);
-        if !conjunction.contains(nonnull) { return None; }
-        let remaining: Vec<_> = conjunction.into_iter().filter(|term| term != nonnull).collect();
+        if !conjunction.contains(nonnull) {
+            return None;
+        }
+        let remaining: Vec<_> = conjunction
+            .into_iter()
+            .filter(|term| term != nonnull)
+            .collect();
         parts.push((rebuild_and(&remaining), value.clone()));
     }
     let candidate = crate::builder::case_when(parts, when_nonnull.clone());
-    crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
+    crate::canonical_order_compare(&candidate, expr, ctx)
+        .is_lt()
+        .then_some(candidate)
 }
 
 fn simplify_impl(
-    expr: &Expr, branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>,
+    expr: &Expr,
+    branches: &[(Expr, Expr)],
+    ctx: &dyn crate::sort_context::SortContext,
+    parent: Option<&Expr>,
 ) -> Expr {
     if let Some(value) = crate::domains::text::redundant_null_default(expr) {
         return value;
@@ -221,9 +288,10 @@ fn simplify_impl(
             .into_iter()
             .map(|(guard, value)| {
                 let guard = crate::normalize_with(guard, ctx);
-                let representative = super::integer_ranges::canonical_guard(&guard, remaining.as_ref(), ctx)
-                    .map(|candidate| crate::normalize_with(candidate, ctx))
-                    .unwrap_or_else(|| guard.clone());
+                let representative =
+                    super::integer_ranges::canonical_guard(&guard, remaining.as_ref(), ctx)
+                        .map(|candidate| crate::normalize_with(candidate, ctx))
+                        .unwrap_or_else(|| guard.clone());
                 if representative.as_bool() != Some(false) {
                     let next = crate::builder::not(guard);
                     remaining = Some(match remaining.take() {
@@ -241,7 +309,8 @@ fn simplify_impl(
         // later range pass cannot restore and publish the redundant bound.
         let (guards, _) = strip_redundant_path_guards(&arms);
         let ranged = crate::builder::case_when(guards, fallback);
-        return ranged.as_case_when()
+        return ranged
+            .as_case_when()
             .and_then(|branches| canonical_disjoint_literal_arms(branches, ctx))
             .unwrap_or(ranged);
     }
@@ -303,7 +372,8 @@ fn simplify_impl(
     //    典型场景：外层 guard 已证明 `value != null`，而 return value 是同一个
     //    `value` 的 CaseWhen。nested flatten 会生成默认 null 分支；该分支被前面
     //    非 null value 分支覆盖，应删除，而不是渲染成 `"found:" + null`。
-    let (covered_stripped, covered_changed) = dead_branch_by_covered_prev_conds(&same_value_grouped);
+    let (covered_stripped, covered_changed) =
+        dead_branch_by_covered_prev_conds(&same_value_grouped);
 
     // Drop false guards and stop after the first explicit default.
     let mut filtered: Vec<(Expr, Expr)> = Vec::new();
@@ -325,12 +395,13 @@ fn simplify_impl(
         }
     }
 
-
     if let Some(rewritten) = orient_adjacent_integer_suffix(&filtered, ctx) {
         return rewritten;
     }
     if let Some(((last_guard, fallback), prior)) = filtered.split_last() {
-        if last_guard.as_bool() != Some(true) && super::integer_ranges::exhaustive_acquired_suffix(&filtered) {
+        if last_guard.as_bool() != Some(true)
+            && super::integer_ranges::exhaustive_acquired_suffix(&filtered)
+        {
             return crate::builder::case_when(prior.to_vec(), fallback.clone());
         }
     }
@@ -370,7 +441,8 @@ fn simplify_impl(
 /// overlap within either of the checked exact domains below. The selector
 /// is already acquired and evaluating these terms adds no observations.
 fn canonical_disjoint_literal_arms(
-    branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
+    branches: &[(Expr, Expr)],
+    ctx: &dyn crate::sort_context::SortContext,
 ) -> Option<Expr> {
     use crate::{BinOpKind::Eq, SymVarOrigin};
     let ((fallback_guard, fallback), arms) = branches.split_last()?;
@@ -387,7 +459,9 @@ fn canonical_disjoint_literal_arms(
     let mut labels = HashSet::new();
     for (guard, result) in arms {
         result.as_lit()?;
-        let (Eq, left, right) = guard.as_binop()? else { return None; };
+        let (Eq, left, right) = guard.as_binop()? else {
+            return None;
+        };
         let (subject, literal) = if let Some(literal) = right.as_lit() {
             (left, literal)
         } else {
@@ -415,18 +489,24 @@ fn canonical_disjoint_literal_arms(
 /// same acquired integer are an exhaustive binary CASE. Keep the whole
 /// suffix behind every earlier arm (notably a null/definedness check).
 fn orient_adjacent_integer_suffix(
-    branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
+    branches: &[(Expr, Expr)],
+    ctx: &dyn crate::sort_context::SortContext,
 ) -> Option<Expr> {
-    let [prefix @ .., (yes_guard, yes), (no_guard, no)] = branches else { return None; };
+    let [prefix @ .., (yes_guard, yes), (no_guard, no)] = branches else {
+        return None;
+    };
     use super::integer_ranges::{acquired_integer_strict_bound, adjacent_acquired_integer_bounds};
     if acquired_integer_strict_bound(yes_guard).is_none()
-        || no_guard.as_bool() != Some(true) && !adjacent_acquired_integer_bounds(yes_guard, no_guard)
+        || no_guard.as_bool() != Some(true)
+            && !adjacent_acquired_integer_bounds(yes_guard, no_guard)
     {
         return None;
     }
     let pair = crate::builder::case_when(vec![(yes_guard.clone(), yes.clone())], no.clone());
     let pair = crate::case_orientation::canonicalize_binary_case(&pair, ctx, None).unwrap_or(pair);
-    let ([(guard, selected)], fallback) = pair.as_total_case_when()? else { return None; };
+    let ([(guard, selected)], fallback) = pair.as_total_case_when()? else {
+        return None;
+    };
     if no_guard.as_bool() == Some(true) && guard == yes_guard && selected == yes && fallback == no {
         return None;
     }
@@ -447,8 +527,12 @@ fn orient_adjacent_integer_suffix(
 // calls, relation bodies, floating point operations or word operators.
 fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
     use crate::{builder as b, BinOpKind as B, Lit};
-    let [(condition, yes), (always, no)] = branches else { return None; };
-    if always.as_bool() != Some(true) { return None; }
+    let [(condition, yes), (always, no)] = branches else {
+        return None;
+    };
+    if always.as_bool() != Some(true) {
+        return None;
+    }
     let (op, left, right) = condition.as_binop()?;
     let (point_value, generic_value) = match op {
         B::Eq => (yes, no),
@@ -456,15 +540,23 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
         _ => return None,
     };
     let is_integer = |value: &Expr| value.as_lit().and_then(Lit::as_integer).is_some();
-    let (subject, point) = if is_integer(right) { (left, right) } else { (right, left) };
-    if subject.as_sym_var().is_none() || !is_integer(point)
+    let (subject, point) = if is_integer(right) {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    if subject.as_sym_var().is_none()
+        || !is_integer(point)
         || !super::integer_ac::total_integer(subject)
         || !super::integer_ac::total_integer(generic_value)
-        || !super::integer_ac::total_integer(point_value) {
+        || !super::integer_ac::total_integer(point_value)
+    {
         return None;
     }
     fn at(value: &Expr, subject: &Expr, point: &Expr) -> Expr {
-        if value == subject { return point.clone(); }
+        if value == subject {
+            return point.clone();
+        }
         if let Some((op, left, right)) = value.as_binop() {
             if matches!(op, B::Add | B::Sub | B::Mul) {
                 return b::binop_public(op, at(left, subject, point), at(right, subject, point));
@@ -472,18 +564,25 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
         }
         value.clone()
     }
-    (crate::normalize(at(generic_value, subject, point)) == crate::normalize(at(point_value, subject, point)))
-        .then(|| generic_value.clone())
+    (crate::normalize(at(generic_value, subject, point))
+        == crate::normalize(at(point_value, subject, point)))
+    .then(|| generic_value.clone())
 }
 
 // A comparison of a bare Count is total on the same acquired snapshot
 // used by its empty test. Reuse the OR absorption without moving any
 // acquisition, filtered projection or unrelated nullable read.
 fn redundant_cardinality_arm(expr: &Expr) -> Option<Expr> {
-    let ([(guard, yes)], no) = expr.as_total_case_when()? else { return None; };
+    let ([(guard, yes)], no) = expr.as_total_case_when()? else {
+        return None;
+    };
     if let (Some(yes), Some(no)) = (yes.as_bool(), no.as_bool()) {
         if yes != no && super::relation::relation_count_bound(guard).is_some() {
-            return Some(if yes { guard.clone() } else { crate::builder::not(guard.clone()) });
+            return Some(if yes {
+                guard.clone()
+            } else {
+                crate::builder::not(guard.clone())
+            });
         }
     }
     if yes.as_bool() == Some(true) {
@@ -497,12 +596,17 @@ fn redundant_cardinality_arm(expr: &Expr) -> Option<Expr> {
 }
 
 fn collapse_two_value_exhaustive_to_default(
-    branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
+    branches: &[(Expr, Expr)],
+    ctx: &dyn crate::sort_context::SortContext,
 ) -> Option<Expr> {
-    if branches.len() < 3 { return None; }
+    if branches.len() < 3 {
+        return None;
+    }
     let (last_cond, default_value) = branches.last()?;
     if last_cond.as_bool() != Some(true)
-        || !branches.iter().all(|(guard, _)| super::boolean_casewhen::total_value(guard))
+        || !branches
+            .iter()
+            .all(|(guard, _)| super::boolean_casewhen::total_value(guard))
     {
         return None;
     }
@@ -514,12 +618,20 @@ fn collapse_two_value_exhaustive_to_default(
     // This CASE is complete. Union the effective domains for the non-default
     // value; never use the raw guards across different earlier payloads.
     let effective = first_match_effective_domains(branches);
-    let guard = branches.iter().zip(effective).filter_map(|((_, value), domain)|
-        (value == distinct).then_some(domain)).reduce(crate::builder::or)?;
+    let guard = branches
+        .iter()
+        .zip(effective)
+        .filter_map(|((_, value), domain)| (value == distinct).then_some(domain))
+        .reduce(crate::builder::or)?;
     let guard = crate::normalize_with(guard, ctx);
-    let candidate = crate::builder::case_when(vec![(guard, distinct.clone())], default_value.clone());
-    let original = Expr::new(ExprKind::CaseWhen { branches: branches.to_vec() });
-    crate::canonical_order_compare(&candidate, &original, ctx).is_lt().then_some(candidate)
+    let candidate =
+        crate::builder::case_when(vec![(guard, distinct.clone())], default_value.clone());
+    let original = Expr::new(ExprKind::CaseWhen {
+        branches: branches.to_vec(),
+    });
+    crate::canonical_order_compare(&candidate, &original, ctx)
+        .is_lt()
+        .then_some(candidate)
 }
 
 fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
@@ -534,24 +646,33 @@ fn first_match_effective_domains(branches: &[(Expr, Expr)]) -> Vec<Expr> {
 }
 
 fn flatten_selected_case(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
-    let ([(outer, selected)], skipped) = expr.as_total_case_when()? else { return None; };
+    let ([(outer, selected)], skipped) = expr.as_total_case_when()? else {
+        return None;
+    };
     let selector = outer.as_not().unwrap_or(outer);
     if !matches!(selector.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
         if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
         || skipped.as_case_when().is_some()
-    { return None; }
+    {
+        return None;
+    }
     let (inside, fallback) = selected.as_total_case_when()?;
     let first = crate::normalize_with(crate::builder::not(outer.clone()), ctx);
     let mut parts = vec![(first, skipped.clone())];
     for (guard, value) in inside {
         // Only the actually proved outer selector can be removed; no
         // other nested observation is moved or removed.
-        let remaining: Vec<_> = flatten_and(guard).into_iter().filter(|test| test != outer).collect();
+        let remaining: Vec<_> = flatten_and(guard)
+            .into_iter()
+            .filter(|test| test != outer)
+            .collect();
         let guard = rebuild_and(&remaining);
         parts.push((guard, value.clone()));
     }
     let candidate = crate::builder::case_when(parts, fallback.clone());
-    crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
+    crate::canonical_order_compare(&candidate, expr, ctx)
+        .is_lt()
+        .then_some(candidate)
 }
 
 /// Execution can produce a flat list of guarded returns instead of a
@@ -559,30 +680,42 @@ fn flatten_selected_case(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Ex
 /// cover the selected domain; a partial expression never gains an ELSE.
 fn factor_exhaustive_selector_tail(expr: &Expr, ctx: &dyn crate::SortContext) -> Option<Expr> {
     let (last, earlier) = expr.as_case_when()?.split_last()?;
-    if earlier.len() < 2 { return None; }
+    if earlier.len() < 2 {
+        return None;
+    }
     let selector = last.0.as_not()?;
     if !matches!(selector.as_sym_var(), Some(crate::SymVarOrigin::Parameter { name, primitive_type })
         if primitive_type == "boolean" && !name.starts_with('$') && !name.contains(['.', '[', ']']))
-    { return None; }
+    {
+        return None;
+    }
     let mut inner = Vec::with_capacity(earlier.len());
     for (guard, value) in earlier {
         let terms = flatten_and(guard);
-        if !terms.contains(selector) { return None; }
+        if !terms.contains(selector) {
+            return None;
+        }
         let terms: Vec<_> = terms.into_iter().filter(|test| test != selector).collect();
         let remaining = rebuild_and(&terms);
         if remaining.as_bool().is_none()
             && !super::boolean_domains::is_closed_boolean(&remaining)
             && !super::integer_ranges::is_closed_integer_guard(&remaining)
-        { return None; }
+        {
+            return None;
+        }
         inner.push((remaining, value.clone()));
     }
     let guards: Vec<_> = inner.iter().map(|(guard, _)| guard.clone()).collect();
-    if !crate::builder::conditions_cover_all(&guards) { return None; }
+    if !crate::builder::conditions_cover_all(&guards) {
+        return None;
+    }
     let (_, fallback) = inner.pop()?;
     let mut parts = vec![last.clone()];
     parts.extend(inner);
     let candidate = crate::builder::case_when(parts, fallback);
-    crate::canonical_order_compare(&candidate, expr, ctx).is_lt().then_some(candidate)
+    crate::canonical_order_compare(&candidate, expr, ctx)
+        .is_lt()
+        .then_some(candidate)
 }
 
 fn flatten_nested_value_branches(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
@@ -626,7 +759,10 @@ fn map_prior_guards(
     for (condition, value) in branches {
         let rewritten = rewrite(condition, &previous);
         changed |= rewritten.is_some();
-        out.push((rewritten.unwrap_or_else(|| condition.clone()), value.clone()));
+        out.push((
+            rewritten.unwrap_or_else(|| condition.clone()),
+            value.clone(),
+        ));
         previous.push(condition);
     }
     (out, changed)
@@ -699,10 +835,7 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     // payloads, so do not rebuild its effective domains on later iterations.
     if explicit_default.is_some() {
         let mut seen_values = HashSet::new();
-        if branches
-            .iter()
-            .all(|(_, value)| seen_values.insert(value))
-        {
+        if branches.iter().all(|(_, value)| seen_values.insert(value)) {
             return (branches.to_vec(), false);
         }
     }
@@ -735,7 +868,11 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         if let Some(group) = groups.iter_mut().find(|group| &group.value == value) {
             group.later.push(domain);
         } else {
-            groups.push(ValueGroup { value: value.clone(), first: domain, later: Vec::new() });
+            groups.push(ValueGroup {
+                value: value.clone(),
+                first: domain,
+                later: Vec::new(),
+            });
         }
     }
 
@@ -745,10 +882,16 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         return (branches.to_vec(), false);
     }
 
-    let mut out: Vec<(Expr, Expr)> = groups.into_iter().map(|group| {
-        let condition = group.later.into_iter().fold(group.first, crate::builder::or);
-        (crate::normalize(condition), group.value)
-    }).collect();
+    let mut out: Vec<(Expr, Expr)> = groups
+        .into_iter()
+        .map(|group| {
+            let condition = group
+                .later
+                .into_iter()
+                .fold(group.first, crate::builder::or);
+            (crate::normalize(condition), group.value)
+        })
+        .collect();
 
     if let Some(default) = explicit_default {
         // Do not OR raw branch guards: moving a later same-value arm before
@@ -770,7 +913,9 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
     (out, true)
 }
 
-fn simplify_branch_conditions_under_prior_failures(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>, bool) {
+fn simplify_branch_conditions_under_prior_failures(
+    branches: &[(Expr, Expr)],
+) -> (Vec<(Expr, Expr)>, bool) {
     map_prior_guards(branches, |cond, prev_conds| {
         if cond.as_bool() == Some(true) {
             return None;
@@ -841,7 +986,9 @@ fn strip_redundant_path_guards(branches: &[(Expr, Expr)]) -> (Vec<(Expr, Expr)>,
 fn is_not_of_any(cond: &Expr, prev_conds: &[&Expr]) -> bool {
     for prev in prev_conds {
         if is_not_of(cond, prev)
-            || flatten_or(prev).iter().any(|disjunct| is_not_of(cond, disjunct))
+            || flatten_or(prev)
+                .iter()
+                .any(|disjunct| is_not_of(cond, disjunct))
         {
             return true;
         }
@@ -920,15 +1067,20 @@ fn adjacent_integer_complement(a: &Expr, b: &Expr) -> bool {
                 if let Some(bound) = rhs.as_lit().and_then(crate::Lit::as_integer) {
                     Some((op, lhs, bound))
                 } else {
-                    lhs.as_lit().and_then(crate::Lit::as_integer)
+                    lhs.as_lit()
+                        .and_then(crate::Lit::as_integer)
                         .map(|bound| (if op == Ge { Le } else { Ge }, rhs, bound))
                 }
             }
             _ => None,
         }
     }
-    let Some((op_a, subject_a, bound_a)) = closed_bound(a) else { return false };
-    let Some((op_b, subject_b, bound_b)) = closed_bound(b) else { return false };
+    let Some((op_a, subject_a, bound_a)) = closed_bound(a) else {
+        return false;
+    };
+    let Some((op_b, subject_b, bound_b)) = closed_bound(b) else {
+        return false;
+    };
     if subject_a != subject_b || !super::integer_ac::total_integer(subject_a) {
         return false;
     }

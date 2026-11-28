@@ -8,10 +8,19 @@ use math::{
 fn predicate_text(expr: &Expr, ctx: &mut crate::FormatCtx) -> String {
     // SQL NULL spelling is a rendering rule, not an operand priority.
     if let Some((op @ (BinOpKind::Eq | BinOpKind::Ne), left, right)) = expr.as_binop() {
-        let row = if right.is_null() { left.as_row_value() }
-            else if left.is_null() { right.as_row_value() } else { None };
+        let row = if right.is_null() {
+            left.as_row_value()
+        } else if left.is_null() {
+            right.as_row_value()
+        } else {
+            None
+        };
         if let Some(row) = row {
-            let test = if op == BinOpKind::Eq { "IS NULL" } else { "IS NOT NULL" };
+            let test = if op == BinOpKind::Eq {
+                "IS NULL"
+            } else {
+                "IS NOT NULL"
+            };
             return format!("{} {test}", ctx.projected_column_label(row));
         }
     }
@@ -23,13 +32,28 @@ fn sort_predicates(predicates: &mut Vec<&Expr>, ctx: &crate::FormatCtx) {
     predicates.sort_by_cached_key(|expr| math::canonical_order_key(expr, &public));
 }
 
-fn relation_name<'a>(physical: &'a str, snapshot: Option<u64>, ctx: &'a crate::FormatCtx) -> Option<&'a str> {
-    match snapshot { Some(id) => ctx.acquisition_name(id), None => Some(physical) }
+fn relation_name<'a>(
+    physical: &'a str,
+    snapshot: Option<u64>,
+    ctx: &'a crate::FormatCtx,
+) -> Option<&'a str> {
+    match snapshot {
+        Some(id) => ctx.acquisition_name(id),
+        None => Some(physical),
+    }
 }
 
-fn table_reference(physical: &str, snapshot: Option<u64>, ctx: &crate::FormatCtx) -> Option<String> {
+fn table_reference(
+    physical: &str,
+    snapshot: Option<u64>,
+    ctx: &crate::FormatCtx,
+) -> Option<String> {
     let relation = relation_name(physical, snapshot, ctx)?;
-    Some(if snapshot.is_some() { format!("{relation} AS {physical}") } else { physical.into() })
+    Some(if snapshot.is_some() {
+        format!("{relation} AS {physical}")
+    } else {
+        physical.into()
+    })
 }
 
 pub(super) fn render(expr: &Expr, ctx: &mut crate::FormatCtx) -> Option<String> {
@@ -55,10 +79,17 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     if kind == math::RelationAggregateKind::NthValue {
         let index = crate::format_expr_with_ctx(value?, ctx);
         match relation {
-            RelationExpr::RecordProjection { source, field } =>
-                return Some(format!("(SELECT r.{field} FROM {source} AS r)[{index}]")),
-            RelationExpr::Project { value: projection, input, alias } if alias == "value" => {
-                if r::order_components(input).is_none() { return None; }
+            RelationExpr::RecordProjection { source, field } => {
+                return Some(format!("(SELECT r.{field} FROM {source} AS r)[{index}]"))
+            }
+            RelationExpr::Project {
+                value: projection,
+                input,
+                alias,
+            } if alias == "value" => {
+                if r::order_components(input).is_none() {
+                    return None;
+                }
                 relation = input;
                 value = Some(projection);
                 nth = Some(index);
@@ -68,21 +99,31 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     }
     if kind == math::RelationAggregateKind::Count && value.is_none() {
         if let RelationExpr::ProjectedUnion(branches) = relation {
-            let distinct = if branches.iter().len() == 1 { "DISTINCT " } else { "" };
-            let selection = branches.iter().map(|branch| {
-                let from = table_reference(&branch.table.name, branch.table.snapshot, ctx)?;
-                let mut sql = format!("  SELECT {distinct}{} FROM {from}", branch.column);
-                let mut filters: Vec<_> = branch.filters.iter().collect();
-                sort_predicates(&mut filters, ctx);
-                for (index, filter) in filters.into_iter().enumerate() {
-                    sql.push_str(if index == 0 { " WHERE " } else { " AND " });
-                    let previous = ctx.projected_table.replace(branch.table.name.clone());
-                    sql.push_str(&predicate_text(filter, ctx));
-                    ctx.projected_table = previous;
-                }
-                Some(sql)
-            }).collect::<Option<Vec<_>>>()?.join("\n  UNION\n");
-            return Some(format!("SELECT COUNT(*) FROM (\n{selection}\n) AS accounts"));
+            let distinct = if branches.iter().len() == 1 {
+                "DISTINCT "
+            } else {
+                ""
+            };
+            let selection = branches
+                .iter()
+                .map(|branch| {
+                    let from = table_reference(&branch.table.name, branch.table.snapshot, ctx)?;
+                    let mut sql = format!("  SELECT {distinct}{} FROM {from}", branch.column);
+                    let mut filters: Vec<_> = branch.filters.iter().collect();
+                    sort_predicates(&mut filters, ctx);
+                    for (index, filter) in filters.into_iter().enumerate() {
+                        sql.push_str(if index == 0 { " WHERE " } else { " AND " });
+                        let previous = ctx.projected_table.replace(branch.table.name.clone());
+                        sql.push_str(&predicate_text(filter, ctx));
+                        ctx.projected_table = previous;
+                    }
+                    Some(sql)
+                })
+                .collect::<Option<Vec<_>>>()?
+                .join("\n  UNION\n");
+            return Some(format!(
+                "SELECT COUNT(*) FROM (\n{selection}\n) AS accounts"
+            ));
         }
     }
     let one = math::builder::lit_int(1);
@@ -97,11 +138,21 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
                 let source = group.table();
                 let table = &source.name;
                 let from = table_reference(table, source.snapshot, ctx)?;
-                let keys = group.columns().map(|column| format!("{table}.{column}")).collect::<Vec<_>>().join(", ");
+                let keys = group
+                    .columns()
+                    .map(|column| format!("{table}.{column}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Some(format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM (\n      SELECT {keys}\n      FROM {from}\n      GROUP BY {keys}\n    ) AS groups\n  ),\n  0\n)"));
             }
         }
-        if let RelationExpr::Join { left, right, on, filters } = relation {
+        if let RelationExpr::Join {
+            left,
+            right,
+            on,
+            filters,
+        } = relation
+        {
             let ((left, left_alias), (right, right_alias)) = (left, right);
             let left = relation_name(&left.name, left.snapshot, ctx)?.to_owned();
             let right = relation_name(&right.name, right.snapshot, ctx)?.to_owned();
@@ -110,7 +161,11 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
             sort_predicates(&mut filters, ctx);
             let mut out = format!("COALESCE(\n  SUM(\n    SELECT 1\n    FROM {left} AS {left_alias}\n    JOIN {right} AS {right_alias} ON {on}");
             for (i, f) in filters.into_iter().enumerate() {
-                out.push_str(if i == 0 { "\n    WHERE " } else { "\n      AND " });
+                out.push_str(if i == 0 {
+                    "\n    WHERE "
+                } else {
+                    "\n      AND "
+                });
                 out.push_str(&predicate_text(f, ctx));
             }
             out.push_str("\n  ),\n  0\n)");
@@ -119,7 +174,10 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     }
     let (mut input, keys) = r::order_components(relation).unwrap_or((relation, &[]));
     let distinct = match input {
-        RelationExpr::Distinct(inner) if kind == math::RelationAggregateKind::Count => { input = inner; true }
+        RelationExpr::Distinct(inner) if kind == math::RelationAggregateKind::Count => {
+            input = inner;
+            true
+        }
         _ => false,
     };
     let mut predicates = Vec::new();
@@ -137,25 +195,37 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     };
     // Never convert the math layer's ordered first/null observation back
     // to an index. Explicit non-null fallbacks remain a separate contract.
-    if let Some(name) = scalar_array.filter(|_| kind == math::RelationAggregateKind::FirstValue
-        && predicates.is_empty() && keys.is_empty() && value.as_row_value() == Some("value"))
-    {
+    if let Some(name) = scalar_array.filter(|_| {
+        kind == math::RelationAggregateKind::FirstValue
+            && predicates.is_empty()
+            && keys.is_empty()
+            && value.as_row_value() == Some("value")
+    }) {
         let array = super::array_name(name, ctx).to_owned();
         let default = default?;
         if default.is_null() {
             return Some(format!("FIRST(value FROM {array})"));
         }
         let empty = crate::format_expr_with_ctx(default, ctx);
-        return Some(format!("CASE WHEN 0 == LENGTH({array}) THEN {empty} ELSE FIRST(value FROM {array}) END"));
+        return Some(format!(
+            "CASE WHEN 0 == LENGTH({array}) THEN {empty} ELSE FIRST(value FROM {array}) END"
+        ));
     }
-    let record_array = matches!(input, RelationExpr::Base { name, .. } if ctx.record_arrays.contains(name));
+    let record_array =
+        matches!(input, RelationExpr::Base { name, .. } if ctx.record_arrays.contains(name));
     let nested = matches!(input, RelationExpr::Base {name, ..} if ctx.nested_arrays.contains(name));
-    let correlated = matches!(input, RelationExpr::Vector {value, ..} if value.as_row_value().is_some());
+    let correlated =
+        matches!(input, RelationExpr::Vector {value, ..} if value.as_row_value().is_some());
     let finite_indices = r::positional::integer_domain(input).map(|(_, alias)| alias);
     let from = match input {
-        RelationExpr::Base { name, alias, snapshot: None } if record_array || nested => format!("{name} AS {alias}"),
-        RelationExpr::Base { name, .. } if scalar_array.is_some() =>
-            super::array_name(name, ctx).to_owned(),
+        RelationExpr::Base {
+            name,
+            alias,
+            snapshot: None,
+        } if record_array || nested => format!("{name} AS {alias}"),
+        RelationExpr::Base { name, .. } if scalar_array.is_some() => {
+            super::array_name(name, ctx).to_owned()
+        }
         RelationExpr::Base { name, snapshot, .. } => table_reference(name, *snapshot, ctx)?,
         RelationExpr::Vector { value, alias } => {
             format!("{} AS {alias}", crate::format_expr_with_ctx(value, ctx))
@@ -172,7 +242,11 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     let projection = fmt(value, ctx);
     let mut clauses = vec![format!("FROM {from}")];
     let inline_body = |clauses: &[String]| {
-        clauses.iter().map(|part| part.trim_start()).collect::<Vec<_>>().join(" ")
+        clauses
+            .iter()
+            .map(|part| part.trim_start())
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     for (i, p) in predicates.iter().enumerate() {
         clauses.push(format!(
@@ -182,11 +256,11 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
         ))
     }
     let nullable_first = kind == math::RelationAggregateKind::FirstValue
-        && value.as_row_value().is_some_and(|column| ctx.nullable_columns.contains(column))
+        && value
+            .as_row_value()
+            .is_some_and(|column| ctx.nullable_columns.contains(column))
         && default.is_some_and(|fallback| !fallback.is_null());
-    let presence = nullable_first.then(|| {
-        presence_test(&inline_body(&clauses), false)
-    });
+    let presence = nullable_first.then(|| presence_test(&inline_body(&clauses), false));
     if !keys.is_empty() {
         clauses.push(format!(
             "ORDER BY {}",
@@ -197,30 +271,48 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
         ))
     }
     if kind == math::RelationAggregateKind::FirstValue && keys.is_empty() {
-        if let Some(index) = finite_indices { clauses.push(format!("ORDER BY {index}")); }
+        if let Some(index) = finite_indices {
+            clauses.push(format!("ORDER BY {index}"));
+        }
     }
     if let Some(index) = nth {
-        return Some(format!("(SELECT {projection} {})[{index}]", inline_body(&clauses)));
+        return Some(format!(
+            "(SELECT {projection} {})[{index}]",
+            inline_body(&clauses)
+        ));
     }
     if scalar_array.is_some() && kind == math::RelationAggregateKind::Count {
         let prefix = if distinct { "DISTINCT " } else { "" };
-        return Some(format!("COUNT({prefix}{projection} {})", inline_body(&clauses)));
+        return Some(format!(
+            "COUNT({prefix}{projection} {})",
+            inline_body(&clauses)
+        ));
     }
     if kind == math::RelationAggregateKind::Count
-        && matches!(input, RelationExpr::Base { .. }) && !record_array && !nested && scalar_array.is_none()
+        && matches!(input, RelationExpr::Base { .. })
+        && !record_array
+        && !nested
+        && scalar_array.is_none()
     {
         let prefix = if distinct { "DISTINCT " } else { "" };
-        return Some(format!("SELECT COUNT({prefix}{projection}) {}", inline_body(&clauses)));
+        return Some(format!(
+            "SELECT COUNT({prefix}{projection}) {}",
+            inline_body(&clauses)
+        ));
     }
     if kind == math::RelationAggregateKind::Exists {
         return Some(presence_test(&inline_body(&clauses), empty));
     }
-    if kind == math::RelationAggregateKind::FirstValue && (default.is_some_and(Expr::is_null) || nullable_first) {
+    if kind == math::RelationAggregateKind::FirstValue
+        && (default.is_some_and(Expr::is_null) || nullable_first)
+    {
         let first = format!("FIRST({projection} {})", inline_body(&clauses));
         if let Some(presence) = presence {
             let fallback = fmt(default?, ctx);
             // CASE distinguishes a NULL on the selected row from absent rows.
-            return Some(format!("(CASE WHEN {presence} THEN {first} ELSE {fallback} END)"));
+            return Some(format!(
+                "(CASE WHEN {presence} THEN {first} ELSE {fallback} END)"
+            ));
         }
         return Some(first);
     }
@@ -229,15 +321,31 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
         // trigger this fallback. Use the same FIRST observation as a
         // zero index; do not render a second SELECT/LIMIT convention.
         let fallback = fmt(default?, ctx);
-        if scalar_array.is_some() || record_array || nested || correlated || finite_indices.is_some() {
-            return Some(format!("COALESCE(FIRST({projection} {}), {fallback})", inline_body(&clauses)));
+        if scalar_array.is_some()
+            || record_array
+            || nested
+            || correlated
+            || finite_indices.is_some()
+        {
+            return Some(format!(
+                "COALESCE(FIRST({projection} {}), {fallback})",
+                inline_body(&clauses)
+            ));
         }
-        return Some(format!("COALESCE(\n  FIRST({projection}\n    {}\n  ),\n  {fallback}\n)", clauses.join("\n    ")));
+        return Some(format!(
+            "COALESCE(\n  FIRST({projection}\n    {}\n  ),\n  {fallback}\n)",
+            clauses.join("\n    ")
+        ));
     }
-    if kind != math::RelationAggregateKind::Sum { return None; }
+    if kind != math::RelationAggregateKind::Sum {
+        return None;
+    }
     let (lead, default) = ("SUM(", "0");
     if scalar_array.is_some() || record_array || nested || correlated || finite_indices.is_some() {
-        return Some(format!("COALESCE({lead}SELECT {projection} {}), {default})", inline_body(&clauses)));
+        return Some(format!(
+            "COALESCE({lead}SELECT {projection} {}), {default})",
+            inline_body(&clauses)
+        ));
     }
     Some(format!(
         "COALESCE(\n  {lead}\n    SELECT {projection}\n    {}\n  ),\n  {default}\n)",

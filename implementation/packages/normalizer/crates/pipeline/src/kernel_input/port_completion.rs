@@ -36,7 +36,8 @@ impl PortSpec {
         if self.returns != Ty::Unit && !self.throwing() {
             return response.clone();
         }
-        self.tagged_value(response).expect("certified closed response type")
+        self.tagged_value(response)
+            .expect("certified closed response type")
     }
     pub fn throw_variants(&self, response: &Expr) -> Vec<(String, Expr, Option<Expr>)> {
         self.exceptions

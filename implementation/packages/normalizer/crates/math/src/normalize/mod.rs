@@ -144,16 +144,20 @@ impl BudgetScope {
 
 impl Drop for BudgetScope {
     fn drop(&mut self) {
-        ACTIVE_BUDGET.with(|slot| { slot.replace(None); });
-        ACTIVE_BUDGET_ABORT.with(|slot| { slot.replace(None); });
+        ACTIVE_BUDGET.with(|slot| {
+            slot.replace(None);
+        });
+        ACTIVE_BUDGET_ABORT.with(|slot| {
+            slot.replace(None);
+        });
     }
 }
 
 fn consume_budget(kind: BudgetKind, amount: usize, observed_nodes: impl FnOnce() -> usize) -> bool {
     ACTIVE_BUDGET.with(|slot| {
-        slot.borrow_mut().as_mut().is_none_or(|budget| {
-            budget.consume(kind, amount, observed_nodes())
-        })
+        slot.borrow_mut()
+            .as_mut()
+            .is_none_or(|budget| budget.consume(kind, amount, observed_nodes()))
     })
 }
 
@@ -169,7 +173,9 @@ fn stop_candidate_search(observed_nodes: usize) {
     ACTIVE_BUDGET.with(|budget| {
         if let Some(budget) = budget.borrow_mut().as_mut() {
             budget.peak_nodes = budget.peak_nodes.max(observed_nodes);
-            if budget.exhausted.is_none() { budget.exhausted = Some(BudgetKind::CandidateNodes); }
+            if budget.exhausted.is_none() {
+                budget.exhausted = Some(BudgetKind::CandidateNodes);
+            }
         }
     });
 }
@@ -177,7 +183,9 @@ fn stop_candidate_search(observed_nodes: usize) {
 /// A required canonical search must not publish a merely available shape.
 fn require_candidate_budget(amount: usize, observed_nodes: usize) -> bool {
     let admitted = consume_candidate_budget(amount, observed_nodes);
-    if !admitted { stop_candidate_search(observed_nodes); }
+    if !admitted {
+        stop_candidate_search(observed_nodes);
+    }
     admitted
 }
 
@@ -187,7 +195,10 @@ fn budget_snapshot() -> Option<NormalizeBudget> {
 
 pub(crate) fn remaining_steps() -> usize {
     ACTIVE_BUDGET.with(|budget| {
-        budget.borrow().as_ref().map_or(0, |budget| budget.max_steps.saturating_sub(budget.steps))
+        budget
+            .borrow()
+            .as_ref()
+            .map_or(0, |budget| budget.max_steps.saturating_sub(budget.steps))
     })
 }
 
@@ -258,11 +269,16 @@ pub(crate) fn exact_acquired_arithmetic(value: &Expr, ctx: &dyn crate::SortConte
 /// relation rows are separate scopes; their callers supply their own domains.
 pub fn canonicalize_bound_integer_ops(value: &Expr, ctx: &dyn crate::SortContext) -> Expr {
     if ctx.choice_slots().is_none()
-        || matches!(value.kind(), ExprKind::CaseWhen { .. } | ExprKind::RelationAggregate { .. } | ExprKind::Relation(_))
+        || matches!(
+            value.kind(),
+            ExprKind::CaseWhen { .. } | ExprKind::RelationAggregate { .. } | ExprKind::Relation(_)
+        )
     {
         return value.clone();
     }
-    let rebuilt = rebuild::rebuild_with_children_simplified(value, &|child| canonicalize_bound_integer_ops(child, ctx));
+    let rebuilt = rebuild::rebuild_with_children_simplified(value, &|child| {
+        canonicalize_bound_integer_ops(child, ctx)
+    });
     integer_ac::simplify(&rebuilt, ctx)
 }
 
@@ -272,7 +288,9 @@ pub fn order_acquired_integer_sum(value: Expr, ctx: &dyn crate::SortContext) -> 
     use crate::BinOpKind;
     if !matches!(value.as_binop(), Some((BinOpKind::Add, ..)))
         || !crate::canonical_order::comparison_operands_are_bound(&value, ctx)
-    { return value; }
+    {
+        return value;
+    }
     let mut work = vec![&value];
     let mut terms = Vec::new();
     while let Some(term) = work.pop() {
@@ -284,7 +302,10 @@ pub fn order_acquired_integer_sum(value: Expr, ctx: &dyn crate::SortContext) -> 
         }
     }
     terms.sort_by_cached_key(|term| crate::canonical_order_key(term, ctx));
-    terms.into_iter().reduce(crate::builder::add).expect("an addition has operands")
+    terms
+        .into_iter()
+        .reduce(crate::builder::add)
+        .expect("an addition has operands")
 }
 
 /// Checked normalization for callers that need to report resource failure.
@@ -468,8 +489,14 @@ fn simplify_once_memo(
                 } else {
                     let inverted = b::not(guard.clone());
                     (
-                        Some(remaining.as_ref().map_or_else(|| guard.clone(), |domain| b::and(domain.clone(), guard.clone()))),
-                        Some(remaining.as_ref().map_or_else(|| inverted.clone(), |domain| b::and(domain.clone(), inverted.clone()))),
+                        Some(remaining.as_ref().map_or_else(
+                            || guard.clone(),
+                            |domain| b::and(domain.clone(), guard.clone()),
+                        )),
+                        Some(remaining.as_ref().map_or_else(
+                            || inverted.clone(),
+                            |domain| b::and(domain.clone(), inverted.clone()),
+                        )),
                     )
                 }
             } else {
@@ -485,7 +512,13 @@ fn simplify_once_memo(
             rewritten.push((guard, value));
             remaining = later;
         }
-        if rewritten == arms { expr.clone() } else { Expr::new(ExprKind::CaseWhen { branches: rewritten }) }
+        if rewritten == arms {
+            expr.clone()
+        } else {
+            Expr::new(ExprKind::CaseWhen {
+                branches: rewritten,
+            })
+        }
     } else {
         rebuild::rebuild_with_children_simplified(expr, &|child| recurse(child, parent))
     };
@@ -508,8 +541,12 @@ fn admit_cache(
     key: Expr,
     output: &Expr,
 ) {
-    if ACTIVE_BUDGET.with(|budget| budget.borrow().as_ref().is_some_and(|budget| budget.exhausted.is_some()))
-        || ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow().is_some())
+    if ACTIVE_BUDGET.with(|budget| {
+        budget
+            .borrow()
+            .as_ref()
+            .is_some_and(|budget| budget.exhausted.is_some())
+    }) || ACTIVE_BUDGET_ABORT.with(|abort| abort.borrow().is_some())
     {
         return;
     }
@@ -518,7 +555,13 @@ fn admit_cache(
         return;
     }
     cache.with(|slot| {
-        crate::cache::insert_bounded(&mut slot.borrow_mut(), key, output.clone(), crate::cache::DEFAULT_KEY_LIMIT, kind);
+        crate::cache::insert_bounded(
+            &mut slot.borrow_mut(),
+            key,
+            output.clone(),
+            crate::cache::DEFAULT_KEY_LIMIT,
+            kind,
+        );
     });
 }
 
@@ -530,7 +573,11 @@ fn is_normalize_atom(expr: &Expr) -> bool {
 }
 
 /// 本地化简：只对顶层节点应用规则，不递归。
-fn simplify_self(expr: &Expr, ctx: &dyn crate::sort_context::SortContext, parent: Option<&Expr>) -> Expr {
+fn simplify_self(
+    expr: &Expr,
+    ctx: &dyn crate::sort_context::SortContext,
+    parent: Option<&Expr>,
+) -> Expr {
     // 顺序：常量折叠 → 算术代数 → 布尔代数 → CaseWhen 化简
     //
     // 常量折叠必须先于 arithmetic：例如 `(3 - 2) > 0` 应先折叠为 `true`，

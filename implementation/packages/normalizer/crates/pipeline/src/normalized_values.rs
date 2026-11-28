@@ -16,7 +16,14 @@ impl Ty {
             Self::OrderedTextMap | Self::Ref => state,
             Self::Vector(t) => t.value_allowed(boundary),
             Self::Record(fields) => fields.values().all(|field| field.value_allowed(boundary)),
-            Self::Unit | Self::Task(_) | Self::UnknownInput | Self::Decimal | Self::CalendarDate | Self::LocalTextMap | Self::LocalRelation | Self::Seq(_) => false,
+            Self::Unit
+            | Self::Task(_)
+            | Self::UnknownInput
+            | Self::Decimal
+            | Self::CalendarDate
+            | Self::LocalTextMap
+            | Self::LocalRelation
+            | Self::Seq(_) => false,
         }
     }
 
@@ -35,9 +42,7 @@ impl Ty {
             Self::Bool => Primitive::Boolean,
             Self::Integer => Primitive::Number,
             Self::Text => Primitive::String,
-            Self::Vector(_)
-            | Self::Record(_)
-            | Self::OrderedTextMap => Primitive::Composite,
+            Self::Vector(_) | Self::Record(_) | Self::OrderedTextMap => Primitive::Composite,
             _ => return Err(fail("state values cannot erase source sequence contracts")),
         })
     }
@@ -48,10 +53,7 @@ pub(super) fn valid_record_field(name: &str, typ: &Ty) -> bool {
 
 // Structural types are declarations, never external classes or executable code.
 pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
-    if let Some(t) = s
-        .strip_prefix("vector<")
-        .and_then(|s| s.strip_suffix('>'))
-    {
+    if let Some(t) = s.strip_prefix("vector<").and_then(|s| s.strip_suffix('>')) {
         let t = Ty::parse(t)?;
         need(t.state_value(), "vector element must be a state value")?;
         return Ok(Some(Ty::Vector(Box::new(t))));
@@ -65,7 +67,9 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
             match c {
                 '<' => depth += 1,
                 '>' => {
-                    depth = depth.checked_sub(1).ok_or_else(|| fail("unbalanced record field type"))?;
+                    depth = depth
+                        .checked_sub(1)
+                        .ok_or_else(|| fail("unbalanced record field type"))?;
                 }
                 ',' if depth == 0 => {
                     declarations.push(&t[start..index]);
@@ -75,7 +79,9 @@ pub(super) fn structural_type(s: &str) -> Result<Option<Ty>> {
             }
         }
         need(depth == 0, "unbalanced record field type")?;
-        if !t.is_empty() { declarations.push(&t[start..]); }
+        if !t.is_empty() {
+            declarations.push(&t[start..]);
+        }
         for p in declarations {
             let (name, typ) = p
                 .split_once(':')
@@ -116,7 +122,6 @@ pub(super) fn field(record: Value, name: &str) -> Result<Value> {
     let expr = data::field(value, name, result_type);
     Ok(Value::Term(ty, expr))
 }
-
 
 pub(super) fn number_vector(items: Vec<Expr>) -> Result<Value> {
     let value = data::number_vector(items);

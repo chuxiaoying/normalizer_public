@@ -51,10 +51,7 @@ pub(crate) fn rebuild_with_children_simplified(
             }
         }
 
-        ExprKind::Call {
-            key,
-            args,
-        } => {
+        ExprKind::Call { key, args } => {
             let new_args: Vec<Expr> = args.iter().map(|a| recurse(a)).collect();
             if new_args == *args {
                 expr.clone()
@@ -108,8 +105,12 @@ pub(crate) fn rebuild_with_children_simplified(
 
         ExprKind::ArrayLit(items) => {
             let rebuilt: Vec<_> = items.iter().map(recurse).collect();
-            if rebuilt == *items { expr.clone() } else { Expr::new(ExprKind::ArrayLit(rebuilt)) }
-        },
+            if rebuilt == *items {
+                expr.clone()
+            } else {
+                Expr::new(ExprKind::ArrayLit(rebuilt))
+            }
+        }
     }
 }
 
@@ -121,7 +122,11 @@ fn rebuild_relation_with_children_simplified(
 
     match relation {
         RelationExpr::Empty => RelationExpr::Empty,
-        RelationExpr::Base { name, alias, snapshot } => RelationExpr::Base {
+        RelationExpr::Base {
+            name,
+            alias,
+            snapshot,
+        } => RelationExpr::Base {
             name: name.clone(),
             alias: alias.clone(),
             snapshot: *snapshot,
@@ -146,8 +151,15 @@ fn rebuild_relation_with_children_simplified(
         RelationExpr::Distinct(input) => RelationExpr::Distinct(Box::new(
             rebuild_relation_with_children_simplified(input, recurse),
         )),
-        RelationExpr::Join { left, right, on, filters } => RelationExpr::Join {
-            left: left.clone(), right: right.clone(), on: recurse(on),
+        RelationExpr::Join {
+            left,
+            right,
+            on,
+            filters,
+        } => RelationExpr::Join {
+            left: left.clone(),
+            right: right.clone(),
+            on: recurse(on),
             filters: filters.iter().map(recurse).collect(),
         },
         RelationExpr::ProjectedUnion(branches) => {
