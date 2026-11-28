@@ -78,3 +78,21 @@ class Quote {
 - `invokedLambda` 在调用时执行函数体，才抛出同一种异常。
 
 这三个入口都没有额外的 P、E 或 S；出现异常的入口没有正常 R。按 [方法引用的求值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.13.3)和 [Lambda 的求值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.27.4)，不能把两种写法当成等价，也不以分别创建的 Lambda 是否引用同一对象作为断言。
+
+
+### 空白局部变量也可以成为有效 final 的捕获
+
+```java
+interface Calculation { int apply(int value); }
+
+class Quote {
+    static int run(boolean active) {
+        int offset;
+        if (active) { offset = 2; } else { offset = 3; }
+        Calculation choose = ignored -> offset;
+        return choose.apply(0);
+    }
+}
+```
+
+每个可继续到 Lambda 的路径都给 `offset` 赋值恰好一次，所以 `active` 为真时返回 2，否则返回 3。删除 `else` 会留下未赋值路径；在一条路径赋值两次则不再有效 final。直线的先声明后赋值也成立，赋值时间不因捕获而提早。这些前提来自 [JLS §4.12.4](https://docs.oracle.com/javase/specs/jls/se25/html/jls-4.html#jls-4.12.4) 和[确定赋值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-16.html)。本例不把一个方法内重名声明或任意控制流都当成已经证明。

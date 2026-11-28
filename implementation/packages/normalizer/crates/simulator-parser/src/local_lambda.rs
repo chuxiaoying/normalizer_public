@@ -47,19 +47,19 @@ fn lower(
     body: &mut Vec<JavaStatement>, parameters: &[(JavaType, String)],
     interfaces: &BTreeMap<String, JavaMethod>, helpers: &mut Vec<JavaMethod>,
 ) -> Result<(), String> {
-    // Check target rebinding and effective finality across the entire
-    // lexical method, including the branches that do not run on a path.
-    let mut writes = Names::new();
     let mut declarations = BTreeMap::<String, usize>::new();
+    let mut captured_names = Names::new();
+    for stmt in body.iter() {
+        if let JavaStatement::VarDecl { initializer: Some(JavaExpr::LocalLambda { parameters, value }), .. } = stmt {
+            let mut free = Names::new();
+            reads(value, &mut free)?;
+            captured_names.extend(free.into_iter().filter(|name| !parameters.contains(name)));
+        }
+    }
     let mut found = false;
     walk(body, &mut |expr| {
         match expr {
             JavaExpr::LocalLambda { .. } => found = true,
-            JavaExpr::Assign { target, .. }
-                | JavaExpr::UnaryOp { op: JavaUnaryOp::PreInc | JavaUnaryOp::PreDec
-                    | JavaUnaryOp::PostInc | JavaUnaryOp::PostDec, operand: target } => {
-                if let JavaExpr::Ident(name) = target.as_ref() { writes.insert(name.clone()); }
-            }
             JavaExpr::InstanceOf { binding: Some(name), .. } =>
                 *declarations.entry(name.clone()).or_default() += 1,
             _ => {}
@@ -69,6 +69,21 @@ fn lower(
     if !found { return Ok(()); }
     walk(body, &mut |_| Ok(()), &mut |name| *declarations.entry(name.to_owned()).or_default() += 1)?;
     for (_, name) in parameters { *declarations.entry(name.clone()).or_default() += 1; }
+    initialize_captured_blanks(body, &captured_names, &declarations)?;
+    // Check effective finality over the remaining lexical method,
+    // including writes made after lambda creation or in other branches.
+    let mut writes = Names::new();
+    walk(body, &mut |expr| {
+        match expr {
+            JavaExpr::Assign { target, .. }
+                | JavaExpr::UnaryOp { op: JavaUnaryOp::PreInc | JavaUnaryOp::PreDec
+                    | JavaUnaryOp::PostInc | JavaUnaryOp::PostDec, operand: target } => {
+                if let JavaExpr::Ident(name) = target.as_ref() { writes.insert(name.clone()); }
+            }
+            _ => {}
+        }
+        Ok(())
+    }, &mut |_| {})?;
     let mut known = parameters.iter().map(|(ty, name)| (name.clone(), ty.clone())).collect::<BTreeMap<_, _>>();
     let mut local_names = parameters.iter().map(|(_, name)| name.clone()).collect::<Names>();
     let mut callables = Callables::new();
@@ -127,6 +142,81 @@ fn lower(
     }
     *body = lowered;
     Ok(())
+}
+
+/// Keep the assignment at its original execution point. A blank declaration
+/// is carried to exactly one simple assignment, or to a complete if/else
+/// whose arms each consist of just that assignment. Prior unrelated
+/// statements stay in place. A unique declaration and a no-use prefix show
+/// that moving the declaration itself is not observable in this subset.
+fn initialize_captured_blanks(
+    body: &mut Vec<JavaStatement>, captures: &Names, declarations: &BTreeMap<String, usize>,
+) -> Result<(), String> {
+    use JavaStatement::*;
+    let mut index = 0;
+    while index < body.len() {
+        let VarDecl { java_type, name, initializer: None, .. } = &body[index] else {
+            index += 1;
+            continue;
+        };
+        if !captures.contains(name) || declarations.get(name) != Some(&1) || !scalar(java_type) {
+            index += 1;
+            continue;
+        }
+        let (ty, name) = (java_type.clone(), name.clone());
+        let mut found = None;
+        for (i, stmt) in body.iter_mut().enumerate().skip(index + 1) {
+            let mut mentioned = false;
+            walk(std::slice::from_mut(stmt), &mut |expression| {
+                if matches!(expression, JavaExpr::Ident(id) if id == &name) { mentioned = true; }
+                Ok(())
+            }, &mut |_| {})?;
+            if mentioned {
+                found = Some(i);
+                break;
+            }
+        }
+        let at = found.ok_or_else(|| error("captured blank local is not definitely assigned"))?;
+        let value = match &body[at] {
+            stmt if simple_initial_assignment(stmt, &name).is_some() =>
+                simple_initial_assignment(stmt, &name).unwrap().clone(),
+            If { cond, then_block, else_block: Some(other) } => {
+                let ([yes], [no]) = (then_block.as_slice(), other.as_slice()) else {
+                    return Err(error("captured blank local is not definitely assigned by a closed initialization"));
+                };
+                if mentions(cond, &name) {
+                    return Err(error("captured blank local is read before assignment"));
+                }
+                let yes = simple_initial_assignment(yes, &name)
+                    .ok_or_else(|| error("captured blank local is not definitely assigned in both if arms"))?;
+                let no = simple_initial_assignment(no, &name)
+                    .ok_or_else(|| error("captured blank local is not definitely assigned in both if arms"))?;
+                JavaExpr::Ternary { cond: Box::new(cond.clone()), then_expr: Box::new(yes.clone()),
+                    else_expr: Box::new(no.clone()) }
+            }
+            _ => return Err(error("captured blank local is not definitely assigned")),
+        };
+        body[at] = VarDecl { java_type: ty, name, initializer: Some(value), is_final: false };
+        body.remove(index);
+    }
+    Ok(())
+}
+
+fn mentions(value: &JavaExpr, name: &str) -> bool {
+    let mut found = false;
+    let mut copy = value.clone();
+    let _ = walk_expr(&mut copy, &mut |e| {
+        if matches!(e, JavaExpr::Ident(id) if id == name) { found = true; }
+        Ok(())
+    });
+    found
+}
+
+fn simple_initial_assignment<'a>(stmt: &'a JavaStatement, name: &str) -> Option<&'a JavaExpr> {
+    let JavaStatement::Assign { target: JavaExpr::Ident(target), value, is_compound: false } = stmt else {
+        return None;
+    };
+    (target == name && !mentions(value, name)).then_some(value)
 }
 
 fn reads(expr: &JavaExpr, out: &mut Names) -> Result<(), String> {

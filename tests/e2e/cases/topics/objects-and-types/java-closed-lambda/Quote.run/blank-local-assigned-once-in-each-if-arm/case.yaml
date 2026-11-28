@@ -1,0 +1,6 @@
+entry: src/Quote.java#Quote.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Quote.java#Quote.run, returns: number}
+  P: {parameters: {active: {position: 0, type: bool}}}
+  R: "CASE WHEN active THEN 2 ELSE 3 END"

@@ -106,6 +106,14 @@ families:
         seed: java-closed-lambda
         evidence:
           - [Quote.run, captured-local-must-be-effectively-final, reject]
+      blank-scalar-capture:
+        focus: 空白标量局部变量在捕获之前完成一次无歧义赋值，完整条件两臂分别赋值也成立
+        seed: java-closed-lambda
+        evidence:
+          - [Quote.run, blank-local-assigned-once-is-effectively-final, pers]
+          - [Quote.run, blank-local-assigned-once-in-each-if-arm, pers]
+          - [Quote.run, blank-capture-must-be-assigned-on-all-paths, reject]
+          - [Quote.run, blank-capture-cannot-be-assigned-twice-on-a-path, reject]
       creation-versus-invocation:
         focus: 创建闭合 Lambda 不执行标量函数体，除零只发生在实际调用路径
         seed: java-closed-lambda
