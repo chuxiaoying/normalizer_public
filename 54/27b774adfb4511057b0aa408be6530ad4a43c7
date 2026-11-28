@@ -1,0 +1,19 @@
+design/chapters/04-AI救赎.md
+  s_47ae65fe8e6220::t_f4b835623f47ea 3,9-21,868-870
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5427b774adfb4511057b0aa408be6530ad4a43c7",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}
