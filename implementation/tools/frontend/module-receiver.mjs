@@ -33,9 +33,12 @@ export function closedReceiver(sf, entry, fail, {linked = false} = {}) {
     if (!literal) fail('object entry requires an exported const receiver with literal as const assembly');
     const fields = new Map(), methods = new Map(), used = new Set();
     for (const property of literal.properties) {
-      if (!property.name || !ts.isIdentifier(property.name) || property.name.text === '__proto__'
-          || used.has(property.name.text)) fail('object receiver requires unique plain field and method names');
-      const name = property.name.text;
+      // An identifier and its quoted spelling name the same static member.
+      const name = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+        ? property.name.text : undefined;
+      if (name === undefined || name === '__proto__' || used.has(name)) {
+        fail('object receiver requires unique plain field and method names');
+      }
       used.add(name);
       if (ts.isMethodDeclaration(property) && property.body && !property.asteriskToken
           && !property.typeParameters?.length && !property.modifiers?.length) {
