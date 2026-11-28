@@ -83,12 +83,34 @@ pub fn field_projection(expression: &Expr) -> Option<(&str, &Expr, &str, Primiti
     Some((source, index, field, ty))
 }
 
+fn known_nonnegative(value: &Expr, active: &Expr) -> bool {
+    if active.as_bool() == Some(false) { return true; }
+    if let Some(number) = value.as_lit().and_then(Lit::as_integer) {
+        return number >= 0.into();
+    }
+    if value.as_relation_aggregate().is_some_and(|(kind, _, _, _)|
+        kind == crate::RelationAggregateKind::Count)
+    {
+        return true;
+    }
+    if let Some((arms, otherwise)) = value.as_total_case_when() {
+        let mut remaining = active.clone();
+        for (test, arm) in arms {
+            let (domain, later) = b::first_match_domains(remaining, test);
+            if !known_nonnegative(arm, &domain) { return false; }
+            remaining = later;
+        }
+        return known_nonnegative(otherwise, &remaining);
+    }
+    b::path_implies(active, &b::ge(value.clone(), b::lit_int(0)))
+}
+
 pub fn count(lower: Expr, upper: Expr) -> Expr {
-    // A cardinality is already a natural number. A zero-based integer
-    // interval ending there contains exactly that many values (RA-11).
+    // A zero-based integer interval ending at a proven nonnegative
+    // value contains exactly that many integers (RA-11). In particular,
+    // do not introduce a second clamp around a closed MAX.
     if lower.as_lit().and_then(Lit::as_integer).is_some_and(|n| n == 0.into())
-        && upper.as_relation_aggregate().is_some_and(|(kind, _, _, _)|
-            kind == crate::RelationAggregateKind::Count)
+        && known_nonnegative(&upper, &b::lit_bool(true))
     {
         return upper;
     }

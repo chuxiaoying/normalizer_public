@@ -1,0 +1,12 @@
+entry: src/RangeValue.java#RangeValue.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/RangeValue.java#RangeValue.run, returns: number}
+  P:
+    parameters:
+      hi: {position: 0, type: number}
+  R: |-
+    CASE
+      WHEN hi > 0 THEN hi
+      ELSE 0
+    END
