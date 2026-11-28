@@ -157,7 +157,7 @@ impl Completion {
             };
             Some(TerminalAlternative { guard: alternative.guard, outcome })
         }).collect::<Option<Vec<_>>>()?;
-        (coverage(alternatives.iter().map(|alternative| &alternative.guard)).as_bool() == Some(true))
+        covers_terminal_domain(alternatives.iter().map(|alternative| &alternative.guard))
             .then_some(TerminalAlternatives(alternatives))
     }
 
@@ -206,7 +206,7 @@ impl Completion {
         if alternatives.len() == 1 && alternatives[0].guard.as_bool() == Some(true) {
             return outcome_to_completion(alternatives.into_iter().next().unwrap().outcome);
         }
-        let covered = coverage(alternatives.iter().map(|alternative| &alternative.guard)).as_bool() == Some(true);
+        let covered = covers_terminal_domain(alternatives.iter().map(|alternative| &alternative.guard));
         if covered
             && alternatives
                 .iter()
@@ -317,9 +317,66 @@ fn outcome_to_completion(outcome: CompletionOutcome) -> Completion {
 }
 
 fn coverage<'a>(guards: impl Iterator<Item = &'a Expr>) -> Expr {
-    math::normalize(guards.fold(b::lit_bool(false), |coverage, guard| {
-        b::or(coverage, guard.clone())
-    }))
+    math::normalize(guards.cloned().fold(b::lit_bool(false), b::or))
+}
+
+fn covers_terminal_domain<'a>(guards: impl Iterator<Item = &'a Expr>) -> bool {
+    use math::BinOpKind::{And, Or};
+
+    // A short-circuit Boolean CASE is an acquired predicate's truth
+    // partition. Expand it exclusively for this coverage certificate,
+    // never for execution, publication, or observation ordering.
+    fn proof_boolean(value: &Expr) -> bool {
+        value.as_bool().is_some() || matches!(value.as_unary_op(), Some((math::UnaryOpKind::Not, _)))
+            || value.as_binop().is_some_and(|(op, _, _)| matches!(op, And | Or)
+                || op.swapped_comparison().is_some())
+            || matches!(value.as_sym_var(),
+                Some(math::SymVarOrigin::Parameter { primitive_type, .. }
+                    | math::SymVarOrigin::External { primitive_type, .. }
+                    | math::SymVarOrigin::Temporal { primitive_type, .. })
+                if primitive_type == "boolean")
+    }
+    fn proof_guard(value: &Expr, budget: &mut usize) -> Expr {
+        if *budget == 0 || !value.has_case_when() {
+            return value.clone();
+        }
+        *budget -= 1;
+        if let Some(([(condition, yes)], no)) = value.as_total_case_when() {
+            if proof_boolean(yes) && proof_boolean(no) {
+                if let Some(bit) = yes.as_bool() {
+                    let condition = proof_guard(condition, budget);
+                    let no = proof_guard(no, budget);
+                    return if bit { b::or(condition, no) } else { b::and(b::not(condition), no) };
+                }
+                if let Some(bit) = no.as_bool() {
+                    let condition = proof_guard(condition, budget);
+                    let yes = proof_guard(yes, budget);
+                    return if bit { b::or(b::not(condition), yes) } else { b::and(condition, yes) };
+                }
+            }
+        }
+        if let Some((math::UnaryOpKind::Not, operand)) = value.as_unary_op() {
+            return b::not(proof_guard(operand, budget));
+        }
+        if let Some((op @ (And | Or), left, right)) = value.as_binop() {
+            return b::binop_public(op, proof_guard(left, budget), proof_guard(right, budget));
+        }
+        value.clone()
+    }
+
+    let guards = guards.collect::<Vec<_>>();
+    if coverage(guards.iter().copied()).as_bool() == Some(true) {
+        return true;
+    }
+    if !guards.iter().any(|guard| guard.has_case_when())
+        || guards.iter().any(|guard| guard.may_observe_sql_unknown())
+    {
+        return false;
+    }
+    let mut budget = 32;
+    let proof = guards.iter().map(|guard| proof_guard(guard, &mut budget)).collect::<Vec<_>>();
+    proof.iter().zip(guards).any(|(candidate, original)| candidate != original)
+        && coverage(proof.iter()).as_bool() == Some(true)
 }
 
 fn collapse_return_values<'a>(

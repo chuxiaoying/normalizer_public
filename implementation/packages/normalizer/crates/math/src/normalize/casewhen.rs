@@ -81,6 +81,63 @@ fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr
     None
 }
 
+/// Match the Boolean value of a complete test on either side of one
+/// already acquired reference's null partition.
+fn null_boolean_arms<'a>(condition: &'a Expr, is_null: &Expr) -> Option<(&'a Expr, &'a Expr)> {
+    let ([(test, yes)], no) = condition.as_total_case_when()? else { return None; };
+    if test == is_null { Some((yes, no)) }
+    else if test.is_comparison_complement(is_null) { Some((no, yes)) }
+    else { None }
+}
+
+fn restrict_nonnull_guard(guard: &Expr, is_null: &Expr) -> Expr {
+    use crate::{builder as b, BinOpKind::{And, Or}};
+    if guard == is_null { return b::lit_bool(false); }
+    if guard.is_comparison_complement(is_null) { return b::lit_bool(true); }
+    if let Some((_, on_nonnull)) = null_boolean_arms(guard, is_null) {
+        return restrict_nonnull_guard(on_nonnull, is_null);
+    }
+    if let Some((op @ (And | Or), left, right)) = guard.as_binop() {
+        return b::binop_public(op,
+            restrict_nonnull_guard(left, is_null),
+            restrict_nonnull_guard(right, is_null));
+    }
+    if let Some(operand) = guard.as_not() {
+        return b::not(restrict_nonnull_guard(operand, is_null));
+    }
+    guard.clone()
+}
+
+/// A short-circuit CASE that is false on null cannot preempt the next
+/// unconditional null arm. Make that null arm first, then specialize
+/// only the remaining guards, where the reference is already non-null.
+fn factor_short_circuit_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr)>> {
+    use crate::BinOpKind::Eq;
+    for (index, ((protected, selected), (nullable, on_null))) in
+        branches.iter().zip(branches.iter().skip(1)).enumerate()
+    {
+        let clauses = flatten_and(nullable);
+        let Some(is_null) = clauses.iter().find(|term| matches!(term.as_binop(), Some((Eq, a, z))
+            if (a.as_heap_ref().is_some() && z.is_null()) || (z.as_heap_ref().is_some() && a.is_null())))
+        else { continue; };
+        let Some((when_null, when_nonnull)) = null_boolean_arms(protected, is_null) else { continue; };
+        if when_null.as_bool() != Some(false)
+            || !clauses.iter().all(|term| term == is_null
+                || null_boolean_arms(term, is_null).is_some_and(|(arm, _)| arm.as_bool() == Some(true)))
+        {
+            continue;
+        }
+        let mut result = branches[..index].to_vec();
+        result.push((is_null.clone(), on_null.clone()));
+        result.push((restrict_nonnull_guard(when_nonnull, is_null), selected.clone()));
+        result.extend(branches[index + 2..].iter().map(|(guard, value)| {
+            (crate::normalize(restrict_nonnull_guard(guard, is_null)), value.clone())
+        }));
+        return Some(result);
+    }
+    None
+}
+
 /// A shared final non-null guard is a partition of the whole CASE when
 /// every preceding total predicate already requires that same non-null
 /// reference. Only then may the null branch become the first test.
@@ -147,7 +204,9 @@ fn simplify_impl(
         branches
     };
 
-    if let Some(guarded) = factor_leading_null_test(branches_ref) {
+    if let Some(guarded) = factor_short_circuit_null_test(branches_ref)
+        .or_else(|| factor_leading_null_test(branches_ref))
+    {
         return Expr::new(ExprKind::CaseWhen { branches: guarded });
     }
     if let Some(guarded) = factor_total_nonnull_tail(expr, ctx) {
