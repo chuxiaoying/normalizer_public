@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-SCENARIO-INPUT]"
     - local IR requires a writable local assignment in this block

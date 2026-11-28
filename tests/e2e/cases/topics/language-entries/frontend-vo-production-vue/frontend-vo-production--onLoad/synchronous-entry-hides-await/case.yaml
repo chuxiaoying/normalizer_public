@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-TS-TYPECHECK]"
     - "'await' expressions are only allowed within async functions"

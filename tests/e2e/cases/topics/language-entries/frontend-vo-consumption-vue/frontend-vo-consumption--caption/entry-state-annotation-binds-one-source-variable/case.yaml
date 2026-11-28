@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#caption
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-SCENARIO-INPUT]"
     - "@N entryState must mark one named binding"

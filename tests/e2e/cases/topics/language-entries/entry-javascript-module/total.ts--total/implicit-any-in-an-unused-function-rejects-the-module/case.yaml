@@ -1,5 +1,6 @@
 entry: src/total.ts#total
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-ANY]"
+    - "Panic: not-support"
     - implicitly has an 'any' type

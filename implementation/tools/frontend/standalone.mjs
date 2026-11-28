@@ -1,5 +1,6 @@
 // Standalone TypeScript source, checked and lowered without executing user code.
 // It parses, never executes, the module and uses the shared PERS kernel.
+import { DiagnosticFailure, reportFailure } from '../diagnostics/internal.mjs';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { invokeKernel } from './invoke-kernel.mjs';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,7 @@ import { dirname, join } from 'node:path';
 import ts from 'typescript';
 import { closedReceiver } from './module-receiver.mjs';
 import { checkedProjectModules, hasProjectImports } from './module-links.mjs';
-import { definedModuleExport, isLocalExportList, parseSourceModule, lowerExpression, staticMemberName, textWireValue, unwrapParens as unwrap } from './ir.mjs';
+import { definedModuleExport, isLocalExportList, lowerExpression, staticMemberName, textWireValue, unwrapParens as unwrap } from './ir.mjs';
 import { eventContract } from './module-event-project.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
@@ -253,13 +254,12 @@ function compileUnknownValue(sf, fn, file, entry, checker, allowTypeImports = fa
 
 function compile(source, file, entry, physicalPath, linked) {
   if (entry.includes('.')) {
-    const sf = linked?.ast ?? parseSourceModule(physicalPath, source, fail, ts.ScriptKind.TS);
-    const official = !linked && sf.statements.some(isOfficialNamespaceImport);
-    const {fn, fields, assembly} = closedReceiver(sf, entry, fail, {linked: Boolean(linked) || official});
+    if (!linked) throw new Error('invariant: object receiver requires the admitted TypeScript project graph');
+    const {ast: sf} = linked;
+    const {fn, fields, assembly} = closedReceiver(sf, entry, fail, {linked: true});
     const formals = namedParameters(fn.parameters);
     if (formals.error) fail(formals.error);
-    const checker = !linked ? checkedTypeScript(physicalPath, sf, fail, {allowOfficial: official}) : undefined;
-    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, receiverAssembly: assembly, linked, typeChecker: checker, officialChecker: official ? checker : undefined});
+    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, receiverAssembly: assembly, linked});
   }
   if (linked) {
     const sf = linked.ast;
@@ -278,7 +278,7 @@ function compile(source, file, entry, physicalPath, linked) {
     && [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(st.expression.operatorToken.kind)
     && staticMemberName(st.expression.left) !== undefined);
   if (isStateEvent) {
-    const project = eventContract(file, source, entry, physicalPath, {synchronous: true});
+    const project = eventContract(file, source, entry, physicalPath, {synchronous: true, parsed: sf});
     return {carrier: project.source_text, carrierFile: project.source, binding: project.entries[0], project, moduleFile: 'Prepared.ts'};
   }
   const usesStandard = sf.statements.some(isOfficialNamespaceImport);
@@ -394,7 +394,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     }
     if (!linked) return;
     const bound = !node.questionDotToken && !node.typeArguments?.length && linked.helper(unwrap(node.expression));
-    if (!bound) fail('linked call has no closed project function: ' + node.expression.getText());
+    if (!bound) throw new DiagnosticFailure('NORM-ADAPTER-UNSUPPORTED', 'linked call has no closed project function: ' + node.expression.getText());
     return {op: 'linked-call', ...bound, args: node.arguments.map(lower)};
   };
   // Lower all module-startup expressions, including fields unused by the
@@ -628,11 +628,6 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
   }};
 }
 
-function publishKernelFailure(result) {
-  process.stderr.write(result.stderr );
-  process.exitCode = result.status ;
-}
-
 try {
   const [kernel, rootArg, flag, locator = ''] = process.argv.slice(2);
   if (flag !== '--entry') fail('expected --entry path.ts#exportedFunction');
@@ -648,8 +643,7 @@ try {
     ? checkedProjectModules(sourceEntry, resolveProjectSource, fail, {rootReceiver}) : undefined;
   const {carrier, carrierFile = 'Carrier.java', binding, project, closure, moduleFile} = compile(source, name, entry, declared, linked);
   if (closure) {
-    const result = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));
-    publishKernelFailure(result);
+    process.exitCode = invokeKernel(kernel, ['--validate-standalone-closure'], JSON.stringify(closure));
   } else {
     const temp = mkdtempSync(join(tmpdir(), 'normalizer-ts-module-'));
     try {
@@ -657,15 +651,10 @@ try {
       writeFileSync(join(temp, moduleFile), source);
       const projectPath = join(temp, 'Project.json');
       writeFileSync(projectPath, JSON.stringify(project));
-      const result = invokeKernel(kernel, ['--project', projectPath, binding]);
-      if (result.status !== 0) {
-        publishKernelFailure(result);
-      } else {
-        process.stdout.write(result.stdout);
-      }
+      process.exitCode = invokeKernel(kernel, ['--project', projectPath, binding]);
     } finally { rmSync(temp, {recursive: true, force: true}); }
   }
 } catch (error) {
-  process.stderr.write(error.message + '\n');
+  reportFailure(error);
   process.exitCode = 1;
 }

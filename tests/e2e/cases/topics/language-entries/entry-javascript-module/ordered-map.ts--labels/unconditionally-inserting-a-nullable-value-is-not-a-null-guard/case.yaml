@@ -1,6 +1,6 @@
 entry: src/ordered-map.ts#labels
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "Map<string, string>"
     - "string | null"

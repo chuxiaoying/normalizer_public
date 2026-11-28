@@ -1,5 +1,5 @@
 entry: src/Dispatch.ts#dispatch
 reject:
   fragments:
-  - "[NORM-TS-MODULE]"
+  - "[NORM-TS-TYPECHECK]"
   - "Property 'other' does not exist on type"

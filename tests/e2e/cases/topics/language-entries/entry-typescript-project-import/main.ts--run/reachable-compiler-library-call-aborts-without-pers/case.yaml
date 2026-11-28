@@ -2,6 +2,5 @@ entry: src/main.ts#run
 reject:
   fragments:
     - "[NORM-OUT-OF-SOURCE]"
-    - "[NORM-ENGINE-FAILURE]"
     - "target=text.trim"
     - "Panic: not-support"

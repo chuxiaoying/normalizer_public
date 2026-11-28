@@ -1,6 +1,6 @@
 entry: src/vector-construction.ts#pair
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "undefined"
     - "readonly number[]"

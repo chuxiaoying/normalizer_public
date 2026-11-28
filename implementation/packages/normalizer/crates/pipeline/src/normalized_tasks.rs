@@ -158,10 +158,22 @@ impl Engine<'_> {
             return Err(fail("task identity is not closed at this operation"));
         };
         let outcome = self.task_outcome(*binding_id)?;
-        let value = outcome.normal_return_value().unwrap_or_else(b::lit_null);
+        let terminal = outcome
+            .terminal_alternatives()
+            .expect("invariant: a declared task completion must cover every outcome");
         self.realtime_completion = self
             .realtime_completion
             .replace_continue(outcome.resume_after_normal_return());
-        Self::bind_local(env, name, Value::Term(*ty, value))
+        match terminal.normal_return_value() {
+            Some(value) => Self::bind_local(env, name, Value::Term(*ty, value)),
+            None => {
+                assert!(
+                    terminal.is_always_throwing(),
+                    "invariant: terminal task lost its return"
+                );
+                // A throwing wait does not acquire the local, not even as null.
+                Ok(())
+            }
+        }
     }
 }

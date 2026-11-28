@@ -1,6 +1,6 @@
 entry: src/Click.ts#onClick
 reject:
   fragments:
-  - "SCENARIO_MODULE_INPUT:"
+  - "[NORM-SCENARIO-INPUT]"
   - "host installation"
   - "executable module initialization"

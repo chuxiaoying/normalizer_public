@@ -3,5 +3,4 @@ reject:
   fragments:
     - "[NORM-OUT-OF-SOURCE]"
     - kind=ABORT
-    - "[NORM-ENGINE-FAILURE]"
     - $source.$read

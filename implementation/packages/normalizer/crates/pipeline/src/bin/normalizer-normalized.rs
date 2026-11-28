@@ -1,4 +1,6 @@
 //! Closed normalized Java/project entry. Does not load semantic plugins.
+#[path = "input/diagnostics.rs"]
+mod diagnostics;
 #[path = "input/manifests.rs"]
 mod manifests;
 
@@ -25,6 +27,11 @@ fn run() -> Result<(), String> {
         return pipeline::kernel_input::standalone_closure::validate(&input);
     }
     match args.as_slice() {
+        [mode] if mode == "--list-diagnostics" => print!("{}", diagnostics::markdown()),
+        [mode, format] if mode == "--format-diagnostic" => {
+            let text = std::io::read_to_string(std::io::stdin()).map_err(|e| e.to_string())?;
+            eprint!("{}", diagnostics::render(&text, format == "json"));
+        }
         [mode, root] if mode == "--check-input-manifests" => {
             manifests::check(std::path::Path::new(root))?
         }
@@ -46,9 +53,7 @@ fn run() -> Result<(), String> {
                 .map_err(|e| source_request(e, entry))?;
             print!(
                 "{}",
-                loaded
-                    .source_pers(path, entry)
-                    .map_err(|e| source_request(e, entry))?
+                loaded.source_pers().map_err(|e| source_request(e, entry))?
             );
         }
         _ => {
@@ -66,6 +71,7 @@ fn main() {
     std::panic::set_hook(Box::new(move |panic| {
         if !panic.payload().is::<math::NormalizationLimit>()
             && !panic.payload().is::<DecimalResourceLimit>()
+            && !panic.payload().is::<pipeline::AnalysisAbort>()
         {
             default_hook(panic);
         }
@@ -77,6 +83,15 @@ fn main() {
             std::process::exit(1);
         }
         Err(payload) => {
+            if let Some(abort) = payload.downcast_ref::<pipeline::AnalysisAbort>() {
+                diagnostics::emit(
+                    "NORM-OUT-OF-SOURCE",
+                    "Panic: not-support; unsupported non-external call without source",
+                    Some(&abort.location),
+                    Some(&abort.target),
+                );
+                std::process::exit(1);
+            }
             let limit = payload
                 .downcast_ref::<math::NormalizationLimit>()
                 .map(ToString::to_string)
@@ -86,7 +101,7 @@ fn main() {
                         .map(ToString::to_string)
                 });
             if let Some(limit) = limit {
-                eprintln!("[NORM-ANALYSIS-INCOMPLETE] {limit}");
+                diagnostics::emit("NORM-ANALYSIS-INCOMPLETE", &limit, None, None);
             } else {
                 eprintln!("[NORM-ENGINE-FAILURE] no successful result produced");
             }

@@ -341,10 +341,6 @@ impl Completion {
             .is_some_and(|alternatives| alternatives.is_always_throwing())
     }
 
-    pub(crate) fn normal_return_value(&self) -> Option<Expr> {
-        self.terminal_alternatives()?.normal_return_value()
-    }
-
     pub(crate) fn alternatives(self) -> Vec<CompletionAlternative> {
         match self {
             Self::Continue => vec![CompletionAlternative {

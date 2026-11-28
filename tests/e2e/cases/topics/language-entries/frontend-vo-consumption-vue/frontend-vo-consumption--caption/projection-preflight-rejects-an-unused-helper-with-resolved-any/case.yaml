@@ -1,5 +1,6 @@
 entry: src/ArrearsPage.ts#caption
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-TS-ANY]"
+    - "Panic: not-support"
     - resolved any is not an admitted analysis type

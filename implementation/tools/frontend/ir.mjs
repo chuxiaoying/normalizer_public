@@ -2,10 +2,14 @@
 // event subset to the language-neutral IR; it does not execute code or infer
 // framework/template semantics.
 import ts from 'typescript';
+import { rejectCompilerDiagnostic } from './ts-diagnostics.mjs';
 
-export function parseSourceModule(file, text, fail, kind = ts.ScriptKind.JS) {
+export function parseSourceModule(file, text, fail, kind = ts.ScriptKind.JS, label) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
-  if (sf.parseDiagnostics.length) fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
+  if (sf.parseDiagnostics.length) {
+    if (kind === ts.ScriptKind.TS) rejectCompilerDiagnostic(sf.parseDiagnostics[0], {syntax: true, label});
+    fail(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText, '\n'));
+  }
   return sf;
 }
 
@@ -146,7 +150,14 @@ function expr(node, sf, specialized) {
     if (operator) return { op: 'binary', operator, left: lower(node.left), right: lower(node.right) };
   }
   if (ts.isArrayLiteralExpression(node)) return { op: 'array', items: node.elements.map(lower) };
-  if (ts.isConditionalExpression(node)) return { op: 'select', condition: lower(node.condition), whenTrue: lower(node.whenTrue), whenFalse: lower(node.whenFalse) };
+  if (ts.isConditionalExpression(node)) {
+    // Strict checking has already inspected the source. A literal guard
+    // cannot execute its other arm; don't require an execution lowering for it.
+    const condition = unwrapParens(node.condition);
+    if (condition.kind === ts.SyntaxKind.TrueKeyword) return lower(node.whenTrue);
+    if (condition.kind === ts.SyntaxKind.FalseKeyword) return lower(node.whenFalse);
+    return { op: 'select', condition: lower(node.condition), whenTrue: lower(node.whenTrue), whenFalse: lower(node.whenFalse) };
+  }
   return { op: 'opaque', text: node.getText(sf) };
 }
 

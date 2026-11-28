@@ -1,5 +1,6 @@
 entry: src/total.ts#total
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-ANY]"
+    - "Panic: not-support"
     - resolved any is not an admitted analysis type

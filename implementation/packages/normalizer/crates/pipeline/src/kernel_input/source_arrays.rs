@@ -692,7 +692,12 @@ impl Engine<'_> {
                 .entries()
                 .iter()
                 .filter(|entry| entry.reference == *reference)
-                .filter_map(|entry| entry.field.parse::<i64>().ok())
+                .map(|entry| {
+                    entry
+                        .field
+                        .parse::<i64>()
+                        .expect("invariant: local array store contains a non-index field")
+                })
                 .collect(),
             LocalIntArray::Selection { .. } | LocalIntArray::Unreachable => {
                 unreachable!("a concrete local identity is required")

@@ -58,7 +58,7 @@ function rejectionNames(method, checker, sf) {
 }
 
 export function readModuleEvent(modulePath, text, entryName, physicalPath = modulePath, options = {}) {
-  const sf = parseSourceModule(physicalPath, text, fail, ts.ScriptKind.TS);
+  const sf = options.parsed ?? parseSourceModule(physicalPath, text, fail, ts.ScriptKind.TS, modulePath);
   const {checker, errors} = typeScriptProgram(physicalPath, sf, fail, {
     allowOfficial: sf.statements.some(isOfficialNamespaceImport),
   });

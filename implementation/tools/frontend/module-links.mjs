@@ -5,8 +5,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, posix } from 'node:path';
 import ts from 'typescript';
 import { isLocalExportList, parseSourceModule } from './ir.mjs';
-import { analysisCompilerOptions, analysisTypeScriptDiagnostic, assertTypeScript, isCompilerLibrary } from './typed-module.mjs';
+import { analysisCompilerOptions, assertTypeScript, checkExplicitAny, checkTypeScriptDirectives, isCompilerLibrary } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
+import { rejectCompilerDiagnostic } from './ts-diagnostics.mjs';
 import {isOfficialModuleImport, isOfficialNamespaceImport, invalidOfficialImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
 const relative = specifier => specifier.startsWith('./') || specifier.startsWith('../');
@@ -36,18 +37,14 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
     if (modules.size >= 128) throw new Error('[NORM-ANALYSIS-INCOMPLETE] project module graph budget exceeded at ' + input.name);
     paths.set(input.path, input.name);
     const source = readFileSync(input.path, 'utf8');
-    const ast = parseSourceModule(input.declared, source, message => fail(input.name + ': ' + message), ts.ScriptKind.TS);
+    const ast = parseSourceModule(input.declared, source, message => fail(input.name + ': ' + message), ts.ScriptKind.TS, input.name);
     localDirectives(ast, ast).requireConsumed(line =>
       fail(`${input.name}:${line}: linked scalar modules do not admit @normalizer-ir directives`));
     const record = {...input, ast, dependencies: new Map()};
     modules.set(input.declared, record);
     visiting.add(input.declared);
-    if (ast.checkJsDirective?.enabled === false || ast.commentDirectives?.length) {
-      fail(input.name + ': TypeScript checking directives cannot disable or suppress the strict preflight');
-    }
-    if (ast.referencedFiles.length || ast.typeReferenceDirectives.length || ast.libReferenceDirectives.length || ast.hasNoDefaultLib) {
-      fail(input.name + ': compiler reference directives are not scoped module imports');
-    }
+    checkTypeScriptDirectives(ast, input.name);
+    checkExplicitAny(ast, input.name);
     for (const st of ast.statements) {
       if (!ordinaryDeclaration(st) && !(rootReceiver && input.declared === entry.declared && ts.isVariableStatement(st))) diagnostic(record, st, 'linked modules require closed declarations without executable initialization');
       if (!ts.isImportDeclaration(st)) continue;
@@ -111,13 +108,9 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
   const errors = [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()];
   if (errors.length) {
     const [error] = errors;
-    const details = analysisTypeScriptDiagnostic(error);
-    const record = error.file && modules.get(error.file.fileName);
-    if (!record || error.start === undefined) fail(details);
-    const {line, character} = record.ast.getLineAndCharacterOfPosition(error.start);
-    fail(`${record.name}:${line + 1}:${character + 1}: ${details}`);
+    rejectCompilerDiagnostic(error, {label: modules.get(error.file?.fileName)?.name});
   }
-  for (const record of modules.values()) assertTypeScript(record.ast, checker, [], reason => fail(record.name + ': ' + reason));
+  for (const record of modules.values()) assertTypeScript(record.ast, checker, [], reason => fail(record.name + ': ' + reason), record.name);
 
   function helper(node) {
     if (!ts.isIdentifier(node)) return;

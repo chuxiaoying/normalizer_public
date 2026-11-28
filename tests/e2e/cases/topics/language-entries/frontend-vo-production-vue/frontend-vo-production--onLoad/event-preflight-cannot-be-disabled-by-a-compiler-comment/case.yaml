@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-TS-CHECK-DIRECTIVE]"
     - TypeScript checking directives cannot disable or suppress

@@ -3,7 +3,6 @@ reject:
   fragments:
     - "[NORM-OUT-OF-SOURCE]"
     - kind=ABORT
-    - "[NORM-ENGINE-FAILURE]"
     - Billing.charge
     - Fee.apply
     - unsupported

@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-SCENARIO-INPUT]"
     - entry requires named required parameters

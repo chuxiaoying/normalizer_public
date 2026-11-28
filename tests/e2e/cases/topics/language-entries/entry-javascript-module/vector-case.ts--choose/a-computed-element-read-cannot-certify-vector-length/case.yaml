@@ -1,5 +1,5 @@
 entry: src/vector-case.ts#choose
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "Property 'length' does not exist on type"

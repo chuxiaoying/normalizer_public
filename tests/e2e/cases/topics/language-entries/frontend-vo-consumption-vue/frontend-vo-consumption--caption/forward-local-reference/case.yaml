@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#caption
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-TS-TYPECHECK]"
     - Block-scoped variable 'later' used before its declaration

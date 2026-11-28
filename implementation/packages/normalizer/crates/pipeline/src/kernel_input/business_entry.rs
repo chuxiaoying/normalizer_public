@@ -125,19 +125,20 @@ impl Loaded {
         Ok((class, method))
     }
 
-    pub fn source_pers(&self, root: &Path, entry: &str) -> Result<String> {
-        let selected = self.source_entry.as_ref();
-        let method_key = match selected {
-            Some(source) if source.locator == entry => source.target.as_str(),
-            Some(_) => return Err("[NORM-ENTRY] selected source locator does not match".into()),
-            None => entry,
-        };
-        let (class, method) = self.entry_method(method_key)?;
+    pub fn source_pers(&self) -> Result<String> {
+        let selected = self
+            .source_entry
+            .as_ref()
+            .expect("invariant: source PERS requires an admitted source entry");
+        let method_key = selected.target.as_str();
+        let (class, method) = self
+            .entry_method(method_key)
+            .expect("invariant: admitted source entry lost its method binding");
         let source = Path::new(class.source_file());
         let path = source
-            .strip_prefix(root)
-            .map_err(|_| "entry file outside project")?;
-        let result = self.normalize(method_key)?;
+            .strip_prefix(&selected.project_root)
+            .expect("invariant: admitted source entry lost its project-root provenance");
+        let result = self.normalize_admitted(method_key)?;
         let signature = method
             .params()
             .iter()
@@ -153,7 +154,7 @@ impl Loaded {
                     .project
                     .source_ports
                     .get(id)
-                    .ok_or("missing source port declaration")?;
+                    .expect("invariant: emitted source port has no admitted declaration");
                 external_results.insert(
                     id.clone(),
                     source_type(&self.program, &port.returns)?.to_owned(),
@@ -173,19 +174,19 @@ impl Loaded {
             }
             pending.push(field.java_type());
             let identity = selected
-                .and_then(|source| {
-                    source.receiver.as_ref().map(|receiver| {
-                        let file = source
-                            .locator
-                            .split_once('#')
-                            .expect("validated entry locator")
-                            .0;
-                        format!(
-                            "{file}#{}.{receiver_field}.{name}",
-                            receiver.owner,
-                            receiver_field = receiver.field
-                        )
-                    })
+                .receiver
+                .as_ref()
+                .map(|receiver| {
+                    let file = selected
+                        .locator
+                        .split_once('#')
+                        .expect("invariant: admitted locator lost its source identity")
+                        .0;
+                    format!(
+                        "{file}#{}.{receiver_field}.{name}",
+                        receiver.owner,
+                        receiver_field = receiver.field
+                    )
                 })
                 .unwrap_or_else(|| format!("{}#{}.{name}", path.display(), class.full_name()));
             environment.insert(
@@ -230,9 +231,7 @@ impl Loaded {
         }
         let context = EntryContext {
             external_results,
-            function: selected
-                .map(|source| source.canonical_function.clone())
-                .unwrap_or_else(|| format!("{}#{entry}", path.display())),
+            function: selected.canonical_function.clone(),
             types,
             returns: {
                 let mut domain = source_type(&self.program, method.return_type())?;
@@ -270,14 +269,17 @@ impl Loaded {
     /// Validate and run one closed adapter entry; do not execute unrelated methods.
     pub fn project_pers(path: &Path, entry: &str) -> Result<String> {
         let loaded = Self::read_adapter_project(path)?;
-        let context = loaded.project.entry_contexts.get(entry);
-        if let Some(context) = context {
-            context.validate_public_bindings()?;
-        }
-        let result = loaded.normalize(entry)?;
-        context
-            .ok_or("missing business entry context")?
-            .render_source(&loaded.project, &result, loaded.entry_method(entry)?.1)
+        let context = loaded
+            .project
+            .entry_contexts
+            .get(entry)
+            .ok_or_else(|| super::fail("entry not declared"))?;
+        context.validate_public_bindings().map_err(super::fail)?;
+        let result = loaded.normalize_admitted(entry)?;
+        let (_, method) = loaded
+            .entry_method(entry)
+            .expect("invariant: executed adapter entry lost its method binding");
+        context.render_source(&loaded.project, &result, method)
     }
 }
 
@@ -572,8 +574,13 @@ impl EntryContext {
                     .source_identity_states
                     .iter()
                     .filter_map(|(id, (binding, path))| {
-                        let root = result.source_state_bindings.get(binding)?;
-                        let layout = self.state_shape_at(root, path).ok()?;
+                        let root = result
+                            .source_state_bindings
+                            .get(binding)
+                            .expect("invariant: observed state identity lost its source binding");
+                        let layout = self
+                            .state_shape_at(root, path)
+                            .expect("invariant: observed state identity lost its declared path");
                         if layout
                             .is_some_and(|ty| !self.types.contains_key(ty.trim_end_matches('?')))
                         {

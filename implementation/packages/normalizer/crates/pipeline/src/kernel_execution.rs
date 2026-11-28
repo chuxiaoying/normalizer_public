@@ -363,7 +363,20 @@ impl<'a> Engine<'a> {
                     "native text flow must own the complete entry domain",
                 )?;
                 let completion = self.source_text_flow(flow, env, env, path)?;
-                let value = completion.normal_return_value().unwrap_or_else(b::lit_null);
+                let terminal = completion
+                    .terminal_alternatives()
+                    .expect("invariant: admitted native text flow did not reach complete exits");
+                let value = match terminal.normal_return_value() {
+                    Some(value) => value,
+                    None => {
+                        assert!(
+                            terminal.is_always_throwing(),
+                            "invariant: terminal text flow lost its return"
+                        );
+                        // This inactive slot is discarded; only the throw is observable.
+                        b::lit_null()
+                    }
+                };
                 self.realtime_completion = completion;
                 Ok(Value::Term(Ty::Text, value))
             }

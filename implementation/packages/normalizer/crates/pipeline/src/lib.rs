@@ -6,6 +6,7 @@ pub mod formatting;
 pub mod kernel_input;
 pub mod normalized;
 mod preprocess;
+pub use preprocess::AnalysisAbort;
 
 mod profile;
 mod runtime_heap;

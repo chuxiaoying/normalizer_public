@@ -1,0 +1,8 @@
+entry: src/main.ts#run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/main.ts#run, returns: text}
+  P:
+    parameters:
+      raw: {position: 0, type: text}
+  R: raw

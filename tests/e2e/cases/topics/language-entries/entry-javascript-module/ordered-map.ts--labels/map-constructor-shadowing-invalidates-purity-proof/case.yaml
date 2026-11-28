@@ -1,6 +1,7 @@
 entry: src/ordered-map.ts#labels
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-ANY]"
+    - "Panic: not-support"
     - "construct signature"
     - "any"

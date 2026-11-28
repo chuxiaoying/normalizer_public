@@ -3,6 +3,7 @@ import ts from 'typescript';
 import {basename, dirname} from 'node:path';
 import {definedModuleExport, parseSourceModule} from './ir.mjs';
 import {localDirectives} from './local-directives.mjs';
+import {rejectAny, rejectCompilerDiagnostic, rejectDirective} from './ts-diagnostics.mjs';
 import {isOfficialModuleImport, isOfficialNamespaceImport, invalidOfficialImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
 export const failTypedModule = message => { throw new Error('[NORM-TS-MODULE] ' + message); };
@@ -30,16 +31,10 @@ export const analysisCompilerOptions = {
 };
 
 export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {allowOfficial = false} = {}) {
-  if (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length) {
-    fail('TypeScript checking directives cannot disable or suppress the strict preflight');
-  }
-  if (sf.referencedFiles.length || sf.typeReferenceDirectives.length
-      || sf.libReferenceDirectives.length || sf.hasNoDefaultLib) {
-    fail('compiler reference directives are not scoped module imports');
-  }
+  checkTypeScriptDirectives(sf);
+  checkExplicitAny(sf);
   let hasImport = false, hasOfficial = false;
   const inspect = node => {
-    if (node.kind === ts.SyntaxKind.AnyKeyword) fail('explicit any is not an admitted analysis type');
     if (isOfficialModuleImport(node) && !isOfficialNamespaceImport(node)) fail('[NORM-IMPORT] ' + invalidOfficialImport);
     if (allowOfficial && isOfficialNamespaceImport(node)) {
       hasOfficial = true;
@@ -67,18 +62,30 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
   return { checker: checked.getTypeChecker(), errors };
 }
 
-export function analysisTypeScriptDiagnostic(error) {
-  // TS2584 recommends adding DOM to lib, which is not a valid remediation here.
-  if (error.code === 2584 && error.file && error.start !== undefined && error.length) {
-    const name = error.file.text.slice(error.start, error.start + error.length);
-    return `Cannot find name '${name}'. Host libraries are not loaded; preprocess host references before admission.`;
-  }
-  return ts.flattenDiagnosticMessageText(error.messageText, '\n');
+export function checkExplicitAny(sf, label) {
+  const inspect = node => {
+    if (node.kind === ts.SyntaxKind.AnyKeyword) {
+      rejectAny('explicit any is not an admitted analysis type', sf, node.getStart(sf), label);
+    }
+    ts.forEachChild(node, inspect);
+  };
+  inspect(sf);
 }
 
-export function assertTypeScript(sf, checker, errors, fail = failTypedModule) {
-  if (errors.length) fail(analysisTypeScriptDiagnostic(errors[0]));
-  assertNoResolvedAny(sf, checker, fail);
+export function checkTypeScriptDirectives(sf, label) {
+  if (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length) {
+    rejectDirective('TypeScript checking directives cannot disable or suppress the strict preflight', sf,
+      sf.checkJsDirective?.pos ?? sf.commentDirectives?.[0]?.range.pos, label);
+  }
+  const reference = sf.referencedFiles[0] ?? sf.typeReferenceDirectives[0] ?? sf.libReferenceDirectives[0];
+  if (reference || sf.hasNoDefaultLib) {
+    rejectDirective('compiler reference directives are not scoped module imports', sf, reference?.pos, label);
+  }
+}
+
+export function assertTypeScript(sf, checker, errors, fail = failTypedModule, label) {
+  if (errors.length) rejectCompilerDiagnostic(errors[0], {label});
+  assertNoResolvedAny(sf, checker, label);
   assertClosedImports(sf, fail);
 }
 
@@ -97,7 +104,7 @@ function assertClosedImports(sf, fail) {
 
 // strict/noImplicitAny alone permits dynamic types originating in the
 // standard library (e.g. JSON.parse or the default of Array<T>).
-function assertNoResolvedAny(sf, checker, fail) {
+function assertNoResolvedAny(sf, checker, label) {
   const visited = new Set();
   const hasAny = type => {
     if (type.flags & ts.TypeFlags.Any) return true;
@@ -130,8 +137,7 @@ function assertNoResolvedAny(sf, checker, fail) {
     // The tuple/object binding pattern itself is syntax, not a typed value.
     // Its individual binding elements and initializer are visited separately.
     if (observed && hasAny(checker.getTypeAtLocation(observed))) {
-      const {line, character} = sf.getLineAndCharacterOfPosition(observed.getStart(sf));
-      fail(`resolved any is not an admitted analysis type at ${line + 1}:${character + 1}`);
+      rejectAny('resolved any is not an admitted analysis type', sf, observed.getStart(sf), label);
     }
     ts.forEachChild(node, inspect);
   };

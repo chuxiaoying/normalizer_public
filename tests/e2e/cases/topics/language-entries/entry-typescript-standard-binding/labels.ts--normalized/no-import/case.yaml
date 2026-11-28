@@ -1,5 +1,5 @@
 entry: src/labels.ts#normalized
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "Cannot find name 'N'"

@@ -1,5 +1,5 @@
 entry: src/vector-construction.ts#pair
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "Type 'null' is not assignable to type 'number'"

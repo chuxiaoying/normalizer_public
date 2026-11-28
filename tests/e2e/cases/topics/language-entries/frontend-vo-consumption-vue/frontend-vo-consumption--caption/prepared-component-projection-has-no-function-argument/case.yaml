@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#caption
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-SCENARIO-INPUT]"
     - prepared component projection caption requires a synchronous exported function with a return expression and no parameters

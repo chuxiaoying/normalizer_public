@@ -1,5 +1,5 @@
 entry: src/receipt.ts#traceCount
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-SCENARIO-INPUT]"
     - "@normalizer-ir"

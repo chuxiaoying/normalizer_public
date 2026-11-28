@@ -5,19 +5,64 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 MANIFEST="$ROOT/packages/normalizer/Cargo.toml"
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/packages/normalizer/target}"
 KERNEL="$TARGET_DIR/debug/normalizer-normalized"
+CATALOG="$ROOT/tools/diagnostics/catalog.tsv"
+diagnostic_format=human
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
-  implementation/tools/normalizer source SOURCE_DIR 'src/Entry.java#Entry.run'
-  implementation/tools/normalizer module PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
-  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
+  implementation/tools/normalizer source PROJECT_ROOT 'src/Entry.java#Entry.run'
+  implementation/tools/normalizer module PROJECT_ROOT --entry 'src/module.ts#exportedFunction'
+  implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry 'src/page.ts#exportedFunction'
+  implementation/tools/normalizer [--diagnostic-format=json] <analysis command>
+  implementation/tools/normalizer errors
   implementation/tools/normalizer test business-examples
 
+SCENE: frontend-vo-production or frontend-vo-consumption.
 Analysis input must declare zero package dependencies (package.json / pom.xml).
-source, module and scenario write final business PERS to stdout.
-EOF
+On success, source, module and scenario write only complete PERS to stdout.
+USAGE
 }
+
+json_quote() {
+  local value=$1 control escaped i
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  for (( i=1; i<32; i++ )); do
+    printf -v control '\\%03o' "$i"
+    printf -v control '%b' "$control"
+    printf -v escaped '\\u%04x' "$i"
+    value=${value//$control/$escaped}
+  done
+  printf '"%s"' "$value"
+}
+
+# Pre-runtime errors use the same catalog. Once Rust is available, the
+# renderer owns all analysis diagnostics. No Node or jq is needed for Java.
+early_error() {
+  local code=$1 status=$2 message=$3 key kind stage summary action design
+  while IFS='|' read -r key kind stage summary action design; do
+    if [[ "$key" == "$code" ]]; then
+      if [[ "$diagnostic_format" == json ]]; then
+        printf '{"schema":"normalizer.diagnostic/1","code":%s,"kind":%s,"stage":%s,"summary":%s,"action":%s,"design":%s,"result":"not-produced","details":[%s]}\n' \
+          "$(json_quote "$key")" "$(json_quote "$kind")" "$(json_quote "$stage")" \
+          "$(json_quote "$summary")" "$(json_quote "$action")" "$(json_quote "$design")" "$(json_quote "$message")" >&2
+      else
+        printf '[%s] kind=%s stage=%s\n%s\nsummary=%s\nnext=%s\ndesign=%s\nresult=not-produced\n' \
+          "$key" "$kind" "$stage" "$message" "$summary" "$action" "$design" >&2
+      fi
+      exit "$status"
+    fi
+  done < "$CATALOG"
+  printf '[NORM-ENGINE-FAILURE] diagnostic catalog entry missing: %s\n' "$code" >&2
+  exit 1
+}
+
+case "${1:-}" in
+  --diagnostic-format=json) diagnostic_format=json; shift ;;
+  --diagnostic-format=human) shift ;;
+  --diagnostic-format=*) early_error NORM-USAGE 2 'diagnostic format must be human or json' ;;
+esac
 
 cargo_command() {
   if [[ -n "${CARGO:-}" ]]; then
@@ -34,9 +79,10 @@ cargo_command() {
 
 ensure_kernel() {
   local cargo_cmd
-  cargo_cmd=$(cargo_command)
-  if [[ ! -x "$KERNEL" ]] || find "$ROOT/packages/normalizer/crates" "$MANIFEST" "$ROOT/packages/normalizer/Cargo.lock" \
-      -type f \( -name '*.rs' -o -name '*.toml' -o -name 'Cargo.lock' \) \
+  cargo_cmd=$(cargo_command) || return
+  # Cargo also tracks the compiled diagnostic registry outside crates/.
+  if [[ ! -x "$KERNEL" ]] || find "$ROOT/packages/normalizer/crates" "$MANIFEST" "$ROOT/packages/normalizer/Cargo.lock" "$CATALOG" \
+      -type f \( -name '*.rs' -o -name '*.toml' -o -name 'Cargo.lock' -o -name 'catalog.tsv' \) \
       -newer "$KERNEL" -print -quit | grep -q .; then
     "$cargo_cmd" build --locked --target-dir "$TARGET_DIR" --manifest-path "$MANIFEST" -p pipeline --bin normalizer-normalized
   fi
@@ -50,7 +96,7 @@ ensure_frontend_dependencies() {
     return
   fi
   (
-    cd "$ROOT/tools/frontend"
+    cd "$ROOT/tools/frontend" || exit
     local options=(--prefer-offline --ignore-scripts --no-audit --no-fund)
     if [[ "$tests" == tests ]]; then options+=(--include=dev); fi
     npm ci "${options[@]}"
@@ -58,56 +104,85 @@ ensure_frontend_dependencies() {
 }
 
 require_args() {
-  local expected="$1"
-  local actual="$2"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "expected $expected arguments, got $actual" >&2
-    usage >&2
-    exit 2
-  fi
+  if [[ "$1" != "$2" ]]; then early_error NORM-USAGE 2 "expected $1 arguments, got $2"; fi
 }
 
 command=${1:-help}
 case "$command" in
-  source)
-    require_args 3 "$#"
-    ensure_kernel
-    exec "$KERNEL" --source "$2" "$3"
-    ;;
+  help|-h|--help) usage; exit 0 ;;
+  source) require_args 3 "$#" ;;
   module)
     require_args 4 "$#"
-    ensure_kernel
-    "$KERNEL" --check-input-manifests "$2"
-    ensure_frontend_dependencies
-    exec node "$ROOT/tools/frontend/standalone.mjs" "$KERNEL" "$2" "$3" "$4"
+    [[ "$3" == --entry && -n "$4" ]] || early_error NORM-USAGE 2 'expected --entry path.ts#export'
     ;;
   scenario)
     require_args 5 "$#"
-    ensure_kernel
-    "$KERNEL" --check-input-manifests "$3"
-    ensure_frontend_dependencies
-    exec node "$ROOT/tools/scenarios/runner.mjs" "$KERNEL" "${@:2}"
+    [[ "$4" == --entry && -n "$5" ]] || early_error NORM-USAGE 2 'expected --entry path.ts#export'
     ;;
   test)
     require_args 2 "$#"
-    case "$2" in
-      business-examples)
-        ensure_frontend_dependencies tests
-        ensure_kernel
-        exec node --test "$ROOT/../tests/e2e/business_examples.test.mjs"
-        ;;
-      *)
-        usage >&2
-        exit 2
-        ;;
-    esac
+    [[ "$2" == business-examples ]] || early_error NORM-USAGE 2 "unknown test suite: $2"
     ;;
-  help|-h|--help)
-    usage
-    ;;
-  *)
-    echo "unknown command: $command" >&2
-    usage >&2
-    exit 2
-    ;;
+  errors) require_args 1 "$#" ;;
+  *) early_error NORM-USAGE 2 "unknown command: $command" ;;
 esac
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/normalizer-cli.XXXXXX" 2>/dev/null) ||
+  early_error NORM-BOOTSTRAP-IO 1 'cannot create CLI temporary output directory'
+trap 'rm -rf -- "$scratch" || :' EXIT
+
+ensure_kernel >"$scratch/prepare" 2>&1 ||
+  early_error NORM-TOOLCHAIN 1 "$(cat "$scratch/prepare")"
+
+if [[ "$command" == errors ]]; then
+  "$KERNEL" --list-diagnostics
+  exit $?
+fi
+
+run_analysis() {
+  case "$1" in
+    source) "$KERNEL" --source "$2" "$3" ;;
+    module)
+      "$KERNEL" --check-input-manifests "$2" || return
+      ensure_frontend_dependencies >>"$scratch/prepare" 2>&1 ||
+        { printf '[NORM-TOOLCHAIN] %s\n' "$(cat "$scratch/prepare")" >&2; return 1; }
+      node "$ROOT/tools/frontend/standalone.mjs" "$KERNEL" "$2" "$3" "$4"
+      ;;
+    scenario)
+      "$KERNEL" --check-input-manifests "$3" || return
+      ensure_frontend_dependencies >>"$scratch/prepare" 2>&1 ||
+        { printf '[NORM-TOOLCHAIN] %s\n' "$(cat "$scratch/prepare")" >&2; return 1; }
+      node "$ROOT/tools/scenarios/runner.mjs" "$KERNEL" "${@:2}"
+      ;;
+  esac
+}
+
+if [[ "$command" == module || "$command" == scenario || "$command" == test ]]; then
+  command -v node >/dev/null 2>&1 || early_error NORM-TOOLCHAIN 1 'Node.js is required for this command'
+fi
+
+if [[ "$command" == test ]]; then
+  ensure_frontend_dependencies tests >"$scratch/prepare" 2>&1 ||
+    early_error NORM-TOOLCHAIN 1 "$(cat "$scratch/prepare")"
+  node --test "$ROOT/../tests/e2e/business_examples.test.mjs"
+  exit $?
+fi
+
+if run_analysis "$@" >"$scratch/result" 2>"$scratch/diagnostic"; then
+  if [[ ! -s "$scratch/result" ]]; then
+    printf '[NORM-ENGINE-FAILURE] analysis returned success without PERS\n' >"$scratch/diagnostic"
+  else
+    cat "$scratch/diagnostic" >&2
+    cat "$scratch/result" || early_error NORM-RESULT-TRANSPORT 1 'unable to write PERS to stdout'
+    exit 0
+  fi
+else
+  status=$?
+  if [[ "$status" -gt 128 && ! -s "$scratch/diagnostic" ]]; then
+    printf '[NORM-INTERRUPTED] process exit status %s\n' "$status" >"$scratch/diagnostic"
+  fi
+fi
+
+"$KERNEL" --format-diagnostic "$diagnostic_format" <"$scratch/diagnostic" ||
+  early_error NORM-ENGINE-FAILURE 1 'diagnostic renderer failed'
+exit 1

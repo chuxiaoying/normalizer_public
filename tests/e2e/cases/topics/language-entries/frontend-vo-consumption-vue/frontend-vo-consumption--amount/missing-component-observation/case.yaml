@@ -1,5 +1,5 @@
 entry: src/ArrearsPage.ts#amount
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-SCENARIO-INPUT]"
     - missing or invalid @N componentProp on amount

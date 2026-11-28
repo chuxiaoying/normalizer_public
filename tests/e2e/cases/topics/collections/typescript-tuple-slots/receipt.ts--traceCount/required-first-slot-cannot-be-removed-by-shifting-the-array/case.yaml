@@ -1,5 +1,5 @@
 entry: src/receipt.ts#traceCount
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - is not assignable to type 'string'

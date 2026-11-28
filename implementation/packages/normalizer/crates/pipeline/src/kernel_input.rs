@@ -1001,7 +1001,9 @@ impl Loaded {
             checked_ports,
         })
     }
-    fn normalize(&self, entry: &str) -> Result<ExecutionResult> {
+    // Callers select an admitted source entry or check the adapter's wire
+    // entry before arriving here. Preparation validates the carrier itself.
+    fn normalize_admitted(&self, entry: &str) -> Result<ExecutionResult> {
         let adapter_prepare = (!self.project.direct_source).then(Instant::now);
         let prepared = self.prepare()?;
         // Validate every declared adapter entry; the engine can only run
@@ -1016,21 +1018,15 @@ impl Loaded {
                 format!("methods={}", prepared.methods.len()),
             );
         }
-        let selected = self
-            .project
-            .entries
-            .iter()
-            .find(|s| *s == entry)
-            .ok_or_else(|| fail("entry not declared"))?;
         let m = prepared
             .methods
             .get(entry)
-            .ok_or_else(|| fail("entry method missing"))?
+            .expect("invariant: prepared execution omitted the admitted entry")
             .syntax;
         let mut e = self.engine(
             prepared,
             kernel_execution::SelectedEntry {
-                id: selected.as_str(),
+                id: entry,
                 syntax: m,
             },
         );
@@ -1045,19 +1041,24 @@ impl Loaded {
                 } else {
                     let owner = entry
                         .rsplit_once('.')
-                        .ok_or_else(|| fail("missing entry owner"))?
+                        .expect("invariant: admitted carrier entry lost its owner key")
                         .0;
                     let class = e
                         .program
                         .find_class(owner)
-                        .ok_or_else(|| fail("entry owner missing"))?;
+                        .expect("invariant: admitted carrier entry lost its owner");
                     crate::normalized::source_nullable_parameter(class, m, n, t)?
                         || self
                             .project
                             .entry_contexts
                             .get(entry)
-                            .and_then(|ctx| ctx.binding(n).ok())
-                            .is_some_and(|(_, ty)| ty == "text?")
+                            .expect("invariant: admitted carrier lost its entry context")
+                            .binding(n)
+                            .expect(
+                                "invariant: admitted carrier lost a validated parameter binding",
+                            )
+                            .1
+                            == "text?"
                 };
                 e.entry_argument(n, t, &expected, nullable)
             })

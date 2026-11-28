@@ -1,5 +1,6 @@
 entry: src/main.ts#run
 reject:
   fragments:
-  - "[NORM-TS-MODULE]"
-  - "src/helper.ts:1:50: Type 'string' is not assignable to type 'number'."
+  - "[NORM-TS-TYPECHECK]"
+  - "src/helper.ts:1:50"
+  - "Type 'string' is not assignable to type 'number'."

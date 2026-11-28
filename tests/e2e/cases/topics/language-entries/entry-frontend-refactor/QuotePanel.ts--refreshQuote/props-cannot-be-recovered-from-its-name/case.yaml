@@ -1,5 +1,5 @@
 entry: src/QuotePanel.ts#refreshQuote
 reject:
   fragments:
-  - "SCENARIO_MODULE_INPUT:"
+  - "[NORM-TS-TYPECHECK]"
   - "Cannot find name 'props'."

@@ -1,5 +1,6 @@
 entry: src/main.ts#run
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
-    - "src/helper.ts: TypeScript checking directives cannot disable or suppress the strict preflight"
+    - "[NORM-TS-CHECK-DIRECTIVE]"
+    - "src/helper.ts:1:1"
+    - "TypeScript checking directives cannot disable or suppress the strict preflight"

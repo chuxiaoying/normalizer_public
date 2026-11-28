@@ -1,5 +1,6 @@
 entry: src/ArrearsPage.ts#amount
 reject:
   fragments:
-    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-TS-ANY]"
+    - "Panic: not-support"
     - Property 'summary.payable' does not exist on type

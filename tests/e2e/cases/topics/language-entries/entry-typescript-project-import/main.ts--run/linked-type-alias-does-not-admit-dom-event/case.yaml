@@ -1,6 +1,6 @@
 entry: src/main.ts#run
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "src/helper.ts:1:"
     - "Cannot find name 'KeyboardEvent'"

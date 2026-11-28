@@ -1,5 +1,5 @@
 entry: src/total.ts#total
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "Type 'string | null' is not assignable to type 'string'."

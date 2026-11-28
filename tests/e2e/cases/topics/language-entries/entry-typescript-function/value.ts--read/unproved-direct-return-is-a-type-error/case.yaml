@@ -1,5 +1,5 @@
 entry: src/value.ts#read
 reject:
   fragments:
-    - "[NORM-TS-MODULE]"
+    - "[NORM-TS-TYPECHECK]"
     - "Type 'unknown' is not assignable to type 'string'."

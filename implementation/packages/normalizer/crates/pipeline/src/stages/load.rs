@@ -79,7 +79,7 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
                 "SOURCE-PARSE-FAILED",
                 file,
                 &error.to_string(),
-                "修正源码或按 Skill 将不支持的语法改写为当前规范 Java 子集；不得跳过该文件。",
+                "核对源码语法；合法输入被解析器拒绝时保留原样并报告实现缺口，不得跳过文件或改写行为。",
             ))
         })?;
         program.extend_source(parsed);
