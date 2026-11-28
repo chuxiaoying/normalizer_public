@@ -1,0 +1,10 @@
+entry: src/MixedTemporal.java#MixedTemporal.settle
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/MixedTemporal.java#MixedTemporal.settle, returns: number}
+  P:
+    parameters:
+      options: {position: 0, type: 'number[]'}
+  E:
+    bill: {kind: table, source: bill, columns: {label: "text?"}}
+  R: CHOOSE(options DEFAULT SELECT COUNT(bill.label) FROM bill AS member0 YIELD member0)

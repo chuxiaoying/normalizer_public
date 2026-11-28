@@ -180,3 +180,7 @@ R: CHOOSE(values DEFAULT backup AS member0 YIELD member0 + COALESCE(SUM(SELECT v
 缺省也可以使用已经取得的有序数组位置结果。先以 `first from data[1:] else 0` 取第二项，再将该结果用作 `choose` 的缺省值。若 `data` 少于两项，所取得的值是 0；不能因为候选为空而在无第二项时执行一次越界读取。
 
 二维数组的关联求和也可以作为缺省。先逐组对大于 `threshold` 的整数求和，再使用该合计。内层只看当前组，不把所有组的明细重新与外层组合。以 `groups = [[1, 8], [], [5, 3]]`、`threshold = 4` 为例，候选为空时使用 13。
+
+### 任选的缺省必须引用已取得的关系值
+
+将表关系的结果作为整数缺省时，仍要区分按行计数、按非空列计数和按排序取首项。若 `bill.label` 可空，`count from rows as r` 数所有行，`count from rows as r yield r.label` 只数非空标签；带 `where r.label is null` 的按行计数恰恰数空标签所在的行。作为缺省不改变原来的列、谓词或排序。若表快照只在 `enabled` 路径取得，缺省仍只能在该路径引用这次快照；另一条路径直接返回 `backup`，不新造一次取得或一次选择。

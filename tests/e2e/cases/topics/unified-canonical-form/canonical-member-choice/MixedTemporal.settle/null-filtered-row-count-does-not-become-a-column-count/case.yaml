@@ -1,0 +1,18 @@
+entry: src/MixedTemporal.java#MixedTemporal.settle
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/MixedTemporal.java#MixedTemporal.settle, returns: number}
+  P:
+    parameters:
+      options: {position: 0, type: 'number[]'}
+  E:
+    bill: {kind: table, source: bill, columns: {label: "text?"}}
+  R: |-
+    CHOOSE(options DEFAULT COALESCE(
+      SUM(
+        SELECT 1
+        FROM bill
+        WHERE bill.label IS NULL
+      ),
+      0
+    ) AS member0 YIELD member0)
