@@ -19,6 +19,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Completion {
     Continue,
+    SwitchBreak,
     Return(Expr),
     Throw { class: String, payload: Option<Expr> },
     ThrowValue(Expr),
@@ -34,6 +35,7 @@ pub(crate) struct CompletionAlternative {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CompletionOutcome {
     Continue,
+    SwitchBreak,
     Return(Expr),
     Throw { class: String, payload: Option<Expr> },
     ThrowValue(Expr),
@@ -181,10 +183,41 @@ impl Completion {
     pub(crate) fn continuing_guard(&self) -> Expr {
         match self {
             Self::Continue => b::lit_bool(true),
-            Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => b::lit_bool(false),
+            Self::SwitchBreak | Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => b::lit_bool(false),
             Self::Guarded(alternatives) => math::normalize(alternatives.iter()
                 .filter(|a| a.outcome == CompletionOutcome::Continue)
                 .fold(b::lit_bool(false), |guard, a| b::or(guard, a.guard.clone()))),
+        }
+    }
+
+    /// A break stops the current switch but its locals are still observable
+    /// after that switch, unlike locals on a return or throw path.
+    pub(crate) fn has_pending_switch_break(&self) -> bool {
+        matches!(self, Self::SwitchBreak) || matches!(self, Self::Guarded(alternatives)
+            if alternatives.iter().any(|item| item.outcome == CompletionOutcome::SwitchBreak))
+    }
+
+    pub(crate) fn may_resume_with_locals(&self) -> bool {
+        match self {
+            Self::Continue | Self::SwitchBreak => true,
+            Self::Guarded(alternatives) => alternatives.iter().any(|item|
+                matches!(item.outcome, CompletionOutcome::Continue | CompletionOutcome::SwitchBreak)),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn finish_switch(self) -> Self {
+        match self {
+            Self::SwitchBreak => Self::Continue,
+            Self::Guarded(alternatives) if alternatives.iter().any(|item|
+                item.outcome == CompletionOutcome::SwitchBreak) =>
+                Self::from_alternatives(alternatives.into_iter().map(|mut item| {
+                    if item.outcome == CompletionOutcome::SwitchBreak {
+                        item.outcome = CompletionOutcome::Continue;
+                    }
+                    item
+                }).collect()),
+            other => other,
         }
     }
 
@@ -194,7 +227,7 @@ impl Completion {
     pub(crate) fn terminal_alternatives(&self) -> Option<TerminalAlternatives> {
         let alternatives = self.clone().alternatives().into_iter().map(|alternative| {
             let outcome = match alternative.outcome {
-                CompletionOutcome::Continue => return None,
+                CompletionOutcome::Continue | CompletionOutcome::SwitchBreak => return None,
                 CompletionOutcome::Return(value) => TerminalOutcome::Return(value),
                 CompletionOutcome::Throw { class, payload } => TerminalOutcome::Throw { class, payload },
                 CompletionOutcome::ThrowValue(value) => TerminalOutcome::ThrowValue(value),
@@ -218,6 +251,10 @@ impl Completion {
             Self::Continue => vec![CompletionAlternative {
                 guard: b::lit_bool(true),
                 outcome: CompletionOutcome::Continue,
+            }],
+            Self::SwitchBreak => vec![CompletionAlternative {
+                guard: b::lit_bool(true),
+                outcome: CompletionOutcome::SwitchBreak,
             }],
             Self::Return(value) => vec![CompletionAlternative {
                 guard: b::lit_bool(true),
@@ -342,6 +379,7 @@ impl Completion {
 fn normalize_outcome(outcome: CompletionOutcome) -> CompletionOutcome {
     match outcome {
         CompletionOutcome::Continue => CompletionOutcome::Continue,
+        CompletionOutcome::SwitchBreak => CompletionOutcome::SwitchBreak,
         CompletionOutcome::Return(value) => CompletionOutcome::Return(math::normalize(value)),
         CompletionOutcome::ThrowValue(value) => CompletionOutcome::ThrowValue(value),
         CompletionOutcome::Throw { class, payload } => CompletionOutcome::Throw {
@@ -354,6 +392,7 @@ fn normalize_outcome(outcome: CompletionOutcome) -> CompletionOutcome {
 fn outcome_to_completion(outcome: CompletionOutcome) -> Completion {
     match outcome {
         CompletionOutcome::Continue => Completion::Continue,
+        CompletionOutcome::SwitchBreak => Completion::SwitchBreak,
         CompletionOutcome::Return(value) => Completion::Return(value),
         CompletionOutcome::ThrowValue(value) => Completion::ThrowValue(value),
         CompletionOutcome::Throw { class, payload } => Completion::Throw { class, payload },

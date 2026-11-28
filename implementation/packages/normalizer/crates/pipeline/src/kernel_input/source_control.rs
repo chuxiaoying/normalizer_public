@@ -134,11 +134,16 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn source_branch(
+    pub(super) fn source_branch(
         &mut self, condition: Expr, env: &mut Env, path: Expr,
         matched: impl FnOnce(&mut Self, &mut Env, Expr) -> Result<()>,
         otherwise: impl FnOnce(&mut Self, &mut Env, Expr) -> Result<()>,
     ) -> Result<()> {
+        // A test simplified under the live domain may be true there but
+        // not on an already-broken path. Preserve that path's local values.
+        let condition = if self.realtime_completion.has_pending_switch_break() {
+            math::normalize(b::and(condition, self.realtime_completion.continuing_guard()))
+        } else { condition };
         if let Some(truth) = condition.as_bool() {
             return if truth { matched(self, env, path) } else { otherwise(self, env, path) };
         }
@@ -160,8 +165,8 @@ impl Engine<'_> {
         // like the effects recorded at the write. Keep those guards as-is.
         self.realtime_store.append(yes_writes);
         self.realtime_store.append(no_writes);
-        let yes_live = yes_completion.continuing_guard().as_bool() != Some(false);
-        let no_live = no_completion.continuing_guard().as_bool() != Some(false);
+        let yes_live = yes_completion.may_resume_with_locals();
+        let no_live = no_completion.may_resume_with_locals();
         for (name, value) in env {
             let y = yes_env.remove(name).unwrap();
             let n = no_env.remove(name).unwrap();
@@ -445,7 +450,7 @@ impl Engine<'_> {
                         (CompletionOutcome::ThrowValue(_), _) =>
                             return Err(fail("escaping resource failure requires suppressed-exception semantics")),
                         (_, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_)) => secondary.outcome.clone(),
-                        (_, CompletionOutcome::Return(_)) => return Err(fail("resource close must complete as a void method")),
+                        (_, CompletionOutcome::Return(_) | CompletionOutcome::SwitchBreak) => return Err(fail("resource close must complete as a void method")),
                     };
                     combined.push(CompletionAlternative { guard, outcome });
                 }

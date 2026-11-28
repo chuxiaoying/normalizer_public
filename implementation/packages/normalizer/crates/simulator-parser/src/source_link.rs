@@ -361,7 +361,7 @@ impl Names<'_> {
                     if let Some(body) = finally_block { self.block(body, types, &mut locals.clone()); }
                 }
                 Block(body) => self.block(body, types, &mut locals.clone()),
-                LocalIr(_) | Return(None) | LoopBreak | LoopContinue => {}
+                LocalIr(_) | Return(None) | LoopBreak | LoopContinue | SwitchBreak => {}
             }
         }
     }

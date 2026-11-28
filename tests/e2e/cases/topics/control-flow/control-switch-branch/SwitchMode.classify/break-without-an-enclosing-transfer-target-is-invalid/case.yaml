@@ -1,0 +1,5 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+reject:
+  fragments:
+    - "[NORM-LOOP]"
+    - SwitchMode.classify

@@ -375,6 +375,9 @@ pub enum JavaStatement {
     /// may consume it; a switch's own separating break is parsed earlier.
     LoopBreak,
     LoopContinue,
+    /// A break lexically bound to the nearest switch, never an exit from
+    /// an enclosing method or a loop.
+    SwitchBreak,
 
     /// 代码块
     Block(Vec<JavaStatement>),

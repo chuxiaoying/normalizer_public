@@ -71,9 +71,14 @@ families:
           - [SwitchMode.classify, colon-break-prevents-fallthrough, pers]
           - [SwitchMode.classify, earlier-return-cannot-enter-a-later-switch-group, pers]
       nested-break:
-        focus: 嵌套条件里的无标签 break 只退出最近的 switch
+        focus: 无标签 break 停止最近的 switch 或循环，不串到外层，保留已写局部值
         seed: control-switch-branch
-        gap: implementation
+        evidence:
+          - [SwitchMode.classify, arrow-nested-break-preserves-written-local, pers]
+          - [SwitchMode.classify, nested-break-only-prevents-its-own-fallthrough-path, pers]
+          - [SwitchMode.classify, inner-switch-does-not-consume-outer-break, pers]
+          - [SwitchMode.classify, loop-break-does-not-leave-an-enclosing-switch, pers]
+          - [SwitchMode.classify, break-without-an-enclosing-transfer-target-is-invalid, reject]
       value-expression:
         focus: 产生值的 switch 表达式，区分箭头值与块内 yield
         gap: review

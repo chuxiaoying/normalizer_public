@@ -528,9 +528,23 @@ impl<'a> Engine<'a> {
     }
 
     pub(super) fn source_steps(&mut self, body: &[S], id: &str, env: &mut Env, entry_path: Expr) -> Result<()> {
-        for (i, s) in body.iter().enumerate() {
-            let path = math::normalize(b::and(entry_path.clone(), self.realtime_completion.continuing_guard()));
+        self.source_steps_from(body, 0, id, env, entry_path)
+    }
+
+    fn source_steps_from(
+        &mut self, body: &[S], start: usize, id: &str, env: &mut Env, entry_path: Expr,
+    ) -> Result<()> {
+        for (i, s) in body.iter().enumerate().skip(start) {
+            let continuing = self.realtime_completion.continuing_guard();
+            let path = math::normalize(b::and(entry_path.clone(), continuing.clone()));
             if path.as_bool() == Some(false) { break; }
+            if self.realtime_completion.has_pending_switch_break() {
+                // Run the suffix once on its live domain, preserving the
+                // locals at the already-broken paths for switch exit.
+                return self.source_branch(continuing, env, entry_path,
+                    |engine, locals, active| engine.source_steps_from(body, i, id, locals, active),
+                    |_, _, _| Ok(()));
+            }
             self.budget()?;
             match s {
                 S::Block(statements) => self.source_scope(statements, id, env, path)?,
@@ -791,6 +805,11 @@ impl<'a> Engine<'a> {
                     let condition = self.condition_under_path(test.scalar()?, &path);
                     self.source_if(condition, then_block, else_block.as_deref().unwrap_or_default(), matched, id, env, path)?;
                 }
+                S::SwitchBreak => {
+                    self.realtime_completion = self.realtime_completion.replace_continue(
+                        realtime_state::Completion::SwitchBreak);
+                    return Ok(());
+                }
                 S::Switch { selector, cases, default, fall_through } => {
                     let selector = self.java_expr(selector, id, env, path.clone())?;
                     let path = self.normal_path(path);
@@ -810,11 +829,17 @@ impl<'a> Engine<'a> {
                     }
                     let path = self.normal_path(path);
                     if path.as_bool() != Some(false) {
+                        // A nested switch cannot consume a break belonging
+                        // to its parent, even when symbolic arms coexist.
+                        use realtime_state::Completion;
+                        let parent = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
                         if let Some(flow) = fall_through {
                             self.source_switch_through(selector, cases, default, flow, id, env, path)?;
                         } else {
                             self.source_switch(selector, cases, default, id, env, path)?;
                         }
+                        let local = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
+                        self.realtime_completion = parent.replace_continue(local.finish_switch());
                     }
                 }
                 S::For {init,cond,update,body} => {

@@ -1,0 +1,6 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/SwitchMode.java#SwitchMode.classify, returns: number}
+  P: {parameters: {stop: {position: 0, type: bool}}}
+  R: CASE WHEN stop THEN 10 ELSE 21 END

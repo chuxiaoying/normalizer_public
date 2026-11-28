@@ -272,8 +272,9 @@ impl<'a> Parser<'a> {
                 return Err(self.err("[JAVA-SWITCH] cannot mix ':' and '->' switch groups"));
             }
             rule_style = Some(arrow);
-            let (body, enters_next) = if arrow { (self.parse_switch_rule()?, false) }
+            let (mut body, enters_next) = if arrow { (self.parse_switch_rule()?, false) }
                 else { self.parse_switch_colon_group()? };
+            bind_switch_breaks(&mut body);
             if let Some(labels) = labels { cases.push((labels, body)); }
             else {
                 default = Some(body);
@@ -1485,6 +1486,29 @@ impl<'a> Parser<'a> {
                     .map_err(|_| self.err("decimal int literal exceeds its source range"))?;
                 Ok(JavaLit::Int(v))
             }
+        }
+    }
+}
+
+
+// Each inner switch has already bound its own breaks. The other three
+// breakable statement forms retain their loop transfers.
+fn bind_switch_breaks(body: &mut [JavaStatement]) {
+    use JavaStatement::*;
+    for statement in body {
+        match statement {
+            LoopBreak => *statement = SwitchBreak,
+            Block(body) => bind_switch_breaks(body),
+            If { then_block, else_block, .. } => {
+                bind_switch_breaks(then_block);
+                if let Some(body) = else_block { bind_switch_breaks(body); }
+            }
+            Try { body, catches, finally_block, .. } => {
+                bind_switch_breaks(body);
+                for catch in catches { bind_switch_breaks(&mut catch.body); }
+                if let Some(body) = finally_block { bind_switch_breaks(body); }
+            }
+            _ => {}
         }
     }
 }

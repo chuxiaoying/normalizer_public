@@ -1,0 +1,6 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/SwitchMode.java#SwitchMode.classify, returns: number}
+  P: {parameters: {}}
+  R: "12"
