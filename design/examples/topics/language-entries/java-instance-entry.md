@@ -72,7 +72,7 @@ R: fee + value
 
 ### 入口使用已经装配好的内部依赖
 
-[第四章的 Beans 装配](../../../chapters/04-AI救赎.md#把隐藏的执行过程写出来)提供两条入口。经 `Beans.QUOTE_CONTROLLER.quote(units)` 时，调用发生在静态块通过 `setPrice(PRICE)` 绑定的那个普通源码对象上；直接选 `Beans.PRICE.quote(units)` 时，使用同一个静态根。两者按原方法体计算 `units * 2`，不把 `PRICE` 变成入口参数、外部回执或本次新分配的对象。换成局部别名不改变绑定，改方法体为乘 3 则结果确实变成乘 3。若服务的运行时代码读一次时钟，E 恰当地记录这次读取，不把之前的装配写入算为本次 S。
+[第四章的 Beans 装配](../../../chapters/04-AI救赎.md#容器配置决定接收实例)提供两条入口。经 `Beans.QUOTE_CONTROLLER.quote(units)` 时，调用发生在静态块通过 `setPrice(PRICE)` 绑定的那个普通源码对象上；直接选 `Beans.PRICE.quote(units)` 时，使用同一个静态根。两者按原方法体计算 `units * 2`，不把 `PRICE` 变成入口参数、外部回执或本次新分配的对象。换成局部别名不改变绑定，改方法体为乘 3 则结果确实变成乘 3。若服务的运行时代码读一次时钟，E 恰当地记录这次读取，不把之前的装配写入算为本次 S。
 
 把装配留在 `app.Beans`，让控制器和服务位于 `steps`，也不需要删包名或把实例调用改成静态调用。通过公开类型、可访问的构造器及公开的装配方法保留同一装配关系，入口是 `src/app/Beans.java#app.Beans.QUOTE_CONTROLLER.quote`，R 仍是 `units * 2`。把隐式的无参构造器显式写成空的公开构造器，不改变装配或 PERS；类型公开却不代表成员也公开，把构造器、setter 或入口方法改成私有后，不能从另一个包调用。
 

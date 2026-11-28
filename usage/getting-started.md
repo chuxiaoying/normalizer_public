@@ -79,19 +79,20 @@ implementation/tools/normalizer scenario frontend-vo-consumption "$consumer" \
 
 ## 4. 辨认失败
 
-在运行第 1 节的同一个终端里，使用刚创建的 `java_project`，把入口换成一个不存在的方法。预期是非零退出、标准错误有诊断、标准输出没有 PERS：
+在运行第 1 节的同一个终端里，使用刚创建的 `java_project`，把入口换成一个不存在的方法，将输出保存到分析工程外的临时目录。预期是非零退出、标准错误有诊断、标准输出没有 PERS：
 
 ```sh
+run_output=$(mktemp -d)
 if implementation/tools/normalizer source "$java_project" \
      'src/HelloWorld.java#HelloWorld.missing' \
-     > "$java_project/pers.yaml" 2> "$java_project/diagnostic.log"; then
-  printf '意外成功：请查看 %s\n' "$java_project/pers.yaml" >&2
+     > "$run_output/pers.yaml" 2> "$run_output/diagnostic.log"; then
+  printf '意外成功：请查看 %s\n' "$run_output/pers.yaml" >&2
   false
 else
   status=$?
   printf '退出码：%s\n' "$status"
-  cat "$java_project/diagnostic.log" >&2
-  test ! -s "$java_project/pers.yaml" && grep -F '[NORM-ENTRY]' "$java_project/diagnostic.log" >/dev/null
+  cat "$run_output/diagnostic.log" >&2
+  test ! -s "$run_output/pers.yaml" && grep -F '[NORM-ENTRY]' "$run_output/diagnostic.log" >/dev/null
 fi
 ```
 
