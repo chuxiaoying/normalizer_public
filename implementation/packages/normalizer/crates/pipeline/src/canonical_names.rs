@@ -44,7 +44,8 @@ impl math::SortContext for ScopedValueKeys<'_> {
     fn heap_binding_identity(&self, id: i64) -> Option<&math::HeapBindingIdentity> { self.base.heap_binding_identity(id) }
     fn observation_identities(&self) -> Option<&BTreeMap<u64, math::ObservationIdentity>> { self.base.observation_identities() }
     fn temporal_aliases(&self) -> Option<&BTreeMap<u64, usize>> { self.base.temporal_aliases() }
-    fn total_failure_classes(&self, receipt: u64) -> Option<Vec<&str>> { self.base.total_failure_classes(receipt) }
+    // Scoped formatting has no completion partition; settled execution
+    // supplies those facts directly through CanonicalNames.
     fn case_arm_keys(&self, expression: &math::Expr) -> Option<&math::CaseArmKeys> { self.cases.get(expression) }
     fn has_case_arm_keys(&self) -> bool { !self.cases.is_empty() }
     fn choice_slots(&self) -> Option<&BTreeMap<u64, usize>> { (!self.slots.is_empty()).then_some(self.slots) }

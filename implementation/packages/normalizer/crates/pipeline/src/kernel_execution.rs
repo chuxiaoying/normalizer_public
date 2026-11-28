@@ -624,7 +624,8 @@ impl<'a> Engine<'a> {
                     initializer: Some(expr),
                     ..
                 } => {
-                    need(!env.contains_key(name), "duplicate local")?;
+                    // Source admission has already checked the Java lexical
+                    // declaration space, including parameters and enclosing locals.
                     if crate::normalized::host_collection_allocation(java_type, expr) {
                         crate::preprocess::out_of_source(self.selected_entry.id, "java.util.ArrayList.<init>");
                     }
