@@ -729,6 +729,22 @@ impl<'a> Parser<'a> {
         if let Some(lambda) = self.parse_local_lambda()? {
             return Ok(Some(lambda));
         }
+        let start = self.pos;
+        if let Some(receiver) = self.read_ident() {
+            self.skip_ws();
+            if self.starts_with("::") {
+                self.pos += 2;
+                let member = self.read_ident().ok_or_else(|| {
+                    self.err("[JAVA-METHOD-REFERENCE] expected an instance method name")
+                })?;
+                return Ok(Some(JavaExpr::LocalBoundMethodReference {
+                    receiver,
+                    member,
+                }));
+            }
+        }
+        self.pos = start;
+
         self.parse_initializer_expr(ty).map(Some)
     }
 

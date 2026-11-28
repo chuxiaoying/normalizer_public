@@ -433,7 +433,7 @@ impl Names<'_> {
     fn expr(&self, value: &mut JavaExpr, types: &BTreeSet<String>, locals: &BTreeSet<String>) {
         use JavaExpr::*;
         match value {
-            Lit(_) | Ident(_) => {}
+            Lit(_) | Ident(_) | LocalBoundMethodReference { .. } => {}
             LocalLambda { parameters, value } => {
                 let mut declared = locals.clone();
                 declared.extend(parameters.iter().cloned());

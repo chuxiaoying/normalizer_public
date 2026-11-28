@@ -79,6 +79,8 @@ class Quote {
 - `unusedLambda` 只建立函数值，未调用函数体，正常返回 7。
 - `invokedLambda` 在调用时执行函数体，才抛出同一种异常。
 
+若创建绑定引用时接收者非空，随后给原局部变量重新赋值，调用仍使用创建时取得的对象。绑定的是身份，不是字段快照，对原对象的后续写入仍然可见。若创建的那条路径未执行，就不会发生接收者检查；若创建时失败，后续调用的实参也不会被求值。
+
 这三个入口都没有额外的 P、E 或 S；出现异常的入口没有正常 R。按 [方法引用的求值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.13.3)和 [Lambda 的求值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.27.4)，不能把两种写法当成等价，也不以分别创建的 Lambda 是否引用同一对象作为断言。
 
 

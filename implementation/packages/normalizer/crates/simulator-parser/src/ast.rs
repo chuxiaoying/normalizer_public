@@ -495,6 +495,8 @@ pub enum JavaExpr {
         parameters: Vec<String>,
         value: Box<JavaExpr>,
     },
+    /// A source-only method reference capturing its receiver at creation.
+    LocalBoundMethodReference { receiver: String, member: String },
     /// 字面量
     Lit(JavaLit),
 

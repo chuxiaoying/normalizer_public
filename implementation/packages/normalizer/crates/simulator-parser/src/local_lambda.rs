@@ -140,7 +140,9 @@ fn lower(
         body,
         &mut |expr| {
             match expr {
-                JavaExpr::LocalLambda { .. } => found = true,
+                JavaExpr::LocalLambda { .. } | JavaExpr::LocalBoundMethodReference { .. } => {
+                    found = true
+                }
                 JavaExpr::InstanceOf {
                     binding: Some(name),
                     ..
@@ -198,6 +200,96 @@ fn lower(
     let mut callables = Callables::new();
     let mut lowered = Vec::with_capacity(body.len());
     for mut stmt in std::mem::take(body) {
+        if let JavaStatement::VarDecl {
+            java_type: JavaType::Class(target),
+            name,
+            initializer: Some(JavaExpr::LocalBoundMethodReference { receiver, member }),
+            ..
+        } = &stmt
+        {
+            if declarations.get(name) != Some(&1) || writes.contains(name) {
+                return Err(error("local closure may not be shadowed or rebound"));
+            }
+            if declarations.get(receiver) != Some(&1) {
+                return Err(error(
+                    "method reference receiver needs a unique lexical binding",
+                ));
+            }
+            let sam = interfaces.get(target).ok_or_else(|| {
+                error("local method reference target must be a source-declared scalar SAM")
+            })?;
+            let Some(receiver_type @ JavaType::Class(owner)) = known.get(receiver) else {
+                return Err(error(
+                    "method reference needs an initialized source-class receiver",
+                ));
+            };
+            let member_signature = source_members
+                .get(&(owner.clone(), member.clone(), sam.params.len()))
+                .ok_or_else(|| {
+                    error("method reference needs a unique closed instance declaration")
+                })?;
+            if member_signature.package != caller_package
+                || member_signature.returns != sam.return_type
+                || !member_signature
+                    .parameters
+                    .iter()
+                    .eq(sam.params.iter().map(|(ty, _)| ty))
+            {
+                return Err(error(
+                    "method reference needs a visible exact scalar signature",
+                ));
+            }
+
+            // Bound references acquire a receiver once on this path. Unlike
+            // a lambda dereference, null fails even when the SAM never runs.
+            let snapshot = format!("<bound:{}>", helpers.len());
+            lowered.push(JavaStatement::VarDecl {
+                java_type: receiver_type.clone(),
+                name: snapshot.clone(),
+                initializer: Some(JavaExpr::Ident(receiver.clone())),
+                is_final: true,
+            });
+            lowered.push(JavaStatement::If {
+                cond: JavaExpr::BinOp {
+                    op: JavaBinOp::Eq,
+                    left: Box::new(JavaExpr::Ident(snapshot.clone())),
+                    right: Box::new(JavaExpr::Lit(JavaLit::Null)),
+                },
+                then_block: vec![JavaStatement::Throw(JavaExpr::New {
+                    java_type: JavaType::Class("java.lang.NullPointerException".into()),
+                    args: Vec::new(),
+                })],
+                else_block: None,
+            });
+            let helper = format!("<lambda:{}>", helpers.len());
+            let mut parameters = sam.params.clone();
+            let args = parameters
+                .iter()
+                .map(|(_, name)| JavaExpr::Ident(name.clone()))
+                .collect();
+            parameters.push((receiver_type.clone(), snapshot.clone()));
+            helpers.push(make_helper(
+                sam,
+                &helper,
+                parameters,
+                JavaExpr::MethodCall {
+                    target: Some(Box::new(JavaExpr::Ident(snapshot.clone()))),
+                    method: member.clone(),
+                    args,
+                },
+            ));
+            local_names.insert(name.clone());
+            callables.insert(
+                name.clone(),
+                Callable {
+                    member: sam.name.clone(),
+                    helper,
+                    arity: sam.params.len(),
+                    captured: vec![snapshot],
+                },
+            );
+            continue;
+        }
         let lambda = match &stmt {
             JavaStatement::VarDecl {
                 java_type,
@@ -257,14 +349,7 @@ fn lower(
             }
             // Angle brackets and colon cannot appear in a source identifier.
             let helper = format!("<lambda:{}>", helpers.len());
-            let mut method = sam.clone();
-            method.name = helper.clone();
-            method.params = helper_params;
-            method.is_static = true;
-            method.is_public = false;
-            method.is_private = true;
-            method.body = Some(vec![JavaStatement::Return(Some(value.clone()))]);
-            helpers.push(method);
+            helpers.push(make_helper(sam, &helper, helper_params, value.clone()));
             local_names.insert(name.clone());
             callables.insert(
                 name.clone(),
@@ -298,6 +383,22 @@ fn lower(
     }
     *body = lowered;
     Ok(())
+}
+
+fn make_helper(
+    sam: &JavaMethod,
+    name: &str,
+    params: Vec<(JavaType, String)>,
+    value: JavaExpr,
+) -> JavaMethod {
+    let mut method = sam.clone();
+    method.name = name.to_owned();
+    method.params = params;
+    method.is_static = true;
+    method.is_public = false;
+    method.is_private = true;
+    method.body = Some(vec![JavaStatement::Return(Some(value))]);
+    method
 }
 
 /// Keep the assignment at its original execution point. A blank declaration
@@ -517,6 +618,11 @@ fn rewrite(expr: &mut JavaExpr, callables: &Callables) -> Result<(), String> {
                 "local lambda must be a direct method-body declaration initializer",
             ))
         }
+        LocalBoundMethodReference { .. } => {
+            return Err(error(
+                "bound method reference must be a direct method-body declaration initializer",
+            ))
+        }
         Ident(name) if callables.contains_key(name) => {
             return Err(error("local closures may only be invoked directly"))
         }
@@ -675,7 +781,7 @@ fn walk_expr(
     use JavaExpr::*;
     visit(expr)?;
     match expr {
-        Lit(_) | Ident(_) => {}
+        Lit(_) | Ident(_) | LocalBoundMethodReference { .. } => {}
         LocalLambda { value, .. }
         | FieldAccess { target: value, .. }
         | UnaryOp { operand: value, .. }

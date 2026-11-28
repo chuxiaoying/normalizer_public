@@ -297,9 +297,14 @@ families:
         focus: 静态、未绑定接收者的方法引用，以及构造器引用
         gap: review
       bound-method-reference-acquisition:
-        focus: 创建绑定方法引用时立即取得并校验接收者，即使后续从不调用
+        focus: 绑定局部引用时立即检查接收者，调用保留取得的对象身份，即使原变量重绑
         seed: java-closed-lambda
-        gap: implementation
+        evidence:
+          - [Quote.run, bound-reference-checks-null-without-invocation, pers]
+          - [Quote.run, bound-reference-checks-null-before-later-call-arguments, pers]
+          - [Quote.run, bound-reference-checks-null-only-on-its-creation-path, pers]
+          - [Quote.run, bound-reference-keeps-acquired-receiver-after-rebinding, pers]
+          - [Quote.run, unused-bound-reference-still-needs-a-valid-member, reject]
       nested-receivers:
         focus: 内部类接收者、限定 this 和显式父类调用
         gap: review
