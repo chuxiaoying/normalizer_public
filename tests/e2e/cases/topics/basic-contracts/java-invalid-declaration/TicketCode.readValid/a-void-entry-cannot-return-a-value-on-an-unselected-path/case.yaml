@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - 'void completion cannot return a value'

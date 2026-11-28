@@ -58,6 +58,10 @@ R: value + 1
 
 **PERS 验收要点**：E 记录入口已有状态的来源，P 只记录调用输入。状态与参数的职责由标记和来源合同决定，不靠 `this` 的语法形式推断。把只读入口改成先执行 `this.value = this.value + 1` 再返回 `this.value` 时，E 仍记录入口的旧状态，S 恰有一次写入，R 读到刚写入的值；写入的依据是原字段和实际执行，而非接收者拼写。
 
+## 提前返回的路径不写状态
+
+把入口改为 `void incrementIfRequested(boolean apply, int amount)`。当 `!apply` 时立即 `return;`，其余路径执行 `this.value = amount + this.value;`。两条路径都正常完成，所以 R 是 `void`；按 [PERS-02](../../../chapters/07-PERS登场.md#pers-02-动作的时点与顺序)，S 只在 `apply` 为真时写入 `value + amount`，不在另一条路径写回旧值。这里 `value` 是入口快照，`amount` 是参数；两者的类型和结构相同时，先按[绑定身份](../../../chapters/08-统一定形.md#cf-02-共享结构与顺序)比较来源类别，再比同类的名字。
+
 ## 两条已取得的状态字段按公开路径排序
 
 ```java

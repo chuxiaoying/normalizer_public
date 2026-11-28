@@ -1,0 +1,16 @@
+entry: src/Counter.java#Beans.ENTRY.incrementIfRequested
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Counter.java#Beans.ENTRY.incrementIfRequested, returns: void}
+  P:
+    parameters:
+      apply: {position: 0, type: bool}
+      amount: {position: 1, type: number}
+  E:
+    value:
+      kind: state
+      source: src/Counter.java#Beans.ENTRY.value
+      type: number
+  S:
+    - write: {target: value, value: 'value + amount', when: apply}
+  R: void
