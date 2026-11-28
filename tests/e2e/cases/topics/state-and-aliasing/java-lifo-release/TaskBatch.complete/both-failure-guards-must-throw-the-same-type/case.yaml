@@ -1,5 +1,0 @@
-entry: src/TaskBatch.java#TaskBatch.complete
-reject:
-  fragments:
-    - "[SOURCE-PARSE-FAILED]"
-    - "[NORM-UNSUPPORTED-LOCAL-IR]"

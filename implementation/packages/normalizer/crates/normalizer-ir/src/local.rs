@@ -169,10 +169,6 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
             return Ok(LocalIr::Decimal(assignment));
         }
     }
-    let mut retired = Tokens { source: tokens.source };
-    if retired.take("fold") || retired.take("reduce") || (retired.take("value") && retired.take(".") && retired.take("length")) {
-        return Err("[NORM-UNSUPPORTED-LOCAL-IR] retired loop control; supply an equivalent relation expression".into());
-    }
     if let Some(source) = tokens.rest().strip_prefix("value")
         .and_then(|tail| tail.trim_start().strip_prefix('.'))
     {
