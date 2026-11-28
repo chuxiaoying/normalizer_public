@@ -1,0 +1,8 @@
+entry: src/Beans.java#Beans.ORDERS.quote
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Beans.java#Beans.ORDERS.quote, returns: number}
+  P:
+    parameters:
+      units: {position: 0, type: number}
+  R: 'units * 2'

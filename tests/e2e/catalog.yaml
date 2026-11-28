@@ -142,6 +142,7 @@ seeds:
   entry-java-instance:
     source:
       - InstanceEntry.INSTANCE.add
+      - Beans.ORDERS.quote
       - app.Beans.QUOTE_CONTROLLER.quote
       - steps.Beans.QUOTE_CONTROLLER.quote
       - steps.Suite.Beans.ENTRY.quote

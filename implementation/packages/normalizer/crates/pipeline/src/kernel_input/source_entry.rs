@@ -27,8 +27,16 @@ pub(crate) struct SourceReceiver {
 #[derive(Clone, Debug)]
 pub(crate) struct AssemblyLink {
     pub(crate) receiver_class: String,
-    pub(crate) target_root: String,
+    pub(crate) object: AssemblyObject,
     pub(crate) target_class: String,
+}
+
+/// One object per real static field or allocation at a constructor argument
+/// position. Equal types do not make two allocation sites the same object.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum AssemblyObject {
+    StaticField(String),
+    ConstructorArgument(usize),
 }
 
 /// The implicit constructor of an ordinary class has no parameters. A
@@ -87,7 +95,8 @@ impl SourceReceiver {
             return Err("static assembly setter needs an exact stateless source dependency".into());
         }
         self.links.entry(receiver.clone()).or_default().insert(name.clone(), AssemblyLink {
-            receiver_class: holder.full_name(), target_root: operand.clone(), target_class: dependency.full_name(),
+            receiver_class: holder.full_name(), object: AssemblyObject::StaticField(operand.clone()),
+            target_class: dependency.full_name(),
         });
         self.startup_setters.insert(key);
         Ok(())
@@ -96,7 +105,9 @@ impl SourceReceiver {
     /// Establish the identity of a pre-existing receiver, not a fresh Java
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
     /// assembly is admitted by this route.
-    fn certify(program: &JavaProgram, caller: &JavaClass, class: &JavaClass, args: &[JavaExpr]) -> Result<()> {
+    fn certify(
+        program: &JavaProgram, caller: &JavaClass, class: &JavaClass, args: &[JavaExpr],
+    ) -> Result<BTreeMap<String, AssemblyLink>> {
         if class.is_interface() || class.supertype().is_some() || !class.static_initializers().is_empty() {
             return Err("unsupported receiver assembly class".into());
         }
@@ -118,6 +129,7 @@ impl SourceReceiver {
             return Err("unsupported or mismatched receiver constructor arguments".into());
         }
         let mut attached_ports = BTreeSet::new();
+        let mut dependencies = BTreeMap::new();
         if let Some(constructor) = constructor {
             if !constructor.throws().is_empty() {
                 return Err("receiver constructor may throw".into());
@@ -139,7 +151,14 @@ impl SourceReceiver {
                     }
                     attached_ports.insert(field.as_str());
                 } else if !crate::normalized::entry_state(class, declaration) {
-                    return Err("receiver constructor writes a field outside its entry contract".into());
+                    let dependency = declaration.annotations().is_empty()
+                        .then(|| allocated_dependency(program, declaration.java_type(), &args[index]))
+                        .flatten().ok_or("receiver constructor writes a field outside its entry contract")?;
+                    dependencies.insert(field.to_owned(), AssemblyLink {
+                        receiver_class: class.full_name(),
+                        object: AssemblyObject::ConstructorArgument(index),
+                        target_class: dependency.full_name(),
+                    });
                 }
             }
         }
@@ -151,7 +170,7 @@ impl SourceReceiver {
         }
         // Executable uses of plain receiver fields are rejected by the
         // scope-aware source gate; an unused declaration need not become E.
-        Ok(())
+        Ok(dependencies)
     }
     fn certify_static_assembly(&mut self, program: &JavaProgram, root: &JavaClass) -> Result<()> {
         self.assembly_fields.insert(self.field.clone());
@@ -231,7 +250,7 @@ fn inert_singleton_target<'a>(program: &'a JavaProgram, owner: &JavaClass, field
     let Some(JavaExpr::New { java_type, args }) = field.initializer() else { return None; };
     if java_type != field.java_type() { return None; }
     let class = program.find_class(target)?;
-    SourceReceiver::certify(program, owner, class, args).ok()?;
+    if !SourceReceiver::certify(program, owner, class, args).ok()?.is_empty() { return None; }
     Some(class)
 }
 
@@ -261,11 +280,17 @@ fn assembly_argument(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bo
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Int(_))) => matches!(name.as_str(), "int" | "long"),
         (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Long(_))) => name == "long",
         (JavaType::Class(name), JavaExpr::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_))) => matches!(name.as_str(), "String" | "java.lang.String"),
-        (JavaType::Class(name), JavaExpr::New { java_type, args }) if ty == java_type && args.is_empty() =>
-            program.find_class(name).is_some_and(|class| class.fields().is_empty())
-                && assembly_allocation(program, ty, arg),
+        (_, JavaExpr::New { .. }) => allocated_dependency(program, ty, arg).is_some(),
         _ => false,
     }
+}
+
+fn allocated_dependency<'a>(program: &'a JavaProgram, declared: &JavaType, arg: &JavaExpr) -> Option<&'a JavaClass> {
+    let JavaExpr::New { java_type: actual @ JavaType::Class(name), .. } = arg else { return None; };
+    let class = program.find_class(name)?;
+    (class.fields().is_empty() && assembly_allocation(program, actual, arg)
+        && (declared == actual || crate::normalized::specialized_interface(program, declared).is_some()
+            && crate::normalized::implements_specialization(class, declared))).then_some(class)
 }
 
 pub(crate) fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {
@@ -342,7 +367,8 @@ impl SourceEntry {
                 owner: root_name.clone(), field: field.name().into(), assembly_fields: BTreeSet::new(),
                 links: BTreeMap::new(), startup_setters: BTreeSet::new(),
             };
-            SourceReceiver::certify(program, class, declaration, args).map_err(|detail| fail(&detail))?;
+            let dependencies = SourceReceiver::certify(program, class, declaration, args).map_err(|detail| fail(&detail))?;
+            if !dependencies.is_empty() { receiver.links.insert(field.name().into(), dependencies); }
             receiver.certify_static_assembly(program, class).map_err(|detail| fail(&detail))?;
             (declaration, Some(receiver))
         } else {

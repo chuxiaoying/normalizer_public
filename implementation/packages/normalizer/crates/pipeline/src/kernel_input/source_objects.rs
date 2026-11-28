@@ -32,7 +32,7 @@ pub(super) struct SourceObjects {
     objects: BTreeMap<i64, (String, Origin)>,
     states: BTreeMap<(String, String), Expr>,
     entry_receiver: Option<i64>,
-    assembly_roots: BTreeMap<String, i64>,
+    assembly_roots: BTreeMap<super::source_entry::AssemblyObject, i64>,
     generic_products: BTreeMap<i64, BTreeMap<String, Value>>,
     borrowed_fields: BTreeMap<(i64, String), i64>,
     pub(super) state_bindings: BTreeMap<u64, String>,
@@ -163,12 +163,12 @@ impl Engine<'_> {
 
     pub(super) fn assembled_dependency(&mut self, owner: &str, name: &str) -> Option<Value> {
         let link = self.source_assembly?.dependency(owner, name)?;
-        let id = if let Some(id) = self.source_objects.assembly_roots.get(&link.target_root) {
+        let id = if let Some(id) = self.source_objects.assembly_roots.get(&link.object) {
             *id
         } else {
             let id = self.heap.new_path_object().id();
             self.source_objects.objects.insert(id, (link.target_class.clone(), Origin::Assembly));
-            self.source_objects.assembly_roots.insert(link.target_root.clone(), id);
+            self.source_objects.assembly_roots.insert(link.object.clone(), id);
             id
         };
         Some(Value::Term(Ty::Ref, b::heap_ref(id)))
@@ -646,8 +646,11 @@ impl Engine<'_> {
             let is_null = self.source_object_null(peer);
             return Ok(if different { b::not(is_null) } else { is_null });
         }
-        if self.source_objects.allocation_owner(&left).is_some()
-            && self.source_objects.allocation_owner(&right).is_some()
+        // Both dispatch owners here denote actual source allocations, either
+        // in this invocation or at statically proved assembly sites. This
+        // says nothing about aliasing with an arbitrary borrowed input.
+        if self.source_objects.dispatch_owner(&left).is_some()
+            && self.source_objects.dispatch_owner(&right).is_some()
         {
             return Ok(b::lit_bool((left == right) != different));
         }

@@ -287,11 +287,11 @@ pub(crate) fn closed_resource_binding<'a>(
 /// business numeric domain and the existing Object carrier remains opaque.
 pub(crate) fn source_layouts(
     program: &JavaProgram,
-    receiver: Option<(&str, &BTreeSet<String>)>,
+    receiver: Option<&crate::kernel_input::SourceReceiver>,
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
     let mut layouts = BTreeMap::new();
     for class in program.classes() {
-        if !class.static_initializers().is_empty() && !receiver.is_some_and(|(owner, _)| owner == class.full_name()) {
+        if !class.static_initializers().is_empty() && !receiver.is_some_and(|receiver| receiver.owner == class.full_name()) {
             return Err(error("NORM-STATIC-INITIALIZER", &class.full_name()));
         }
         if admitted_exception_fields(program, class).is_some() || generic_product::prove(class).is_some() { continue; }
@@ -308,7 +308,8 @@ pub(crate) fn source_layouts(
             if !declared_field_names.insert(field.name()) {
                 return Err(error("NORM-FIELD-DECLARATION", &class.full_name()));
             }
-            if receiver.is_some_and(|(owner, fields)| owner == class.full_name() && fields.contains(field.name())) {
+            if receiver.is_some_and(|receiver| receiver.owner == class.full_name()
+                && receiver.assembly_fields.contains(field.name())) {
                 continue;
             }
             if crate::kernel_input::inert_singleton(program, class, field) {
@@ -318,6 +319,7 @@ pub(crate) fn source_layouts(
                 continue;
             }
             let state = entry_state(class, field);
+            let wired = receiver.is_some_and(|receiver| receiver.dependency(&class.full_name(), field.name()).is_some());
             let annotation_ok = field.annotations().is_empty() || state || source_nullable_field(class, field);
             let initializer_ok = field.initializer().is_none_or(|value| {
                 if state {
@@ -330,7 +332,7 @@ pub(crate) fn source_layouts(
                 }
             });
             if field.is_static()
-                || field.is_final() && !class.is_record()
+                || field.is_final() && !class.is_record() && !wired
                     && !(closed_resource_close(program, class).is_some() && resource_blank_final(class, field))
                 || !initializer_ok || !annotation_ok
             {
@@ -722,7 +724,7 @@ pub(crate) fn validate_with_receiver(
         }
     }
     let exceptions = source_exceptions(program)?;
-    let layouts = source_layouts(program, receiver.map(|r| (r.owner.as_str(), &r.assembly_fields)))?;
+    let layouts = source_layouts(program, receiver)?;
     let ports = source_ports::declarations(program, &exceptions)?;
     if receiver.is_some() {
         external_polling::validate_entry(program, entry, locator.unwrap_or(entry), &ports)?;

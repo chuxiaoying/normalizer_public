@@ -1,0 +1,6 @@
+entry: src/Beans.java#Beans.ORDERS.quote
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-ENTRY]"
+    - 'unsupported or mismatched receiver constructor arguments'
