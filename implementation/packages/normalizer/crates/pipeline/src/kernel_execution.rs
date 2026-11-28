@@ -253,6 +253,24 @@ impl<'a> Engine<'a> {
             );
         }
         match n {
+            Node::UnavailableCall {
+                location,
+                target,
+                returns,
+                operands,
+            } => {
+                let unreachable = || Ok(Value::Term(returns.clone(), b::lit_null()));
+                if path.as_bool() == Some(false) {
+                    return unreachable();
+                }
+                for operand in operands {
+                    self.node(operand, env, path.clone())?;
+                    if self.normal_path(path.clone()).as_bool() == Some(false) {
+                        return unreachable();
+                    }
+                }
+                crate::preprocess::out_of_source(location, target)
+            }
             Node::ReadClock => Ok(self.observe_clock(path)),
             Node::ReadState { path: fields } => self.read_adapter_state(fields, &path),
             Node::ObserveTuple(observation) => {

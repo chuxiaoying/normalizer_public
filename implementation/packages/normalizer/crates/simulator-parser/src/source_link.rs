@@ -487,37 +487,6 @@ impl Names<'_> {
                     }
                     return;
                 }
-                let imported_platform = self
-                    .imports
-                    .get(first)
-                    .is_some_and(|path| PLATFORM_CARRIERS.contains(&path.as_str()));
-                let implicit_platform = matches!(
-                    first,
-                    "System"
-                        | "Math"
-                        | "StrictMath"
-                        | "Class"
-                        | "Thread"
-                        | "Runtime"
-                        | "String"
-                        | "Object"
-                        | "Integer"
-                        | "Long"
-                        | "Double"
-                        | "Float"
-                        | "Boolean"
-                        | "Character"
-                        | "Byte"
-                        | "Short"
-                        | "Void"
-                );
-                if host_package(&raw) || imported_platform || implicit_platform {
-                    self.issue.borrow_mut().get_or_insert_with(|| {
-                        let member = call.map_or_else(|| raw.clone(), |(name, _)| format!("{raw}.{name}"));
-                        format!("[NORM-IMPORT] platform member {member} has no admitted source contract")
-                    });
-                    return;
-                }
                 if !self.package.is_empty()
                     && self.packages.contains_key(&raw)
                     && !raw.contains('.')

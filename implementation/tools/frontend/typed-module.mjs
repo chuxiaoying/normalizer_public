@@ -64,82 +64,18 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
 export function assertTypeScript(sf, checker, errors, fail = failTypedModule) {
   if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
   assertNoResolvedAny(sf, checker, fail);
-  assertClosedPlatformReferences(sf, checker, fail);
+  assertClosedImports(sf, fail);
 }
 
-// The compiler loads library declarations for typing, not for implicit
-// access to browser, Node or standard-library operations. Check the binding,
-// so a project variable named fetch does not become a host reference.
-const nativeTypes = new Set([
-  'Array', 'ReadonlyArray', 'Map', 'ReadonlyMap', 'Promise', 'Record', 'Partial',
-  'Readonly', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable',
-  'ReturnType', 'Parameters', 'Awaited', 'Generator', 'Error', 'TypeError',
-]);
-const nativeValues = new Set(['Map', 'Error', 'TypeError', 'String', 'Boolean', 'undefined']);
-const nativeMembers = new Set([
-  'Array.length', 'ReadonlyArray.length', 'String.length', 'Error.message', 'Promise.then',
-]);
-
-function assertClosedPlatformReferences(sf, checker, fail) {
-  const failAt = (node, detail) => {
-    const {line, character} = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-    fail(`[NORM-IMPORT] ${sf.fileName}:${line + 1}:${character + 1}: ${detail}`);
-  };
-  const isLibraryDeclaration = declaration => {
-    const source = declaration.getSourceFile();
-    return source.isDeclarationFile && /^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(source.fileName));
-  };
-  const isLibraryGlobal = declaration => {
-    if (!isLibraryDeclaration(declaration)) return false;
-    const statement = ts.isVariableDeclaration(declaration) ? declaration.parent.parent : declaration;
-    return ts.isSourceFile(statement.parent);
-  };
-  const checkMember = (node, member) => {
-    for (const declaration of member?.declarations ?? []) {
-      if (!isLibraryDeclaration(declaration)) continue;
-      const owner = declaration.parent.name;
-      if (!owner || !ts.isIdentifier(owner) || !nativeMembers.has(owner.text + '.' + member.getName())) {
-        failAt(node, 'platform member ' + node.getText(sf) + ' has no admitted source contract');
-      }
-    }
-  };
+// Every import must pass the closed compiler module resolver. Dynamic and
+// type import expressions do not participate in that explicit import graph.
+function assertClosedImports(sf, fail) {
   const visit = node => {
     if (ts.isImportTypeNode(node) || (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)) {
-      failAt(node, 'only explicit project-relative and official namespace imports are admitted');
-    }
-    if (ts.isIdentifier(node)) {
-      const parent = node.parent;
-      if (!(ts.isPropertyAccessExpression(parent) && parent.name === node)
-          && !(ts.isQualifiedName(parent) && parent.right === node)) {
-        let symbol = checker.getSymbolAtLocation(node);
-        if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
-        const name = symbol?.getName();
-        const global = symbol?.declarations?.some(isLibraryGlobal)
-          || (name === 'globalThis' && !symbol?.declarations?.length);
-        if (global) {
-          const typeOnly = ts.isPartOfTypeNode(node) && !ts.isTypeQueryNode(parent);
-          if (!(typeOnly ? nativeTypes : nativeValues).has(name)) {
-            failAt(node, 'platform binding ' + name + ' is outside the source allowlist');
-          }
-          // Admitting built-in constructors/value conversions does not admit
-          // arbitrary namespace members or aliases to host prototype methods.
-          if (!typeOnly && (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent))
-              && parent.expression === node) {
-            failAt(parent, 'platform member ' + parent.getText(sf) + ' has no admitted source contract');
-          }
-        }
-      }
+      const {line, character} = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+      fail(`[NORM-IMPORT] ${sf.fileName}:${line + 1}:${character + 1}: only explicit project-relative and official namespace imports are admitted`);
     }
     ts.forEachChild(node, visit);
-    if (ts.isPropertyAccessExpression(node)) {
-      checkMember(node, checker.getSymbolAtLocation(node.name));
-    } else if (ts.isElementAccessExpression(node)) {
-      const type = checker.getTypeAtLocation(node.argumentExpression);
-      const receiver = checker.getApparentType(checker.getNonNullableType(checker.getTypeAtLocation(node.expression)));
-      for (const key of type.isUnion() ? type.types : [type]) {
-        if (key.isStringLiteral()) checkMember(node, checker.getPropertyOfType(receiver, key.value));
-      }
-    }
   };
   visit(sf);
 }

@@ -127,6 +127,11 @@ function namedParameters(parameters) {
   return {names};
 }
 
+function libraryDeclaration(declaration) {
+  const file = declaration?.getSourceFile();
+  return file?.isDeclarationFile && isCompilerLibrary(file.fileName, dirname(file.fileName));
+}
+
 function leadingParameterCall(fn, params, checker) {
   const first = fn.body.statements[0];
   if (!first || !checker) return;
@@ -140,6 +145,8 @@ function leadingParameterCall(fn, params, checker) {
   const awaited = ts.isAwaitExpression(expression);
   const call = awaited ? unwrap(expression.expression) : expression;
   if (!ts.isCallExpression(call) || call.arguments.length) return;
+  if (!awaited && ts.isReturnStatement(first) && fn.body.statements.length === 1
+      && libraryDeclaration(checker.getResolvedSignature(call)?.getDeclaration())) return;
   const callee = unwrap(call.expression);
   if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.name)) return;
   const receiver = unwrap(callee.expression);
@@ -351,7 +358,37 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
   const lowerCall = (node, lower) => {
     const official = lowerOfficial?.(node, lower);
     if (official !== undefined) return official;
-    if (!linked || !ts.isCallExpression(node)) return;
+    if (!ts.isCallExpression(node)) return;
+    if (!linked && bindings && !node.questionDotToken && !node.arguments.some(ts.isSpreadElement)) {
+      const callee = unwrap(node.expression);
+      const prop = ts.isPropertyAccessExpression(callee) ? callee.name
+        : ts.isElementAccessExpression(callee) && ts.isStringLiteral(callee.argumentExpression)
+          ? callee.argumentExpression : undefined;
+      const target = prop && callee.expression;
+      const signature = (target || ts.isIdentifier(callee)) && bindings.getResolvedSignature(node);
+      const declaration = signature?.getDeclaration();
+      // Only a real compiler-library declaration without a body. Do not
+      // confuse a project method with an unavailable host operation.
+      if (libraryDeclaration(declaration)) {
+        const tsType = bindings.getTypeAtLocation(node);
+        const type = tsType.flags & ts.TypeFlags.StringLike ? 'text'
+          : tsType.flags & ts.TypeFlags.NumberLike ? 'number'
+          : tsType.flags & ts.TypeFlags.BooleanLike ? 'bool' : undefined;
+        // Evaluating a primitive receiver is part of evaluation order.
+        // A compiler global namespace is a binding, not a receiver value.
+        const receiver = target && unwrap(target);
+        const owner = receiver && ts.isIdentifier(receiver) && bindings.getSymbolAtLocation(receiver);
+        const global = owner?.declarations?.some(decl =>
+          ts.isVariableDeclaration(decl) && ts.isSourceFile(decl.parent.parent.parent)
+          && libraryDeclaration(decl));
+        if (type) {
+          const at = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          return {op: 'unavailable-call', type, location: `${file}:${at.line + 1}:${at.character + 1}`,
+            target: callee.getText(sf), operands: [...(!receiver || global ? [] : [lower(receiver)]), ...node.arguments.map(lower)]};
+        }
+      }
+    }
+    if (!linked) return;
     const bound = !node.questionDotToken && !node.typeArguments?.length && linked.helper(unwrap(node.expression));
     if (!bound) fail('linked call has no closed project function: ' + node.expression.getText());
     return {op: 'linked-call', ...bound, args: node.arguments.map(lower)};
@@ -367,6 +404,13 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
   }
   function expression(expr, lexical = names, entryScope = lexical === names) {
     const evaluate = child => expression(child, lexical, entryScope);
+    if (expr.op === 'unavailable-call') {
+      const operands = expr.operands.map(evaluate);
+      return {type: expr.type, node: internal('source.unavailable_call', {
+        location: expr.location, target: expr.target, returns: expr.type === 'text' ? 'text?' : expr.type,
+        operands: operands.map(value => value.node),
+      })};
+    }
     if (expr.op === 'linked-call') {
       const {declaration, origin} = expr;
       const label = origin.name + '#' + declaration.name?.text;

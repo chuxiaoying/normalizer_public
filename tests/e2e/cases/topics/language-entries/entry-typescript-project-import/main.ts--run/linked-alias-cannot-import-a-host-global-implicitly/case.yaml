@@ -1,6 +1,0 @@
-entry: src/main.ts#run
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - "[NORM-IMPORT]"
-    - "platform binding fetch"

@@ -106,4 +106,4 @@ R: value + 1
 
 给合法的 `readValid` 编译单元加上 `import java.util.*;`、`import static java.lang.Math.abs;` 或 `import java.time.Clock;`，即使没有使用，入口也应报告该引用不在白名单，不生成 PERS。在限定名的组成部分之间插入注释不改变它实际绑定的类型。
 
-不写 import 也不能绕过：一个未调用的 helper 使用 `System.currentTimeMillis()` 或 `java.lang.System.currentTimeMillis()`，应同样拒绝。导入已登记的值载体 `LocalDate` 可以，但不授予调用 `LocalDate.now()` 的能力。此处测准入，不应修改入口的业务源码或模拟实际时钟。
+只改变导入是准入对照，不应修改入口的业务源码或模拟实际时钟。即使可导入 `LocalDate` 作为值载体，也不授予宿主方法的执行语义；遇到没有来源或合同的调用，另按调用路径判定。

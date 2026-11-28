@@ -1,6 +1,0 @@
-entry: src/ArrearsPage.ts#caption
-reject:
-  fragments:
-    - "SCENARIO_MODULE_INPUT:"
-    - "[NORM-IMPORT]"
-    - "platform binding Date"

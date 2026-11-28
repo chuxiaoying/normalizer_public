@@ -356,6 +356,14 @@ enum Node {
     ThrowUnknownInput {
         name: String,
     },
+    #[serde(rename = "source.unavailable_call")]
+    UnavailableCall {
+        location: String,
+        target: String,
+        #[serde(deserialize_with = "read_action_return")]
+        returns: Ty,
+        operands: Vec<Node>,
+    },
     #[serde(rename = "source.clock")]
     ReadClock,
     #[serde(rename = "source.state_value")]
