@@ -65,8 +65,8 @@ impl SourceReceiver {
         let holder = program.find_class(owner).ok_or("missing static assembly setter owner")?;
         let dependency = program.find_class(target).ok_or("missing statically assembled dependency")?;
         let (key, setter) = crate::normalized::named_method_for_arity(holder, method, 1)
-            .filter(|(_, setter)| !setter.is_static() && !setter.is_private()
-                && (root.package() == holder.package() || setter.is_public())
+            .filter(|(_, setter)| !setter.is_static()
+                && crate::normalized::instance_member_visible(root, holder, setter)
                 && setter.throws().is_empty() && setter.annotations().is_empty()
                 && crate::normalized::plain_source_data_method(holder, setter))
             .ok_or("static assembly setter must resolve to one visible direct field assignment")?;
@@ -234,7 +234,7 @@ fn inert_singleton_target<'a>(program: &'a JavaProgram, owner: &JavaClass, field
 
 /// Find a statically assembled receiver invoked inside ordinary Java code.
 pub(crate) fn inert_instance_method<'a>(
-    program: &'a JavaProgram, owner: &JavaClass, field: &str, name: &str, arity: usize,
+    program: &'a JavaProgram, caller: &JavaClass, owner: &JavaClass, field: &str, name: &str, arity: usize,
 ) -> Option<(&'a JavaClass, &'a simulator_parser::JavaMethod, String)> {
     let field = owner.fields().iter().find(|decl| decl.name() == field)?;
     let class = inert_singleton_target(program, owner, field)?;
@@ -248,7 +248,7 @@ pub(crate) fn inert_instance_method<'a>(
         m.name() == name && m.arity() == arity && !m.is_constructor());
     let (index, method) = candidates.next()?;
     (candidates.next().is_none() && !method.is_static() && method.body().is_some()
-        && (class.package() == owner.package() || method.is_public())).then(||
+        && crate::normalized::instance_member_visible(caller, class, method)).then(||
         (class, method, crate::normalized::method_key(class, index, method)))
 }
 
@@ -358,8 +358,11 @@ impl SourceEntry {
                 "NORM-OVERLOAD", invocation, "ambiguous entry method", "入口需要显式的 Java 源码参数类型签名。",
             ));
         }
-        if receiver.is_some() && target_class.package() != class.package() && !method.is_public() {
-            return Err(fail("cross-package receiver entry must name a public method"));
+        if receiver.is_some() && !crate::normalized::instance_member_visible(class, target_class, method) {
+            let reason = if target_class.package() == class.package() {
+                "private receiver entry is not accessible from the assembly class"
+            } else { "cross-package receiver entry must name a public method" };
+            return Err(fail(reason));
         }
 
         // The caller may include a redundant signature. PERS identifies

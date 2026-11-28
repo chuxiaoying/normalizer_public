@@ -1,0 +1,6 @@
+entry: src/steps/Beans.java#steps.Beans.QUOTE_CONTROLLER.quote
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-ENTRY]"
+    - 'private receiver entry is not accessible from the assembly class'

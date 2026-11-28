@@ -1284,9 +1284,9 @@ impl<'a> Engine<'a> {
                         },
                         _ => None,
                     };
-                    if let Some((root, field)) = candidate {
+                    if let (Some(caller), Some((root, field))) = (self.program.find_class(caller), candidate) {
                         if let Some((owner, declaration, key)) =
-                            super::inert_instance_method(self.program, root, field, method, args.len())
+                            super::inert_instance_method(self.program, caller, root, field, method, args.len())
                         {
                             let source = Path::new(root.source_file());
                             let path_from_root = source.strip_prefix(self.source_root.unwrap())

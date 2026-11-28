@@ -679,9 +679,16 @@ pub(crate) fn assembled_instance_method<'a>(
     caller: &JavaClass, class: &'a JavaClass, member: &str, arity: usize,
 ) -> Option<(String, &'a JavaMethod)> {
     named_method_for_arity(class, member, arity).filter(|(_, method)| {
-        !method.is_static() && !method.is_private() && method.body().is_some()
-            && (caller.package() == class.package() || method.is_public() && class.is_public_top_level())
+        !method.is_static() && method.body().is_some() && instance_member_visible(caller, class, method)
     })
+}
+
+pub(crate) fn instance_member_visible(caller: &JavaClass, class: &JavaClass, method: &JavaMethod) -> bool {
+    if caller.package() != class.package() {
+        return class.is_public_top_level() && method.is_public() && !method.is_private();
+    }
+    !method.is_private()
+        || caller.simple_name().split('.').next() == class.simple_name().split('.').next()
 }
 
 pub(crate) fn constructor_for_arity(class: &JavaClass, arity: usize) -> Option<(String, &JavaMethod)> {
@@ -830,7 +837,7 @@ pub(crate) fn validate_with_receiver(
                 SourceCall::Method { owner, member } => (owner, member),
                 SourceCall::StaticReceiver { owner: root, field, member } => {
                     let target = program.find_class(&root)
-                        .and_then(|root| crate::kernel_input::inert_instance_method(program, root, &field, &member, arity))
+                        .and_then(|root| crate::kernel_input::inert_instance_method(program, owner, root, &field, &member, arity))
                         .ok_or_else(|| error("NORM-UNBOUND-CALL", &format!("{id} -> {root}.{field}.{member}/{arity}")))?;
                     targets.push(target.2);
                     continue;
@@ -895,7 +902,7 @@ pub(crate) fn validate_with_receiver(
                     targets.push(key);
                     continue;
                 }
-                if let Some((_, _, key)) = crate::kernel_input::inert_instance_method(program, owner, &target_owner, &target_member, arity) {
+                if let Some((_, _, key)) = crate::kernel_input::inert_instance_method(program, owner, owner, &target_owner, &target_member, arity) {
                     targets.push(key);
                     continue;
                 }

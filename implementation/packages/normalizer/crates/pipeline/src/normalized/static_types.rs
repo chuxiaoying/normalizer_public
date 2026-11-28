@@ -180,7 +180,7 @@ impl Admission<'_> {
             };
             if let Some((root, field)) = root {
                 if let Some((_, method, _)) = crate::kernel_input::inert_instance_method(
-                    self.program, root, field, method, arity,
+                    self.program, self.class, root, field, method, arity,
                 ) { return Some(method); }
             }
         }

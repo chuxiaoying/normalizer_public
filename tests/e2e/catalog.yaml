@@ -143,6 +143,8 @@ seeds:
     source:
       - InstanceEntry.INSTANCE.add
       - app.Beans.QUOTE_CONTROLLER.quote
+      - steps.Beans.QUOTE_CONTROLLER.quote
+      - steps.Suite.Beans.ENTRY.quote
   java-loop-bounded-retry:
     source:
       - ScoreService.INSTANCE.fetchScore

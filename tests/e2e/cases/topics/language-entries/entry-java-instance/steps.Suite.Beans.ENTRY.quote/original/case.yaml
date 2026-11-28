@@ -1,0 +1,8 @@
+entry: src/steps/Suite.java#steps.Suite.Beans.ENTRY.quote
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/steps/Suite.java#steps.Suite.Beans.ENTRY.quote, returns: number}
+  P:
+    parameters:
+      units: {position: 0, type: number}
+  R: units * 2
