@@ -33,7 +33,11 @@
 | `frontend-vo-production` | 看事件或生命周期入口（如 `onLoad`）如何读取环境并写入页面展示状态（VO） | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
 | `frontend-vo-consumption` | 看单个组件属性如何读已有 VO 并返回展示值；准备成同步、导出的无参函数，不分析整次渲染 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
 
+每次命令只交付所选入口的结果。整页的入口选择、VO 辨识和覆盖验收见[前端整页归一化](skills/normalizer-preprocess/SKILL.md#前端整页归一化)。
+
 **当前场景适配限制，不是设计约束：** 生产适配器目前只接收具名的 `async` 导出入口，能处理的等待写法包括直接等待已声明的外部端口。《PERS登场》里的同步生产事件仍是合法设计输入，不能加一个 `async`、把未等待的动作改成等待，或把并发等待改成串行，只为通过当前适配器。如果没有能维持原完成合同和观察结果的表示，就报告工具缺口。
+
+消费适配器能处理标量常量、已有状态字段和受支持的条件选择。实际模板里的复合挂载条件可能被拒绝，例如布尔字段与两个状态比较组成的 `ready && (status === "open" || status === "pending")`。保留原条件、位置和诊断，单独报告已经核实的属性值。
 
 直接可运行的两条完整命令见[新手入门](getting-started.md#3-前端-vo运行生产入口与消费入口)。
 
