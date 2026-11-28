@@ -1,0 +1,37 @@
+tests/README.md
+  s_47ae65fe8e6220::t_5d7202793da562 43
+design/chapters/09-场景归一.md
+  s_47ae65fe8e6220::t_531b819be36735 3,5
+  s_47ae65fe8e6220::t_2b4b9d7f3d757a 1-2,4,6-32,34-76,78-80,82-91,93-112
+  s_47ae65fe8e6220::t_5d7202793da562 33,77,81,92
+AGENTS.md
+  s_47ae65fe8e6220::t_5d7202793da562 5,7
+usage/skills/normalizer-preprocess/SKILL.md
+  s_47ae65fe8e6220::t_5d7202793da562 10
+implementation/docs/principles.md
+  s_47ae65fe8e6220::t_5d7202793da562 3
+README.md
+  s_47ae65fe8e6220::t_5d7202793da562 5,18,25
+design/examples/README.md
+  s_47ae65fe8e6220::t_5d7202793da562 3,18,31,49
+usage/README.md
+  s_47ae65fe8e6220::t_5d7202793da562 9
+design/README.md
+  s_47ae65fe8e6220::t_5d7202793da562 11,13,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "396ac6dac78e237d4b6995f8532d9aac705119dc",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}

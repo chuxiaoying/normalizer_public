@@ -1,0 +1,30 @@
+design/chapters/01-符号执行.md
+  s_47ae65fe8e6220::t_260b2abedd19de 188-193
+design/chapters/02-多重宇宙.md
+  s_47ae65fe8e6220::t_260b2abedd19de 76
+design/chapters/09-场景归一.md
+  s_47ae65fe8e6220::t_5f230a14136a1f 92-93,96
+  s_47ae65fe8e6220::t_260b2abedd19de 89-91,94-95
+design/chapters/06-业务至上.md
+  s_47ae65fe8e6220::t_260b2abedd19de 163-168,170
+design/chapters/03-数学化简.md
+  s_47ae65fe8e6220::t_260b2abedd19de 25-32
+design/chapters/07-PERS登场.md
+  s_47ae65fe8e6220::t_260b2abedd19de 228,230-233,235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f4c1c7b9737f671facbc1cfe8934228348efe209",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}

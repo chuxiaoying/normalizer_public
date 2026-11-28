@@ -1,0 +1,27 @@
+design/chapters/04-AI救赎.md
+  s_47ae65fe8e6220::t_260b2abedd19de 141
+  s_47ae65fe8e6220::t_222aca924143c4 269,473,857
+  s_47ae65fe8e6220::t_db351efe339479 858
+design/chapters/05-关系代数.md
+  s_47ae65fe8e6220::t_86aefb5f5374ef 98,139,231,234-241,243,250-306,487,530-534,546,575,577,579,595,597,599,601
+  s_47ae65fe8e6220::t_55400a3ab8186d 477,502-514,573
+  s_47ae65fe8e6220::t_5f230a14136a1f 489,496,501,515,555
+  s_47ae65fe8e6220::t_50f06c3c0bda4b 126,415-431,476,491,495,497,499-500,516-520,526,528-529,536,538-540,571
+  s_47ae65fe8e6220::t_81ac614768c1e4 488,535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b434817bb65a7afbdae0a4f1edd4734d8868d009",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}

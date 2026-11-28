@@ -1,0 +1,20 @@
+design/chapters/09-场景归一.md
+  s_47ae65fe8e6220::t_1ace2a1683fe49 131
+  s_47ae65fe8e6220::t_7dec1095e88c22 106,108,110,112-114,116,118,120,122-123,125-130,132-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "52668a0bb748e4263d94ae1bdd808be305e1b662",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}
