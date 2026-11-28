@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { closedReceiver } from './module-receiver.mjs';
 import { checkedProjectModules, hasProjectImports } from './module-links.mjs';
-import { definedModuleExport, isLocalExportList, parseSourceModule, lowerExpression, unwrapParens as unwrap } from './ir.mjs';
+import { definedModuleExport, isLocalExportList, parseSourceModule, lowerExpression, textWireValue, unwrapParens as unwrap } from './ir.mjs';
 import { eventContract } from './module-event-project.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
@@ -97,34 +97,43 @@ function mapEntries(node, names, fail) {
   if (!argument || !ts.isArrayLiteralExpression(argument)) {
     fail('readonly Map requires one built-in Map construction with literal entry assembly');
   }
+  const textPair = node => {
+    let entry = unwrap(node);
+    // A const assertion preserves the concrete tuple shape. Other casts
+    // are not proof of a value's shape, type or acquisition.
+    if (ts.isAsExpression(entry) && entry.type.getText() === 'const') entry = unwrap(entry.expression);
+    if (!ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2
+        || !ts.isStringLiteral(entry.elements[0])) return;
+    return [textWireValue(entry.elements[0].text), unwrap(entry.elements[1])];
+  };
   return argument.elements.map(row => {
-    const candidate = ts.isSpreadElement(row) && unwrap(row.expression);
+    if (!ts.isSpreadElement(row)) {
+      const pair = textPair(row);
+      if (!pair || !ts.isStringLiteral(pair[1])) fail('readonly Map unconditional entries must contain literal text');
+      const [key, text] = pair;
+      return {key, source: {kind: 'literal', text: textWireValue(text.text)}};
+    }
+    const candidate = unwrap(row.expression);
     const conditional = candidate && ts.isConditionalExpression(candidate);
     const cond = conditional && unwrap(candidate.condition);
     const operator = cond && ts.isBinaryExpression(cond) && cond.operatorToken.kind;
     const nullFirst = operator === ts.SyntaxKind.EqualsEqualsEqualsToken;
     const empty = conditional && unwrap(nullFirst ? candidate.whenTrue : candidate.whenFalse);
     const present = conditional && unwrap(nullFirst ? candidate.whenFalse : candidate.whenTrue);
-    let entry = present && ts.isArrayLiteralExpression(present) && present.elements.length === 1
-      && unwrap(present.elements[0]);
-    // TS can prove a fresh literal has two readonly slots. Other assertions
-    // are not evidence for the shape or origin of a business value.
-    if (entry && ts.isAsExpression(entry) && entry.type.getText() === 'const') entry = unwrap(entry.expression);
+    const entry = present && ts.isArrayLiteralExpression(present) && present.elements.length === 1
+      && textPair(present.elements[0]);
     if ((!nullFirst && operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken)
-        || !empty || !ts.isArrayLiteralExpression(empty) || empty.elements.length
-        || !entry || !ts.isArrayLiteralExpression(entry) || entry.elements.length !== 2
-        || !ts.isStringLiteral(entry.elements[0])) {
+        || !empty || !ts.isArrayLiteralExpression(empty) || empty.elements.length || !entry) {
       fail('readonly Map requires explicitly null-guarded literal text entries');
     }
     const operands = [unwrap(cond.left), unwrap(cond.right)];
     const nullIndex = operands.findIndex((operand) => operand.kind === ts.SyntaxKind.NullKeyword);
     const subject = operands[1 - nullIndex];
-    const [key, raw] = entry.elements;
-    const value = unwrap(raw);
+    const [key, value] = entry;
     const input = ts.isIdentifier(value) ? names.get(value.text) : undefined;
     if (!subject || !ts.isIdentifier(subject) || !input || value.text !== subject.text || input.type !== 'text?')
       fail('readonly Map requires each null guard to protect the inserted value');
-    return {key: key.text, input: input.name};
+    return {key, source: {kind: 'parameter', name: input.name}};
   });
 }
 

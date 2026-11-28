@@ -262,7 +262,7 @@ pub fn ordered_text_map_entries(expr: &Expr) -> Option<&[Expr]> {
     entries.as_array_lit()
 }
 
-pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'static str> {
+pub fn lifted_ordered_text_map(entries: &[(Expr, Expr)]) -> Result<Expr, &'static str> {
     // Explore the last distinct null decision first, as for source-order
     // insertion. A repeated null test is one decision, not another product
     // axis. A constant null check consumes no decision at all.
@@ -292,14 +292,14 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
     }
 
     fn lift(
-        entries: &[(String, Expr)],
+        entries: &[(Expr, Expr)],
         selectors: &[Presence],
         decisions: &[Expr],
         depth: usize,
         present: u8,
     ) -> Expr {
         let Some(guard) = decisions.get(depth) else {
-            let mut ordered = Vec::<(&str, &Expr)>::new();
+            let mut ordered = Vec::<(&Expr, &Expr)>::new();
             for ((key, value), selector) in entries.iter().zip(selectors) {
                 let include = match selector {
                     Presence::Known(include) => *include,
@@ -307,14 +307,14 @@ pub fn lifted_ordered_text_map(entries: &[(String, Expr)]) -> Result<Expr, &'sta
                 };
                 if !include { continue; }
                 // Map.set replaces a value without moving the original key slot.
-                if let Some((_, acquired)) = ordered.iter_mut().find(|(existing, _)| *existing == key.as_str()) {
+                if let Some((_, acquired)) = ordered.iter_mut().find(|(existing, _)| *existing == key) {
                     *acquired = value;
                 } else {
-                    ordered.push((key.as_str(), value));
+                    ordered.push((key, value));
                 }
             }
             return ordered_text_map(ordered.into_iter().map(|(key, value)|
-                b::array_lit(vec![b::lit_str(key), value.clone()])).collect());
+                b::array_lit(vec![key.clone(), value.clone()])).collect());
         };
         let without = lift(entries, selectors, decisions, depth + 1, present);
         let with = lift(entries, selectors, decisions, depth + 1, present | (1 << depth));

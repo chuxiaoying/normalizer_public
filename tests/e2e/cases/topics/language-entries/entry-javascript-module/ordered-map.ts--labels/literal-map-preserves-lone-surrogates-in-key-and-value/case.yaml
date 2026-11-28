@@ -1,0 +1,6 @@
+entry: src/ordered-map.ts#labels
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/ordered-map.ts#labels, returns: 'map<text,text>'}
+  P: {parameters: {}}
+  R: MAP([["\uD800", "\uDFFF"], ["a", "only"]])

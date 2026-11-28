@@ -1,0 +1,12 @@
+entry: src/ordered-map.ts#labels
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/ordered-map.ts#labels, returns: 'map<text,text>'}
+  P:
+    parameters:
+      replacement: {position: 0, type: 'text?'}
+  R: |-
+    CASE
+      WHEN replacement == null THEN MAP([["a", "old"], ["b", "only"]])
+      ELSE MAP([["a", replacement], ["b", "only"]])
+    END

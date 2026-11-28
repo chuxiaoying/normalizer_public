@@ -208,9 +208,15 @@ impl<'a> Engine<'a> {
                 self.observe_tuple(&observation.tuple, &observation.body, env, path),
             Node::OrderedTextMap { entries } => {
                 let acquired = entries.iter().map(|entry| {
-                    let value = env.get(&entry.input).ok_or_else(|| fail("unbound readonly Map entry"))?;
-                    need(value.ty() == Ty::Text, "readonly Map entry requires an acquired nullable text parameter")?;
-                    Ok((entry.key.clone(), value.scalar()?))
+                    let value = match &entry.source {
+                        OrderedMapSource::Literal { text } => text.to_expression(),
+                        OrderedMapSource::Parameter { name } => {
+                            let value = env.get(name).ok_or_else(|| fail("unbound readonly Map entry"))?;
+                            need(value.ty() == Ty::Text, "readonly Map entry requires an acquired nullable text parameter")?;
+                            value.scalar()?
+                        }
+                    };
+                    Ok((entry.key.to_expression(), value))
                 }).collect::<Result<Vec<_>>>()?;
                 let map = math::domains::composite::lifted_ordered_text_map(&acquired)?;
                 Ok(Value::Term(Ty::OrderedTextMap, map))

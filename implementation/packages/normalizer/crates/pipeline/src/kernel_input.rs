@@ -240,8 +240,15 @@ struct Origin {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct OrderedMapEntry {
-    key: String,
-    input: String,
+    key: WireText,
+    source: OrderedMapSource,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum OrderedMapSource {
+    Literal { text: WireText },
+    Parameter { name: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
