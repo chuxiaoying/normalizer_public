@@ -293,20 +293,36 @@ impl<'a> Parser<'a> {
             }
             Ok(expression)
         } else {
-            let key = match &expression {
-                JavaExpr::Lit(JavaLit::Int(value)) => *value,
-                JavaExpr::Lit(JavaLit::Char(value)) => i32::from(*value),
-                JavaExpr::UnaryOp { op: JavaUnaryOp::Neg, operand } => match operand.as_ref() {
-                    JavaExpr::Lit(JavaLit::Int(value)) => value.checked_neg()
-                        .ok_or_else(|| self.err("[JAVA-SWITCH] case requires an int literal"))?,
-                    _ => return Err(self.err("[JAVA-SWITCH] case requires a signed int literal")),
-                },
-                _ => return Err(self.err("[JAVA-SWITCH] case requires a closed int or char literal or a text literal")),
-            };
+            let key = Self::fold_int_switch_label(&expression).ok_or_else(|| self.err(
+                "[JAVA-SWITCH] case requires a closed int or char constant within the native int range or a text literal"))?;
             if !seen.insert(key) {
                 return Err(self.err("[JAVA-SWITCH] duplicate case label"));
             }
             Ok(JavaExpr::Lit(JavaLit::Int(key)))
+        }
+    }
+
+    // Admit the arithmetic constant forms whose Java int operations
+    // and exact business integer operations agree at every subterm.
+    // Out-of-range subterms are not treated as different case labels.
+    fn fold_int_switch_label(expression: &JavaExpr) -> Option<i32> {
+        use JavaBinOp::{Add, Mul, Sub};
+        match expression {
+            JavaExpr::Lit(JavaLit::Int(value)) => Some(*value),
+            JavaExpr::Lit(JavaLit::Char(value)) => Some(i32::from(*value)),
+            JavaExpr::UnaryOp { op: JavaUnaryOp::Neg, operand } =>
+                Self::fold_int_switch_label(operand)?.checked_neg(),
+            JavaExpr::BinOp { op, left, right } => {
+                let left = Self::fold_int_switch_label(left)?;
+                let right = Self::fold_int_switch_label(right)?;
+                match op {
+                    Add => left.checked_add(right),
+                    Sub => left.checked_sub(right),
+                    Mul => left.checked_mul(right),
+                    _ => None,
+                }
+            }
+            _ => None,
         }
     }
 
