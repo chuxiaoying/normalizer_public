@@ -191,6 +191,7 @@ pub struct JavaMethod {
     pub(crate) is_constructor: bool,
     pub(crate) is_default: bool,
     pub(crate) is_public: bool,
+    pub(crate) is_private: bool,
     pub(crate) is_native: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) body: Option<Vec<JavaStatement>>,

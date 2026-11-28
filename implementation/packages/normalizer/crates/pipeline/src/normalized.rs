@@ -683,6 +683,16 @@ pub(crate) fn validate_with_receiver(
     program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>, locator: Option<&str>,
 ) -> Result<SourceEvidence, String> {
     validate_official_namespace(program)?;
+    // Refuse duplicate declarations before constructing class-keyed layout,
+    // exception or member indexes. An alias collision between distinct
+    // declarations is a different error from defining one owner twice.
+    let mut classes = BTreeSet::new();
+    for class in program.classes() {
+        let name = class.full_name();
+        if !classes.insert(name.clone()) {
+            return Err(error("NORM-DUPLICATE-CLASS", &name));
+        }
+    }
     let exceptions = source_exceptions(program)?;
     let layouts = source_layouts(program, receiver)?;
     let ports = source_ports::declarations(program, &exceptions)?;
@@ -696,13 +706,9 @@ pub(crate) fn validate_with_receiver(
             || specialized_interface(program, ty).is_some()
     };
     let mut methods = BTreeMap::new();
-    let mut classes = BTreeSet::new();
     let mut nullable_entry_parameters = BTreeSet::new();
     for c in program.classes() {
         let name = c.full_name();
-        if !classes.insert(name.clone()) {
-            return Err(error("NORM-DUPLICATE-CLASS", &name));
-        }
         if c.interfaces().iter().any(|interface| {
             if builtin_resource_interface(program, interface) {
                 return closed_resource_close(program, c).is_none();

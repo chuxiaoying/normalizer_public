@@ -646,6 +646,7 @@ fn parse_class_body(
         let mut is_default = false;
         let mut nonpublic_at = None;
         let mut is_public = false;
+        let mut is_private = false;
         let mut native_modifier_conflict = false;
         let mut synchronized_at = None;
         loop {
@@ -654,7 +655,12 @@ fn parse_class_body(
                 is_public = true;
                 continue;
             }
-            if p.eat_keyword("private") || p.eat_keyword("protected") {
+            if p.eat_keyword("private") {
+                is_private = true;
+                nonpublic_at = Some(p.pos);
+                continue;
+            }
+            if p.eat_keyword("protected") {
                 nonpublic_at = Some(p.pos);
                 continue;
             }
@@ -798,6 +804,7 @@ fn parse_class_body(
                     is_constructor: true,
                     is_default: false,
                     is_public,
+                    is_private,
                     is_native: false,
                     annotations: annotations.clone(),
                     body,
@@ -883,6 +890,7 @@ fn parse_class_body(
                 is_constructor: false,
                 is_default,
                 is_public,
+                is_private,
                 is_native,
                 annotations,
                 body,

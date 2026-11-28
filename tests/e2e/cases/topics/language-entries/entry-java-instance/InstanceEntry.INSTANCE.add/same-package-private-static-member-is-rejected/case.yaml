@@ -1,0 +1,5 @@
+entry: src/demo/Entry.java#demo.Entry.run
+reject:
+  fragments:
+    - "[SOURCE-LINK-FAILED]"
+    - private member demo.Tools.value is not accessible from demo.Entry

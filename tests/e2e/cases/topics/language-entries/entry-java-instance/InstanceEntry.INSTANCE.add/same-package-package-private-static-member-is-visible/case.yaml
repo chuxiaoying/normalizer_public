@@ -1,0 +1,8 @@
+entry: src/demo/Entry.java#demo.Entry.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/demo/Entry.java#demo.Entry.run, returns: number}
+  P:
+    parameters:
+      x: {position: 0, type: number}
+  R: x + 1

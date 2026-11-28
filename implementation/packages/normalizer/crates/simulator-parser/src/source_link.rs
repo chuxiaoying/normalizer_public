@@ -7,12 +7,28 @@ impl JavaProgram {
     /// Bind the closed source tree after its compilation units are known.
     /// Adapters that only parse a signature carrier do not use this linker.
     pub fn bind_source_names(&mut self) -> Result<(), String> {
-        if self.classes.iter().all(|class| class.package.is_empty()) { return Ok(()); }
+        let qualify_names = self.classes.iter().any(|class| !class.package.is_empty());
         let declared = self.classes.iter().map(JavaClass::full_name).collect::<BTreeSet<_>>();
         let units = self.classes.iter().map(|class| (class.full_name(), class.source_file.clone()))
             .collect::<BTreeMap<_, _>>();
         let packages = self.classes.iter().map(|class| (class.full_name(), class.package.clone()))
             .collect::<BTreeMap<_, _>>();
+        // A direct qualifier and a unique name/arity can prove a private
+        // selection only when there are no inherited overload candidates.
+        let private_statics = self.classes.iter().filter(|class|
+            class.supertype.is_none() && class.interfaces.is_empty()).map(|class| {
+            let methods = class.methods.iter().filter(|method|
+                method.is_private && method.is_static && !method.is_constructor
+                && class.methods.iter().filter(|candidate| candidate.name == method.name
+                    && candidate.params.len() == method.params.len()).count() == 1
+            ).map(|method| (method.name.clone(), method.params.len())).collect::<BTreeSet<_>>();
+            (class.full_name(), methods)
+        }).collect::<BTreeMap<_, _>>();
+        let nests = self.classes.iter().map(|class| {
+            let top = class.simple_name.split('.').next().unwrap_or(&class.simple_name);
+            let nest = if class.package.is_empty() { top.to_owned() } else { format!("{}.{top}", class.package) };
+            (class.full_name(), nest)
+        }).collect::<BTreeMap<_, _>>();
         let cross_package_statics = self.classes.iter().filter(|class| class.is_public_top_level())
             .map(|class| {
                 let methods = class.methods.iter().filter(|method|
@@ -30,11 +46,11 @@ impl JavaProgram {
             let mut imports = BTreeMap::<String, String>::new();
             for import in &class.imports {
                 let Some((_, short)) = import.rsplit_once('.') else { continue; };
-                if imports.get(short).is_some_and(|prior| prior != import)
+                if qualify_names && (imports.get(short).is_some_and(|prior| prior != import)
                     || units.iter().any(|(defined, file)| file == &class.source_file
                         && defined.rsplit('.').next() == Some(short) && defined != import
                         && defined.strip_prefix(&class.package)
-                            .unwrap_or(defined).trim_start_matches('.').split('.').count() == 1)
+                            .unwrap_or(defined).trim_start_matches('.').split('.').count() == 1))
                 {
                     return Err(format!("{}: conflicting source type import for {short}", class.source_file));
                 }
@@ -42,6 +58,7 @@ impl JavaProgram {
             }
             let issue = RefCell::new(None);
             let scope = Names { owner: &owner, package: &class.package, declared: &declared, imports: &imports, packages: &packages,
+                qualify_names, private_statics: &private_statics, nests: &nests,
                 cross_package_statics: &cross_package_statics, issue: &issue };
             let types = class.type_parameters.iter().cloned().collect::<BTreeSet<_>>();
             let member_names = class.fields.iter().map(|field| field.name.clone()).collect::<BTreeSet<_>>();
@@ -72,8 +89,8 @@ impl JavaProgram {
                 for exception in &mut method.throws { scope.bind_name(exception, &method_types); }
                 if let Some(body) = &mut method.body { scope.block(body, &method_types, &mut values); }
             }
-            if let Some(foreign) = issue.into_inner() {
-                return Err(format!("{}: cross-package access to {foreign} requires a member access proof", class.source_file));
+            if let Some(message) = issue.into_inner() {
+                return Err(format!("{}: {message}", class.source_file));
             }
         }
         Ok(())
@@ -86,6 +103,9 @@ struct Names<'a> {
     declared: &'a BTreeSet<String>,
     imports: &'a BTreeMap<String, String>,
     packages: &'a BTreeMap<String, String>,
+    qualify_names: bool,
+    private_statics: &'a BTreeMap<String, BTreeSet<(String, usize)>>,
+    nests: &'a BTreeMap<String, String>,
     cross_package_statics: &'a BTreeMap<String, BTreeSet<(String, usize)>>,
     issue: &'a RefCell<Option<String>>,
 }
@@ -115,6 +135,15 @@ impl Names<'_> {
     }
 
     fn require_member_access(&self, bound: &str, call: Option<(&str, usize)>) {
+        if let Some((member, arity)) = call {
+            if self.nests.get(self.owner) != self.nests.get(bound)
+                && self.private_statics.get(bound).is_some_and(|methods| methods.contains(&(member.to_owned(), arity)))
+                && self.packages.get(bound).is_some_and(|package| package == self.package)
+            {
+                self.issue.borrow_mut().get_or_insert_with(|| format!("private member {bound}.{member} is not accessible from {}", self.owner));
+                return;
+            }
+        }
         if self.packages.get(bound).is_none_or(|package| package == self.package) {
             return;
         }
@@ -127,12 +156,13 @@ impl Names<'_> {
             return;
         }
         self.issue.borrow_mut().get_or_insert_with(|| {
-            call.map_or_else(|| bound.to_owned(), |(member, _)| format!("{bound}.{member}"))
+            let target = call.map_or_else(|| bound.to_owned(), |(member, _)| format!("{bound}.{member}"));
+            format!("cross-package access to {target} requires a member access proof")
         });
     }
 
     fn bind_name(&self, name: &mut String, type_parameters: &BTreeSet<String>) {
-        if type_parameters.contains(name) { return; }
+        if !self.qualify_names || type_parameters.contains(name) { return; }
         if let Some(bound) = self.declared_name(name) {
             self.require_member_access(&bound, None);
             *name = bound;
@@ -170,7 +200,7 @@ impl Names<'_> {
             if !locals.contains(first) && !types.contains(first) && first != "this" {
                 if let Some(bound) = self.declared_name(&raw) {
                     self.require_member_access(&bound, call);
-                    *value = JavaExpr::Ident(bound);
+                    if self.qualify_names { *value = JavaExpr::Ident(bound); }
                     return;
                 }
                 if !self.package.is_empty() && self.declared.contains(&raw) && !raw.contains('.') {
