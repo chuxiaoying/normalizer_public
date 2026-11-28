@@ -6,7 +6,7 @@
 
 - [analysis/src/Bindings.ts](analysis/src/Bindings.ts)：可单独送入正式 CLI 的、按绑定切出的最小闭合工程。同一生产/消费对使用同一份 VO 声明。此处不是整个页面已归一化的结论。
 - [navigation/](navigation/)：页签和群设置的独立切片，保留页签原有联合类型和本地函数调用；不影响原最小切片的验收。
-- [workspace/src/ChatWorkspace.ts](workspace/src/ChatWorkspace.ts)：覆盖工作台核心流程的严格 TS 预处理稿。保留发送、已读、好友和群命令、生命周期、回执及选择后的状态投影；当前场景适配器拒收。它不是已通过的分析副本。列表逐项、日期显示和 DOM 观察仍有后文列出的宿主/运算缺口。
+- [workspace/src/ChatWorkspace.ts](workspace/src/ChatWorkspace.ts)：覆盖工作台核心流程的严格 TS 预处理稿。保留发送、已读、好友和群命令、生命周期、回执及选择后的状态投影；当前仍有无法交付的片段，它不是已获准的分析副本。列表逐项、日期显示和 DOM 观察仍有后文列出的宿主/运算缺口。
 
 ## 可交付的入口和出口
 
@@ -48,10 +48,12 @@ implementation/tools/normalizer scenario frontend-vo-consumption "$root" --entry
 | 原入口 | 稿中入口 | 不能丢的行为 |
 | --- | --- | --- |
 | 表单 `@submit.prevent="send"` | `send` | 模板先阻止原生表单提交，再调用原 `async` handler。无权限、空白/超长或忙碌不发请求；许可时把当次账号、会话、原草稿和提及写入 POST 表单。保留回执后的版本/销毁检查、失败提示、正常/异常路径的 busy/loading 清理。只有命令成功才清空草稿和提及。 |
-| 编辑框按键 | `composerKey` | 非 Enter、Shift+Enter 和组字不发送；命中时先 `preventDefault()`，发起 `void send()` 后按原方式返回，绝不替换成等待发送完成的入口。 |
+| 编辑框按键 | `composerKey` | P 只含这次派发的 `key`、`shiftKey`、`isComposing`。非 Enter、Shift+Enter 和组字不调用宿主端口，也不发送；其余先对**同一次按键派发**调用 `preventDefault()`，再发起 `void send()` 并返回。即使发送守卫最终不放行，取消默认动作的调用仍发生。 |
 | 列表会话点击 | `onRoomClick` | 沿 `selectRoom` 原函数；忙碌时不切换，换房间才清草稿/提及/面板/邀请项；只有标记为已读且未读数非零才 POST。会话 ID 取自当时模板捕获的行，不是假设用户传入的 P。 |
 | 通讯录、撤回、群角色/禁言/邀请/退出 | 各 `on…Click` 和 `invite` | 模板选择的行或成员保留绑定身份；只在原分支调用对应命令。接受好友后切到新私聊，退群清空选择，过期回执不覆盖现有快照。 |
 | 账号绑定、挂载、轮询、卸载、重新连接 | `onAccountValueChanged`、`onAccountChange`、`onMount`、`onPollTick`、`onUnmount`、`onReconnectClick` | 账号绑定与 change 回调是不同连接点；保留刷新、可见性门控、1600ms 注册、注销与过期回执门控，不将无限轮询当成一次有界调用。挂载、计时器每次触发、卸载分别观察。 |
+
+**按键宿主边界。** `ComposerKeyInput` 是原事件传给应用的三个字段，不引用 DOM 类型。`composerKeyDispatch` 只表达原事件的同步动作，绑定同一事件，不增加 P 或模拟一个新的 DOM 对象。记录的是尝试取消默认行为，不承诺宿主原本不可取消的动作也会被取消。`send` 仍是源码可见的本地函数，不标成 external，也不改成 await。
 
 **HTTP 边界。** `http.get`、`http.post` 分别定位真实的 `GET /api/view?user=…` 和 `POST /api/command`。POST 的 `URLSearchParams` 保持原字段共存和编码合同。网络拒绝有真实依据，声明为 `ExternalFailure`；HTTP 非 2xx 仍先收到响应，按原程序等待 `json()`、再检查 `ok` 和失败消息。响应体读取可独立失败，并属于同一个响应，不得当成第二个 HTTP 请求，也不能合并两个 await 以消除可能发生的交错。保留宽类型 `unknown` 检查和原捕获行为，不编造后端成功数据。
 
@@ -77,18 +79,18 @@ implementation/tools/normalizer scenario frontend-vo-consumption "$root" --entry
 | 统一定形 | 源码保留执行次序；不由预处理选 CASE 表达方向、不手写输出代替 CLI。 |
 | 场景归一 | 生产从宿主交给应用的回调开始，消费从具体一次渲染的绑定开始；用具名、同步、无参 supplier 读同一实例。 |
 
-两个工程的同名字段回指同一原件绑定，但 CLI 会输出各自源码定位，**不要把不同根产物中的 E 标识自动合并**。可串看的是同根同绑定，例如写、读 `draft.value` 的一对。
+不同工程的同名字段回指同一原件绑定，但 CLI 会输出各自源码定位，**不要把不同根产物中的 E 标识自动合并**。可串看的是同根同绑定，例如写、读 `draft.value` 的一对。
 
 ## 当前实现缺口
 
-以下是可复验的首个拒绝点，不代表修掉它就能完整分析。保留候选源码，未改内核或正式回归。
+已拆出清楚的待处理项；不能把候选稿的宿主依赖算成工具缺口。未改内核或正式回归。
 
 | 根目录 / 入口 | 首个拒绝及含义 |
 | --- | --- |
 | `analysis` / 生产 `onCloseNotice` | 内部值装载报 `missing field value`；原赋值是两次写空字符串。不能为测试通过改写成空参数或布尔清除。 |
 | `analysis` / 消费 `accountDisabled`、`noticeRole` | 前者拒绝二元投影；后者拒绝字符串 truthiness 的三元守卫。两者都保留原表达式。 |
-| `workspace` / 生产 `send` | 当前外部端口签名解析不接受实际方法字面量类型 `'POST'`。响应解析、局部异步调用和复杂 VO 也要单独验收。 |
-| `workspace` / 生产 `composerKey`、`onRoomClick` | 前者所在同步入口模块含真实异步端口；后者是非 async 的回调，但返回原 `selectRoom` 的 Promise，当前路由要求同步入口显式 `void`。不为过准入重写完成类型。 |
-| `workspace` / 消费 `sendDisabled`、`searchPlaceholder` | 当前投影入口不能接纳工作台的数据初始化，连符号执行还没到。这不能证实复合守卫或列表相关语义已经支持。 |
+| `workspace` / 整页 | 已去掉键盘事件类型，但仍直接引用 `URLSearchParams`、`HTMLElement`、`document` 和 `window`。新 TS 准入不会装载这些 DOM 声明；HTTP 编码、滚动、可见性和定时器还要按真实语义交付。 |
+| `workspace` / 生产 `composerKey` | 单独隔离三个输入字段和取消默认动作的同步端口，可通过无 DOM 的严格 TS 编译；当前生产适配器拒绝同步端口。整条路径还依赖真实的本地 `send`，因此没有完整 PERS。不能为了绕开工具而删取消动作，或把发送改为黑盒。 |
+| `workspace` / 生产 `send` 与消费 `sendDisabled` | 两边要保留同一个发送守卫。原生 `.trim()` 还没完成等价交付：现有 `N.trim` 对仅含一个不换行空格（U+00A0）的草稿会改变是否允许发送。不能只按名字替换，也不能用 UTF-16 的 `.length` 代替裁剪后的码点数。 |
 
 运行拒绝复现时，把上面命令末尾的场景、根和导出名替换为表中入口；`workspace` 使用 `src/ChatWorkspace.ts#…`。本轮不运行或改动正式回归。

@@ -196,9 +196,23 @@ export async function send(): Promise<void> {
     draft.value = ''; mention.value = ''
   }
 }
-export function composerKey(event: KeyboardEvent): void {
+interface ComposerKeyInput {
+  readonly key: string
+  readonly shiftKey: boolean
+  readonly isComposing: boolean
+}
+
+interface ComposerKeyDispatch {
+  preventDefault(): void
+}
+
+// Bound to the event that supplied this invocation's ComposerKeyInput.
+/** @N external */
+declare const composerKeyDispatch: ComposerKeyDispatch
+
+export function composerKey(event: ComposerKeyInput): void {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
-  event.preventDefault()
+  composerKeyDispatch.preventDefault()
   void send()
 }
 function inRoom(action: Action, target = '') {

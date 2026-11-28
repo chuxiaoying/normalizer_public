@@ -121,15 +121,27 @@
      draft.value = ''; mention.value = ''
    }
  }
++interface ComposerKeyInput {
++  readonly key: string
++  readonly shiftKey: boolean
++  readonly isComposing: boolean
++}
++interface ComposerKeyDispatch {
++  preventDefault(): void
++}
++/** @N external */
++declare const composerKeyDispatch: ComposerKeyDispatch
++
 -function composerKey(event: KeyboardEvent) {
-+export function composerKey(event: KeyboardEvent): void {
++export function composerKey(event: ComposerKeyInput): void {
    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
-   event.preventDefault()
+-  event.preventDefault()
++  composerKeyDispatch.preventDefault()
    void send()
  }
 ```
 
-**为什么改：** `send` 是表单的真实应用回调；原模板的 `@submit.prevent` 由宿主先处理，不在入口里假造事件。键盘回调则自己判断 Enter、Shift 和组字，命中时先阻止默认行为，再启动发送并立即返回 `void`。两种入口不能合成一个都等待发送完成的函数。禁言、忙碌或无有效草稿仍不发请求；只有原命令判成功才清草稿。
+**为什么改：** `send` 是表单的真实应用回调；原模板的 `@submit.prevent` 由宿主先处理，不在入口里假造事件。键盘回调则自己判断 Enter、Shift 和组字，命中时先阻止默认行为，再启动发送并立即返回 `void`。宿主在回调入口交付事件的三个实际字段，并把端口绑定到同一次事件派发；端口不是新增参数，也不是声称默认动作一定成功取消的布尔值。两种入口不能合成一个都等待发送完成的函数。禁言、忙碌或无有效草稿仍不发请求；只有原命令判成功才清草稿。
 
 ### 5. 把列表行的闭包身份交代清楚，不新增 P
 
