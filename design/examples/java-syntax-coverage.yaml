@@ -175,14 +175,33 @@ families:
   type-relationships:
     title: 类型、继承和转换
     leaves:
-      cast-and-instanceof:
-        focus: 强制转换、类型测试、模式变量与 null
+      text-instanceof-pattern:
+        focus: 文本模式绑定和 null；未匹配分支不能读取模式变量
+        seed: entry-java-wide-text-pattern
+        evidence:
+          - [Entry.read, original, pers]
+          - [Entry.read, null-does-not-match-the-pattern, pers]
+          - [Entry.read, pattern-name-is-not-bound-in-the-unmatched-arm, reject]
+      casts-and-other-patterns:
+        focus: 强制转换、记录模式、失配、限定和嵌套绑定
         gap: review
-      generics-and-inference:
-        focus: 类型参数、边界、通配符、原始类型及泛型推断
+      closed-generic-local:
+        focus: 源码内泛型类和泛型方法的已绑定参数
+        seed: java-invalid-declaration
+        evidence:
+          - [TicketCode.readValid, a-generic-source-class-retains-its-concrete-bound-constructor-use, pers]
+          - [TicketCode.readValid, a-generic-source-method-binds-its-type-parameter-without-changing-the-entry, pers]
+      generic-inference-and-variance:
+        focus: 边界、通配符、原始类型及泛型推断
         gap: review
-      boxing-and-conversion:
-        focus: 装箱拆箱、赋值转换、窄化和算术提升
+      integer-assignment-conversion:
+        focus: 窄化只接受可表示的常量；普通较宽变量仍不能隐式窄化
+        seed: java-assignment-conversion
+        evidence:
+          - [AssignmentConversion.read, an-in-range-final-int-constant-can-initialize-a-byte, pers]
+          - [AssignmentConversion.read, an-int-parameter-cannot-initialize-a-byte, reject]
+      boxing-and-promotion:
+        focus: 装箱、拆箱、null 与不同数值运算类型的提升
         gap: review
       reference-shapes:
         focus: 类、记录、枚举、匿名类和封闭继承关系
@@ -284,10 +303,27 @@ families:
         seed: control-try-catch-finally
         evidence:
           - [FinallyService.INSTANCE.read, original, pers]
-      multi-catch-and-rethrow:
-        focus: 多类型捕获、优先顺序、精确重抛和 finally 覆盖
+      multi-catch:
+        focus: 一个处理器接收多种原有异常，保留实际匹配者
+        seed: control-try-catch-finally
+        evidence:
+          - [FinallyService.INSTANCE.read, native-multi-catch-retains-the-matching-alternative, pers]
+          - [FinallyService.INSTANCE.read, reject-overlapping-types-in-one-multi-catch, reject]
+      catch-and-finally-order:
+        focus: 具体处理器先于宽泛处理器，finally 返回仅覆盖自己的路径
+        seed: control-try-catch-finally
+        evidence:
+          - [FinallyService.INSTANCE.read, legal-specific-handler-before-base-keeps-first-match, pers]
+          - [FinallyService.INSTANCE.read, conditional-finally-return-only-overrides-its-domain, pers]
+      rethrow:
+        focus: 精确重抛及当前异常对象身份，不改成新异常
         gap: review
-      try-with-resources:
+      single-resource-close:
+        focus: 一项原生资源在成功和失败路径都先关闭，再进入 finally
+        seed: control-try-catch-finally
+        evidence:
+          - [FinallyService.INSTANCE.read, native-try-with-resources-closes-before-finally-on-both-paths, pers]
+      multiple-resource-close:
         focus: 资源从左到右取得、逆序关闭、主异常与 suppressed 异常
         gap: review
   host-dependent-syntax:
