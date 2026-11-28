@@ -1,6 +1,6 @@
 # 松果聊天 · 会话工作台的 AI 预处理
 
-原件：[App.vue](../frontend/src/App.vue)、[model.ts](../frontend/src/model.ts)、[HTTP 合同](../backend/src/practice/chat/ChatServer.java)、[业务服务](../backend/src/practice/chat/ChatService.java)。工作台是松果聊天的单页应用，包含会话、通讯录、群设置和消息编辑。原应用不改动。
+原件：[App.vue](../frontend/src/App.vue)、[model.ts](../frontend/src/model.ts)、[HTTP 合同](../backend/src/practice/chat/ChatServer.java)、[业务服务](../backend/src/practice/chat/ChatService.java)。工作台是松果聊天的单页应用，包含会话、通讯录、群设置和消息编辑。原应用不改动。要逐处看原码、改写和依据，见[预处理逐项 Diff](DIFF.md)。
 
 这里分两个根目录：
 
