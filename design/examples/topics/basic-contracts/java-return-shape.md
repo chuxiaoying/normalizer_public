@@ -61,3 +61,27 @@ R: |-
 **预处理要点**：源码可见且类型已闭合的对象结构不需要 AI 另造 record 语法。
 
 **PERS 验收要点**：自定义类型由 `types` 统一定义，PERS 在返回处表达业务字段值，避免无根的宿主类型名。
+
+### 构造器前置语句不改变返回的观察边界
+
+```java
+class Pair {
+    int left;
+    int right;
+
+    Pair(int left) { this.left = left; }
+    Pair(int left, int right) {
+        int next = left / left;
+        this(next);
+        this.right = right;
+    }
+}
+
+class PairFactory {
+    static Pair make(int value) {
+        return new Pair(value, value + 1);
+    }
+}
+```
+
+`value != 0` 时，调用先算出 `next = 1`，返回 `{left: 1, right: value + 1}`；`value == 0` 时只有 `java.lang.ArithmeticException`，对象字段不属于正常结果。直接调用 `Object` 的无参构造器也可以有接收者无关的标量前置计算；在显式委托前读取 `this.left` 不合法。本例依据 [JLS §8.8.7](https://docs.oracle.com/javase/specs/jls/se25/html/jls-8.html#jls-8.8.7) 区分前置语句和委托后的语句，不证明复杂的早期字段写入。

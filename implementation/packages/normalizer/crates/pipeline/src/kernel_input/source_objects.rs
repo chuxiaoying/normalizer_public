@@ -464,10 +464,6 @@ impl Engine<'_> {
         Ok(Value::Term(initial.ty(), value))
     }
 
-    pub(super) fn read_source_field(&self, reference: &Expr, name: &str) -> Result<Value> {
-        self.read_source_field_on_path(reference, name, &b::lit_bool(true))
-    }
-
     pub(super) fn read_source_field_on_path(&self, reference: &Expr, name: &str, path: &Expr) -> Result<Value> {
         let (owner, origin) = self
             .source_objects
@@ -703,7 +699,8 @@ impl Engine<'_> {
     }
 
     fn check_source_content_cycle(
-        &self, root: &Expr, id: i64, active: &mut BTreeSet<i64>, completed: &mut BTreeSet<i64>,
+        &self, root: &Expr, id: i64, path: &Expr,
+        active: &mut BTreeSet<i64>, completed: &mut BTreeSet<i64>,
     ) -> Result<()> {
         let Some((owner, Origin::Allocation)) = self.source_objects.objects.get(&id)
             else { return Ok(()); };
@@ -715,9 +712,9 @@ impl Engine<'_> {
         let class = self.program.find_class(owner).ok_or("missing object return layout")?;
         for field in class.fields() {
             if self.project.parameter_type(field.java_type())? == Ty::Ref {
-                let value = self.read_source_field(root, field.name())?.scalar()?;
+                let value = self.read_source_field_on_path(root, field.name(), path)?.scalar()?;
                 if let Some(id) = value.as_heap_ref() {
-                    self.check_source_content_cycle(&value, id, active, completed)?;
+                    self.check_source_content_cycle(&value, id, path, active, completed)?;
                 }
             }
         }
@@ -759,12 +756,21 @@ impl Engine<'_> {
         let Some(id) = reference.as_heap_ref().filter(|id| self.source_objects.objects.contains_key(id)) else {
             return Ok(None);
         };
-        need(
-            matches!(&self.realtime_completion, realtime_state::Completion::Return(value) if value == &reference)
-                && self.realtime_throws.is_empty(),
-            "object projection requires a total normal return of the same object",
-        )?;
-        self.check_source_content_cycle(&reference, id, &mut BTreeSet::new(), &mut BTreeSet::new())?;
+        let terminal = self.realtime_completion.terminal_alternatives()
+            .ok_or_else(|| fail("object projection requires a complete entry outcome"))?;
+        need(terminal.same_normal_return_value() == Some(&reference),
+            "object projection requires the same object on every normal return")?;
+        let mut normal = b::lit_bool(false);
+        for item in terminal.as_slice() {
+            if matches!(item.outcome, realtime_state::TerminalOutcome::Return(_)) {
+                normal = b::or(normal, item.guard.clone());
+            }
+        }
+        let normal = math::normalize(normal);
+        need(normal.as_bool() != Some(false), "object projection requires a normal return")?;
+        // Returned content exists on the normal domain only. An exceptional
+        // construction never supplies default or partially initialized fields.
+        self.check_source_content_cycle(&reference, id, &normal, &mut BTreeSet::new(), &mut BTreeSet::new())?;
         let class = self
             .program
             .find_class(owner)
@@ -773,7 +779,7 @@ impl Engine<'_> {
             .fields()
             .iter()
             .map(|f| {
-                let field = self.read_guarded_source_scalar(&reference, f.name(), &b::lit_bool(true))?;
+                let field = self.read_guarded_source_scalar(&reference, f.name(), &normal)?;
                 let scalar = field.scalar()?;
                 if field.ty() == Ty::Text && !crate::normalized::nullable_text_field(class, f) {
                     need(!scalar.is_null(), "nonnullable record text field was not initialized")?;

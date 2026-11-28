@@ -49,9 +49,9 @@ pub(super) fn observations(
     let mut names = names;
     let alternatives = &result.terminal;
     let projected_record = result.source_record_return.as_deref();
-    // The Java boundary already certified a total return of this one
-    // declared, noncyclic record. Validate and render its contents, not
-    // the internal reference token. Every other return keeps its checks.
+    // The Java boundary already certified the same declared, noncyclic
+    // record on every normal return. Validate and render its contents,
+    // not the internal reference token. Throws remain distinct.
     let returned = projected_record.map(|fields| b::array_lit(
         fields.iter().map(|(_, field)| field.clone()).collect()
     )).or_else(|| alternatives.value_on_normal_exit());
@@ -357,8 +357,8 @@ pub(super) fn observations(
             }
             TerminalOutcome::Return(value) => {
                 if projected_record.is_some() {
-                    need(alternatives.total_return_value() == Some(value),
-                        "record projection requires its proven total return")?;
+                    need(alternatives.same_normal_return_value() == Some(value),
+                        "record projection requires the same object on every normal return")?;
                 } else {
                     validate_ids(value, &issued, Some(temporal_names))?;
                 }

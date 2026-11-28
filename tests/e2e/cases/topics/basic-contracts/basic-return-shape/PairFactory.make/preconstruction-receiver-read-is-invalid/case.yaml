@@ -1,0 +1,5 @@
+entry: src/PairFactory.java#PairFactory.make
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - constructor prologue requires receiver-free scalar locals

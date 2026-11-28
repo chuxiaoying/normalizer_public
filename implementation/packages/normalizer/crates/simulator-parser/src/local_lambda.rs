@@ -312,7 +312,7 @@ fn walk(
                 if let Some(body) = finally_block { walk(body, visit, declare)?; }
             }
             Block(body) => walk(body, visit, declare)?,
-            LocalIr(_) | Return(None) | LoopBreak | LoopContinue | SwitchBreak => {}
+            LocalIr(_) | Return(None) | LoopBreak | LoopContinue | SwitchBreak | ObjectSuperConstructor => {}
         }
     }
     Ok(())

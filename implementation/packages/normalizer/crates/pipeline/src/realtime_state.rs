@@ -70,6 +70,16 @@ impl TerminalAlternatives {
         }
     }
 
+    /// Identity shared by every normal completion; throws have no value.
+    pub(super) fn same_normal_return_value(&self) -> Option<&Expr> {
+        let mut returns = self.0.iter().filter_map(|item| match &item.outcome {
+            TerminalOutcome::Return(value) => Some(value),
+            _ => None,
+        });
+        let value = returns.next()?;
+        returns.all(|other| other == value).then_some(value)
+    }
+
     pub(super) fn normalize_pure_return_choices(&mut self, definitions: &mut Vec<super::temporal_graph::Definition>) {
         if let Some(value) = self.total_return_value()
             .and_then(|value| super::temporal_graph::same_support_choice(value, definitions))

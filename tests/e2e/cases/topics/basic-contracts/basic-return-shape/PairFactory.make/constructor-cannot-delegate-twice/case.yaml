@@ -1,0 +1,5 @@
+entry: src/PairFactory.java#PairFactory.make
+reject:
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - duplicate explicit constructor invocation

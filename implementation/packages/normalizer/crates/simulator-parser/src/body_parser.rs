@@ -35,28 +35,35 @@ pub(crate) fn parse_constructor_body_text(
     let mut p = Parser::new(body_text, file).with_surrogates(surrogates);
     p.official_n = official_n;
     p.imports.extend_from_slice(imports);
-    let initial_position = p.pos;
-    let same_class = p.eat_keyword("this");
-    p.skip_ws();
-    if same_class && p.peek() == Some(b'(') {
-        let args = p.parse_arg_list()?;
-        p.require_semicolon("same-class constructor call")?;
-        let mut body = vec![JavaStatement::ThisConstructor(args)];
-        body.extend(p.parse_statements_until_end()?);
-        return Ok(body);
-    }
-    p.pos = initial_position;
-    if implicit_object_parent && p.eat_keyword("super") && p.eat_char(b'(') {
-        if !p.eat_char(b')') {
-            return Err(p.err("[JAVA-CONSTRUCTOR-DELEGATION] Object has only a zero-argument constructor"));
+    let mut body = Vec::new();
+    let mut seen_invocation = false;
+    loop {
+        p.skip_ws();
+        if p.peek().is_none() { break; }
+        let at = p.pos;
+        let same_class = p.eat_keyword("this");
+        let object_parent = !same_class && implicit_object_parent && p.eat_keyword("super");
+        p.skip_ws();
+        if (same_class || object_parent) && p.peek() == Some(b'(') {
+            p.reject_after_direct_return(&body)?;
+            if seen_invocation {
+                return Err(p.err_at(at, "[JAVA-CONSTRUCTOR-DELEGATION] duplicate explicit constructor invocation"));
+            }
+            let args = p.parse_arg_list()?;
+            p.require_semicolon("explicit constructor invocation")?;
+            if object_parent && !args.is_empty() {
+                return Err(p.err("[JAVA-CONSTRUCTOR-DELEGATION] Object has only a zero-argument constructor"));
+            }
+            body.push(if same_class { JavaStatement::ThisConstructor(args) }
+                else { JavaStatement::ObjectSuperConstructor });
+            seen_invocation = true;
+        } else {
+            p.pos = at;
+            let statement = p.parse_statement(&mut body)?;
+            body.push(statement);
         }
-        p.require_semicolon("Object constructor call")?;
-        // java.lang.Object() has no source-observable instance effect. The
-        // allocator already executes this implicit stage before field init.
-    } else {
-        p.pos = initial_position;
     }
-    p.parse_statements_until_end()
+    Ok(body)
 }
 
 impl<'a> Parser<'a> {

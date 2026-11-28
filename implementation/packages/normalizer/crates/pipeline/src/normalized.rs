@@ -1316,6 +1316,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                     return Err(error("NORM-EXPLICIT-THROW", at));
                 }
             }
+            S::ObjectSuperConstructor => (),
             S::ThisConstructor(args) => {
                 let owner = at.rsplit_once('.').expect("constructor key has an owner").0;
                 for a in args { expr(a, at, calls)?; }

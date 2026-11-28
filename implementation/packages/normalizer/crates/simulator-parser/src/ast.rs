@@ -312,8 +312,10 @@ pub enum JavaStatement {
         is_compound: bool,
     },
 
-    /// Explicit `this(...)` at the head of a constructor.
+    /// Explicit `this(...)` after an optional checked constructor prologue.
     ThisConstructor(Vec<JavaExpr>),
+    /// Explicit `super()` targeting the implicit Object constructor.
+    ObjectSuperConstructor,
 
     /// 纯表达式语句：`foo();` / `x++;`
     ExprStmt(JavaExpr),

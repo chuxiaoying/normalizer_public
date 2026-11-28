@@ -262,8 +262,17 @@ families:
         focus: 委托构造、超类构造、实例字段和静态初始化时点
         gap: review
       statements-before-constructor-invocation:
-        focus: 显式 this(...) 或 super(...) 前的构造器前置语句，保留求值和早期构造限制
-        gap: implementation
+        focus: 显式 this(...) 或 Object.super() 前，接收者无关的标量局部计算与异常完成
+        seed: basic-return-shape
+        evidence:
+          - [PairFactory.make, locals-before-this-delegation-are-available-to-the-callee, pers]
+          - [PairFactory.make, locals-before-object-super-survive-in-the-constructor, pers]
+          - [PairFactory.make, prologue-exception-precedes-constructor-body, pers]
+          - [PairFactory.make, preconstruction-receiver-read-is-invalid, reject]
+          - [PairFactory.make, constructor-cannot-delegate-twice, reject]
+      early-constructor-field-writes-and-parent-arguments:
+        focus: 更广义的早期构造字段写入、带参父构造器和复杂控制流
+        gap: review
   invocation:
     title: 调用与函数值
     leaves:

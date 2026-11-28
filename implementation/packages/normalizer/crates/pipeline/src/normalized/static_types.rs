@@ -801,7 +801,23 @@ impl Admission<'_> {
     }
 
     fn block(&self, body: &[S], scope: &mut Scope) -> Result<(), String> {
-        for statement in body {
+        // The outer constructor starts with parameter bindings. Restrict
+        // the subset before explicit delegation to receiver-free locals.
+        let explicit = self.method.is_constructor().then(|| body.iter().position(|statement|
+            matches!(statement, S::ThisConstructor(_) | S::ObjectSuperConstructor))).flatten();
+        for (index, statement) in body.iter().enumerate() {
+            if explicit.is_some_and(|at| index < at) {
+                let pure = |value: &E| early_construction_expr(value, &|name| scope.contains_key(name));
+                let checked = match statement {
+                    S::VarDecl { java_type: JavaType::Primitive(_), initializer: Some(value), .. } => pure(value),
+                    S::Assign { target: E::Ident(name), value, .. } => scope.contains_key(name) && pure(value),
+                    _ => false,
+                };
+                if !checked {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                        "constructor prologue requires receiver-free scalar locals before explicit delegation"));
+                }
+            }
             match statement {
                 S::VarDecl { java_type, name, initializer, is_final } => {
                     self.check_local_name(name, scope)?;
@@ -838,24 +854,12 @@ impl Admission<'_> {
                         initialized_local: initializer.is_some(),
                     });
                 }
+                S::ObjectSuperConstructor => {}
                 S::ThisConstructor(args) => {
-                    let only_parameter_value = |name: &str| self.method.params().iter().any(|(_, n)| n == name);
-                    fn pure_arg(value: &E, has_parameter: &impl Fn(&str) -> bool) -> bool {
-                        match value {
-                            E::Lit(_) => true,
-                            E::Ident(name) => has_parameter(name),
-                            E::BinOp { left, right, .. } =>
-                                pure_arg(left, has_parameter) && pure_arg(right, has_parameter),
-                            E::UnaryOp { op: U::Neg | U::Not, operand } =>
-                                pure_arg(operand, has_parameter),
-                            E::Cast { operand, .. } => pure_arg(operand, has_parameter),
-                            _ => false,
-                        }
-                    }
                     let (_, constructor) = super::constructor_for_arity(self.class, args.len())
                         .ok_or_else(|| self.diagnostic("NORM-UNBOUND-CALL", "unresolved same-class constructor"))?;
                     for ((expected, _), arg) in constructor.params().iter().zip(args) {
-                        if !pure_arg(arg, &only_parameter_value) {
+                        if !early_construction_expr(arg, &|name| scope.contains_key(name)) {
                             return Err(self.diagnostic("NORM-SOURCE-TYPE",
                                 "same-class delegation must not observe the receiver before construction"));
                         }
@@ -1002,6 +1006,19 @@ impl Admission<'_> {
             }
         }
         Ok(())
+    }
+}
+
+fn early_construction_expr(value: &E, has_local: &impl Fn(&str) -> bool) -> bool {
+    match value {
+        E::Lit(_) => true,
+        E::Ident(name) => has_local(name),
+        E::BinOp { left, right, .. } =>
+            early_construction_expr(left, has_local) && early_construction_expr(right, has_local),
+        E::UnaryOp { op: U::Neg | U::Not, operand } =>
+            early_construction_expr(operand, has_local),
+        E::Cast { operand, .. } => early_construction_expr(operand, has_local),
+        _ => false,
     }
 }
 

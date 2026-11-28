@@ -548,6 +548,9 @@ impl<'a> Engine<'a> {
             self.budget()?;
             match s {
                 S::Block(statements) => self.source_scope(statements, id, env, path)?,
+                // The built-in Object constructor has no source-visible
+                // operation; this marker delimits the checked prologue.
+                S::ObjectSuperConstructor => {}
                 S::ThisConstructor(args) => {
                     let owner = id.rsplit_once('.').expect("constructor key has an owner").0;
                     let class = self.program.find_class(owner).ok_or_else(|| fail("no constructor owner"))?;
