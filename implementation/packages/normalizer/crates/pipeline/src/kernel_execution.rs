@@ -292,6 +292,8 @@ impl<'a> Engine<'a> {
                                 (Some(Ty::Bool), "bool") => Some(ScalarSymbolType::Boolean),
                                 (Some(Ty::Text), "text") => Some(ScalarSymbolType::Text),
                                 (Some(Ty::Text), "text?") => Some(ScalarSymbolType::NullableText),
+                                (Some(record @ Ty::Record(_)), _) =>
+                                    return Ok(Value::Term(record.clone(), math::domains::composite::input(&format!("{input}.{name}")))),
                                 _ => None,
                             };
                             if let Some(sort) = sort {

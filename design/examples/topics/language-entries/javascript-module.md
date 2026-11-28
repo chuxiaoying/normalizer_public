@@ -245,3 +245,5 @@ R: |-
 ### 入口参数可以是具名记录
 
 若 `Quote` 声明了必填的 `amount: number` 和 `fee: number`，`total(input: Quote)` 在 P 中仍是一个 `Quote` 参数，不拆成两个入口参数。PERS 的 `types.Quote.fields` 保留两个字段，`return input.fee + input.amount` 归到 `input.amount + input.fee`；这两个字段都来自同一个 P，不产生 E 或 S。字段 `label: string | null` 则保留为必填的 `text?` 字段，值可能为 null 不等于字段可缺省。
+
+记录嵌套时也要保留每一段来源路径。若 `Quote` 的 `current` 和 `previous` 都是 `Price`，PERS 只定义一次 `Price`，但 `input.current.amount` 与 `input.previous.amount` 是两个不同的字段取值。两者相减保留原顺序，不能因为同为 `Price.amount` 而化成 0。

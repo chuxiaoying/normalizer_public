@@ -1,0 +1,13 @@
+entry: src/Quote.ts#total
+expected:
+  schema: normalizer.pers/1
+  types:
+    Price:
+      fields: {amount: number}
+    Quote:
+      fields: {current: Price, previous: Price}
+  entry: {function: src/Quote.ts#total, returns: number}
+  P:
+    parameters:
+      input: {position: 0, type: Quote}
+  R: input.current.amount - input.previous.amount

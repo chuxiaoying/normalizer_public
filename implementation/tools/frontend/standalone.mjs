@@ -53,7 +53,22 @@ function resolvedParameter(type, checker) {
 
 function declaredRecord(node, checker) {
   if (!node || !checker || !ts.isTypeReferenceNode(node)) return;
-  const type = checker.getTypeAtLocation(node);
+  let remaining = 4096;
+  const visit = (type, active) => {
+    if (active.has(type)) return;
+    if (--remaining < 0 || active.size > 96)
+      throw new Error('[NORM-ANALYSIS-INCOMPLETE] named record shape expansion exceeds its analysis budget');
+    active.add(type);
+    try { return resolvedRecord(type, checker, node, nested => visit(nested, active)); }
+    finally { active.delete(type); }
+  };
+  return visit(checker.getTypeAtLocation(node), new Set());
+}
+
+const recordFieldWire = field => typeof field === 'string' ? valueType(field) : field.wire;
+const recordFieldDomain = field => typeof field === 'string' ? parameter(field) : field.name;
+
+function resolvedRecord(type, checker, node, nestedRecord) {
   if (!(type.flags & ts.TypeFlags.Object)) return;
   const symbol = type.aliasSymbol ?? type.getSymbol();
   if (symbol?.declarations?.length !== 1) return;
@@ -72,11 +87,14 @@ function declaredRecord(node, checker) {
     const key = member.name.text;
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || fields.has(key)) return;
     const property = checker.getPropertyOfType(type, key);
-    const domain = property && resolvedParameter(checker.getTypeOfSymbolAtLocation(property, node), checker);
-    if (!['number', 'boolean', 'string', nullableText].includes(domain)) return;
-    fields.set(key, domain);
+    if (!property) return;
+    const actual = checker.getTypeOfSymbolAtLocation(property, node);
+    const domain = resolvedParameter(actual, checker);
+    const field = ['number', 'boolean', 'string', nullableText].includes(domain) ? domain : nestedRecord(actual);
+    if (!field) return;
+    fields.set(key, field);
   }
-  const wire = 'record<' + Array.from(fields, ([key, domain]) => key + ':' + valueType(domain)).sort().join(',') + '>';
+  const wire = 'record<' + Array.from(fields, ([key, field]) => key + ':' + recordFieldWire(field)).sort().join(',') + '>';
   return {name, declaration, fields, wire};
 }
 
@@ -298,6 +316,19 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
   }
   const names = new Map();
   const boundRecords = new Map();
+  const bindRecord = record => {
+    const existing = boundRecords.get(record.name);
+    if (existing) {
+      const sameFields = existing.wire === record.wire
+        && Array.from(record.fields).every(([name, field]) =>
+          recordFieldDomain(existing.fields.get(name)) === recordFieldDomain(field));
+      if (existing.declaration !== record.declaration || !sameFields)
+        fail('same public record name resolves to different declarations or field domains: ' + record.name);
+    } else boundRecords.set(record.name, record);
+    for (const field of record.fields.values()) {
+      if (typeof field !== 'string') bindRecord(field);
+    }
+  };
   const params = fn.parameters.map((param, position) => {
     const domain = declaredParameter(param.type, bindings);
     const record = parameter(domain) ? undefined : declaredRecord(param.type, bindings);
@@ -306,12 +337,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
-    if (record) {
-      const existing = boundRecords.get(record.name);
-      if (existing && (existing.declaration !== record.declaration || existing.wire !== record.wire))
-        fail('same public record name resolves to different declarations or field domains: ' + record.name);
-      boundRecords.set(record.name, record);
-    }
+    if (record) bindRecord(record);
     names.set(param.name.text, {name: binding, type: record ? record.name : parameter(domain), record});
     return {publicName: param.name.text, name: binding, domain, position, record};
   });
@@ -440,11 +466,16 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
         return value;
       }
       const binding = lexical.get(name);
-      if (expr.target.length === 2 && binding?.record?.fields.has(field)) {
-        const domain = binding.record.fields.get(field);
-        return {type: parameter(domain), node: internal('value.field', {
-          value: binding.node ?? internal('var', {name: binding.name}), name: field,
-        })};
+      if (binding?.record) {
+        let declared = binding.record;
+        let value = binding.node ?? internal('var', {name: binding.name});
+        for (const member of expr.target.slice(1)) {
+          const next = typeof declared !== 'string' && declared.fields.get(member);
+          if (!next) fail('field does not belong to the checked record path: ' + expr.target.join('.'));
+          value = internal('value.field', {value, name: member});
+          declared = next;
+        }
+        return {type: recordFieldDomain(declared), node: value};
       }
       if (expr.target.length !== 2 || field !== 'length' || binding?.type !== 'number[]') {
         fail('length requires a direct declared non-null readonly Vector');
@@ -504,7 +535,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     }
   }
   const types = Object.fromEntries(Array.from(boundRecords.values(), record => [record.name, {
-    fields: Object.fromEntries(Array.from(record.fields, ([name, domain]) => [name, parameter(domain)])),
+    fields: Object.fromEntries(Array.from(record.fields, ([name, field]) => [name, recordFieldDomain(field)])),
   }]));
   return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf), {types});
 }

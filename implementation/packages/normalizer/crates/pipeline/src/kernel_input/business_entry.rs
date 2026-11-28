@@ -366,8 +366,9 @@ impl EntryContext {
     }
 
     pub(super) fn source_parameter_field_type(&self, root: &str, field: &str) -> Option<&str> {
-        let parameter = self.parameter_type(root)?;
-        self.declared_field_type(parameter, std::iter::once(field))
+        let mut path = root.split('.');
+        let parameter = self.parameter_type(path.next()?)?;
+        self.declared_field_type(parameter, path.chain(std::iter::once(field)))
     }
 
     pub(super) fn source_identity_names(&self, result: &ExecutionResult) -> BTreeMap<i64, String> {
