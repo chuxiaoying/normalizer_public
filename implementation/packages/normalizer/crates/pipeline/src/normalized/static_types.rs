@@ -321,9 +321,17 @@ impl Admission<'_> {
                     return Ok(Kind::Number);
                 }
                 if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
-                    if self.program.find_class(&owner).is_some_and(JavaClass::is_record) {
-                        return Err(self.diagnostic("NORM-RECORD-ACCESS",
-                            "a passive record component is private; direct Java field access is not supported"));
+                    if let Some(declaration) = self.program.find_class(&owner) {
+                        if declaration.is_record() {
+                            return Err(self.diagnostic("NORM-RECORD-ACCESS",
+                                "a passive record component is private; direct Java field access is not supported"));
+                        }
+                        if let Some(member) = declaration.fields().iter().find(|member| member.name() == field) {
+                            if !super::source_member_visible(self.class, declaration, member.is_public(), member.is_private()) {
+                                return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                                    &format!("field {owner}.{field} is not accessible from {}", self.class.full_name())));
+                            }
+                        }
                     }
                 }
                 if self.declared_type(target, scope).is_some_and(|ty|

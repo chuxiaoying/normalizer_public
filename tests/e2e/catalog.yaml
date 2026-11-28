@@ -202,6 +202,8 @@ seeds:
   java-static-object:
     source:
       - Calculator.summarize
+      - steps.Entry.read
+      - steps.Suite.Entry.read
   object-collection-records:
     source:
       - ProfileScores.total

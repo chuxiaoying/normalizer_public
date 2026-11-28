@@ -1,0 +1,8 @@
+entry: src/steps/Suite.java#steps.Suite.Entry.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/steps/Suite.java#steps.Suite.Entry.read, returns: number}
+  P:
+    parameters:
+      amount: {position: 0, type: number}
+  R: amount
