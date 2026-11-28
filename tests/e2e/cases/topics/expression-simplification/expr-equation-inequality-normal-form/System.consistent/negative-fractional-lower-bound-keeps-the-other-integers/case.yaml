@@ -1,0 +1,8 @@
+entry: src/System.java#System.consistent
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/System.java#System.consistent, returns: bool}
+  P:
+    parameters:
+      x: {position: 0, type: number}
+  R: 'x > -2'
