@@ -285,7 +285,11 @@ function compile(source, file, entry, physicalPath, linked) {
   const checker = checkedTypeScript(physicalPath, sf, fail, {allowOfficial: usesStandard});
   const unknown = compileUnknownValue(sf, fn, file, entry, checker);
   if (unknown) return unknown;
-  const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
+  const first = fn.body.statements[0];
+  // An unrelated type-only declaration does not select the tuple adapter.
+  const isTuple = first && ts.isVariableStatement(first)
+    && first.declarationList.declarations.some(decl => ts.isArrayBindingPattern(decl.name))
+    && sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
   if (isListener || isTuple) {
     if (usesStandard) fail('typed listener and tuple modules do not use the official text namespace');
     if (fn.parameters.some(p => p.type?.kind !== ts.SyntaxKind.BooleanKeyword)) {
