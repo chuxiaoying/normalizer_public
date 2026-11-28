@@ -1,0 +1,8 @@
+entry: src/Order.java#Order.total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Order.java#Order.total, returns: number}
+  P:
+    parameters:
+      x: {position: 0, type: number}
+  R: '-2'

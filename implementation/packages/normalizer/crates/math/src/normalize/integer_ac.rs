@@ -89,21 +89,28 @@ pub(super) fn simplify(expr: &Expr, ctx: &dyn SortContext) -> Expr {
         return expr.clone();
     };
     if *op == B::Sub {
-        // This strict rewrite keeps the exact same acquired base exactly
-        // once. The two other values are integer literals, so no evaluation,
-        // observation or completion domain can be lost or reordered.
-        if let Some((B::Add, x, y)) = left.as_binop() {
-            let (base, first) = if y.as_lit().and_then(Lit::as_integer).is_some() {
-                (x, y)
-            } else { (y, x) };
-            if exact_business_integer(base, ctx) {
-                if let (Some(first), Some(second)) = (
-                    first.as_lit().and_then(Lit::as_integer),
-                    right.as_lit().and_then(Lit::as_integer),
-                ) {
-                    return apply_offset(base, first - second);
+        match (literal_offset(left), literal_offset(right)) {
+            (Some((left_base, left_offset)), Some((right_base, right_offset)))
+                if total_with_temporals(left_base, ctx) && total_with_temporals(right_base, ctx) =>
+            {
+                let offset = left_offset - right_offset;
+                if left_base == right_base {
+                    return b::lit_integer(offset);
+                }
+                return apply_offset(&b::sub(left_base.clone(), right_base.clone()), offset);
+            }
+            (Some((base, offset)), _) if base == right && total_with_temporals(base, ctx) =>
+                return b::lit_integer(offset),
+            (_, Some((base, offset))) if left == base && total_with_temporals(base, ctx) =>
+                return b::lit_integer(-offset),
+            (Some((base, offset)), _) if exact_business_integer(base, ctx) => {
+                // The strict base is retained exactly once; only integer
+                // literals are combined, even if that base is not total.
+                if let Some(right) = right.as_lit().and_then(Lit::as_integer) {
+                    return apply_offset(base, offset - right);
                 }
             }
+            _ => {}
         }
         return expr.clone();
     }
@@ -215,6 +222,17 @@ fn simplify_admitted(
     terms.sort_by(|left, right| crate::canonical_order_compare(left, right, ctx));
     let combine: fn(Expr, Expr) -> Expr = if op == B::Add { b::add } else { b::mul };
     terms.into_iter().reduce(combine).unwrap()
+}
+
+fn literal_offset(value: &Expr) -> Option<(&Expr, BigInt)> {
+    let (op, left, right) = value.as_binop()?;
+    let integer = |value: &Expr| value.as_lit()?.as_integer();
+    match op {
+        B::Add => integer(right).map(|offset| (left, offset))
+            .or_else(|| integer(left).map(|offset| (right, offset))),
+        B::Sub => integer(right).map(|offset| (left, -offset)),
+        _ => None,
+    }
 }
 
 // A proven total exact integer base is evaluated once. Combine only the two
