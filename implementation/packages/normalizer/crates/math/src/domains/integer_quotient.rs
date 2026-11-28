@@ -1,5 +1,5 @@
 //! BF-02: truncating integer quotient on the normal completion domain.
-use crate::{builder as b, Expr, Lit, Primitive};
+use crate::{builder as b, BinOpKind, Expr, Lit, Primitive};
 use crate::domains::primitive::registry::{FuncKey, FuncSemantics};
 use num_bigint::Sign;
 use std::sync::{Arc, OnceLock};
@@ -35,6 +35,13 @@ pub fn on_nonzero_path(dividend: Expr, divisor: Expr) -> Expr {
     if divisor.as_lit().and_then(Lit::as_integer).is_some_and(|value| value == 1.into()) {
         return dividend;
     }
+    if let Some(over) = cancel_exact_factor(&dividend, &divisor) {
+        return crate::normalize(over);
+    }
+    quotient_call(dividend, divisor)
+}
+
+fn quotient_call(dividend: Expr, divisor: Expr) -> Expr {
     crate::normalize(b::call(key(), vec![dividend, divisor]))
 }
 
@@ -53,6 +60,19 @@ pub fn remainder_on_nonzero_path(dividend: Expr, divisor: Expr) -> Expr {
         || divisor.as_lit().and_then(Lit::as_integer).is_some_and(|d| d == 1.into() || d == (-1).into()) {
         return b::lit_int(0);
     }
-    let quotient = on_nonzero_path(dividend.clone(), divisor.clone());
+    if cancel_exact_factor(&dividend, &divisor).is_some() {
+        return b::lit_int(0);
+    }
+    let quotient = quotient_call(dividend.clone(), divisor.clone());
     crate::normalize(b::sub(dividend, b::mul(divisor, quotient)))
+}
+
+// Match an already acquired factor, never an algebraically similar
+// expression or a word multiplication with its own wrap contract.
+fn cancel_exact_factor(product: &Expr, divisor: &Expr) -> Option<Expr> {
+    let (BinOpKind::Mul, left, right) = product.as_binop()? else { return None; };
+    if left == divisor { return Some(right.clone()); }
+    if right == divisor { return Some(left.clone()); }
+    cancel_exact_factor(left, divisor).map(|rest| b::mul(rest, right.clone()))
+        .or_else(|| cancel_exact_factor(right, divisor).map(|rest| b::mul(left.clone(), rest)))
 }
