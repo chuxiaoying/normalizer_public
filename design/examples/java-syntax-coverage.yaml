@@ -84,21 +84,37 @@ families:
     title: Lambda 表达式与调用
     leaves:
       expression-and-block-body:
-        focus: 目标类型明确时，表达式体与等价的块返回体
+        focus: 源码内标量 SAM 的表达式体、等价的单 return 块和多个形参
         seed: java-closed-lambda
-        gap: implementation
+        evidence:
+          - [Quote.run, original, pers]
+          - [Quote.run, block-return-preserves-lexical-scalar-capture, pers]
+          - [Quote.run, two-lambda-parameters-keep-their-argument-order, pers]
+          - [Quote.run, lambda-arity-must-match-the-sam, reject]
       effectively-final-capture:
-        focus: 捕获有效 final 局部变量，区分捕获值和调用实参
+        focus: 区分捕获的有效 final 标量局部值和调用实参
+        seed: java-closed-lambda
+        evidence:
+          - [Quote.run, original, pers]
+      invalid-mutable-capture:
+        focus: 被再次写入的标量局部变量不得作为合法捕获
+        seed: java-closed-lambda
+        evidence:
+          - [Quote.run, captured-local-must-be-effectively-final, reject]
+      creation-versus-invocation:
+        focus: 创建闭合 Lambda 不执行标量函数体，除零只发生在实际调用路径
+        seed: java-closed-lambda
+        evidence:
+          - [Quote.run, unused-closure-does-not-evaluate-its-body, pers]
+          - [Quote.run, invoked-closure-throws-only-on-the-call-path, pers]
+      reference-receiver-in-lambda:
+        focus: 延迟执行的 Lambda 捕获引用，空接收者只在实际调用时抛异常
         seed: java-closed-lambda
         gap: implementation
-      invalid-mutable-capture:
-        focus: 被重新赋值的局部变量不得作为合法捕获
+      general-lambda-body-and-scope:
+        focus: 嵌套块声明、显式参数类型、多语句体、泛型目标类型和函数值流动
         seed: java-closed-lambda
         gap: review
-      creation-versus-invocation:
-        focus: 创建 Lambda 不执行本体；空接收者只在实际调用时抛异常
-        seed: java-closed-lambda
-        gap: implementation
   interface-default-methods:
     title: 接口默认方法与分派
     leaves:

@@ -1,0 +1,6 @@
+entry: "src/Quote.java#Quote.<lambda:0>"
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-ENTRY]"
+    - local lambda helper is not a source-declared entry

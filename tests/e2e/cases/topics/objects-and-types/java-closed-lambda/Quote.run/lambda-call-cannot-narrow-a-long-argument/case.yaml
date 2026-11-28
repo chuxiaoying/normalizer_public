@@ -1,0 +1,6 @@
+entry: src/Quote.java#Quote.run
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - argument 1 of local lambda cannot implicitly narrow a long expression

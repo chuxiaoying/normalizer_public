@@ -435,8 +435,13 @@ impl Admission<'_> {
                 for (i, arg) in args.iter().enumerate() {
                     let actual = self.expression(arg, scope)?;
                     if let Some(callee) = callee {
-                        let expected = Kind::declared(&callee.params()[i].0);
-                        if expected.is_native_decimal() || actual.is_native_decimal() {
+                        let expected_type = &callee.params()[i].0;
+                        let expected = Kind::declared(expected_type);
+                        if callee.is_local_lambda_helper() {
+                            let label = format!("argument {} of local lambda", i + 1);
+                            self.check_assignment_narrowing(Some(expected_type), arg, scope, &label)?;
+                            self.compatible(expected, actual, &label)?;
+                        } else if expected.is_native_decimal() || actual.is_native_decimal() {
                             self.compatible(expected, actual, &format!("argument {} of {method}", i+1))?;
                         }
                     }

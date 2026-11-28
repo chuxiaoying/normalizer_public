@@ -13,6 +13,9 @@ seeds:
   basic-unsupported-source-boundary:
     source:
       - UnsupportedBoundary.format
+  java-closed-lambda:
+    source:
+      - Quote.run
   java-invalid-declaration:
     source:
       - TicketCode.read
@@ -443,5 +446,4 @@ seeds:
   composition-relation-distinct-aggregate:
     source:
       - DistinctMemo.count
-pending:
-  - java-closed-lambda
+pending: []

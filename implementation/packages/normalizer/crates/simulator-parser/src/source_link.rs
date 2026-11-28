@@ -101,7 +101,7 @@ impl JavaProgram {
                 return Err(format!("{}: {message}", class.source_file));
             }
         }
-        Ok(())
+        crate::local_lambda::link(self)
     }
 }
 
@@ -249,6 +249,11 @@ impl Names<'_> {
         use JavaExpr::*;
         match value {
             Lit(_) | Ident(_) => {}
+            LocalLambda { parameters, value } => {
+                let mut declared = locals.clone();
+                declared.extend(parameters.iter().cloned());
+                self.expr(value, types, &declared);
+            }
             InstanceOf {value, target, ..} | Cast {operand: value, target_type: target} => {
                 self.ty(target, types);
                 self.expr(value, types, locals);

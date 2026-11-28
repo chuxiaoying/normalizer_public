@@ -608,9 +608,44 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_optional_initializer(&mut self, ty: &JavaType) -> Result<Option<JavaExpr>, ParseError> {
-        self.eat_char(b'=')
-            .then(|| self.parse_initializer_expr(ty))
-            .transpose()
+        if !self.eat_char(b'=') { return Ok(None); }
+        if let Some(lambda) = self.parse_local_lambda()? { return Ok(Some(lambda)); }
+        self.parse_initializer_expr(ty).map(Some)
+    }
+
+    // Only local declaration initializers are admitted by this source lane.
+    // In particular, a switch rule's -> is not a lambda delimiter here.
+    fn parse_local_lambda(&mut self) -> Result<Option<JavaExpr>, ParseError> {
+        let start = self.pos;
+        let mut parameters = Vec::new();
+        if self.eat_char(b'(') {
+            if !self.eat_char(b')') {
+                loop {
+                    let Some(name) = self.read_ident() else { self.pos = start; return Ok(None); };
+                    parameters.push(name);
+                    if self.eat_char(b')') { break; }
+                    if !self.eat_char(b',') { self.pos = start; return Ok(None); }
+                }
+            }
+        } else if let Some(name) = self.read_ident() {
+            parameters.push(name);
+        } else {
+            self.pos = start;
+            return Ok(None);
+        }
+        self.skip_ws();
+        if !self.starts_with("->") { self.pos = start; return Ok(None); }
+        self.pos += 2;
+        for name in &parameters { self.require_local_binding_name(name)?; }
+        self.skip_ws();
+        let value = if self.peek() == Some(b'{') {
+            let body = self.parse_braced_statements()?;
+            let [JavaStatement::Return(Some(value))] = body.as_slice() else {
+                return Err(self.err("[JAVA-LAMBDA-BODY] expected a single value-return in the local lambda block"));
+            };
+            value.clone()
+        } else { self.parse_expression()? };
+        Ok(Some(JavaExpr::LocalLambda { parameters, value: Box::new(value) }))
     }
 
     fn require_local_binding_name(&self, name: &str) -> Result<(), ParseError> {

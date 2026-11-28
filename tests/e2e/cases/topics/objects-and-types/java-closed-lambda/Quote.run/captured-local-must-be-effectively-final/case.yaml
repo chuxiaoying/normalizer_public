@@ -1,0 +1,7 @@
+entry: src/Quote.java#Quote.run
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-LINK-FAILED]"
+    - "[JAVA-LOCAL-LAMBDA]"
+    - captured local is not effectively final

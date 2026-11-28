@@ -494,7 +494,7 @@ impl<'a> Engine<'a> {
         )
     }
     fn block(&mut self, body: &[S], id: &str, env: &mut Env, path: Expr) -> Result<Value> {
-        self.source_steps(body, id, env, path)?;
+        self.source_steps(body, id, env, path.clone())?;
         let terminal = self.realtime_completion.terminal_alternatives();
         if let Some(result) = terminal.as_ref().and_then(|exits| exits.normal_return_value()) {
             return Ok(Value::Term(self.methods[id].returns.clone(), self.normalize_execution_value(result)));
@@ -505,7 +505,12 @@ impl<'a> Engine<'a> {
                 realtime_state::Completion::Return(b::lit_null()));
             return Ok(Value::Term(Ty::Unit, b::lit_null()));
         }
-        if terminal.as_ref().is_some_and(|exits| exits.is_always_throwing()) {
+        if terminal.as_ref().is_some_and(|exits| exits.is_always_throwing())
+            || math::normalize(self.normal_path(path)).as_bool() == Some(false)
+        {
+            // For a nested call only its actual invocation domain must
+            // complete. All of that domain can throw while the otherwise
+            // unreachable complement still appears as Continue.
             // No expression can observe this carrier; the completion records
             // the actual exit and enclosing catches consume that completion.
             return Ok(Value::Term(self.methods[id].returns.clone(), b::lit_null()));

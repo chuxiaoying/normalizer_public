@@ -348,6 +348,9 @@ impl SourceEntry {
         };
         let (qualified_owner, method_name) = invocation.rsplit_once('.')
             .ok_or_else(|| fail("expected Class.method or Class.FIELD.method"))?;
+        if method_name.starts_with("<lambda:") {
+            return Err(fail("local lambda helper is not a source-declared entry"));
+        }
         let method_owner = program.find_class(qualified_owner);
         let receiver_root = qualified_owner.rsplit_once('.').and_then(|(owner, name)| {
             let class = program.find_class(owner)?;

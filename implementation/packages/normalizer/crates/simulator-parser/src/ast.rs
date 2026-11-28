@@ -225,6 +225,7 @@ impl JavaMethod {
 
     pub fn is_native(&self) -> bool { self.is_native }
     pub fn is_default(&self) -> bool { self.is_default }
+    pub fn is_local_lambda_helper(&self) -> bool { self.name.starts_with("<lambda:") }
 
     pub fn name(&self) -> &str {
         &self.name
@@ -437,6 +438,8 @@ impl CatchClause {
 /// Java 表达式。
 #[derive(Debug, Clone)]
 pub enum JavaExpr {
+    /// Source-only lambda syntax; the linker must certify it before execution.
+    LocalLambda { parameters: Vec<String>, value: Box<JavaExpr> },
     /// 字面量
     Lit(JavaLit),
 

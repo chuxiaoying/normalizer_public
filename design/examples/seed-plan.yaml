@@ -268,7 +268,7 @@ topics:
         test_status: covered
       - id: java-closed-lambda
         status: seeded
-        test_status: pending
+        test_status: covered
         surface: java
         focus: 源码可见的 Lambda 捕获局部值，实际调用时才执行本体
   state-and-aliasing:

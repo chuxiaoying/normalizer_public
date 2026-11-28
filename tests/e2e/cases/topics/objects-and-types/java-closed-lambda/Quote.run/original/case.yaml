@@ -1,0 +1,6 @@
+entry: src/Quote.java#Quote.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Quote.java#Quote.run, returns: number}
+  P: {parameters: {input: {position: 0, type: number}, delta: {position: 1, type: number}}}
+  R: delta + input + 1
