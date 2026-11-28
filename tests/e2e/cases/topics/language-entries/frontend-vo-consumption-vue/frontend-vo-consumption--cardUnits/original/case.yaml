@@ -1,0 +1,15 @@
+entry: src/OrderView.ts#cardUnits
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/OrderView.ts#cardUnits
+    returns: number
+  P:
+    parameters: {}
+  E:
+    draft:
+      kind: state
+      source: src/OrderView.ts#draft
+      fields: { units: number, ready: bool }
+  R: |-
+    CASE WHEN draft.ready THEN draft.units ELSE 0 END

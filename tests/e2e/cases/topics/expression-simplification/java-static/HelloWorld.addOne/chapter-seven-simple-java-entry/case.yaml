@@ -1,0 +1,11 @@
+entry: src/Add.java#Add.run
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Add.java#Add.run
+    returns: number
+  P:
+    parameters:
+      value: { position: 0, type: number }
+      delta: { position: 1, type: number }
+  R: delta + value

@@ -1,0 +1,18 @@
+entry: src/OrderView.ts#onUnitsChanged
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/OrderView.ts#onUnitsChanged
+    returns: void
+  P:
+    parameters:
+      units: { position: 0, type: number }
+  E:
+    draft:
+      kind: state
+      source: src/OrderView.ts#draft
+      fields: { units: number, ready: bool }
+  S:
+    - write: { target: draft.units, value: units }
+    - write: { target: draft.ready, value: true }
+  R: void

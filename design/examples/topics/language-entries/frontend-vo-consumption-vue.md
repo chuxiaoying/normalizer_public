@@ -129,3 +129,5 @@ R: |-
 - 源码到结果的验收要贯穿原入口和上下文约束。CLI 有输出不代表原行为已被完整承接；适配参数的技术取值范围不能冒充真实业务输入域。
 
 数值域的共性见[基础案例](../expression-simplification/java-static.md)，业务类型默认非空的共性见[对象案例](../objects-and-types/java-static-object.md)，状态身份的共性见[参数与状态同名案例](../basic-contracts/java-name-collision.md)。
+
+[第七章的对应原例](../../../chapters/07-PERS登场.md)：第七章的属性入口直接验收原例：无参数、无写入，只读取该次求值开始前的页面状态。

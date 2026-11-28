@@ -356,6 +356,7 @@ seeds:
   entry-event-handler:
     module:
       - Click.ts#onClick
+      - OrderView.ts#onUnitsChanged
   entry-typescript-standard-binding:
     module:
       - labels.ts#normalized
@@ -390,6 +391,7 @@ seeds:
     frontend-vo-consumption:
       - amount
       - caption
+      - cardUnits
   frontend-vo-production-vue:
     frontend-vo-production:
       - onLoad

@@ -1,0 +1,32 @@
+entry: src/Dispatch.java#Beans.DISPATCH.place
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/Dispatch.java#Beans.DISPATCH.place
+    returns: number
+
+  P:
+    parameters:
+      units: { position: 0, type: number }
+
+  E:
+    remaining:
+      kind: state
+      source: src/Dispatch.java#Beans.DISPATCH.remaining
+      type: number
+
+  S:
+    - write:
+        target: remaining
+        value: remaining - units
+    - call:
+        external: src/Dispatch.java#Beans.DISPATCH.orders.create
+        args: [units, remaining - units]
+        returns: number
+        result: $e_0
+
+  R: $e_0
+
+  throws:
+    - type: OrderUnavailable
+      when: completion.is_throw($e_0, OrderUnavailable)
