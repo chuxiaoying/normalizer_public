@@ -34,9 +34,17 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
 /// The empty member of an exact cardinality interval is the length-zero
 /// observation of the same acquired relation, not an independent failure.
 pub(super) fn empty_relation_is_within_count(empty: &Expr, count: &Expr) -> bool {
-    let Some(exists) = empty.as_not() else { return false; };
+    let empty = empty.as_not().and_then(|present| {
+        relation_exists_true_relation(present).or_else(|| {
+            let (op, relation, bound) = relation_count_bound(present)?;
+            (matches!(op, BinOpKind::Gt | BinOpKind::Ne) && bound == 0.into()).then_some(relation)
+        })
+    }).or_else(|| {
+            let (op, relation, bound) = relation_count_bound(empty)?;
+            (matches!(op, BinOpKind::Eq | BinOpKind::Le) && bound == 0.into()).then_some(relation)
+        });
     let (Some(empty), Some((op, relation, bound))) =
-        (relation_exists_true_relation(exists), relation_count_bound(count))
+        (empty, relation_count_bound(count))
     else { return false; };
     empty == relation && match op {
         BinOpKind::Lt => bound > 0.into(),

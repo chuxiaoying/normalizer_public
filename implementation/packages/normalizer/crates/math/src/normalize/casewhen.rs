@@ -115,6 +115,9 @@ fn simplify_impl(
     if let Some(value) = redundant_integer_point_arm(branches) {
         return value;
     }
+    if let Some(value) = redundant_cardinality_arm(expr) {
+        return value;
+    }
     // An exhaustive binary partition may be complemented only together
     // with swapping its values. Use the shared predicate ordering so source
     // branch order cannot choose two different normal forms.
@@ -326,6 +329,26 @@ fn redundant_integer_point_arm(branches: &[(Expr, Expr)]) -> Option<Expr> {
     }
     (crate::normalize(at(generic_value, subject, point)) == crate::normalize(at(point_value, subject, point)))
         .then(|| generic_value.clone())
+}
+
+// A comparison of a bare Count is total on the same acquired snapshot
+// used by its empty test. Reuse the OR absorption without moving any
+// acquisition, filtered projection or unrelated nullable read.
+fn redundant_cardinality_arm(expr: &Expr) -> Option<Expr> {
+    let ([(guard, yes)], no) = expr.as_total_case_when()? else { return None; };
+    if let (Some(yes), Some(no)) = (yes.as_bool(), no.as_bool()) {
+        if yes != no && super::relation::relation_count_bound(guard).is_some() {
+            return Some(if yes { guard.clone() } else { crate::builder::not(guard.clone()) });
+        }
+    }
+    if yes.as_bool() == Some(true) {
+        return super::boolean::absorbed_cardinality_disjunction(guard, no);
+    }
+    if no.as_bool() == Some(true) {
+        let opposite = crate::builder::not(guard.clone());
+        return super::boolean::absorbed_cardinality_disjunction(&opposite, yes);
+    }
+    None
 }
 
 fn collapse_two_value_exhaustive_to_default(

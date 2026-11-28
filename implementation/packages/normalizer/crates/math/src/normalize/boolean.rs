@@ -1100,6 +1100,13 @@ fn tighter_bound(
     }
 }
 
+// This proof is shared by an explicit OR and a short-circuit CASE.
+pub(super) fn absorbed_cardinality_disjunction(left: &Expr, right: &Expr) -> Option<Expr> {
+    if empty_relation_is_within_count(left, right) { return Some(right.clone()); }
+    if empty_relation_is_within_count(right, left) { return Some(left.clone()); }
+    None
+}
+
 fn comparison_or_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
     let mut out = disjuncts.to_vec();
     let mut changed = true;
@@ -1107,12 +1114,8 @@ fn comparison_or_absorb(disjuncts: &[Expr]) -> Vec<Expr> {
         changed = false;
         'outer: for i in 0..out.len() {
             for j in (i + 1)..out.len() {
-                let contained = if empty_relation_is_within_count(&out[i], &out[j]) {
-                    Some(out[j].clone())
-                } else if empty_relation_is_within_count(&out[j], &out[i]) {
-                    Some(out[i].clone())
-                } else { None };
-                let Some(absorbed) = contained.or_else(|| absorb_two_ordered_comparisons(&out[i], &out[j])) else {
+                let Some(absorbed) = absorbed_cardinality_disjunction(&out[i], &out[j])
+                    .or_else(|| absorb_two_ordered_comparisons(&out[i], &out[j])) else {
                     continue;
                 };
                 out[i] = absorbed;

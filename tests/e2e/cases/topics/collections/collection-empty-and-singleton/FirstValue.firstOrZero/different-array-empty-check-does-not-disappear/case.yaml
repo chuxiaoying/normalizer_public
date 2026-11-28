@@ -1,0 +1,13 @@
+entry: src/Bounds.java#Bounds.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Bounds.java#Bounds.run, returns: bool}
+  P:
+    parameters:
+      values: {position: 0, type: 'number[]'}
+      other: {position: 1, type: 'number[]'}
+  R: |-
+    CASE
+      WHEN 0 == LENGTH(values) THEN true
+      ELSE 9223372036854775809 > LENGTH(other)
+    END
