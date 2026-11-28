@@ -29,12 +29,18 @@ pub fn is_quotient(expr: &Expr) -> bool {
 /// Both operands are already evaluated integers. The language executor
 /// separates division by zero before constructing this value.
 pub fn on_nonzero_path(dividend: Expr, divisor: Expr) -> Expr {
+    if is_exact_zero(&dividend) {
+        return dividend;
+    }
     if divisor.as_lit().and_then(Lit::as_integer).is_some_and(|value| value == 1.into()) {
         return dividend;
     }
     crate::normalize(b::call(key(), vec![dividend, divisor]))
 }
 
+fn is_exact_zero(expr: &Expr) -> bool {
+    expr.as_lit().and_then(Lit::as_integer).is_some_and(|n| n.sign() == Sign::NoSign)
+}
 
 // Reuse the defined quotient domain. This is a value identity over
 // already observed operands; it does not execute either operand twice.
@@ -42,6 +48,10 @@ pub fn remainder_on_nonzero_path(dividend: Expr, divisor: Expr) -> Expr {
     if let (Some(a), Some(d)) = (dividend.as_lit().and_then(Lit::as_integer),
         divisor.as_lit().and_then(Lit::as_integer)) {
         return b::lit_integer(a % d);
+    }
+    if is_exact_zero(&dividend)
+        || divisor.as_lit().and_then(Lit::as_integer).is_some_and(|d| d == 1.into() || d == (-1).into()) {
+        return b::lit_int(0);
     }
     let quotient = on_nonzero_path(dividend.clone(), divisor.clone());
     crate::normalize(b::sub(dividend, b::mul(divisor, quotient)))

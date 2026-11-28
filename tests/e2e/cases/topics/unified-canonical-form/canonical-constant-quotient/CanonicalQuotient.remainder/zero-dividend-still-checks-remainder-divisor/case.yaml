@@ -1,0 +1,8 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.remainder
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/CanonicalQuotient.java#CanonicalQuotient.remainder, returns: number}
+  P: {parameters: {divisor: {position: 0, type: number}}}
+  R: "0"
+  throws:
+    - {type: java.lang.ArithmeticException, when: divisor == 0}
