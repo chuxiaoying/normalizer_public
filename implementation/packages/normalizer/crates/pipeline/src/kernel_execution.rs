@@ -732,11 +732,16 @@ impl<'a> Engine<'a> {
                     then_block,
                     else_block,
                 } => {
-                    let (test, matched) = if let J::InstanceOf { value, target, binding: Some(name) } = cond {
-                        need(crate::normalized::platform_string_type(self.program, target), "uncertified Java pattern target")?;
-                        let Some((value, _)) = self.source_operand(value, id, env, path.clone())? else { continue; };
+                    let (test, matched) = if let Some(pattern) = cond.direct_type_pattern() {
+                        need(crate::normalized::platform_string_type(self.program, pattern.target), "uncertified Java pattern target")?;
+                        let Some((value, _)) = self.source_operand(pattern.operand, id, env, path.clone())? else { continue; };
                         let (guard, narrowed) = self.java_string_pattern(value)?;
-                        (Value::Term(Ty::Bool, guard), Some((name.as_str(), narrowed)))
+                        let guard = if pattern.matched_when_true { guard } else { b::not(guard) };
+                        let survives = S::pattern_in_continuation(
+                            pattern.matched_when_true, then_block, else_block.as_deref());
+                        (Value::Term(Ty::Bool, guard), Some(super::source_control::SourcePattern {
+                            name: pattern.name, value: narrowed, matched_when_true: pattern.matched_when_true, survives,
+                        }))
                     } else {
                         (self.java_expr(cond, id, env, path.clone())?, None)
                     };

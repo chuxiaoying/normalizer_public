@@ -352,6 +352,37 @@ pub enum JavaStatement {
     Block(Vec<JavaStatement>),
 }
 
+impl JavaStatement {
+    /// Establish post-if visibility only when the native statement forms
+    /// prove that the unmatched arm cannot fall through and the matched one
+    /// can. This is lexical Java reachability, not symbolic feasibility.
+    pub fn pattern_in_continuation(
+        matched_when_true: bool, then_block: &[Self], else_block: Option<&[Self]>,
+    ) -> bool {
+        fn block_completion(body: &[JavaStatement]) -> Option<bool> {
+            use JavaStatement::*;
+            match body.last() {
+                None | Some(VarDecl { .. } | Assign { .. } | ExprStmt(_) | LocalIr(_)) => Some(true),
+                Some(Return(_) | Throw(_)) => Some(false),
+                Some(Block(inner)) => block_completion(inner),
+                Some(If { else_block: None, .. }) => Some(true),
+                Some(If { then_block, else_block: Some(other), .. }) => {
+                    match (block_completion(then_block), block_completion(other)) {
+                        (Some(true), _) | (_, Some(true)) => Some(true),
+                        (Some(false), Some(false)) => Some(false),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }
+        let yes = block_completion(then_block);
+        let no = block_completion(else_block.unwrap_or_default());
+        if matched_when_true { yes == Some(true) && no == Some(false) }
+        else { no == Some(true) && yes == Some(false) }
+    }
+}
+
 /// catch 子句。
 #[derive(Debug, Clone)]
 pub struct CatchClause {
@@ -385,7 +416,7 @@ pub enum JavaExpr {
     /// 标识符引用（变量名/类名/字段名，由 resolver 决定）
     Ident(String),
 
-    /// Native non-binding Java type test.
+    /// Native Java type test, optionally introducing a pattern variable.
     InstanceOf { value: Box<JavaExpr>, target: JavaType, binding: Option<String> },
 
     /// 字段访问：`obj.field`
@@ -470,7 +501,30 @@ pub enum JavaExpr {
     },
 }
 
-/// Java 字面量。
+/// A type-pattern condition and the Boolean branch where it binds.
+pub struct JavaTypePattern<'a> {
+    pub operand: &'a JavaExpr,
+    pub target: &'a JavaType,
+    pub name: &'a str,
+    pub matched_when_true: bool,
+}
+
+impl JavaExpr {
+    pub fn direct_type_pattern(&self) -> Option<JavaTypePattern<'_>> {
+        match self {
+            Self::InstanceOf { value, target, binding: Some(name) } => Some(JavaTypePattern {
+                operand: value, target, name, matched_when_true: true,
+            }),
+            Self::UnaryOp { op: JavaUnaryOp::Not, operand } => {
+                let mut pattern = operand.direct_type_pattern()?;
+                pattern.matched_when_true = !pattern.matched_when_true;
+                Some(pattern)
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum JavaLit {
     Int(i32),

@@ -7,6 +7,13 @@ use super::{
 use simulator_parser::ast::CatchClause;
 use simulator_parser::JavaType;
 
+pub(super) struct SourcePattern<'a> {
+    pub name: &'a str,
+    pub value: Value,
+    pub matched_when_true: bool,
+    pub survives: bool,
+}
+
 impl Engine<'_> {
     /// A lexical child can update an outer binding, but cannot export its own
     /// locals. Returns and effects already live in the same execution frame.
@@ -39,33 +46,50 @@ impl Engine<'_> {
             |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))
     }
 
+    fn source_if_arm(
+        &mut self, body: &[S], id: &str, env: &mut Env, path: Expr,
+        pattern: Option<&SourcePattern<'_>>,
+    ) -> Result<Option<Value>> {
+        let Some(pattern) = pattern else {
+            self.source_scope(body, id, env, path)?;
+            return Ok(None);
+        };
+        // A successful pattern projects the evaluated operand, never a
+        // fresh value. A scoped arm can rebind it before a legal fallthrough.
+        let mut scoped = env.clone();
+        need(scoped.insert(pattern.name.into(), pattern.value.clone()).is_none(),
+            "source pattern shadows an active local")?;
+        self.source_steps(body, id, &mut scoped, path)?;
+        for (name, value) in env {
+            *value = scoped.remove(name).expect("pattern arm preserved its outer binding");
+        }
+        Ok(scoped.remove(pattern.name))
+    }
+
     pub(super) fn source_if(
-        &mut self,
-        condition: Expr,
-        yes: &[S],
-        no: &[S],
-        matched: Option<(&str, Value)>,
-        id: &str,
-        env: &mut Env,
-        path: Expr,
+        &mut self, condition: Expr, yes: &[S], no: &[S],
+        pattern: Option<SourcePattern<'_>>,
+        id: &str, env: &mut Env, path: Expr,
     ) -> Result<()> {
+        let mut after_yes = None;
+        let mut after_no = None;
         self.source_branch(condition, env, path,
             |engine, locals, path| {
-                if let Some((name, value)) = matched {
-                    // A successful pattern projects the evaluated operand,
-                    // not a new acquisition or a local visible after this arm.
-                    let mut scoped = locals.clone();
-                    need(scoped.insert(name.into(), value).is_none(), "source pattern shadows an active local")?;
-                    engine.source_steps(yes, id, &mut scoped, path)?;
-                    for (name, value) in locals {
-                        *value = scoped.remove(name).expect("pattern arm preserved its outer binding");
-                    }
-                    Ok(())
-                } else {
-                    engine.source_scope(yes, id, locals, path)
-                }
+                after_yes = engine.source_if_arm(yes, id, locals, path,
+                    pattern.as_ref().filter(|binding| binding.matched_when_true))?;
+                Ok(())
             },
-            |engine, locals, path| engine.source_scope(no, id, locals, path))
+            |engine, locals, path| {
+                after_no = engine.source_if_arm(no, id, locals, path,
+                    pattern.as_ref().filter(|binding| !binding.matched_when_true))?;
+                Ok(())
+            })?;
+        if let Some(pattern) = pattern.filter(|binding| binding.survives) {
+            if let Some(value) = after_yes.or(after_no) {
+                env.insert(pattern.name.to_owned(), value);
+            }
+        }
+        Ok(())
     }
 
     fn source_branch(

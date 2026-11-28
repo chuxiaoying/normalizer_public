@@ -1,0 +1,10 @@
+entry: src/Entry.java#Entry.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Entry.java#Entry.read, returns: text}
+  P:
+    parameters: {}
+  throws:
+    - type: java.lang.IllegalArgumentException
+      when: 'true'
+      payload: '"guard"'

@@ -1,0 +1,12 @@
+entry: src/Entry.java#Entry.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Entry.java#Entry.read, returns: text}
+  P:
+    parameters:
+      value: {position: 0, type: unknown}
+  R: '"fixed"'
+  throws:
+    - type: java.lang.IllegalArgumentException
+      when: '"string" != typeof(value)'
+      payload: '"guard"'

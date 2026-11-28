@@ -1,0 +1,16 @@
+entry: src/Entry.java#Entry.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Entry.java#Entry.read, returns: text}
+  P:
+    parameters:
+      value: {position: 0, type: unknown}
+      stop: {position: 1, type: bool}
+  R: 'value'
+  throws:
+    - type: java.lang.IllegalArgumentException
+      when: 'stop AND "string" != typeof(value)'
+      payload: '"first"'
+    - type: java.lang.IllegalArgumentException
+      when: 'NOT (stop) AND "string" != typeof(value)'
+      payload: '"second"'

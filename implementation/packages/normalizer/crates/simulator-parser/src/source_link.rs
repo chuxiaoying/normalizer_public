@@ -269,12 +269,19 @@ impl Names<'_> {
                 ExprStmt(value) | Throw(value) | Return(Some(value)) => self.expr(value, types, locals),
                 If {cond, then_block, else_block} => {
                     self.expr(cond, types, locals);
-                    let mut matched = locals.clone();
-                    if let JavaExpr::InstanceOf { binding: Some(name), .. } = cond {
-                        matched.insert(name.clone());
+                    let mut yes = locals.clone();
+                    let mut no = locals.clone();
+                    if let Some(pattern) = cond.direct_type_pattern() {
+                        let arm = if pattern.matched_when_true { &mut yes } else { &mut no };
+                        arm.insert(pattern.name.to_owned());
+                        if JavaStatement::pattern_in_continuation(
+                            pattern.matched_when_true, then_block, else_block.as_deref(),
+                        ) {
+                            locals.insert(pattern.name.to_owned());
+                        }
                     }
-                    self.block(then_block, types, &mut matched);
-                    if let Some(body) = else_block { self.block(body, types, &mut locals.clone()); }
+                    self.block(then_block, types, &mut yes);
+                    if let Some(body) = else_block { self.block(body, types, &mut no); }
                 }
                 Switch {selector, cases, default} => {
                     self.expr(selector, types, locals);

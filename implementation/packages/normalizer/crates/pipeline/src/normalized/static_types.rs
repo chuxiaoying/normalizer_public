@@ -817,23 +817,29 @@ impl Admission<'_> {
                     }
                 }
                 S::If { cond, then_block, else_block } => {
-                    let mut matched = scope.clone();
-                    if let E::InstanceOf { value, target, binding: Some(name) } = cond {
-                        if !super::platform_string_type(self.program, target) {
+                    let mut yes = scope.clone();
+                    let mut no = scope.clone();
+                    if let Some(pattern) = cond.direct_type_pattern() {
+                        if !super::platform_string_type(self.program, pattern.target) {
                             return Err(self.diagnostic("NORM-SOURCE-TYPE", "pattern target requires a supported reference narrowing"));
                         }
-                        self.instanceof_type(value, target, scope)?;
-                        self.check_local_name(name, scope)?;
-                        matched.insert(name.clone(), Binding {
+                        self.instanceof_type(pattern.operand, pattern.target, scope)?;
+                        self.check_local_name(pattern.name, scope)?;
+                        let binding = Binding {
                             ty: JavaType::Class("java.lang.String".into()),
                             initialized_final: false,
                             initialized_local: true,
-                        });
+                        };
+                        let matched = if pattern.matched_when_true { &mut yes } else { &mut no };
+                        matched.insert(pattern.name.to_owned(), binding.clone());
+                        if S::pattern_in_continuation(pattern.matched_when_true, then_block, else_block.as_deref()) {
+                            scope.insert(pattern.name.to_owned(), binding);
+                        }
                     } else {
                         self.condition(self.expression(cond, scope)?, "if condition")?;
                     }
-                    self.block(then_block, &mut matched)?;
-                    if let Some(body) = else_block { self.block(body, &mut scope.clone())?; }
+                    self.block(then_block, &mut yes)?;
+                    if let Some(body) = else_block { self.block(body, &mut no)?; }
                 }
                 S::Switch { selector, cases, default } => {
                     let actual = self.expression(selector, scope)?;

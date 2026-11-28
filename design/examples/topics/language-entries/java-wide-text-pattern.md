@@ -44,3 +44,5 @@ throws:
 模式作用域和 `null` 的匹配规则见 [JLS 6.3.2.2](https://docs.oracle.com/javase/specs/jls/se21/html/jls-6.html#jls-6.3.2.2) 和 [JLS 15.20.2](https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.20.2)。
 
 操作数只执行一次。若操作数是调用 `take(value)`，且该调用先把入口状态 `seen` 加一再返回原值，不论类型匹配与否，PERS 都只有一次无条件写入 `seen + 1`；文本分支也不重新调用 `take`。
+
+取反后，模式名进入“不满足 `if` 条件但匹配成功”的分支，而不是无条件可见。若未匹配分支直接 `throw` 或 `return`，且匹配分支可以继续，后续语句也能用模式值：例如 `if (!(value instanceof String text)) throw new IllegalArgumentException("guard"); return text;`。显式 `else` 全部退出时同理；匹配分支重新赋给 `text` 后，后续读取是新值。若未匹配分支仍可能继续，后续无该模式名，静态拒绝。反过来，静态名字可见也不能凭空造出成功路径：已知 `value` 是 `null` 时只发布异常，不发布 R。
