@@ -321,6 +321,7 @@ seeds:
       - CanonicalQuotient.large
       - CanonicalQuotient.guarded
       - CanonicalQuotient.caught
+      - CanonicalQuotient.remainder
   canonical-exception-payload:
     source:
       - CanonicalFailure.validate

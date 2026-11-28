@@ -1,0 +1,8 @@
+entry: src/CanonicalQuotient.java#CanonicalQuotient.remainder
+expected:
+  schema: normalizer.pers/1
+  entry: { function: src/CanonicalQuotient.java#CanonicalQuotient.remainder, returns: number }
+  P:
+    parameters:
+      input: {position: 0, type: number}
+  R: input - 5 * QUOTIENT(input, 5)

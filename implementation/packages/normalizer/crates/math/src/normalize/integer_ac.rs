@@ -66,6 +66,11 @@ pub(super) fn exact_business_integer(value: &Expr, ctx: &dyn SortContext) -> boo
         ExprKind::RowValue { sql: Some(column), .. } => column.scalar_type == "number",
         ExprKind::Call { key, .. } if crate::domains::completion::output_name(&crate::func_name(*key)) == "completion.value" =>
             crate::domains::primitive::registry::func_return_type(*key) == Some(crate::Primitive::Number),
+        // A quotient produces an exact integer wherever it is defined.
+        // This is not totality: the strict branch below retains both
+        // operands and never replaces an unavailable quotient by zero.
+        ExprKind::Call { args, .. } if crate::domains::integer_quotient::is_quotient(value) =>
+            args.iter().all(|arg| exact_business_integer(arg, ctx)),
         ExprKind::Call { .. } => crate::domains::composite::field_projection(value)
             .is_some_and(|(_, _, ty)| ty == crate::Primitive::Number),
         // Strict addition/multiplication require both operands on the

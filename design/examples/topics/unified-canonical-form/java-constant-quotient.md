@@ -95,3 +95,32 @@ R: QUOTIENT(input, 5)
 ```
 
 例如 `-6 → -1`，`-4 → 0`。这里没有环境读取或写入。
+
+
+### 符号余数保留向零截断和零除数异常
+
+```java
+class CanonicalQuotient {
+    static int remainder(int input, int divisor) {
+        return input % divisor;
+    }
+}
+```
+
+**原样通过。** 在 `divisor != 0` 的正常完成域，余数等于被除数减去除数与向零截断商的乘积。已经取得的两个值可以在同一表达式中复用，不重新执行它们的源码。复用 [业务数值的精确合同](../../../chapters/06-业务至上.md#bf-02-业务数值的精确合同)中的 `QUOTIENT`，不用新增一种 IR 原生操作。例：`-13 % 5 = -13 - 5 × (-2) = -3`，不是向下取余。
+
+```yaml
+schema: normalizer.pers/1
+entry:
+  function: src/CanonicalQuotient.java#CanonicalQuotient.remainder
+  returns: number
+P:
+  parameters:
+    input: {position: 0, type: number}
+    divisor: {position: 1, type: number}
+R: input - divisor * QUOTIENT(input, divisor)
+throws:
+  - {type: java.lang.ArithmeticException, when: divisor == 0}
+```
+
+把除数固定成 `5` 时，不再有异常分支，R 是 `input - 5 * QUOTIENT(input, 5)`。乘法中已取得的标量（零次运算）排在商（一次运算）前面。

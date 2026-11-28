@@ -34,3 +34,15 @@ pub fn on_nonzero_path(dividend: Expr, divisor: Expr) -> Expr {
     }
     crate::normalize(b::call(key(), vec![dividend, divisor]))
 }
+
+
+// Reuse the defined quotient domain. This is a value identity over
+// already observed operands; it does not execute either operand twice.
+pub fn remainder_on_nonzero_path(dividend: Expr, divisor: Expr) -> Expr {
+    if let (Some(a), Some(d)) = (dividend.as_lit().and_then(Lit::as_integer),
+        divisor.as_lit().and_then(Lit::as_integer)) {
+        return b::lit_integer(a % d);
+    }
+    let quotient = on_nonzero_path(dividend.clone(), divisor.clone());
+    crate::normalize(b::sub(dividend, b::mul(divisor, quotient)))
+}
