@@ -332,6 +332,8 @@ enum Node {
     ObserveTuple(tuple_observation::Observation),
     #[serde(rename = "value.text_equal")]
     TextEqual { left: Box<Node>, right: Box<Node> },
+    #[serde(rename = "value.text_concat")]
+    TextConcat { left: Box<Node>, right: Box<Node> },
     #[serde(rename = "value.text_trim")]
     TrimText { value: Box<Node> },
     #[serde(rename = "value.text_default_if_blank")]

@@ -233,3 +233,7 @@ R: |-
 严格 TypeScript 的 `mode === "pickup"` 比较的是文本内容，不是对象身份。文本中孤立的 UTF-16 代理项保持原样，不用替换字符替代。若入口接收 `string | null`，`value === null ? "fallback" : value` 只在匹配 `null` 时返回兜底；空字符串仍返回原值。改成 `null !== value ? value : "fallback"` 也得到同一 CASE。窄化只适用于这次受检的绑定，不保证另一个可空输入也是文本。这些都是原生表达式，无需预处理为别的语言或标准库调用。
 
 声明返回可空文本时，文本臂和 `null` 臂一起归到 `text?`。例如 `enabled ? "ready" : null` 和 `!enabled ? null : "ready"` 得到同一个 CASE。若是 `value === null ? null : value`，两臂其实都保留同一个入参，可以直接返回 `value`；若另一路是不同的绑定，就不能这样合并。恒定返回 `null` 仍是正常完成，PERS 明确写 `R: 'null'`，不是省略 R。
+
+### 原生文本拼接保留操作数顺序
+
+两个操作数都已知为非空文本时，`suffix + prefix` 按原顺序拼接，不按参数名重排。两个文本常量也按原顺序折叠：`"上海" + "账单"` 得到 `"上海账单"`。如果两条路径分别拼接不同前缀，就保留各自选中的结果，例如 `CASE WHEN pickup THEN "门店：" + value ELSE "送达：" + value END`。这与[等价候选的准入](../../../chapters/08-统一定形.md#cf-01-等价候选的准入)一致：数值加法的交换规则不适用于文本拼接。

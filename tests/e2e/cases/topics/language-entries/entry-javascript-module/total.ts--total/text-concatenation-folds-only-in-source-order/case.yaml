@@ -1,0 +1,7 @@
+entry: src/total.ts#total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/total.ts#total, returns: text}
+  P:
+    parameters: {}
+  R: '"上海账单"'

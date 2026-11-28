@@ -367,6 +367,11 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     if (expr.op === 'binary' && Object.hasOwn(numericOperators, expr.operator)) {
       const [type, operator, negate] = numericOperators[expr.operator];
       const left = evaluate(expr.left), right = evaluate(expr.right);
+      // Native text concatenation uses the two acquired values in source
+      // order. The exact-number path below never handles coercion.
+      if (operator === 'add' && left.type === 'text' && right.type === 'text') {
+        return {type: 'text', node: internal('value.text_concat', {left: left.node, right: right.node})};
+      }
       // Negating an ordered comparison is valid on exact business numbers,
       // not on unrestricted JS values (which may include NaN or coercion).
       const numberPair = left.type === 'number' && right.type === 'number';

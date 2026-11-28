@@ -231,6 +231,15 @@ impl<'a> Engine<'a> {
                     "native text comparison requires text or null")?;
                 Ok(Value::Term(Ty::Bool, self.order_execution_comparison(BinOpKind::Eq, a, z)))
             }
+            Node::TextConcat { left, right } => {
+                let left = self.node(left, env, path.clone())?;
+                let right = self.node(right, env, path)?;
+                let a = left.scalar()?;
+                let z = right.scalar()?;
+                need(left.ty() == Ty::Text && right.ty() == Ty::Text && !a.is_null() && !z.is_null(),
+                    "native text concatenation requires two non-null text values")?;
+                Ok(Value::Term(Ty::Text, self.normalize_execution_value(b::add(a, z))))
+            }
             Node::TrimText { value } => {
                 let text = self.node(value, env, path)?;
                 need(text.ty() == Ty::Text || text.scalar().is_ok_and(|value| value.is_null()),

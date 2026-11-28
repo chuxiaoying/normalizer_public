@@ -1,0 +1,9 @@
+entry: src/total.ts#total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/total.ts#total, returns: text}
+  P:
+    parameters:
+      pickup: {position: 0, type: bool}
+      value: {position: 1, type: text}
+  R: 'CASE WHEN pickup THEN "门店：" + value ELSE "送达：" + value END'
