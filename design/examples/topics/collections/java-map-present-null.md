@@ -80,3 +80,5 @@ R: CASE WHEN cleared THEN null ELSE fallback END
 **两个分支都写入**　清空分支令 `main → null`、`left → "pending"`，另一分支令 `main → "queued"`、`right → "confirmed"`。对 `main`，两个分支均有该键，不能读到默认文本；只在一个分支写入的键，在另一个分支才读取默认文本。局部变量名与同名文字也不互换：写入变量 `caption` 保存已取得的值，写入字面量 `"caption"` 保存这七个字符。
 
 不能仅凭载体类名判定映射语义。未给出关系声明的载体、非文本键或非文本值都不能直接沿用此局部扩展。
+
+使用第五章示例中的 `java.util.HashMap<String,String>` 作为局部映射载体时，同样按已声明的关系指令区分缺键和已存的 null，不静默补值。

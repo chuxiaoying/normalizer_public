@@ -1,0 +1,8 @@
+entry: src/CanonicalArray.java#CanonicalArray.digits
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/CanonicalArray.java#CanonicalArray.digits, returns: bool}
+  P:
+    parameters:
+      first: {position: 0, type: bool}
+  R: first

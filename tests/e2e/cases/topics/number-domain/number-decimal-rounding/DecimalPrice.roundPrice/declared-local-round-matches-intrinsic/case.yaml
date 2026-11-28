@@ -1,0 +1,8 @@
+entry: src/DecimalRound.java#DecimalRound.round
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/DecimalRound.java#DecimalRound.round, returns: number}
+  P:
+    parameters:
+      value: {position: 0, type: number}
+  R: N.round(value, 2, N.HALF_UP)

@@ -498,15 +498,11 @@ impl Loaded {
     pub fn from_linked_source(program: JavaProgram, root: &Path, locator: &str) -> Result<Self> {
         let resolved = source_entry::SourceEntry::resolve(&program, root, locator)?;
         let target = resolved.target.clone();
-        Self::admit_source(program, &target, Some(resolved))
+        Self::admit_source(program, &target, resolved)
     }
 
-    pub fn from_parsed_source(program: JavaProgram, entry: &str) -> Result<Self> {
-        Self::admit_source(program, entry, None)
-    }
-
-    fn admit_source(program: JavaProgram, entry: &str, source_entry: Option<source_entry::SourceEntry>) -> Result<Self> {
-        let receiver = source_entry.as_ref().and_then(|source| source.receiver.as_ref())
+    fn admit_source(program: JavaProgram, entry: &str, source_entry: source_entry::SourceEntry) -> Result<Self> {
+        let receiver = source_entry.receiver.as_ref()
             .map(|receiver| (receiver.owner.as_str(), &receiver.assembly_fields));
         let crate::normalized::SourceEvidence {
             layouts: source_layouts,
@@ -515,7 +511,7 @@ impl Loaded {
             ports: source_ports,
             nullable_entry_parameters: source_nullable_entry_parameters,
         } = crate::normalized::validate_with_receiver(
-            &program, entry, receiver, source_entry.as_ref().map(|source| source.locator.as_str()),
+            &program, entry, receiver, Some(source_entry.locator.as_str()),
         )?;
         let ports = source_ports::contracts(&program, &source_ports)?;
         // A Java throws clause binds the exception declaration. A class
@@ -552,7 +548,7 @@ impl Loaded {
         // The source gate already checked syntax, calls and cycles. Only
         // normalize(entry) executes code, with the actual entry arguments and
         // receiver; auditing a constructor as a stand-alone call has no meaning.
-        Ok(Self { project, program, source_entry })
+        Ok(Self { project, program, source_entry: Some(source_entry) })
     }
     fn read_adapter_project(path: &Path) -> Result<Self> {
         let load_started = Instant::now();

@@ -131,20 +131,6 @@ pub(crate) fn canonicalize_terminal_completion(expression: &Expr, context: &dyn 
     (new != *expression).then_some(new)
 }
 
-/// Compare the full trees after normalizing the complement. Terminal selection
-/// is still lazy: exchanging the two arms does not evaluate either arm in the
-/// other arm's domain. Callers must first establish a total Boolean test in
-/// the domain where it is already evaluated.
-pub fn preferred_complement(
-    condition: &Expr,
-    yes: &Expr,
-    no: &Expr,
-    context: &dyn SortContext,
-) -> Option<Expr> {
-    if selection_comparison(condition, yes, no).is_some() { return None; }
-    preferred_complement_for_case(condition, yes, no, context)
-}
-
 fn preferred_complement_for_case(
     condition: &Expr, yes: &Expr, no: &Expr, context: &dyn SortContext,
 ) -> Option<Expr> {

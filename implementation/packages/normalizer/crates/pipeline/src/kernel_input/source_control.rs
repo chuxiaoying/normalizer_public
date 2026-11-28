@@ -379,7 +379,7 @@ impl Engine<'_> {
         self.realtime_throws.truncate(prior_realtime_throws);
         let mut handled = Vec::new();
         for catch in catches {
-            // from_parsed_source has bound every handler, independent of its reachability.
+            // Source admission has bound every handler, independent of its reachability.
             let caught = catch.exception_classes().iter()
                 .map(|name| &self.project.source_exception_bindings[id][name])
                 .collect::<Vec<_>>();
