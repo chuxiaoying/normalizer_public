@@ -713,9 +713,9 @@ impl<'a> Engine<'a> {
             if path.as_bool() == Some(false) {
                 break;
             }
-            if self.realtime_completion.has_pending_switch_break() {
+            if self.realtime_completion.has_pending_region_exit() {
                 // Run the suffix once on its live domain, preserving the
-                // locals at the already-broken paths for switch exit.
+                // locals on paths that already exited their lexical region.
                 return self.source_branch(
                     continuing,
                     env,
@@ -1152,10 +1152,16 @@ impl<'a> Engine<'a> {
                         path,
                     )?;
                 }
-                S::SwitchBreak => {
+                S::SwitchBreak | S::DoOnceExit => {
+                    use realtime_state::{Completion, RegionExit};
+                    let target = if matches!(s, S::SwitchBreak) {
+                        RegionExit::Switch
+                    } else {
+                        RegionExit::SinglePassLoop
+                    };
                     self.realtime_completion = self
                         .realtime_completion
-                        .replace_continue(realtime_state::Completion::SwitchBreak);
+                        .replace_continue(Completion::RegionExit(target));
                     return Ok(());
                 }
                 S::Switch {
@@ -1201,8 +1207,23 @@ impl<'a> Engine<'a> {
                         }
                         let local =
                             std::mem::replace(&mut self.realtime_completion, Completion::Continue);
-                        self.realtime_completion = parent.replace_continue(local.finish_switch());
+                        self.realtime_completion = parent.replace_continue(
+                            local.finish_region(realtime_state::RegionExit::Switch),
+                        );
                     }
+                }
+                S::DoWhile {
+                    cond: J::Lit(JavaLit::Bool(false)),
+                    body,
+                } => {
+                    use realtime_state::{Completion, RegionExit};
+                    let parent =
+                        std::mem::replace(&mut self.realtime_completion, Completion::Continue);
+                    self.source_scope(body, id, env, path)?;
+                    let local =
+                        std::mem::replace(&mut self.realtime_completion, Completion::Continue);
+                    self.realtime_completion =
+                        parent.replace_continue(local.finish_region(RegionExit::SinglePassLoop));
                 }
                 S::For {
                     init,

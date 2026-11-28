@@ -377,8 +377,20 @@ families:
         focus: 数组和可迭代对象的增强 for、取值顺序和终止条件
         gap: review
       while-and-do:
-        focus: while 先判断与 do-while 至少执行一次
+        focus: 前置判断及更一般的后置判断边界
         gap: review
+      single-pass-post-test:
+        focus: 后置条件为假时先执行循环体，保留作用域和各层跳转的真实目标
+        seed: java-loop-post-test-once
+        evidence:
+          - [PostTest.run, condition-can-stay-true-forever, reject]
+          - [PostTest.run, conditional-break-keeps-the-written-prefix, pers]
+          - [PostTest.run, conditional-continue-keeps-the-written-prefix, pers]
+          - [PostTest.run, finally-runs-before-a-pending-loop-exit, pers]
+          - [PostTest.run, nested-post-test-loop-does-not-consume-the-outer-exit, pers]
+          - [PostTest.run, original, pers]
+          - [PostTest.run, return-stops-the-loop-and-the-method, pers]
+          - [PostTest.run, switch-break-stays-in-the-loop-but-continue-leaves-it, pers]
   exceptions-and-resources:
     title: 异常、清理与资源
     leaves:

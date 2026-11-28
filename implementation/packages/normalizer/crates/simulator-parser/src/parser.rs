@@ -538,7 +538,10 @@ impl<'a> Parser<'a> {
             explicit: std::mem::take(&mut self.imports),
             unbound: std::mem::take(&mut self.unbound_imports),
         };
-        Ok(JavaProgram { classes, import_units: vec![imports] })
+        Ok(JavaProgram {
+            classes,
+            import_units: vec![imports],
+        })
     }
 
     fn take_class_kind(&mut self) -> Result<Option<bool>, ParseError> {

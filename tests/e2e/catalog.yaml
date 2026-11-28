@@ -175,6 +175,9 @@ seeds:
     source:
       - Recursive.down
       - Recursive.finiteDown
+  java-loop-post-test-once:
+    source:
+      - PostTest.run
   loop-variable-finite-bound:
     source:
       - VariableLoop.count

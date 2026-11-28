@@ -176,10 +176,11 @@ impl<'a> Parser<'a> {
         if self.eat_keyword("switch") {
             return self.parse_switch();
         }
-        for keyword in ["do", "assert"] {
-            if self.eat_keyword(keyword) {
-                return Err(self.err(&format!("{keyword} requires explicit preprocessing")));
-            }
+        if self.eat_keyword("do") {
+            return self.parse_do_while();
+        }
+        if self.eat_keyword("assert") {
+            return Err(self.err("assert requires explicit preprocessing"));
         }
         let jump_at = self.pos;
         for (keyword, statement) in [
@@ -468,6 +469,21 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let enters_next = !breaks && self.peek() != Some(b'}') && !body.last().is_some_and(exits);
         Ok((body, enters_next))
+    }
+
+    fn parse_do_while(&mut self) -> Result<JavaStatement, ParseError> {
+        let mut body = self.parse_single_or_block()?;
+        if !self.eat_keyword("while") {
+            return Err(self.err("[JAVA-POST-TEST-LOOP] expected while after do body"));
+        }
+        self.require_delimiter(b'(', "expected '(' after 'while'")?;
+        let cond = self.parse_expression()?;
+        self.require_delimiter(b')', "expected ')' after do-while condition")?;
+        self.require_delimiter(b';', "expected ';' after do-while condition")?;
+        if matches!(cond, JavaExpr::Lit(JavaLit::Bool(false))) {
+            bind_do_once_exits(&mut body);
+        }
+        Ok(JavaStatement::DoWhile { cond, body })
     }
 
     fn parse_while(&mut self) -> Result<JavaStatement, ParseError> {
@@ -1776,6 +1792,49 @@ fn bind_switch_breaks(body: &mut [JavaStatement]) {
                 }
                 if let Some(body) = finally_block {
                     bind_switch_breaks(body);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// A nested switch already owns its own breaks; a continue still targets
+// this loop. Nested loops own both transfers and are not traversed.
+fn bind_do_once_exits(body: &mut [JavaStatement]) {
+    use JavaStatement::*;
+    for statement in body {
+        match statement {
+            LoopBreak | LoopContinue => *statement = DoOnceExit,
+            Block(body) => bind_do_once_exits(body),
+            If {
+                then_block,
+                else_block,
+                ..
+            } => {
+                bind_do_once_exits(then_block);
+                if let Some(body) = else_block {
+                    bind_do_once_exits(body);
+                }
+            }
+            Switch { cases, default, .. } => {
+                for (_, body) in cases {
+                    bind_do_once_exits(body);
+                }
+                bind_do_once_exits(default);
+            }
+            Try {
+                body,
+                catches,
+                finally_block,
+                ..
+            } => {
+                bind_do_once_exits(body);
+                for catch in catches {
+                    bind_do_once_exits(&mut catch.body);
+                }
+                if let Some(body) = finally_block {
+                    bind_do_once_exits(body);
                 }
             }
             _ => {}

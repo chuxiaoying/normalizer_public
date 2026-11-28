@@ -2,8 +2,8 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 127
-  seeded: 127
+  total: 128
+  seeded: 128
   planned: 0
 topics:
   expression-simplification:
@@ -344,6 +344,11 @@ topics:
         surface: java/javascript/typescript
         focus: 常量边界循环由内核直接支持
         test_status: covered
+      - id: java-loop-post-test-once
+        status: seeded
+        test_status: covered
+        surface: java
+        focus: 后置判断的首轮执行、循环跳转、嵌套目标和终止证明
       - id: loop-variable-finite-bound
         status: seeded
         surface: java/javascript/typescript

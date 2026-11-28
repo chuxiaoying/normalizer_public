@@ -730,7 +730,7 @@ fn walk(
                 }
                 walk(body, visit, declare)?;
             }
-            While { cond, body } => {
+            While { cond, body } | DoWhile { cond, body } => {
                 walk_expr(cond, visit)?;
                 walk(body, visit, declare)?;
             }
@@ -768,6 +768,7 @@ fn walk(
             | LoopBreak
             | LoopContinue
             | SwitchBreak
+            | DoOnceExit
             | ObjectSuperConstructor => {}
         }
     }

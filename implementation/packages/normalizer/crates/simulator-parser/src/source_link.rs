@@ -10,15 +10,29 @@ use std::{
 const PLATFORM_CARRIERS: &[&str] = &["java.math.BigDecimal", "java.time.LocalDate"];
 
 fn host_package(raw: &str) -> bool {
-    ["java.", "javax.", "jdk.", "sun.", "com.sun."].iter().any(|prefix| raw.starts_with(prefix))
+    ["java.", "javax.", "jdk.", "sun.", "com.sun."]
+        .iter()
+        .any(|prefix| raw.starts_with(prefix))
 }
 
 fn implicit_java_type(raw: &str) -> bool {
-    matches!(raw.strip_prefix("java.lang."), Some(
-        "String" | "Object" | "AutoCloseable" | "Throwable" | "Exception" | "RuntimeException"
-        | "NullPointerException" | "ArithmeticException" | "IllegalArgumentException"
-        | "IndexOutOfBoundsException" | "ArrayIndexOutOfBoundsException" | "NegativeArraySizeException"
-    ))
+    matches!(
+        raw.strip_prefix("java.lang."),
+        Some(
+            "String"
+                | "Object"
+                | "AutoCloseable"
+                | "Throwable"
+                | "Exception"
+                | "RuntimeException"
+                | "NullPointerException"
+                | "ArithmeticException"
+                | "IllegalArgumentException"
+                | "IndexOutOfBoundsException"
+                | "ArrayIndexOutOfBoundsException"
+                | "NegativeArraySizeException"
+        )
+    )
 }
 
 impl JavaProgram {
@@ -52,7 +66,10 @@ impl JavaProgram {
                 let allowed = name == NORMALIZER_INTRINSICS_IMPORT
                     || PLATFORM_CARRIERS.contains(&name.as_str())
                     || visible.get(name).is_some_and(|public| {
-                        *public || packages.get(name).is_some_and(|package| package == &unit.package)
+                        *public
+                            || packages
+                                .get(name)
+                                .is_some_and(|package| package == &unit.package)
                     });
                 if !allowed {
                     return Err(format!(
@@ -402,8 +419,10 @@ impl Names<'_> {
                 self.require_member_access(&bound, None);
                 *name = bound;
             }
-        } else if host_package(name) && !PLATFORM_CARRIERS.contains(&name.as_str())
-            && !implicit_java_type(name) {
+        } else if host_package(name)
+            && !PLATFORM_CARRIERS.contains(&name.as_str())
+            && !implicit_java_type(name)
+        {
             self.issue.borrow_mut().get_or_insert_with(|| {
                 format!("[NORM-IMPORT] platform type {name} is outside the source allowlist")
             });
@@ -468,11 +487,30 @@ impl Names<'_> {
                     }
                     return;
                 }
-                let imported_platform = self.imports.get(first).is_some_and(|path|
-                    PLATFORM_CARRIERS.contains(&path.as_str()));
-                let implicit_platform = matches!(first, "System" | "Math" | "StrictMath" | "Class"
-                    | "Thread" | "Runtime" | "String" | "Object" | "Integer" | "Long" | "Double"
-                    | "Float" | "Boolean" | "Character" | "Byte" | "Short" | "Void");
+                let imported_platform = self
+                    .imports
+                    .get(first)
+                    .is_some_and(|path| PLATFORM_CARRIERS.contains(&path.as_str()));
+                let implicit_platform = matches!(
+                    first,
+                    "System"
+                        | "Math"
+                        | "StrictMath"
+                        | "Class"
+                        | "Thread"
+                        | "Runtime"
+                        | "String"
+                        | "Object"
+                        | "Integer"
+                        | "Long"
+                        | "Double"
+                        | "Float"
+                        | "Boolean"
+                        | "Character"
+                        | "Byte"
+                        | "Short"
+                        | "Void"
+                );
                 if host_package(&raw) || imported_platform || implicit_platform {
                     self.issue.borrow_mut().get_or_insert_with(|| {
                         let member = call.map_or_else(|| raw.clone(), |(name, _)| format!("{raw}.{name}"));
@@ -644,7 +682,7 @@ impl Names<'_> {
                     }
                     self.block(default, types, &mut locals.clone());
                 }
-                While { cond, body } => {
+                While { cond, body } | DoWhile { cond, body } => {
                     self.expr(cond, types, locals);
                     self.block(body, types, &mut locals.clone());
                 }
@@ -713,6 +751,7 @@ impl Names<'_> {
                 | LoopBreak
                 | LoopContinue
                 | SwitchBreak
+                | DoOnceExit
                 | ObjectSuperConstructor => {}
             }
         }

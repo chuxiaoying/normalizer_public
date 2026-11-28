@@ -220,7 +220,7 @@ impl Engine<'_> {
     ) -> Result<()> {
         // A test simplified under the live domain may be true there but
         // not on an already-broken path. Preserve that path's local values.
-        let condition = if self.realtime_completion.has_pending_switch_break() {
+        let condition = if self.realtime_completion.has_pending_region_exit() {
             math::normalize(b::and(
                 condition,
                 self.realtime_completion.continuing_guard(),
@@ -658,7 +658,7 @@ impl Engine<'_> {
                         (_, CompletionOutcome::Throw { .. } | CompletionOutcome::ThrowValue(_)) => {
                             secondary.outcome.clone()
                         }
-                        (_, CompletionOutcome::Return(_) | CompletionOutcome::SwitchBreak) => {
+                        (_, CompletionOutcome::Return(_) | CompletionOutcome::RegionExit(_)) => {
                             return Err(fail("resource close must complete as a void method"))
                         }
                     };

@@ -9,6 +9,12 @@ use super::port_completion::PortSpec;
 use math::{builder as b, Expr};
 use std::sync::Arc;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RegionExit {
+    Switch,
+    SinglePassLoop,
+}
+
 /// The completion channel carried by a real-time execution state.
 ///
 /// A completion is either one outcome or a guarded set of outcomes. The
@@ -19,7 +25,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Completion {
     Continue,
-    SwitchBreak,
+    RegionExit(RegionExit),
     Return(Expr),
     Throw {
         class: String,
@@ -38,7 +44,7 @@ pub(crate) struct CompletionAlternative {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CompletionOutcome {
     Continue,
-    SwitchBreak,
+    RegionExit(RegionExit),
     Return(Expr),
     Throw {
         class: String,
@@ -246,7 +252,7 @@ impl Completion {
     pub(crate) fn continuing_guard(&self) -> Expr {
         match self {
             Self::Continue => b::lit_bool(true),
-            Self::SwitchBreak | Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => {
+            Self::RegionExit(_) | Self::Throw { .. } | Self::ThrowValue(_) | Self::Return(_) => {
                 b::lit_bool(false)
             }
             Self::Guarded(alternatives) => math::normalize(
@@ -258,40 +264,40 @@ impl Completion {
         }
     }
 
-    /// A break stops the current switch but its locals are still observable
-    /// after that switch, unlike locals on a return or throw path.
-    pub(crate) fn has_pending_switch_break(&self) -> bool {
-        matches!(self, Self::SwitchBreak)
+    /// A lexical exit leaves its locals observable at its target, unlike
+    /// a method return or throw. Preserve the values on those paths.
+    pub(crate) fn has_pending_region_exit(&self) -> bool {
+        matches!(self, Self::RegionExit(_))
             || matches!(self, Self::Guarded(alternatives)
-            if alternatives.iter().any(|item| item.outcome == CompletionOutcome::SwitchBreak))
+            if alternatives.iter().any(|item| matches!(item.outcome, CompletionOutcome::RegionExit(_))))
     }
 
     pub(crate) fn may_resume_with_locals(&self) -> bool {
         match self {
-            Self::Continue | Self::SwitchBreak => true,
+            Self::Continue | Self::RegionExit(_) => true,
             Self::Guarded(alternatives) => alternatives.iter().any(|item| {
                 matches!(
                     item.outcome,
-                    CompletionOutcome::Continue | CompletionOutcome::SwitchBreak
+                    CompletionOutcome::Continue | CompletionOutcome::RegionExit(_)
                 )
             }),
             _ => false,
         }
     }
 
-    pub(crate) fn finish_switch(self) -> Self {
+    pub(crate) fn finish_region(self, target: RegionExit) -> Self {
         match self {
-            Self::SwitchBreak => Self::Continue,
+            Self::RegionExit(exit) if exit == target => Self::Continue,
             Self::Guarded(alternatives)
                 if alternatives
                     .iter()
-                    .any(|item| item.outcome == CompletionOutcome::SwitchBreak) =>
+                    .any(|item| item.outcome == CompletionOutcome::RegionExit(target)) =>
             {
                 Self::from_alternatives(
                     alternatives
                         .into_iter()
                         .map(|mut item| {
-                            if item.outcome == CompletionOutcome::SwitchBreak {
+                            if item.outcome == CompletionOutcome::RegionExit(target) {
                                 item.outcome = CompletionOutcome::Continue;
                             }
                             item
@@ -313,7 +319,7 @@ impl Completion {
             .into_iter()
             .map(|alternative| {
                 let outcome = match alternative.outcome {
-                    CompletionOutcome::Continue | CompletionOutcome::SwitchBreak => return None,
+                    CompletionOutcome::Continue | CompletionOutcome::RegionExit(_) => return None,
                     CompletionOutcome::Return(value) => TerminalOutcome::Return(value),
                     CompletionOutcome::Throw { class, payload } => {
                         TerminalOutcome::Throw { class, payload }
@@ -345,9 +351,9 @@ impl Completion {
                 guard: b::lit_bool(true),
                 outcome: CompletionOutcome::Continue,
             }],
-            Self::SwitchBreak => vec![CompletionAlternative {
+            Self::RegionExit(exit) => vec![CompletionAlternative {
                 guard: b::lit_bool(true),
-                outcome: CompletionOutcome::SwitchBreak,
+                outcome: CompletionOutcome::RegionExit(exit),
             }],
             Self::Return(value) => vec![CompletionAlternative {
                 guard: b::lit_bool(true),
@@ -478,7 +484,7 @@ impl Completion {
 fn normalize_outcome(outcome: CompletionOutcome) -> CompletionOutcome {
     match outcome {
         CompletionOutcome::Continue => CompletionOutcome::Continue,
-        CompletionOutcome::SwitchBreak => CompletionOutcome::SwitchBreak,
+        CompletionOutcome::RegionExit(exit) => CompletionOutcome::RegionExit(exit),
         CompletionOutcome::Return(value) => CompletionOutcome::Return(math::normalize(value)),
         CompletionOutcome::ThrowValue(value) => CompletionOutcome::ThrowValue(value),
         CompletionOutcome::Throw { class, payload } => CompletionOutcome::Throw {
@@ -491,7 +497,7 @@ fn normalize_outcome(outcome: CompletionOutcome) -> CompletionOutcome {
 fn outcome_to_completion(outcome: CompletionOutcome) -> Completion {
     match outcome {
         CompletionOutcome::Continue => Completion::Continue,
-        CompletionOutcome::SwitchBreak => Completion::SwitchBreak,
+        CompletionOutcome::RegionExit(exit) => Completion::RegionExit(exit),
         CompletionOutcome::Return(value) => Completion::Return(value),
         CompletionOutcome::ThrowValue(value) => Completion::ThrowValue(value),
         CompletionOutcome::Throw { class, payload } => Completion::Throw { class, payload },

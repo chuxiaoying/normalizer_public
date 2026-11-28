@@ -80,6 +80,7 @@ state-multi-write-read-order: topics/state-and-aliasing/java-multi-write-read-or
 state-call-to-call: topics/state-and-aliasing/java-call-to-call.md
 state-collection-mutation: topics/state-and-aliasing/java-collection-mutation.md
 loop-variable-finite-bound: topics/loops-and-termination/java-variable-finite-bound.md
+java-loop-post-test-once: topics/loops-and-termination/java-loop-post-test-once.md
 loop-break-continue: topics/loops-and-termination/java-break-continue.md
 loop-recursive: topics/loops-and-termination/java-recursive.md
 relation-delete: topics/relational-data/java-delete.md

@@ -1446,7 +1446,11 @@ impl Admission<'_> {
                 S::LocalIr(_) if self.class.fields().iter().any(|f| self.unmodeled_receiver_field(f)) =>
                     return Err(self.diagnostic("NORM-ENTRY-STATE",
                         "cannot prove plain receiver fields are unused by local semantic directives")),
-                S::LoopBreak | S::LoopContinue | S::SwitchBreak => {}
+                S::DoWhile { cond, body } => {
+                    self.expression(cond, scope)?;
+                    self.block(body, &mut scope.clone())?;
+                }
+                S::LoopBreak | S::LoopContinue | S::SwitchBreak | S::DoOnceExit => {}
                 S::While { .. } | S::For { .. } | S::LocalIr(_) => {}
             }
         }

@@ -387,6 +387,12 @@ pub enum JavaStatement {
         body: Vec<JavaStatement>,
     },
 
+    /// A native post-test loop. Its condition follows the body.
+    DoWhile {
+        cond: JavaExpr,
+        body: Vec<JavaStatement>,
+    },
+
     /// for 循环（3 段式）
     For {
         init: Option<Box<JavaStatement>>,
@@ -421,6 +427,9 @@ pub enum JavaStatement {
     /// A break lexically bound to the nearest switch, never an exit from
     /// an enclosing method or a loop.
     SwitchBreak,
+    /// Transfer out of a proved single-pass post-test loop body. Its pure
+    /// false condition makes local break and continue equally terminal.
+    DoOnceExit,
 
     /// 代码块
     Block(Vec<JavaStatement>),

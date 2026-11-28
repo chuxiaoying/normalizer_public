@@ -1,0 +1,6 @@
+entry: src/PostTest.java#PostTest.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/PostTest.java#PostTest.run, returns: number}
+  P: {parameters: {}}
+  R: "2"

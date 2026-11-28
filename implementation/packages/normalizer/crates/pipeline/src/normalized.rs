@@ -1088,7 +1088,8 @@ fn continuing_try_body(body: &[S]) -> bool {
             target: E::ArrayAccess { .. },
             ..
         }
-        | S::Throw(_) => true,
+        | S::Throw(_)
+        | S::DoOnceExit => true,
         S::If {
             then_block,
             else_block,
@@ -1801,7 +1802,7 @@ fn statements(
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
             S::For { .. } if fixed_for::BoundedControlFor::from_for(stmt).is_some() => {}
             S::LoopBreak | S::LoopContinue => return Err(error("NORM-LOOP", at)),
-            S::SwitchBreak => {}
+            S::SwitchBreak | S::DoOnceExit => {}
             S::For { cond, body, .. } if fixed_for::FixedFieldFor::from_for(stmt).is_some() => {
                 // The proof admits just one literal store and a unit update.
                 // The typed source pass checks both field lvalues.
@@ -2009,7 +2010,13 @@ fn statements(
             } if integral(var_type) && array_sum(var_name, body).is_some() => {
                 expr(iterable, at, calls)?;
             }
-            S::While { .. } | S::For { .. } | S::ForEach { .. } => {
+            S::DoWhile {
+                cond: E::Lit(JavaLit::Bool(false)),
+                body,
+            } => {
+                statements(body, at, calls, catch_admission)?;
+            }
+            S::While { .. } | S::DoWhile { .. } | S::For { .. } | S::ForEach { .. } => {
                 return Err(error("NORM-LOOP", at))
             }
             _ => return Err(error("NORM-STATEMENT", at)),

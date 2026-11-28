@@ -1,0 +1,6 @@
+entry: src/PostTest.java#PostTest.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/PostTest.java#PostTest.run, returns: number}
+  P: {parameters: {active: {position: 0, type: bool}}}
+  R: CASE WHEN active THEN 2 ELSE 3 END

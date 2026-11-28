@@ -1,0 +1,6 @@
+entry: src/PostTest.java#PostTest.run
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-LOOP]"
+    - PostTest.run
