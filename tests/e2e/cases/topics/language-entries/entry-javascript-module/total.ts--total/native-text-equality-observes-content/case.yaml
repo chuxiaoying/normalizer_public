@@ -1,0 +1,8 @@
+entry: src/total.ts#total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/total.ts#total, returns: bool}
+  P:
+    parameters:
+      mode: {position: 0, type: "text"}
+  R: 'mode == "pickup"'

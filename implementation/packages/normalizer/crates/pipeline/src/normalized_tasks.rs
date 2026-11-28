@@ -12,7 +12,8 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
         | Node::Mul { left, right }
         | Node::Gt { left, right }
         | Node::Lt { left, right }
-        | Node::Eq { left, right } => expression_is_closed(left) && expression_is_closed(right),
+        | Node::Eq { left, right }
+        | Node::TextEqual { left, right } => expression_is_closed(left) && expression_is_closed(right),
         Node::If {
             cond,
             then,

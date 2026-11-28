@@ -221,6 +221,15 @@ impl<'a> Engine<'a> {
                 let map = math::domains::composite::lifted_ordered_text_map(&acquired)?;
                 Ok(Value::Term(Ty::OrderedTextMap, map))
             }
+            Node::TextEqual { left, right } => {
+                let left = self.node(left, env, path.clone())?;
+                let right = self.node(right, env, path)?;
+                let a = left.scalar()?;
+                let z = right.scalar()?;
+                need((left.ty() == Ty::Text || a.is_null()) && (right.ty() == Ty::Text || z.is_null()),
+                    "native text comparison requires text or null")?;
+                Ok(Value::Term(Ty::Bool, self.order_execution_comparison(BinOpKind::Eq, a, z)))
+            }
             Node::TrimText { value } => {
                 let text = self.node(value, env, path)?;
                 need(text.ty() == Ty::Text || text.scalar().is_ok_and(|value| value.is_null()),

@@ -1,0 +1,12 @@
+entry: src/total.ts#total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/total.ts#total, returns: text}
+  P:
+    parameters:
+      value: {position: 0, type: "text?"}
+  R: |-
+    CASE
+      WHEN value == null THEN "fallback"
+      ELSE value
+    END

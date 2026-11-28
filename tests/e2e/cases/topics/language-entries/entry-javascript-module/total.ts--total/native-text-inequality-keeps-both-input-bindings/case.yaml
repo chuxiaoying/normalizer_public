@@ -1,0 +1,9 @@
+entry: src/total.ts#total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/total.ts#total, returns: bool}
+  P:
+    parameters:
+      right: {position: 0, type: "text"}
+      left: {position: 1, type: "text"}
+  R: 'left != right'

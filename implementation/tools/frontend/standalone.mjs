@@ -277,8 +277,6 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     if (!bound) fail('linked call has no closed project function: ' + node.expression.getText());
     return {op: 'linked-call', ...bound, args: node.arguments.map(lower)};
   };
-  // Text literals are admitted for closed text expressions, not as vector slots.
-  const textExpressions = checker || returnDomain === 'string' || returnDomain === nullableText;
   // Lower all module-startup expressions, including fields unused by the
   // selected method. The linked scalar rules admit only closed, pure
   // computations here, so reading their acquired value may reuse that IR.
@@ -288,8 +286,8 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     if (!['number', 'bool', 'text', 'text?'].includes(value.type)) fail('object receiver requires a closed pure scalar initializer');
     initializerValues.set(initializer, value);
   }
-  function expression(expr, lexical = names) {
-    const evaluate = child => expression(child, lexical);
+  function expression(expr, lexical = names, entryScope = lexical === names) {
+    const evaluate = child => expression(child, lexical, entryScope);
     if (expr.op === 'linked-call') {
       const {declaration, origin} = expr;
       const label = origin.name + '#' + declaration.name?.text;
@@ -329,9 +327,9 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       const type = scalar(expr.type);
       return {type, node: internal('const', {type, value: expr.value})};
     }
-    if (textExpressions && expr.op === 'literal' && expr.type === 'string')
+    if (expr.op === 'literal' && expr.type === 'string')
       return {type: 'text', node: internal('const', {type: 'text?', value: expr.value})};
-    if (textExpressions && expr.op === 'literal' && expr.type === 'null')
+    if (expr.op === 'literal' && expr.type === 'null')
       return {type: 'text?', node: internal('const', {type: 'unit', value: null})};
     if (expr.op === 'official-call') {
       if (expr.name === 'currentTimeMillis' && expr.args.length === 0) {
@@ -369,15 +367,18 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       // not on unrestricted JS values (which may include NaN or coercion).
       const numberPair = left.type === 'number' && right.type === 'number';
       const booleanEquality = operator === 'eq' && left.type === 'bool' && right.type === 'bool';
-      if (!numberPair && !booleanEquality) fail('scalar operations need two numbers or, for equality, two Booleans');
-      // Preserve source evaluation order; the kernel canonicalizes only
-      // the resulting already acquired operands.
-      const node = internal(operator, {left: left.node, right: right.node});
+      const textEquality = operator === 'eq' && [left.type, right.type].every(kind => kind === 'text' || kind === 'text?');
+      if (!numberPair && !booleanEquality && !textEquality) {
+        fail('scalar operations need two numbers or, for equality, two Booleans or two text/null values');
+      }
+      // Native JS primitive text equality does not share Java object-identity
+      // semantics. Its operands are still acquired in source order.
+      const node = internal(textEquality ? 'value.text_equal' : operator, {left: left.node, right: right.node});
       return {type, node: negate ? internal('not', {value: node}) : node};
     }
     if (expr.op === 'read') {
       const [name, field] = expr.target;
-      if (name === 'this' && receiverFields && lexical === names) {
+      if (name === 'this' && receiverFields && entryScope) {
         const initializer = expr.target.length === 2 && receiverFields.get(field);
         const value = initializer && initializerValues.get(initializer);
         if (!value) fail('entry receiver field is not a proved acquired scalar: ' + field);
@@ -396,7 +397,23 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       return {type: 'number[]', node: internal('value.number_vector', {items: items.map(item => item.node)})};
     }
     if (expr.op === 'select') {
-      const test = evaluate(expr.condition), yes = evaluate(expr.whenTrue), no = evaluate(expr.whenFalse);
+      const test = evaluate(expr.condition);
+      let yesScope = lexical, noScope = lexical;
+      const condition = expr.condition;
+      if (condition.op === 'binary' && ['===', '!=='].includes(condition.operator)) {
+        const isNull = node => node.op === 'literal' && node.type === 'null';
+        const other = isNull(condition.left) ? condition.right : isNull(condition.right) ? condition.left : undefined;
+        const binding = other?.op === 'var' && lexical.get(other.name);
+        if (binding?.type === 'text?') {
+          const nonnull = new Map(lexical);
+          // Only the same already-bound value narrows on the proved arm;
+          // its node, name and public nullable input contract are unchanged.
+          nonnull.set(other.name, {...binding, type: 'text'});
+          if (condition.operator === '!==') yesScope = nonnull;
+          else noScope = nonnull;
+        }
+      }
+      const yes = expression(expr.whenTrue, yesScope, entryScope), no = expression(expr.whenFalse, noScope, entryScope);
       if (test.type !== 'bool' || yes.type !== no.type) fail('conditional requires a Boolean and two matching business value types');
       return {type: yes.type, node: internal('if', {cond: test.node, then: yes.node, else: no.node})};
     }
