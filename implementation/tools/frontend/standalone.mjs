@@ -22,6 +22,7 @@ const scalar = domain => domains.get(domain)?.[1];
 const readonlyVector = 'ReadonlyArray<number>';
 const readonlyMap = 'ReadonlyMap<string,string>';
 const nullableText = 'string|null';
+const isTextDomain = kind => kind === 'text' || kind === 'text?';
 const parameter = domain => scalar(domain) ?? (domain === readonlyVector ? 'number[]'
   : domain === nullableText ? 'text?' : domain === 'unknown' ? 'unknown' : null);
 const carrier = domain => domain === readonlyVector ? 'int[]'
@@ -333,7 +334,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     if (expr.op === 'literal' && expr.type === 'string')
       return {type: 'text', node: internal('const', {type: 'text?', value: expr.value})};
     if (expr.op === 'literal' && expr.type === 'null')
-      return {type: 'text?', node: internal('const', {type: 'unit', value: null})};
+      return {type: 'text?', node: internal('const', {type: 'text?', value: null})};
     if (expr.op === 'official-call') {
       if (expr.name === 'currentTimeMillis' && expr.args.length === 0) {
         // Link-time expression substitution can duplicate or erase a helper
@@ -370,7 +371,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       // not on unrestricted JS values (which may include NaN or coercion).
       const numberPair = left.type === 'number' && right.type === 'number';
       const booleanEquality = operator === 'eq' && left.type === 'bool' && right.type === 'bool';
-      const textEquality = operator === 'eq' && [left.type, right.type].every(kind => kind === 'text' || kind === 'text?');
+      const textEquality = operator === 'eq' && [left.type, right.type].every(isTextDomain);
       if (!numberPair && !booleanEquality && !textEquality) {
         fail('scalar operations need two numbers or, for equality, two Booleans or two text/null values');
       }
@@ -417,8 +418,10 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
         }
       }
       const yes = expression(expr.whenTrue, yesScope, entryScope), no = expression(expr.whenFalse, noScope, entryScope);
-      if (test.type !== 'bool' || yes.type !== no.type) fail('conditional requires a Boolean and two matching business value types');
-      return {type: yes.type, node: internal('if', {cond: test.node, then: yes.node, else: no.node})};
+      const joined = yes.type === no.type ? yes.type
+        : [yes.type, no.type].every(isTextDomain) ? 'text?' : undefined;
+      if (test.type !== 'bool' || !joined) fail('conditional requires a Boolean and two matching business value types');
+      return {type: joined, node: internal('if', {cond: test.node, then: yes.node, else: no.node})};
     }
     fail('unsupported standalone scalar operation ' + expr.op);
   }

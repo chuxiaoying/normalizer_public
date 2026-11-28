@@ -1,0 +1,8 @@
+entry: src/total.ts#total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/total.ts#total, returns: "text?"}
+  P:
+    parameters:
+      enabled: {position: 0, type: "bool"}
+  R: 'CASE WHEN enabled THEN "ready" ELSE null END'

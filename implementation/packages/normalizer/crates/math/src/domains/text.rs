@@ -46,6 +46,12 @@ pub(crate) fn redundant_null_default(expr: &Expr) -> Option<Expr> {
         _ => return None,
     };
     let subject = if left.is_null() { right } else if right.is_null() { left } else { return None; };
+    // Both arms leave the same already-acquired nullable input unchanged.
+    if on_null.is_null() && otherwise == subject && matches!(subject.as_sym_var(),
+        Some(crate::SymVarOrigin::Parameter { primitive_type, .. }) if primitive_type == "text?")
+    {
+        return Some(subject.clone());
+    }
     let (key, [value, fallback]) = otherwise.as_call()? else { return None; };
     (DEFAULT_IF_BLANK.get() == Some(&key) && value == subject && fallback == on_null)
         .then(|| otherwise.clone())

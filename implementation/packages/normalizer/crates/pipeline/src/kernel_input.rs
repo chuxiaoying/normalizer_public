@@ -302,6 +302,7 @@ impl TryFrom<WireConstant> for AdmittedConstant {
                     && (!digits.starts_with('0') || value == "0"), "invalid exact integer constant")?;
                 b::lit_integer(value.parse::<math::Integer>().map_err(|_| "invalid exact integer constant")?)
             },
+            (Ty::Text, serde_json::Value::Null) if raw.typ == "text?" => b::lit_null(),
             (Ty::Text, value) => serde_json::from_value::<WireText>(value)
                 .map_err(|_| "invalid text constant")?.to_expression(),
             _ => return Err("invalid constant".into()),
