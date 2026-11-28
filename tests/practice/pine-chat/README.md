@@ -30,3 +30,7 @@
 - [ChatService.java](backend/src/practice/chat/ChatService.java)：会话与好友状态、权限、消息和用户间的观察差异。撤回窗口使用注入的时钟。
 
 身份选择只是演练手段，不是认证；应用只绑定本机回环地址，不用于部署。刷新采用轮询，不承诺实时推送。
+
+## 前端归一化实战
+
+见[会话工作台的 AI 预处理](preprocessing/README.md)：原绑定、生产和消费入口、正式 CLI 复现与当前工具缺口。
