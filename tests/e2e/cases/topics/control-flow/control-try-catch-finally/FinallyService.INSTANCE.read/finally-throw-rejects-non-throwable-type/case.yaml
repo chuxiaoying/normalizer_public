@@ -1,0 +1,5 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+reject:
+  fragments:
+    - "[NORM-EXPLICIT-THROW]"
+    - "Ordinary requires a declared type-only exception"

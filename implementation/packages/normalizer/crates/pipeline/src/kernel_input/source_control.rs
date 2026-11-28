@@ -433,20 +433,9 @@ impl Engine<'_> {
             // frame's domain. Its abrupt completion overrides the saved one.
             self.realtime_throws.truncate(prior_realtime_throws);
             self.realtime_completion = Completion::Continue;
-            let trailing_throw = finally.split_last().and_then(|(last, prefix)|
-                crate::normalized::finally_throw(last)
-                            .filter(|class| !matches!(*class, "RuntimeException" | crate::normalized::RUNTIME_EXCEPTION))
-                            .map(|class| (class, prefix)));
-            let body = trailing_throw.map_or(finally, |(_, prefix)| prefix);
             // The finally block has its own local declarations, but a
             // write to an existing binding survives a continuing completion.
-            self.source_scope(body, id, env, path.clone())?;
-            if let Some((class, _)) = trailing_throw {
-                let class = self.project.source_exception_bindings[id][class].clone();
-                self.realtime_completion = self.realtime_completion.replace_continue(
-                    Completion::Throw { class, payload: None },
-                );
-            }
+            self.source_scope(finally, id, env, path.clone())?;
             let finished = self.realtime_completion.replace_continue(saved);
             self.realtime_throws.truncate(prior_realtime_throws);
             self.realtime_throws.extend(finished.clone().alternatives().into_iter().filter_map(|alt| {

@@ -1,0 +1,34 @@
+entry: src/FinallyService.java#FinallyService.INSTANCE.read
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/FinallyService.java#FinallyService.INSTANCE.read
+    returns: number
+  P:
+    parameters:
+      accountId:
+        position: 0
+        type: number
+  E:
+    attempts:
+      kind: state
+      source: src/FinallyService.java#FinallyService.INSTANCE.attempts
+      type: number
+  S:
+    - call:
+        external: src/FinallyService.java#FinallyService.INSTANCE.client.fetch
+        args:
+          - accountId
+        returns: number
+        result: $e_0
+    - write:
+        target: attempts
+        value: attempts + 1
+  R: |-
+    CASE
+      WHEN completion.is_return($e_0) THEN $e_0
+      ELSE 0
+    END
+  throws:
+    - type: RemoteError
+      when: accountId == 0

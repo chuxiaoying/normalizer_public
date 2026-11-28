@@ -144,3 +144,5 @@ R: |-
 ### 可证的资源关闭
 
 把原 try 的关闭动作交给源码中的 `java.lang.AutoCloseable`，资源析构必须在外层 finally 之前发生，两处写入不合并。资源用闭合构造器准确绑定 owner 和 increment 两个 final 字段时，关闭使用绑定到实际实例的 increment。合法的、可能抛出的关闭不属于这个只证明正常关闭的子集；尤其在 try 已经失败时，不能丢掉关闭的异常，也不能当成第二个互不相关的正常结果。
+
+`finally` 中的无参抛出和普通语句一样按已声明的异常类型执行。把末尾的 `throw new RemoteError()` 换成 `throw new java.lang.ArithmeticException()`，最终只报告该原生异常的完整类型名；之前的调用和写入不变。若改为仅当 `accountId == 0` 才抛出 `RemoteError`，只在该条件下覆盖待完成值，其余路径保留原 try/catch 的结果。若构造的是普通类 `Ordinary` 而非异常类，则入口拒绝，不发布 PERS。

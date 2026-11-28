@@ -526,7 +526,7 @@ impl<'a> Engine<'a> {
                         Some(RuntimeThrowMessage::TextUnits(units)) => (crate::normalized::RUNTIME_EXCEPTION.into(),
                             Some(b::lit(math::Lit::from_text_units(units.to_vec())))),
                         None => {
-                            let class = crate::normalized::finally_throw(s)
+                            let class = crate::normalized::type_only_throw_name(s)
                                 .and_then(|raw| self.project.source_exception_bindings.get(id)?.get(raw))
                                 .ok_or_else(|| fail("source throw requires an admitted exception constructor"))?
                                 .clone();

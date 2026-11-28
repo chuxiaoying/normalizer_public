@@ -589,8 +589,8 @@ pub(crate) fn rethrows_caught_value(handler: &simulator_parser::ast::CatchClause
     matches!(handler.body(), [S::Throw(E::Ident(name))] if name == handler.var_name())
 }
 
-/// Syntactic terminal-throw shape. Admission binds its declared type before execution.
-pub(crate) fn finally_throw<'a>(statement: &'a S) -> Option<&'a str> {
+/// Syntactic no-argument throw shape. Admission binds its declared type before execution.
+pub(crate) fn type_only_throw_name<'a>(statement: &'a S) -> Option<&'a str> {
     match statement {
         S::Throw(E::New { java_type: JavaType::Class(class), args }) if args.is_empty() => Some(class),
         _ => None,
@@ -781,7 +781,7 @@ pub(crate) fn validate_with_receiver(
             parents: &exceptions,
             resolved: exception_bindings.entry(id.clone()).or_default(),
         };
-        statements(body, id, &mut calls, &mut catches, false)?;
+        statements(body, id, &mut calls, &mut catches)?;
         let entry_owner = entry.rsplit_once('.').map(|(owner, _)| owner);
         let closed_receiver = receiver.is_some() && entry_owner == Some(owner.full_name().as_str());
         static_types::validate(program, owner, m, id, body, &layouts, closed_receiver)?;
@@ -968,26 +968,9 @@ impl CatchAdmission<'_> {
         self.resolved.insert(raw.into(), name);
         Ok(())
     }
-
-    fn bind_finally_throw(&mut self, at: &str, raw: &str) -> Result<(), String> {
-        let owner = at.rsplit_once('.').map_or("", |(owner, _)| owner);
-        let name = exception_name(raw, owner, self.parents)
-            .filter(|name| self.parents.contains_key(name))
-            .filter(|name| self.program.find_class(name).is_some_and(|class| class.fields().is_empty()))
-            .ok_or_else(|| unsupported_finally_throw(at))?;
-        self.resolved.insert(raw.into(), name);
-        Ok(())
-    }
 }
 
-fn unsupported_finally_throw(at: &str) -> String {
-    crate::preprocess::required(
-        "NORM-PROJECT", at, "finally throw requires a source-declared type-only exception",
-        "只在 finally 的末尾抛出源码声明且无字段的异常，并使用无参构造。",
-    )
-}
-
-fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>, inside_finally: bool) -> Result<(), String> {
+fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>) -> Result<(), String> {
     for stmt in body {
         match stmt {
             S::LocalIr(normalizer_ir::local::LocalIr::IntegerRange(_)
@@ -999,20 +982,20 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 // The proof admits just one literal store and a unit update.
                 // The typed source pass checks both field lvalues.
                 expr(cond.as_ref().unwrap(), at, calls)?;
-                statements(body, at, calls, catch_admission, inside_finally)?;
+                statements(body, at, calls, catch_admission)?;
             }
             S::For {init,cond,update,body}
                 if fixed_for::FixedFor::from_header(init.as_deref(),cond.as_ref(),update.as_ref()).is_some() => {
                 if let Some(S::Block(declarations)) = init.as_deref() {
-                    statements(declarations, at, calls, catch_admission, inside_finally)?;
+                    statements(declarations, at, calls, catch_admission)?;
                 }
-                statements(body, at, calls, catch_admission, inside_finally)?;
+                statements(body, at, calls, catch_admission)?;
             }
             S::Try { resource, body, catches, finally_block } => {
                 if let Some(resource) = resource {
                     let (_, close) = closed_resource_binding(catch_admission.program, resource)
                         .ok_or_else(|| error("NORM-RESOURCE-CLOSURE", at))?;
-                    statements(std::slice::from_ref(resource.as_ref()), at, calls, catch_admission, inside_finally)?;
+                    statements(std::slice::from_ref(resource.as_ref()), at, calls, catch_admission)?;
                     calls.push((SourceCall::Resolved(close), 0));
                     if catches.is_empty() && !closed_terminal_block(body) && !continuing_try_body(body) {
                         return Err(error("NORM-CATCH-BODY", at));
@@ -1021,7 +1004,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 if resource.is_none() || !catches.is_empty() {
                     validate_protected_try(body, catches, finally_block.as_deref(), at)?;
                 }
-                statements(body, at, calls, catch_admission, inside_finally)?;
+                statements(body, at, calls, catch_admission)?;
                 let mut prior_types: Vec<String> = Vec::new();
                 for handler in catches {
                     let mut alternatives: Vec<String> = Vec::new();
@@ -1049,22 +1032,11 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                     }
                     prior_types.extend(alternatives);
                     if !rethrows_caught_value(handler) {
-                        statements(handler.body(), at, calls, catch_admission, inside_finally)?;
+                        statements(handler.body(), at, calls, catch_admission)?;
                     }
                 }
                 if let Some(finally) = finally_block {
-                    let body = match finally.split_last()
-                        .and_then(|(last, prefix)| finally_throw(last)
-                            .filter(|class| !matches!(*class, "RuntimeException" | crate::normalized::RUNTIME_EXCEPTION))
-                            .map(|class| (class, prefix)))
-                    {
-                        Some((class, prefix)) => {
-                            catch_admission.bind_finally_throw(at, class)?;
-                            prefix
-                        }
-                        _ => finally,
-                    };
-                    statements(body, at, calls, catch_admission, true)?;
+                    statements(finally, at, calls, catch_admission)?;
                 }
             }
             S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { .. }
@@ -1115,15 +1087,14 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             } => expr(value, at, calls)?,
             S::Throw(E::Lit(JavaLit::Null)) => (),
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
-            S::Throw(e) if !inside_finally => {
-                if let Some(class) = finally_throw(stmt) {
+            S::Throw(e) => {
+                if let Some(class) = type_only_throw_name(stmt) {
                     catch_admission.bind_type_only_throw(at, class)?;
                 } else {
                     expr(e, at, calls)?;
                     return Err(error("NORM-EXPLICIT-THROW", at));
                 }
             }
-            S::Throw(_) => return Err(unsupported_finally_throw(at)),
             S::ThisConstructor(args) => {
                 let owner = at.rsplit_once('.').expect("constructor key has an owner").0;
                 for a in args { expr(a, at, calls)?; }
@@ -1131,24 +1102,24 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             }
             S::Return(Some(e)) | S::ExprStmt(e) => expr(e, at, calls)?,
             S::Return(None) => (),
-            S::Block(b) => statements(b, at, calls, catch_admission, inside_finally)?,
+            S::Block(b) => statements(b, at, calls, catch_admission)?,
             S::If {
                 cond,
                 then_block,
                 else_block,
             } => {
                 expr(cond, at, calls)?;
-                statements(then_block, at, calls, catch_admission, inside_finally)?;
+                statements(then_block, at, calls, catch_admission)?;
                 if let Some(b) = else_block {
-                    statements(b, at, calls, catch_admission, inside_finally)?;
+                    statements(b, at, calls, catch_admission)?;
                 }
             }
             S::Switch { selector, cases, default } => {
                 expr(selector, at, calls)?;
                 for (_, body) in cases {
-                    statements(body, at, calls, catch_admission, inside_finally)?;
+                    statements(body, at, calls, catch_admission)?;
                 }
-                statements(default, at, calls, catch_admission, inside_finally)?;
+                statements(default, at, calls, catch_admission)?;
             }
             S::ForEach { var_type, var_name, iterable, body }
                 if integral(var_type) && array_sum(var_name, body).is_some() => {
