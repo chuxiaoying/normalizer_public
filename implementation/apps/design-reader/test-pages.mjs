@@ -1,5 +1,7 @@
 import YAML from '../../tools/frontend/node_modules/yaml/dist/index.js';
 
+import { seedDirectory } from '../../../tests/e2e/harness/catalog.mjs';
+
 function escape(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -90,8 +92,8 @@ export function attachTestPages(pages, seedTests, codeBlock) {
     const tests = entries.length ? link(path, entries.length + ' 个入口 · ' + countTests(entries) + ' 个用例', 'seed-tests') : '待派生';
     rows.push('<tr><td>' + link(path, seed.title) + '</td><td><code>' + escape(seedId) + '</code></td><td><code>' + escape(metadata.kind) + '</code></td><td><code>' + escape(metadata.topic) + '</code></td><td>' + tests + '</td></tr>');
   }
-  const registry = byPath.get('design/examples/seeds.yaml');
-  const table = '<div class="seed-test-index"><table><thead><tr><th>设计种子</th><th>种子 ID</th><th>类型</th><th>主主题</th><th>关联测试</th></tr></thead>' +
+  const registry = byPath.get(seedDirectory + '/seeds.yaml');
+  const table = '<div class="seed-test-index"><table><thead><tr><th>测试种子</th><th>种子 ID</th><th>类型</th><th>主主题</th><th>关联测试</th></tr></thead>' +
     '<tbody>' + rows.join('') + '</tbody></table></div>';
   registry.html = registry.html.replace('</h1>', () => '</h1>' + table + '<details class="test-expectation"><summary>查看种子清单 YAML</summary>') + '</details>';
   return pages;

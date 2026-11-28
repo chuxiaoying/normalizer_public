@@ -22,6 +22,6 @@
 - [统一定形](chapters/08-统一定形.md)
 - [场景归一](chapters/09-场景归一.md)
 
-## 设计种子
+## 相关验收
 
-[种子目录](examples/README.md)用于查看规则的具体例证。种子及其独立预期用于派生验收，不另行定义规则。代码和工程职责请查[实现区](../implementation/README.md)，运行验收请查[测试区](../tests/README.md)。
+[测试种子](../tests/seeds/README.md)在测试区，提供具体例证和派生验收，不另行定义规则。代码和工程职责请查[实现区](../implementation/README.md)，运行验收请查[测试区](../tests/README.md)。

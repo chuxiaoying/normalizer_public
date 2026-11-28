@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from '../../../implementation/tools/frontend/node_modules/yaml/dist/index.js';
-import { loadSeeds } from './catalog.mjs';
+import { loadSeeds, seedDirectory } from './catalog.mjs';
 
-const index = 'design/examples/java-syntax-coverage.yaml';
+const index = seedDirectory + '/java-syntax-coverage.yaml';
 const id = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function record(value, at, keys) {

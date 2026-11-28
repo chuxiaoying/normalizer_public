@@ -37,9 +37,10 @@
   }
 
   function topicOf(page) {
-    // The existing directory tree also works when the linked test catalog is unavailable.
-    const folder = /^(design\/examples\/(?:topics|compositions)\/[^/]+)\//.exec(page.path)?.[1];
-    const topic = folder && byPath.get(folder + '/README.md');
+    // Seed navigation follows the topic directory even without a valid CLI catalog.
+    if (page.group !== '基础主题' && page.group !== '联合主题') return null;
+    const folder = page.path.slice(0, page.path.lastIndexOf('/'));
+    const topic = byPath.get(folder + '/README.md');
     return topic?.group === page.group ? topic : null;
   }
 

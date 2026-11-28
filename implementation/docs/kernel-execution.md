@@ -10,9 +10,9 @@
 |---|---|---|
 | 入口绑定、声明或加载失败 | `kernel_input.rs`、`kernel_input/source_entry.rs` | [源码交接](../contracts/normalized-source-contract.md) |
 | 值、控制流、循环或执行预算 | `kernel_execution.rs`、`kernel_input/source_control.rs` | 发生条件、执行前缀和完成方式 |
-| 对象、别名、堆更新或完成状态 | `runtime_heap.rs`、`realtime_state.rs` | [别名与有序写入](../../design/examples/topics/state-and-aliasing/java-state-alias.md) |
-| 外部事件、回执或顺序 | `kernel_input/business_event.rs`、`kernel_input/port_completion.rs` | [有界重试](../../design/examples/topics/loops-and-termination/java-loop-bounded-retry.md) |
-| 入口返回或出口内容 | `kernel_input/business_entry.rs`、`kernel_input/source_objects.rs` | [环与无环的出口](../../design/examples/topics/state-and-aliasing/java-cycle-observable.md) |
+| 对象、别名、堆更新或完成状态 | `runtime_heap.rs`、`realtime_state.rs` | [别名与有序写入](../../tests/seeds/topics/state-and-aliasing/java-state-alias.md) |
+| 外部事件、回执或顺序 | `kernel_input/business_event.rs`、`kernel_input/port_completion.rs` | [有界重试](../../tests/seeds/topics/loops-and-termination/java-loop-bounded-retry.md) |
+| 入口返回或出口内容 | `kernel_input/business_entry.rs`、`kernel_input/source_objects.rs` | [环与无环的出口](../../tests/seeds/topics/state-and-aliasing/java-cycle-observable.md) |
 
 ## 怎样缩小偏差
 

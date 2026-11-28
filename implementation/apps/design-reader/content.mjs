@@ -2,6 +2,7 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { basename, extname, join, posix, relative, resolve } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js/lib/common';
+import { seedDirectory } from '../../../tests/e2e/harness/catalog.mjs';
 import { loadSeedTests } from './test-data.mjs';
 import { attachTestPages } from './test-pages.mjs';
 
@@ -48,22 +49,22 @@ md.core.ruler.after('inline', 'rewrite_columns', ({ tokens }) => {
   }
 });
 
-async function designFiles(root, folder) {
+async function browseFiles(root, folder) {
   const files = [];
   for (const entry of await readdir(join(root, folder), { withFileTypes: true })) {
     const path = posix.join(folder, entry.name);
-    if (entry.isDirectory() && !entry.name.startsWith('.')) files.push(...await designFiles(root, path));
+    if (entry.isDirectory() && !entry.name.startsWith('.')) files.push(...await browseFiles(root, path));
     if (entry.isFile() && textDocument.test(entry.name)) files.push(path);
   }
   return files.sort();
 }
 
 function group(path) {
-  if (!path.startsWith('design/')) return '参考资料';
-  if (path === 'design/examples/seeds.yaml' || path === 'design/examples/seed-manifest.yaml' || path === 'design/examples/seed-plan.yaml') return '种子清单';
-  if (path.startsWith('design/examples/topics/')) return '基础主题';
-  if (path.startsWith('design/examples/compositions/')) return '联合主题';
-  return '设计导览';
+  if (path.startsWith(seedDirectory + '/topics/')) return '基础主题';
+  if (path.startsWith(seedDirectory + '/compositions/')) return '联合主题';
+  if (path.startsWith(seedDirectory + '/')) return '种子清单';
+  if (path.startsWith('design/')) return '设计导览';
+  return '参考资料';
 }
 
 function textOf(tokens) {
@@ -127,7 +128,8 @@ async function readDocument(root, path) {
 
 export async function loadContent(repoRoot) {
   const root = await realpath(resolve(repoRoot));
-  const design = await designFiles(root, 'design');
+  const browse = [...await browseFiles(root, 'design'), ...await browseFiles(root, seedDirectory)];
+  const browsePaths = new Set(browse);
   let seedTests;
   let catalogError;
   try {
@@ -140,7 +142,7 @@ export async function loadContent(repoRoot) {
   const pages = new Map();
   const aliases = new Map();
   const refs = new Set();
-  for (const path of design) {
+  for (const path of browse) {
     const doc = await readDocument(root, path);
     pages.set(path, doc);
     for (const token of doc.tokens) {
@@ -149,8 +151,8 @@ export async function loadContent(repoRoot) {
         if (children[i].type !== 'link_open') continue;
         const link = localLink(path, children[i].attrGet('href'));
         if (!link) continue;
-        if (!link.path.startsWith('design/') && textDocument.test(link.path)) refs.add(link.path);
-        if (path.endsWith('/README.md') && link.path.startsWith('design/') && !aliases.has(link.path)) {
+        if (!browsePaths.has(link.path) && textDocument.test(link.path)) refs.add(link.path);
+        if (path.endsWith('/README.md') && browsePaths.has(link.path) && !aliases.has(link.path)) {
           const end = children.findIndex((item, index) => index > i && item.type === 'link_close');
           if (end !== -1) aliases.set(link.path, textOf(children.slice(i + 1, end)));
         }
@@ -182,7 +184,7 @@ export async function loadContent(repoRoot) {
   if (seedTests) return { pages: attachTestPages(documents, seedTests, codeBlock) };
 
   const notice = '<p class="seed-test-jump" role="status">关联测试暂不可用。' + escape(catalogError) + '</p>';
-  for (const page of documents.filter(page => page.path.startsWith('design/'))) {
+  for (const page of documents.filter(page => page.path.startsWith(seedDirectory + '/'))) {
     page.html = page.html.replace('</h1>', () => '</h1>' + notice);
   }
   return { pages: documents };

@@ -23,25 +23,25 @@ function register(set, name, label) {
   set.add(name);
 }
 
-const examples = 'design/examples';
+export const seedDirectory = 'tests/seeds';
 
 export function loadSeeds(root) {
-  const seeds = new Map(record(readYaml(root, examples + '/seeds.yaml'), 'design seeds'));
-  assert.ok(seeds.size > 0, 'The design seed catalog is empty');
+  const seeds = new Map(record(readYaml(root, seedDirectory + '/seeds.yaml'), 'test seeds'));
+  assert.ok(seeds.size > 0, 'The test seed catalog is empty');
 
   const documents = new Set();
   for (const [id, relative] of seeds) {
     assert.match(id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid seed ID');
-    register(documents, relative, 'design document');
+    register(documents, relative, 'seed document');
   }
-  const published = inventory(root, examples, file => file.endsWith('.md') && !/(^|\/)README\.md$/.test(file));
-  assert.deepEqual([...documents].sort(), published, 'Design seed catalog must cover all example documents');
+  const published = inventory(root, seedDirectory, file => file.endsWith('.md') && !/(^|\/)README\.md$/.test(file));
+  assert.deepEqual([...documents].sort(), published, 'Test seed catalog must cover all seed documents');
 
   return seeds;
 }
 
 export function loadSeedManifest(root, seeds = loadSeeds(root)) {
-  const manifest = readYaml(root, examples + '/seed-manifest.yaml');
+  const manifest = readYaml(root, seedDirectory + '/seed-manifest.yaml');
   assert.equal(manifest.version, 1, 'Unsupported seed manifest version');
   const topics = new Map(record(manifest.topics, 'topic registry'));
   const compositions = new Map(record(manifest.compositions, 'composition registry'));
@@ -51,13 +51,13 @@ export function loadSeedManifest(root, seeds = loadSeeds(root)) {
     assert.match(id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid registry ID: ' + id);
     assert.ok(entry && typeof entry.path === 'string', 'Invalid registry entry: ' + id);
     assert.match(entry.path, /^(topics|compositions)\/[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid registry path: ' + id);
-    assert.ok(existsSync(join(root, examples, entry.path, 'README.md')), 'Missing registry README: ' + id);
+    assert.ok(existsSync(join(root, seedDirectory, entry.path, 'README.md')), 'Missing registry README: ' + id);
   }
   const topicIds = new Set(topics.keys());
   const compositionIds = new Set(compositions.keys());
   const records = record(manifest.seeds, 'seed metadata');
   assert.deepEqual(records.map(([id]) => id).sort(), [...seeds.keys()].sort(),
-    'Seed metadata must cover every design seed exactly once');
+    'Seed metadata must cover every test seed exactly once');
   const metadata = new Map();
   const knownKinds = new Set(['topic', 'composition', 'basic']);
   for (const [id, value] of records) {
@@ -68,7 +68,7 @@ export function loadSeedManifest(root, seeds = loadSeeds(root)) {
     else assert.ok(topicIds.has(value.topic), 'Unknown topic for ' + id);
     const registry = value.kind === 'composition' ? compositions : topics;
     const directory = registry.get(value.topic).path;
-    assert.ok(seeds.get(id).startsWith(directory + '/'), 'Design seed must live in its registered topic: ' + id);
+    assert.ok(seeds.get(id).startsWith(directory + '/'), 'Test seed must live in its registered topic: ' + id);
     const related = value.related ?? [];
     assert.ok(Array.isArray(related), 'Seed related topics must be a list: ' + id);
     assert.equal(new Set(related).size, related.length, 'Duplicate related topic: ' + id);
@@ -88,10 +88,10 @@ export function loadSeedManifest(root, seeds = loadSeeds(root)) {
 }
 
 function loadSeedPlan(root, seeds = loadSeeds(root), seedMetadata = loadSeedManifest(root, seeds)) {
-  const plan = readYaml(root, examples + '/seed-plan.yaml');
+  const plan = readYaml(root, seedDirectory + '/seed-plan.yaml');
   assert.equal(plan.version, 1, 'Unsupported seed plan version');
   assert.ok(plan.model && Number.isInteger(plan.model.total), 'Seed plan needs a total');
-  const manifest = readYaml(root, examples + '/seed-manifest.yaml');
+  const manifest = readYaml(root, seedDirectory + '/seed-manifest.yaml');
   const topicIds = new Set(Object.keys(manifest.topics ?? {}));
   const records = new Map();
   const addGroup = (kind, topic, group) => {
@@ -122,13 +122,13 @@ function loadSeedPlan(root, seeds = loadSeeds(root), seedMetadata = loadSeedMani
   assert.equal(planned, plan.model.planned, 'Seed plan planned count does not match its entries');
   for (const [id, metadata] of seedMetadata) {
     const plannedSeed = records.get(id);
-    assert.ok(plannedSeed, 'Design seed is missing from the denominator plan: ' + id);
-    assert.equal(plannedSeed.status, 'seeded', 'Design seed must be marked seeded: ' + id);
+    assert.ok(plannedSeed, 'Test seed is missing from the denominator plan: ' + id);
+    assert.equal(plannedSeed.status, 'seeded', 'Test seed must be marked seeded: ' + id);
     assert.equal(plannedSeed.kind, metadata.kind, 'Seed kind differs between manifest and plan: ' + id);
     assert.equal(plannedSeed.topic, metadata.topic, 'Seed topic differs between manifest and plan: ' + id);
   }
   for (const [id, plannedSeed] of records) {
-    if (plannedSeed.status === 'seeded') assert.ok(seeds.has(id), 'Seed plan says seeded but no design seed exists: ' + id);
+    if (plannedSeed.status === 'seeded') assert.ok(seeds.has(id), 'Seed plan says seeded but no test seed exists: ' + id);
   }
   return records;
 }
@@ -144,10 +144,10 @@ export function loadCases(root, seeds = loadSeeds(root)) {
   const entryDirectories = new Set();
   const cases = [];
   for (const [seedId, binding] of record(catalog.seeds, 'test seeds')) {
-    assert.ok(seeds.has(seedId), 'Unknown design seed: ' + seedId);
+    assert.ok(seeds.has(seedId), 'Unknown test seed: ' + seedId);
     register(assigned, seedId, 'seed assignment');
     const seedPath = seeds.get(seedId);
-    const document = examples + '/' + seedPath;
+    const document = seedDirectory + '/' + seedPath;
     const runners = record(binding, 'CLI runners for ' + seedId);
     assert.ok(runners.length, 'No CLI runner for seed: ' + seedId);
     for (const [runner, entries] of runners) {
