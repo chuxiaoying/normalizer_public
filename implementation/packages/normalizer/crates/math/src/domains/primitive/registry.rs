@@ -13,24 +13,13 @@ pub struct FuncKey(u32);
 
 #[derive(Clone, Default)]
 pub struct FuncSemantics {
-    /// 是否为纯函数（相同输入 → 相同输出，无副作用）。
-    /// 纯函数允许常量折叠：f(Lit, Lit) → 求值后 Lit（需要 evaluator 支持）
-    pub pure: bool,
-
-    /// 对 Null 输入的已知行为（如 isBlank(null) = true）。
-    /// 语义：如果所有 args 中位置 `null_trigger_positions` 之一为 Null，则结果为 `null_result`
+    /// If an argument at a declared trigger position is null, the
+    /// registered value operation can return this known result.
     pub null_behavior: Option<NullBehavior>,
 
-    /// 可选的 pure_function 求值器（P2 方案 B）。
-    ///
-    /// 签名：`&[Lit] -> Option<Lit>`
-    /// - 输入：全部 args 的 Lit 值（由 math::constant_fold 在 pure && all-Lit 条件下收集）
-    /// - 输出 Some(lit)：折叠成功
-    /// - 输出 None：evaluator 不支持此输入组合（如类型不匹配），保留原 Call
-    ///
-    /// 只有 pure=true 时才会被 math::constant_fold 调用。
+    /// Optional exact evaluator for literal operands. Returning None keeps
+    /// the call for the other normalization rules.
     pub evaluator: Option<Arc<dyn Fn(&[Lit]) -> Option<Lit> + Send + Sync>>,
-
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,12 +31,10 @@ pub struct NullBehavior {
 }
 
 impl FuncSemantics {
-    /// 纯函数：相同输入→相同输出，无副作用
+    /// Registered math calls are value operations. Environmental reads and
+    /// actions are acquired by execution and never registered as evaluators.
     pub fn pure_function() -> Self {
-        Self {
-            pure: true,
-            ..Default::default()
-        }
+        Self::default()
     }
 
     /// 组合已有语义 + null_behavior（链式构造，保留原有语义）
@@ -75,15 +62,8 @@ impl FuncSemantics {
     }
 }
 
-/// Func 注册条目。
-///
-/// ## 参数类型强制 primitive（用户 20260428122100 明令）
-///
-/// 用户原话："NCL构造需要传入参数类型列表，且类型不能是泛类型，必须是primitive枚举。
-/// 这样就可以逼出所有违规操作的编译错误。全部肃清。"
-///
-/// `param_types` 是 **封闭枚举 `Primitive` 列表**，不允许 Object / 泛型 / 业务类。
-/// 这样编译器强制：只有 primitive 演算函数能注册 Primitive Functions。
+/// A registered value operation has a closed primitive signature. Java
+/// classes and generic host types do not serve as operand domains here.
 #[derive(Clone)]
 pub(crate) struct FuncEntry {
     pub name: String,
@@ -125,7 +105,6 @@ fn verify_repeated_contract(
         _ => false,
     };
     assert!(entry.return_type == return_type
-        && entry.semantics.pure == semantics.pure
         && entry.semantics.null_behavior == semantics.null_behavior
         && same_evaluator,
         "[NORM-INVARIANT] conflicting contracts for canonical operation {}", entry.name);
