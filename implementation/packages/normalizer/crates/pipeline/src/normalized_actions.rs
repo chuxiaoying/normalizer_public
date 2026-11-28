@@ -267,8 +267,21 @@ fn adapter_scalar_domain(domain: &str) -> Option<Ty> {
     match domain {
         "bool" => Some(Ty::Bool),
         "number" => Some(Ty::Integer),
+        "text" => Some(Ty::Text),
         _ => None,
     }
+}
+
+// Reads and writes share the declared state domain. Nullable text keeps
+// its own symbol contract even though both carriers have Ty::Text.
+fn adapter_state_domain(domain: &str) -> Option<(Ty, ScalarSymbolType)> {
+    Some(match domain {
+        "bool" => (Ty::Bool, ScalarSymbolType::Boolean),
+        "number" => (Ty::Integer, ScalarSymbolType::Integer),
+        "text" => (Ty::Text, ScalarSymbolType::Text),
+        "text?" => (Ty::Text, ScalarSymbolType::NullableText),
+        _ => return None,
+    })
 }
 
 impl Engine<'_> {
@@ -421,11 +434,8 @@ impl Engine<'_> {
         need(target.iter().all(|part| identifier(part)), "invalid state field path")?;
         let context = self.entry_context.ok_or_else(|| fail("state read requires the selected entry context"))?;
         let domain = context.state_field(root, fields)?;
-        let (ty, scalar) = match domain {
-            "bool" => (Ty::Bool, ScalarSymbolType::Boolean),
-            "number" => (Ty::Integer, ScalarSymbolType::Integer),
-            _ => return Err(fail("unsupported state field read type")),
-        };
+        let (ty, scalar) = adapter_state_domain(domain)
+            .ok_or_else(|| fail("unsupported state field read type"))?;
         let existing = self.source_objects.state_bindings.iter().find_map(|(&id, name)| (name == root).then_some(id));
         let binding = if let Some(id) = existing { id } else {
             let id = self.fresh_binding();
@@ -476,7 +486,7 @@ impl Engine<'_> {
                         "NORM-STATE-DECLARATION", &format!("{root}.{}", fields.join(".")), &detail,
                         "请在当前入口声明真实的状态字段和类型。",
                     ))?;
-                    let expected = adapter_scalar_domain(domain)
+                    let (expected, _) = adapter_state_domain(domain)
                         .ok_or_else(|| fail("unsupported state field type"))?;
                     let value = self.action_value(value, env)?;
                     need(value.ty() == expected, "incompatible state write value")?;

@@ -1,0 +1,15 @@
+entry: src/ArrearsPage.ts#onLoad
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/ArrearsPage.ts#onLoad, returns: void}
+  P:
+    parameters: {next: {position: 0, type: text}}
+  E:
+    arrears:
+      kind: state
+      source: src/ArrearsPage.ts#arrears
+      fields: {caption: text, previous: text}
+  R: void
+  S:
+    - write: {target: arrears.caption, value: next}
+    - write: {target: arrears.previous, value: arrears.caption}
