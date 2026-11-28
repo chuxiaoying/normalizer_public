@@ -322,15 +322,8 @@ pub(super) fn observations(
                                     if !project.entry_contexts.get(id).is_some_and(|context| std::ptr::eq(context, entry)) {
                                         return false;
                                     }
-                                    let failure = match &function.body {
-                                        super::Node::GuardUnknownText { name, message }
-                                            if class == "TypeError" && *value == message.to_expression() => {
-                                            let input = b::param(name, math::ScalarSymbolType::UntrustedSourceValue);
-                                            b::not(math::domains::source_type_guard::is_native_text(input))
-                                        }
-                                        super::Node::NativeTextFlow { flow } => flow.throw_domain(class, value),
-                                        _ => return false,
-                                    };
+                                    let super::Node::NativeTextFlow { flow } = &function.body else { return false; };
+                                    let failure = flow.throw_domain(class, value);
                                     b::path_implies(&alternative.guard, &math::normalize(failure))
                                 }))
                             || external_payloads.iter().any(|(declared, observed, domain)|

@@ -262,18 +262,6 @@ impl<'a> Engine<'a> {
                 self.realtime_completion = realtime_state::Completion::ThrowValue(value);
                 Ok(Value::Term(Ty::Unit, b::lit_null()))
             }
-            Node::GuardUnknownText { name, message } => {
-                need(path.as_bool() == Some(true), "unknown type guard must own the complete entry domain")?;
-                let value = env.get(name).filter(|value| value.ty() == Ty::UnknownInput)
-                    .ok_or_else(|| fail("native type guard requires the exact unknown input"))?.scalar()?;
-                let guard = math::domains::source_type_guard::is_native_text(value.clone());
-                let text = math::domains::source_type_guard::certified_text(value);
-                self.realtime_completion = realtime_state::join_completion(
-                    guard, realtime_state::Completion::Return(text.clone()),
-                    realtime_state::Completion::Throw { class: "TypeError".into(), payload: Some(message.to_expression()) },
-                ).ok_or_else(|| fail("unsupported native type-guard completion"))?;
-                Ok(Value::Term(Ty::Text, text))
-            }
             Node::NativeTextFlow { flow } => {
                 need(path.as_bool() == Some(true), "native text flow must own the complete entry domain")?;
                 let completion = self.source_text_flow(flow, env, env, path)?;

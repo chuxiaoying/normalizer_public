@@ -2,4 +2,4 @@ entry: src/value.ts#read
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - 'unknown guard requires a native strict typeof comparison'
+    - 'native text flow requires strict native comparisons and a proved text result'

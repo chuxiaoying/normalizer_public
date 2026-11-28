@@ -13,7 +13,7 @@ import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { checkedTypeScript, failTypedModule, isCompilerLibrary, typedModuleAst } from './typed-module.mjs';
 import { entryLocator } from './entry-locator.mjs';
-import { guardedUnknownText, nativeTextFlow, unknownValueModule } from './module-unknown-text.mjs';
+import { nativeTextFlow, unknownValueModule } from './module-unknown-text.mjs';
 import { projectSources } from './project-source.mjs';
 import {isOfficialNamespaceImport, standardCalls} from './standard-library.mjs';
 
@@ -186,10 +186,10 @@ function compileUnknownValue(sf, fn, file, entry, checker, allowTypeImports = fa
     return projectInput(file, entry, general.params, 'string', false, 'text',
       {op: 'source.native_text_flow', flow: general.flow}, fn.getText(sf), {exceptions: general.exceptions});
   }
-  const proof = guardedUnknownText(sf, fn, checker, fail, allowTypeImports);
-  const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
-  return projectInput(file, entry, params, 'string', false, 'text',
-    {op: 'source.guard_unknown_text', ...proof}, fn.getText(sf), {exceptions: {TypeError: 'text'}});
+  const first = fn.body.statements[0];
+  if (!first || !ts.isIfStatement(first))
+    fail('returning text from an unknown input requires a native type decision');
+  fail('native text flow requires strict native comparisons and a proved text result on every normal path');
 }
 
 function compile(source, file, entry, physicalPath, linked) {

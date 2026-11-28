@@ -318,10 +318,6 @@ fn read_action_return<'de, D: serde::Deserializer<'de>>(reader: D) -> std::resul
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Node {
-    /// One checked TypeScript unknown input, with native type-test and
-    /// non-coercing projection only on the admitted normal completion.
-    #[serde(rename = "source.guard_unknown_text")]
-    GuardUnknownText { name: String, message: WireText },
     #[serde(rename = "source.native_text_flow")]
     NativeTextFlow { flow: Box<NativeTextFlow> },
     #[serde(rename = "source.throw_unknown_input")]
@@ -812,9 +808,6 @@ impl Loaded {
                     need(*fallback == Ty::Ref
                         && entry_context.is_some_and(|context| context.parameter_type(&p.name) == Some("unknown")
                             && match &f.body {
-                                Node::GuardUnknownText { name, .. } if single_input && name == &p.name =>
-                                    context.return_type() == "text" && self.project.exceptions.get("TypeError")
-                                        .is_some_and(|domain| domain == "text"),
                                 Node::NativeTextFlow { flow } =>
                                     context.return_type() == "text" && flow.declared_throws(&self.project.exceptions),
                                 Node::ThrowUnknownInput { name } if single_input && name == &p.name =>

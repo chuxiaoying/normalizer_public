@@ -3,82 +3,11 @@
 import ts from 'typescript';
 import {isLocalExportList, textWireValue, unwrapParens} from './ir.mjs';
 
-function oneStatement(node) {
-  return node && ts.isBlock(node) ? (node.statements.length === 1 ? node.statements[0] : undefined) : node;
-}
-
 export function unknownValueModule(sf, fn, allowTypeImports) {
   return sf.statements.every(statement => statement === fn
     || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)
     || isLocalExportList(statement)
     || allowTypeImports && ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly);
-}
-
-export function guardedUnknownText(sf, fn, checker, fail, allowTypeImports = false) {
-  const declarationsOnly = unknownValueModule(sf, fn, allowTypeImports);
-  const signature = checker.getSignatureFromDeclaration(fn);
-  const returnedType = signature && checker.getReturnTypeOfSignature(signature);
-  if (!declarationsOnly || fn.parameters.length !== 1 ||
-      !(checker.getTypeAtLocation(fn.parameters[0].name).flags & ts.TypeFlags.Unknown) ||
-      !(returnedType?.flags & ts.TypeFlags.String) || fn.asteriskToken ||
-      fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) {
-    fail('unknown input requires a checked standalone string guard with the original TypeError branch');
-  }
-  const parameter = fn.parameters[0];
-  const name = parameter.name.text;
-  const binding = checker.getSymbolAtLocation(parameter.name);
-  const sameBinding = node => ts.isIdentifier(node) && checker.getSymbolAtLocation(node) === binding;
-  const isString = node => ts.isStringLiteralLike(node) && node.text === 'string';
-  const isNativeTypeTest = node => ts.isTypeOfExpression(node) && sameBinding(unwrapParens(node.expression));
-  const [decision, terminal, ...rest] = fn.body.statements;
-  if (!decision || !ts.isIfStatement(decision) || rest.length ||
-      (decision.elseStatement ? terminal !== undefined : terminal === undefined)) {
-    fail('unknown guard must have exactly a native type decision and one return and one throw');
-  }
-  const test = unwrapParens(decision.expression);
-  if (!ts.isBinaryExpression(test) ||
-      ![ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(test.operatorToken.kind)) {
-    fail('unknown guard requires a native strict typeof comparison');
-  }
-  const left = unwrapParens(test.left), right = unwrapParens(test.right);
-  if (!(isNativeTypeTest(left) && isString(right) || isString(left) && isNativeTypeTest(right))) {
-    fail('unknown guard must test the same input binding against the native string type tag');
-  }
-  const equal = test.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
-  const taken = oneStatement(decision.thenStatement);
-  const alternate = oneStatement(decision.elseStatement ?? terminal);
-  const normal = equal ? taken : alternate;
-  const failure = equal ? alternate : taken;
-  const returned = normal && ts.isReturnStatement(normal) && normal.expression && unwrapParens(normal.expression);
-  let observed = returned;
-  if (returned && ts.isCallExpression(returned) && !returned.questionDotToken
-      && !returned.typeArguments?.length && returned.arguments.length === 1) {
-    const callee = unwrapParens(returned.expression);
-    if (ts.isIdentifier(callee) && callee.text === 'String'
-        && checker.getSymbolAtLocation(callee)?.declarations?.length
-        && checker.getSymbolAtLocation(callee).declarations.every(d => {
-          const owner = d.getSourceFile();
-          return owner.isDeclarationFile && owner.hasNoDefaultLib;
-        })) {
-      // Builtin String of a value already proved a primitive string is
-      // that very value. Do not admit pre-check coercion or a shadow.
-      observed = unwrapParens(returned.arguments[0]);
-    }
-  }
-  if (!observed || !sameBinding(observed) || !(checker.getTypeAtLocation(observed).flags & ts.TypeFlags.String)) {
-    fail('normal result must be the same input proved to be native string on that path');
-  }
-  const thrown = failure && ts.isThrowStatement(failure) && unwrapParens(failure.expression);
-  if (!thrown || !ts.isNewExpression(thrown) || thrown.typeArguments?.length || thrown.arguments?.length !== 1 ||
-      !ts.isIdentifier(thrown.expression) || thrown.expression.text !== 'TypeError' ||
-      !checker.getSymbolAtLocation(thrown.expression)?.declarations?.every(d => d.getSourceFile().isDeclarationFile)) {
-    fail('unknown guard requires the original native TypeError with a literal text message');
-  }
-  const message = unwrapParens(thrown.arguments[0]);
-  if (!ts.isStringLiteral(message) && !ts.isNoSubstitutionTemplateLiteral(message)) {
-    fail('unknown guard TypeError message must be literal text');
-  }
-  return {name, message: textWireValue(message.text)};
 }
 
 // Lower a closed native decision tree, not a serialization of an application
@@ -113,6 +42,14 @@ export function nativeTextFlow(sf, fn, checker, location, allowTypeImports = fal
     const input = bound(node);
     if (input && checker.getTypeAtLocation(node).flags & ts.TypeFlags.StringLike)
       return {kind: 'binding', name: input.name};
+    if (ts.isCallExpression(node) && !node.questionDotToken
+        && !node.typeArguments?.length && node.arguments.length === 1) {
+      const callee = unwrapParens(node.expression);
+      // Builtin String preserves an already proved native text value.
+      // An assertion or an unproved input is never accepted in value().
+      if (ts.isIdentifier(callee) && callee.text === 'String' && native(callee))
+        return value(node.arguments[0], depth + 1);
+    }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
       const left = value(node.left, depth + 1), right = value(node.right, depth + 1);
       if (left && right) return {kind: 'concat', left, right};

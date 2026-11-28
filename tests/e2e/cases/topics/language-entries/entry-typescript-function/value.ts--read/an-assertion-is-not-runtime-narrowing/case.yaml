@@ -2,4 +2,4 @@ entry: src/value.ts#read
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - 'unknown guard must have exactly a native type decision'
+    - 'returning text from an unknown input requires a native type decision'
