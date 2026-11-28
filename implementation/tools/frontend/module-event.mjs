@@ -2,7 +2,7 @@
 // completion of the request it waits for. Inputs bind to actual formals.
 import ts from 'typescript';
 import { normalizerMarkers, singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
-import { definedModuleExport, exactIntegerLiteral, isLocalExportList, parseSourceModule, unwrapParens } from './ir.mjs';
+import { definedModuleExport, exactIntegerLiteral, isLocalExportList, parseSourceModule, staticMemberName, unwrapParens } from './ir.mjs';
 import { localDirectives } from './local-directives.mjs';
 import { assertTypeScript, typeScriptProgram } from './typed-module.mjs';
 import { isOfficialNamespaceImport } from './standard-library.mjs';
@@ -173,12 +173,15 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
     if (number !== undefined) return { op: 'const', type: 'number', value: number };
     if (n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.TrueKeyword)
       return { op: 'const', type: 'bool', value: n.kind === ts.SyntaxKind.TrueKeyword };
-    if (ts.isPropertyAccessExpression(n)) {
-      if (n.questionDotToken) fail('optional access needs a checked nullish branch before field observation');
+    if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && n.questionDotToken) {
+      fail('optional access needs a checked nullish branch before field observation');
+    }
+    const member = staticMemberName(n);
+    if (member !== undefined) {
       const fields = [];
-      let root = n;
-      while (ts.isPropertyAccessExpression(root) && !root.questionDotToken) {
-        fields.unshift(root.name.text);
+      let root = n, name;
+      while ((name = staticMemberName(root)) !== undefined) {
+        fields.unshift(name);
         root = unwrapParens(root.expression);
       }
       if (ts.isIdentifier(root)) {
@@ -193,7 +196,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
           && symbol(root) === stateDeclarations.get(root.text)) {
         return {op: 'source.state_value', path: [root.text, ...fields]};
       }
-      return { op: 'value.field', value: lowerValue(n.expression, scope), name: n.name.text };
+      return { op: 'value.field', value: lowerValue(n.expression, scope), name: member };
     }
     if (ts.isConditionalExpression(n)) {
       const cond = lowerValue(n.condition, scope);
@@ -292,12 +295,12 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
         ts.isExpressionStatement(st) &&
         ts.isBinaryExpression(st.expression) &&
         [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(st.expression.operatorToken.kind) &&
-        ts.isPropertyAccessExpression(st.expression.left)
+        staticMemberName(st.expression.left) !== undefined
       ) {
         const target = [];
-        let root = st.expression.left;
-        while (ts.isPropertyAccessExpression(root) && !root.questionDotToken) {
-          target.unshift(root.name.text);
+        let root = st.expression.left, name;
+        while ((name = staticMemberName(root)) !== undefined) {
+          target.unshift(name);
           root = unwrapParens(root.expression);
         }
         const assignedValue = () => {

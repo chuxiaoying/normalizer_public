@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import ts from 'typescript';
 import { closedReceiver } from './module-receiver.mjs';
 import { checkedProjectModules, hasProjectImports } from './module-links.mjs';
-import { definedModuleExport, isLocalExportList, parseSourceModule, lowerExpression, textWireValue, unwrapParens as unwrap } from './ir.mjs';
+import { definedModuleExport, isLocalExportList, parseSourceModule, lowerExpression, staticMemberName, textWireValue, unwrapParens as unwrap } from './ir.mjs';
 import { eventContract } from './module-event-project.mjs';
 import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
@@ -269,7 +269,7 @@ function compile(source, file, entry, physicalPath, linked) {
   const isStateEvent = isListener && fn.body.statements.some(st => ts.isExpressionStatement(st)
     && ts.isBinaryExpression(st.expression)
     && [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(st.expression.operatorToken.kind)
-    && ts.isPropertyAccessExpression(st.expression.left));
+    && staticMemberName(st.expression.left) !== undefined);
   if (isStateEvent) {
     const project = eventContract(file, source, entry, physicalPath, {synchronous: true});
     return {carrier: project.source_text, carrierFile: project.source, binding: project.entries[0], project, moduleFile: 'Prepared.ts'};
