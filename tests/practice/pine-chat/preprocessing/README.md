@@ -2,9 +2,10 @@
 
 原件：[App.vue](../frontend/src/App.vue)、[model.ts](../frontend/src/model.ts)、[HTTP 合同](../backend/src/practice/chat/ChatServer.java)、[业务服务](../backend/src/practice/chat/ChatService.java)。工作台是松果聊天的单页应用，包含会话、通讯录、群设置和消息编辑。原应用不改动。要逐处看原码、改写和依据，见[预处理逐项 Diff](DIFF.md)。
 
-这里分两个根目录：
+这里分三个根目录：
 
 - [analysis/src/Bindings.ts](analysis/src/Bindings.ts)：可单独送入正式 CLI 的、按绑定切出的最小闭合工程。同一生产/消费对使用同一份 VO 声明。此处不是整个页面已归一化的结论。
+- [navigation/src/Navigation.ts](navigation/src/Navigation.ts)：页签和群设置的独立切片，保留页签原有联合类型和本地函数调用；不影响原最小切片的验收。
 - [workspace/src/ChatWorkspace.ts](workspace/src/ChatWorkspace.ts)：覆盖工作台核心流程的严格 TS 预处理稿。保留发送、已读、好友和群命令、生命周期、回执及选择后的状态投影；当前场景适配器拒收。它不是已通过的分析副本。列表逐项、日期显示和 DOM 观察仍有后文列出的宿主/运算缺口。
 
 ## 可交付的入口和出口
@@ -29,6 +30,18 @@ implementation/tools/normalizer scenario frontend-vo-consumption "$root" --entry
 | 欢迎区标题；`page !== 'contacts'` 且没有当前会话 | `welcomeTitle()` | 无 P、无 S；已有 `loading` 为真得到「正在连接」，否则得到「选一个会话，聊点什么」。隐藏欢迎区不等于返回空字符串。 |
 
 输入的观察点在 Vue 的文本绑定交付之后，不是在浏览器开始一次原始 `InputEvent` 时。输入法组字等 Vue 尚未交付值的事件不调用该入口。消费入口由原模板调用域限定；上层不挂载时不调用 supplier，返回值里不造 `null`、空文本或 `false` 作为「没有观察」的替代。
+
+## 补充切片：切换页签、展开群设置
+
+这些入口在 `navigation/src/Navigation.ts`。每组入口在这一根内共用 VO；`query`、`notice`、`problem` 对应与原切片相同的 App.vue 槽位，但两个根的 PERS 标识不能自动合并。
+
+| 原绑定 / 观察点 | 入口 | 预期业务观察 |
+| --- | --- | --- |
+| 顶部两个页签按钮，宿主已经派发点击 | 生产 `onChatsClick()` / `onContactsClick()` | 无 P。沿原 `switchPage`，S 依次写 `page.value`、清空 `query.value`、`notice.value`、`problem.value`，R 为 `void`。点当前页也照常清空。保留 `switchPage(next)` 的原签名和函数体；只有模板绑定的两个固定实参被显式接回。 |
+| 同一个搜索框的占位文案，两页均挂载 | 消费 `searchPlaceholder()` | 无 P、无 S。读同一个 `page.value`，返回对应文案。不读取或清洗搜索文字。 |
+| 群设置按钮；处在会话页且选中的会话是群聊 | 生产 `onGroupSettingsClick()` / 消费 `groupExpanded()` | 前者无 P，读取并翻转 `panel.value`，R 为 `void`；后者无 P、无 S，读同一槽并返回模板实际绑定的布尔值（宿主序列化为 DOM 属性之前）。没有按钮时两者都不在调用域，不能用 `false` 代替没有观察。 |
+
+定向查验用 `root=tests/practice/pine-chat/preprocessing/navigation` 和 `--entry 'src/Navigation.ts#<导出名>'`。源码保留原页签联合类型；当前场景适配器的状态装载只接受有限几种字段类型，不能把 `'chats' | 'contacts'` 当作普通 `string` 交付来迁就它。表中是从原件推导的预期，不是手填的 CLI 产物。
 
 ## 工作台生产预处理稿
 

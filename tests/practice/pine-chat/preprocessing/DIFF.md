@@ -53,6 +53,33 @@
 
 **为什么改：** 标题表达式原来只由模板求值；现在让它成为独立的消费入口，条件和两段文案不变。原模板先排除通讯录、再排除有会话的分支；只有走到欢迎区才调用。一个已打开的会话不会因此得到空标题，也不会执行这个函数。
 
+## 补充切片：把宿主绑定接回原生程序
+
+```diff
+-<button ... @click="switchPage('chats')">
+-<button ... @click="switchPage('contacts')">
+-<input v-model="query" :placeholder="page==='chats'?'搜索会话和消息':'搜索联系人'" ... />
++export function onChatsClick(): void { switchPage('chats') }
++export function onContactsClick(): void { switchPage('contacts') }
++/** @N componentProp Input#global-search.placeholder */
++export function searchPlaceholder(): string {
++  return page.value === 'chats' ? '搜索会话和消息' : '搜索联系人'
++}
+```
+
+两个参数值来自模板中的字面量，不来自事件，不新增 P。只把 `page` 的 Vue 容器还原成原实例的 `entryState`，`switchPage(next)` 原样保留。即使当前已在通讯录，再点一次也要清空搜索和两种提示。取值函数只搬出原模板的三元式。
+
+```diff
+-<button v-if="room.group" :aria-expanded="panel" @click="panel=!panel">群设置</button>
++/** @N entryState */
++const panel = { value: false }
++export function onGroupSettingsClick(): void { panel.value = !panel.value }
++/** @N componentProp Button#group-settings.aria-expanded */
++export function groupExpanded(): boolean { return panel.value }
+```
+
+模板的两个绑定分别导出，写、读都落在原群按钮所属页面的同一 `panel`。外层 `v-if` 仍限定实际调用：没有挂载就不调用，不把「未挂载」改成属性值 `false`。
+
 ## 尚未验收：闭合小入口里的两类拒绝
 
 这些函数也在 [Bindings.ts](analysis/src/Bindings.ts)。它们通过了强类型检查，但不在上面五个已通过的入口里。
