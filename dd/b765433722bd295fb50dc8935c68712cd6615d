@@ -1,0 +1,22 @@
+design/chapters/08-统一定形.md
+  s_47ae65fe8e6220::t_5f230a14136a1f 231-240
+  s_47ae65fe8e6220::t_53c3282eb7b610 40,42,44-55,57,59,61-66,68,70,144,146-150,153,159,161-167,196
+  s_47ae65fe8e6220::t_55400a3ab8186d 250
+  s_47ae65fe8e6220::t_01cc9bd186545b 241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ddb765433722bd295fb50dc8935c68712cd6615d",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}
