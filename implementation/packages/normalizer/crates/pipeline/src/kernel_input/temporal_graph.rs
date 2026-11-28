@@ -89,12 +89,22 @@ fn closed_computed_value(
     value.walk_pruned(&mut |part| {
         if !closed { return false; }
         if let Some((kind, relation, select, fallback)) = part.as_relation_aggregate() {
-            use math::RelationAggregateKind::{Count, FirstValue, Sum};
+            use math::RelationAggregateKind::{Count, FirstValue, NthValue, Sum};
             if kind == Count
                 && matches!(relation, RelationExpr::Base { name, alias, snapshot: None }
                     if arrays.contains(name) && alias == "value")
                 && select.is_none() && fallback.is_none()
             {
+                return false;
+            }
+            // A positional operand keeps its index in the enclosing scope.
+            // Its absence is handled by the surrounding fallback CASE.
+            if kind == NthValue {
+                closed = matches!(relation, RelationExpr::Base { name, alias, snapshot: None }
+                    if arrays.contains(name) && alias == "value")
+                    && fallback.is_none()
+                    && select.is_some_and(|index|
+                        closed_computed_value(index, rows, arrays, tables, acquired, acquired_table));
                 return false;
             }
             let counts_rows = kind == Sum && select == Some(&b::lit_int(1)) && fallback.is_none();

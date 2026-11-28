@@ -1,0 +1,9 @@
+entry: src/MixedTemporal.java#MixedTemporal.settle
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/MixedTemporal.java#MixedTemporal.settle, returns: number}
+  P:
+    parameters:
+      options: {position: 0, type: 'number[]'}
+      data: {position: 1, type: 'number[]'}
+  R: CHOOSE(options DEFAULT CASE WHEN 2 > LENGTH(data) THEN 0 ELSE data[1] END AS member0 YIELD member0)
