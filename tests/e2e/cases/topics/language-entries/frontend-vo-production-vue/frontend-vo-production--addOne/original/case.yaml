@@ -1,0 +1,15 @@
+entry: src/OrderPage.ts#addOne
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/OrderPage.ts#addOne, returns: void}
+  P:
+    parameters: {}
+  E:
+    draft:
+      kind: state
+      source: src/OrderPage.ts#draft
+      fields: {ready: bool, units: number}
+  S:
+    - write: {target: draft.units, value: '1 + draft.units'}
+    - write: {target: draft.ready, value: true}
+  R: void

@@ -265,7 +265,8 @@ function compile(source, file, entry, physicalPath, linked) {
   if (formals.error) fail(formals.error);
   const isListener = fn.type?.kind === ts.SyntaxKind.VoidKeyword;
   const isStateEvent = isListener && fn.body.statements.some(st => ts.isExpressionStatement(st)
-    && ts.isBinaryExpression(st.expression) && st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    && ts.isBinaryExpression(st.expression)
+    && [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(st.expression.operatorToken.kind)
     && ts.isPropertyAccessExpression(st.expression.left));
   if (isStateEvent) {
     const project = eventContract(file, source, entry, physicalPath, {synchronous: true});

@@ -2,4 +2,4 @@ entry: src/ArrearsPage.ts#onLoad
 reject:
   fragments:
     - "SCENARIO_MODULE_INPUT:"
-    - entry needs an exported async function
+    - "'await' expressions are only allowed within async functions"

@@ -1,0 +1,12 @@
+entry: src/OrderPage.ts#cardUnits
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/OrderPage.ts#cardUnits, returns: number}
+  P:
+    parameters: {}
+  E:
+    draft:
+      kind: state
+      source: src/OrderPage.ts#draft
+      fields: {ready: bool, units: number}
+  R: CASE WHEN draft.ready THEN draft.units ELSE 0 END

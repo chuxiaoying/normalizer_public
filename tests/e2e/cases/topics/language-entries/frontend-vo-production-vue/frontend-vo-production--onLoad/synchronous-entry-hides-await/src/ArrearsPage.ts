@@ -43,7 +43,7 @@ declare const profileClient: ProfileClient
 /** @N external */
 declare const arrearsClient: ArrearsClient
 
-export function onLoad(accountId: number, today: number): Promise<void> {
+export function onLoad(accountId: number, today: number): void {
   const todayAtEntry = today
   arrears.loadedAccountId = accountId
   arrears.status.loading = true

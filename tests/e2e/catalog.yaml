@@ -364,6 +364,7 @@ seeds:
     module:
       - Click.ts#onClick
       - OrderView.ts#onUnitsChanged
+      - OrderPage.ts#addOne
   entry-typescript-standard-binding:
     module:
       - labels.ts#normalized
@@ -405,6 +406,7 @@ seeds:
   frontend-vo-production-vue:
     frontend-vo-production:
       - onLoad
+      - addOne
   composition-filter-boolean-equation:
     source:
       - Filter.run

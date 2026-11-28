@@ -1,4 +1,4 @@
-// Lower an observed async module entry in source order. An await binds the
+// Lower an observed module entry in source order. An await binds the
 // completion of the request it waits for. Inputs bind to actual formals.
 import ts from 'typescript';
 import { normalizerMarkers, singleAnnotatedBinding, stateBinding } from './module-projection.mjs';
@@ -57,7 +57,7 @@ function rejectionNames(method, checker, sf) {
   return names;
 }
 
-export function readModuleEvent(modulePath, text, entryName, physicalPath = modulePath, {synchronous = false} = {}) {
+export function readModuleEvent(modulePath, text, entryName, physicalPath = modulePath, options = {}) {
   const sf = parseSourceModule(physicalPath, text, fail, ts.ScriptKind.TS);
   const {checker, errors} = typeScriptProgram(physicalPath, sf, fail, {
     allowOfficial: sf.statements.some(isOfficialNamespaceImport),
@@ -68,6 +68,13 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
   const inputs = new Map(), ports = new Map(), stateDeclarations = new Map();
   const fn = definedModuleExport(sf, entryName, fail);
   const async = fn.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
+  const synchronous = options.synchronous ?? !async;
+  if (synchronous) {
+    // A local directive can prove definite assignment later in this pass.
+    // It cannot make another source type or syntax error valid.
+    const earlyErrors = errors.filter(d => d.code !== 2454);
+    if (earlyErrors.length) assertTypeScript(sf, checker, earlyErrors, fail);
+  }
   if (synchronous) {
     if (fn.asteriskToken || async || fn.type?.kind !== ts.SyntaxKind.VoidKeyword) {
       fail('selected synchronous event requires an explicitly void exported function');
@@ -284,7 +291,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
       if (
         ts.isExpressionStatement(st) &&
         ts.isBinaryExpression(st.expression) &&
-        st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(st.expression.operatorToken.kind) &&
         ts.isPropertyAccessExpression(st.expression.left)
       ) {
         const target = [];
@@ -293,11 +300,21 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
           target.unshift(root.name.text);
           root = unwrapParens(root.expression);
         }
+        const assignedValue = () => {
+          const {left, right, operatorToken} = st.expression;
+          if (operatorToken.kind === ts.SyntaxKind.EqualsToken) return lowerValue(right, scope);
+          if (![left, right].every(value => checker.getTypeAtLocation(value).flags & ts.TypeFlags.NumberLike)) {
+            fail('numeric compound assignment requires two checked numeric operands');
+          }
+          // The target path has a fixed, checked root. JS reads its old
+          // value before the RHS; the one following write publishes the sum.
+          return {op: 'add', left: lowerValue(left, scope), right: lowerValue(right, scope)};
+        };
         if (ts.isIdentifier(root)) {
           const slot = scope.get(root.text);
           if (slot?.recordFields && symbol(root) === slot.declaration) {
             if (target.length !== 1 || !slot.recordFields.has(target[0])) fail('unbound local record write');
-            const value = lowerValue(st.expression.right, scope);
+            const value = assignedValue();
             const key = local();
             steps.push({op: 'let', name: key, value});
             slot.recordFields.set(target[0], key);
@@ -309,7 +326,7 @@ export function readModuleEvent(modulePath, text, entryName, physicalPath = modu
           fail('write has no bound @N entryState root: ' + root.getText());
         }
         target.unshift(root.text);
-        const value = lowerValue(st.expression.right, scope);
+        const value = assignedValue();
         steps.push({ op: 'write_state', target, value });
         continue;
       }
