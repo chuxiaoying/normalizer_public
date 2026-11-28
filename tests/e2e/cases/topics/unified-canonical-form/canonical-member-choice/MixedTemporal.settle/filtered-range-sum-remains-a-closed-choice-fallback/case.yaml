@@ -1,0 +1,10 @@
+entry: src/MixedTemporal.java#MixedTemporal.settle
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/MixedTemporal.java#MixedTemporal.settle, returns: number}
+  P:
+    parameters:
+      options: {position: 0, type: 'number[]'}
+      hi: {position: 1, type: 'number'}
+      threshold: {position: 2, type: 'number'}
+  R: CHOOSE(options DEFAULT COALESCE(SUM(SELECT i * i FROM range(1, hi) AS i WHERE threshold < i), 0) AS member0 YIELD member0)

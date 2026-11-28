@@ -1,0 +1,8 @@
+entry: src/VariableLoop.java#VariableLoop.count
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/VariableLoop.java#VariableLoop.count, returns: number}
+  P:
+    parameters:
+      values: {position: 0, type: 'number[]'}
+  R: LENGTH(values)

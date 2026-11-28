@@ -32,20 +32,64 @@ pub(super) struct Publication {
     pub(super) slots: Vec<Slot>,
 }
 
-/// Supported computed operands are already acquired exact integers.
-fn acquired_integer_math(value: &Expr, domains: &BTreeMap<String, String>, names: &BTreeMap<String, String>) -> bool {
-    if value.as_lit().and_then(math::Lit::as_integer).is_some() { return true; }
-    if let Some(SymVarOrigin::Parameter { name, primitive_type }) = value.as_sym_var() {
-        return primitive_type == "integer" && domains.get(name).is_some_and(|kind| kind == "number")
-            && names.contains_key(name);
-    }
-    if let Some((math::UnaryOpKind::Neg, operand)) = value.as_unary_op() {
-        return acquired_integer_math(operand, domains, names);
-    }
-    value.as_binop().is_some_and(|(op, left, right)| {
-        matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
-            && acquired_integer_math(left, domains, names) && acquired_integer_math(right, domains, names)
-    })
+/// A SUM may use an acquired scalar array or the same finite integer
+/// domain that is available to ordinary relation results. Bind each row
+/// at its own relation site, including rows mentioned in filters.
+fn sum_row<'a>(relation: &'a RelationExpr, arrays: &BTreeSet<String>) -> Option<&'a str> {
+    use math::domains::relation::positional::integer_domain;
+    if let Some((_, alias)) = integer_domain(relation) { return Some(alias); }
+    if super::business_relation::is_scalar_array_relation(relation, arrays) { return Some("value"); }
+    None
+}
+
+fn closed_computed_value(
+    value: &Expr, rows: &[&str], arrays: &BTreeSet<String>, acquired: &impl Fn(&Expr) -> bool,
+) -> bool {
+    let mut closed = true;
+    value.walk_pruned(&mut |part| {
+        if !closed { return false; }
+        if let Some((kind, relation, select, fallback)) = part.as_relation_aggregate() {
+            use math::RelationAggregateKind::{Count, Sum};
+            if kind == Count
+                && matches!(relation, RelationExpr::Base { name, alias, snapshot: None }
+                    if arrays.contains(name) && alias == "value")
+                && select.is_none() && fallback.is_none()
+            {
+                return false;
+            }
+            let Some(row) = (kind == Sum).then(|| sum_row(relation, arrays)).flatten() else {
+                closed = false;
+                return false;
+            };
+            let mut scoped = rows.to_vec();
+            scoped.push(row);
+            let mut source = relation;
+            while let RelationExpr::Select { predicate, input } = source {
+                closed &= closed_computed_value(predicate, &scoped, arrays, acquired);
+                source = input;
+            }
+            if let RelationExpr::Vector { value, .. } = source {
+                // Bounds live in the enclosing scope, not the row scope.
+                closed &= closed_computed_value(value, rows, arrays, acquired);
+            }
+            closed &= select.is_some_and(|value| closed_computed_value(value, &scoped, arrays, acquired))
+                && fallback.is_none();
+            return false;
+        }
+        use math::domains::relation::positional::{minimum_bounds, range_bounds};
+        closed = if let Some(row) = part.as_row_value() { rows.contains(&row) }
+            else {
+                acquired(part)
+                || part.as_lit().is_some_and(|lit| lit.as_integer().is_some() || matches!(lit, math::Lit::Bool(_)))
+                || part.as_binop().is_some()
+                || matches!(part.as_unary_op(), Some((math::UnaryOpKind::Neg | math::UnaryOpKind::Not, _)))
+                || part.as_total_case_when().is_some()
+                || range_bounds(part).is_some() || minimum_bounds(part).is_some()
+                || math::domains::integer_quotient::is_quotient(part)
+            };
+        closed
+    });
+    closed
 }
 
 pub(super) fn publish(
@@ -97,8 +141,6 @@ pub(super) fn publish(
             } else if let Some(n) = operand.as_lit().and_then(math::Lit::as_integer) {
                 Operand::Integer(n)
             } else if let Some(SymVarOrigin::Parameter { name, .. }) = operand.as_sym_var() {
-                // Fold initials and numeric choice fallbacks admit an
-                // exact integer before entering the temporal graph.
                 need(domains.get(name).is_some_and(|domain| domain == "number"),
                     "temporal parameter must be a declared number")?;
                 Operand::Parameter(names.get(name).cloned().ok_or_else(|| fail("invalid temporal input name"))?)
@@ -118,24 +160,20 @@ pub(super) fn publish(
                         } else { well_bound = false; }
                     }
                 });
-                let closed_sum = {
-                    let mut closed = well_bound;
-                    operand.walk(&mut |part| {
-                        closed &= if let Some((kind, relation, _, _)) = part.as_relation_aggregate() {
-                            kind == math::RelationAggregateKind::Sum &&
-                                matches!(relation, RelationExpr::Base { name, alias, snapshot: None }
-                                    if arrays.contains(name) && alias == "value")
-                        } else if let Some(row) = part.as_row_value() { row == "value" }
-                        else if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = part.as_sym_var() {
-                            primitive_type == "integer" && acquired_path(*binding_id, path).is_some()
-                        } else {
-                            integer_definition_id(part).is_some() || acquired_integer_math(part, domains, names)
-                            || part.as_binop().is_some_and(|(op, _, _)| matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul))
-                        }
-                    });
-                    closed
+                let acquired = |part: &Expr| match part.as_sym_var() {
+                    Some(SymVarOrigin::External { binding_id, path, primitive_type }) =>
+                        matches!(primitive_type.as_str(), "integer" | "boolean")
+                            && acquired_path(*binding_id, path).is_some(),
+                    Some(SymVarOrigin::Parameter {name, primitive_type}) => {
+                        let domain = match primitive_type.as_str() {
+                            "integer" => "number", "boolean" => "bool", _ => return false,
+                        };
+                        domains.get(name).is_some_and(|kind| kind == domain) && names.contains_key(name)
+                    }
+                    _ => integer_definition_id(part).is_some(),
                 };
-                need(closed_sum, "member choice fallback must be an acquired integer expression")?;
+                need(well_bound && closed_computed_value(operand, &[], arrays, &acquired),
+                    "member choice fallback must be an acquired integer expression")?;
                 Operand::Computed { value: operand.clone(), dependencies: seen.into_iter().collect() }
             }
         };

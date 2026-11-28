@@ -84,6 +84,14 @@ pub fn field_projection(expression: &Expr) -> Option<(&str, &Expr, &str, Primiti
 }
 
 pub fn count(lower: Expr, upper: Expr) -> Expr {
+    // A cardinality is already a natural number. A zero-based integer
+    // interval ending there contains exactly that many values (RA-11).
+    if lower.as_lit().and_then(Lit::as_integer).is_some_and(|n| n == 0.into())
+        && upper.as_relation_aggregate().is_some_and(|(kind, _, _, _)|
+            kind == crate::RelationAggregateKind::Count)
+    {
+        return upper;
+    }
     let length = crate::normalize(b::sub(upper, lower));
     b::case_when(vec![(b::gt(length.clone(), b::lit_int(0)), length)], b::lit_int(0))
 }
