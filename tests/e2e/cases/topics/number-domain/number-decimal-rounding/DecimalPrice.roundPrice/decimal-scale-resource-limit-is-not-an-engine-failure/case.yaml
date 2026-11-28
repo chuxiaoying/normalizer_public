@@ -1,0 +1,6 @@
+entry: src/DecimalRound.java#DecimalRound.run
+reject:
+  fragments:
+    - "[NORM-ANALYSIS-INCOMPLETE]"
+    - exact decimal scale exceeds its representation
+    - no canonical result was produced

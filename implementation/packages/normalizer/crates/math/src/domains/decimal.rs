@@ -14,14 +14,31 @@ const ROUND: &str = "decimal.round";
 // This caps work for expansion, not the business value or its scale.
 const MAX_RADIX_EXPANSION: u32 = 1_000_000;
 
+/// A known decimal representation or work limit, not an engine failure.
+#[derive(Debug)]
+pub struct DecimalResourceLimit(&'static str);
+
+impl std::fmt::Display for DecimalResourceLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}; no canonical result was produced", self.0)
+    }
+}
+
+impl std::error::Error for DecimalResourceLimit {}
+
+fn resource_limit(detail: &'static str) -> ! {
+    std::panic::panic_any(DecimalResourceLimit(detail))
+}
+
 fn check_expansion(digits: u32) {
-    assert!(digits <= MAX_RADIX_EXPANSION,
-        "[NORM-ANALYSIS-INCOMPLETE] exact decimal expansion exceeded the digit budget");
+    if digits > MAX_RADIX_EXPANSION {
+        resource_limit("exact decimal expansion exceeded the digit budget");
+    }
 }
 
 fn combined_scale(left: u32, right: u32) -> u32 {
     left.checked_add(right)
-        .expect("[NORM-ANALYSIS-INCOMPLETE] exact decimal scale exceeds its representation")
+        .unwrap_or_else(|| resource_limit("exact decimal scale exceeds its representation"))
 }
 
 #[derive(Clone, Copy)]
@@ -192,7 +209,7 @@ pub fn round_at(value: Expr, scale: Expr, mode: Mode) -> Expr {
             return b::lit_int(0);
         }
         let removed: u32 = removed.try_into()
-            .expect("[NORM-ANALYSIS-INCOMPLETE] exact decimal rounding exceeds the digit budget");
+            .unwrap_or_else(|_| resource_limit("exact decimal rounding exceeds the digit budget"));
         check_expansion(removed);
         let divisor = BigInt::from(10).pow(removed);
         let negative = coefficient.sign() == Sign::Minus;

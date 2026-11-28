@@ -32,6 +32,10 @@ export function assertRejection({ status, stdout, stderr }, entry, fragments, ki
     assert.equal(header.exec(inner)?.[1], diagnosticCode(fragments[1]), entry + ': wrong nested kernel diagnostic\n' + stderr);
     assert.ok(diagnosticCode(fragments[1]), entry + ': expected rejection must name the nested kernel diagnostic');
   }
+  if (header.exec(inner)?.[1] === 'NORM-ANALYSIS-INCOMPLETE') {
+    assert.ok(!rustPanic && !lines.some(line => header.exec(line.trimStart())?.[1] === 'NORM-ENGINE-FAILURE'),
+      entry + ': a known resource limit is not an engine panic\n' + stderr);
+  }
   const expectedKind = kind ?? fragments.find(fragment => fragment.startsWith('kind='))?.slice(5);
   if (expectedKind) {
     assert.equal(/(?:^|\s)kind=([A-Z_]+)(?:\s|$)/.exec(inner)?.[1], expectedKind, entry + ': wrong diagnostic kind\n' + stderr);

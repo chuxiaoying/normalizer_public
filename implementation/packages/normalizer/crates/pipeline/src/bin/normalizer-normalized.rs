@@ -1,4 +1,5 @@
 //! Closed normalized Java/project entry. Does not load semantic plugins.
+use math::domains::decimal::DecimalResourceLimit;
 use pipeline::parse_source_directory;
 
 fn source_request(error: String, locator: &str) -> String {
@@ -40,7 +41,7 @@ fn main() {
     // partial normal form. Keep unexpected panics on the ordinary error path.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
-        if !panic.payload().is::<math::NormalizationLimit>() {
+        if !panic.payload().is::<math::NormalizationLimit>() && !panic.payload().is::<DecimalResourceLimit>() {
             default_hook(panic);
         }
     }));
@@ -51,7 +52,9 @@ fn main() {
             std::process::exit(1);
         }
         Err(payload) => {
-            if let Some(limit) = payload.downcast_ref::<math::NormalizationLimit>() {
+            let limit = payload.downcast_ref::<math::NormalizationLimit>().map(ToString::to_string)
+                .or_else(|| payload.downcast_ref::<DecimalResourceLimit>().map(ToString::to_string));
+            if let Some(limit) = limit {
                 eprintln!("[NORM-ANALYSIS-INCOMPLETE] {limit}");
             } else {
                 eprintln!("[NORM-ENGINE-FAILURE] no successful result produced");
