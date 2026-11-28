@@ -38,6 +38,6 @@ throws:
 
 **不解释宽类型值。** 若入口的返回声明也为 `unknown`，直接返回入参不需要收窄。若入口原样抛出它，异常载荷仍是同一入参，不制造异常类型或包装对象；失败路径不再产生正常返回。
 
-**先查类型，再按模式返回。** [第四章的 `handleOrder`](../../../chapters/04-AI救赎.md#只支持强类型)原样交付。先验证 `value` 是文本，再用严格相等区分 `mode`。R 只覆盖正常完成域：`mode` 是 `"delivery"` 或 `"pickup"`，任一个等式都能区分两种前缀。按[完整二分 CASE 的结构键](../../../chapters/08-统一定形.md#cf-04-完整二分-case)，同成本时 `"delivery"` 在前，R 写成 `CASE WHEN mode == "delivery" THEN "送达：" + value ELSE "门店：" + value END`。互换源码中两个互斥分支不改变完整 PERS。不合类型的 `value` 与不支持的 `mode` 各保留原来的 `Error` 消息；只有文本检查通过后，第二个错误才可能发生。
+**先查类型，再按模式返回。** [第四章的 `handleOrder`](../../../chapters/04-AI救赎.md#ai-04-强类型准入)原样交付。先验证 `value` 是文本，再用严格相等区分 `mode`。R 只覆盖正常完成域：`mode` 是 `"delivery"` 或 `"pickup"`，任一个等式都能区分两种前缀。按[完整二分 CASE 的结构键](../../../chapters/08-统一定形.md#cf-04-完整二分-case)，同成本时 `"delivery"` 在前，R 写成 `CASE WHEN mode == "delivery" THEN "送达：" + value ELSE "门店：" + value END`。互换源码中两个互斥分支不改变完整 PERS。不合类型的 `value` 与不支持的 `mode` 各保留原来的 `Error` 消息；只有文本检查通过后，第二个错误才可能发生。
 
 严格比较 `value === "ready"` 也给出该路径上的实际文本值：如果此时返回原来的 `value`，R 就是 `"ready"`。其余路径照常走原来的失败分支，不能因为声明是 `unknown` 而对入参做字符串转换。
