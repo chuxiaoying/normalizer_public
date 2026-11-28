@@ -13,7 +13,7 @@ import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { checkedTypeScript, failTypedModule, isCompilerLibrary, typedModuleAst } from './typed-module.mjs';
 import { entryLocator } from './entry-locator.mjs';
-import { guardedUnknownText } from './module-unknown-text.mjs';
+import { guardedUnknownText, unknownValueModule } from './module-unknown-text.mjs';
 import { projectSources } from './project-source.mjs';
 import {isOfficialNamespaceImport, standardCalls} from './standard-library.mjs';
 
@@ -156,6 +156,36 @@ const numericOperators = {
   '===': ['bool', 'eq'], '!==': ['bool', 'eq', true],
 };
 
+function compileUnknownValue(sf, fn, file, entry, checker, allowTypeImports = false) {
+  if (!fn.parameters.some(param => checker.getTypeAtLocation(param.name).flags & ts.TypeFlags.Unknown)) return;
+  const [statement] = fn.body.statements;
+  const [parameter] = fn.parameters;
+  const simple = fn.parameters.length === 1 && fn.body.statements.length === 1
+    && (ts.isThrowStatement(statement) || ts.isReturnStatement(statement))
+    && statement.expression && ts.isIdentifier(unwrap(statement.expression))
+    && !fn.asteriskToken && !fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)
+    && checker.getSymbolAtLocation(unwrap(statement.expression)) === checker.getSymbolAtLocation(parameter.name)
+    && unknownValueModule(sf, fn, allowTypeImports);
+  if (simple) {
+    const name = parameter.name.text;
+    const params = [{publicName: name, name, position: 0, domain: 'unknown'}];
+    const signature = checker.getSignatureFromDeclaration(fn);
+    const returnedType = signature && checker.getReturnTypeOfSignature(signature);
+    if (ts.isThrowStatement(statement) && (returnedType?.flags & ts.TypeFlags.Void)) {
+      return projectInput(file, entry, params, 'void', false, 'void',
+        {op: 'source.throw_unknown_input', name}, fn.getText(sf));
+    }
+    if (ts.isReturnStatement(statement) && (returnedType?.flags & ts.TypeFlags.Unknown)) {
+      return projectInput(file, entry, params, 'unknown', false, 'unknown',
+        {op: 'var', name}, fn.getText(sf));
+    }
+  }
+  const proof = guardedUnknownText(sf, fn, checker, fail, allowTypeImports);
+  const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
+  return projectInput(file, entry, params, 'string', false, 'text',
+    {op: 'source.guard_unknown_text', ...proof}, fn.getText(sf), {exceptions: {TypeError: 'text'}});
+}
+
 function compile(source, file, entry, physicalPath, linked) {
   if (entry.includes('.')) {
     const sf = linked?.ast ?? parseSourceModule(physicalPath, source, fail, ts.ScriptKind.TS);
@@ -171,7 +201,8 @@ function compile(source, file, entry, physicalPath, linked) {
     const fn = definedModuleExport(sf, entry, fail);
     const formals = namedParameters(fn.parameters);
     if (formals.error) fail(formals.error);
-    return compileScalar(sf, fn, file, entry, formals.names, {linked});
+    return compileUnknownValue(sf, fn, file, entry, linked.checker, true)
+      ?? compileScalar(sf, fn, file, entry, formals.names, {linked});
   }
   const {sf, fn} = typedModuleAst(source, physicalPath, entry);
   const formals = namedParameters(fn.parameters);
@@ -186,36 +217,8 @@ function compile(source, file, entry, physicalPath, linked) {
   }
   const usesStandard = sf.statements.some(isOfficialNamespaceImport);
   const checker = checkedTypeScript(physicalPath, sf, fail, {allowOfficial: usesStandard});
-  if (fn.parameters.some(param => checker.getTypeAtLocation(param.name).flags & ts.TypeFlags.Unknown)) {
-    const [statement] = fn.body.statements;
-    const [parameter] = fn.parameters;
-    const simple = fn.parameters.length === 1 && fn.body.statements.length === 1
-      && (ts.isThrowStatement(statement) || ts.isReturnStatement(statement))
-      && statement.expression && ts.isIdentifier(unwrap(statement.expression))
-      && !fn.asteriskToken && !fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)
-      && checker.getSymbolAtLocation(unwrap(statement.expression)) === checker.getSymbolAtLocation(parameter.name)
-      && sf.statements.every(declaration => declaration === fn
-        || ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)
-        || isLocalExportList(declaration));
-    if (simple) {
-      const name = parameter.name.text;
-      const params = [{publicName: name, name, position: 0, domain: 'unknown'}];
-      const signature = checker.getSignatureFromDeclaration(fn);
-      const returnedType = signature && checker.getReturnTypeOfSignature(signature);
-      if (ts.isThrowStatement(statement) && (returnedType?.flags & ts.TypeFlags.Void)) {
-        return projectInput(file, entry, params, 'void', false, 'void',
-          {op: 'source.throw_unknown_input', name}, fn.getText(sf));
-      }
-      if (ts.isReturnStatement(statement) && (returnedType?.flags & ts.TypeFlags.Unknown)) {
-        return projectInput(file, entry, params, 'unknown', false, 'unknown',
-          {op: 'var', name}, fn.getText(sf));
-      }
-    }
-    const proof = guardedUnknownText(sf, fn, checker, fail);
-    const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];
-    return projectInput(file, entry, params, 'string', false, 'text',
-      {op: 'source.guard_unknown_text', ...proof}, fn.getText(sf), {exceptions: {TypeError: 'text'}});
-  }
+  const unknown = compileUnknownValue(sf, fn, file, entry, checker);
+  if (unknown) return unknown;
   const isTuple = sf.statements.some(node => ts.isTypeAliasDeclaration(node) && ts.isTupleTypeNode(node.type));
   if (isListener || isTuple) {
     if (usesStandard) fail('typed listener and tuple modules do not use the official text namespace');

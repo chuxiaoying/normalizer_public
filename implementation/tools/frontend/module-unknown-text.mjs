@@ -7,10 +7,15 @@ function oneStatement(node) {
   return node && ts.isBlock(node) ? (node.statements.length === 1 ? node.statements[0] : undefined) : node;
 }
 
-export function guardedUnknownText(sf, fn, checker, fail) {
-  const declarationsOnly = sf.statements.every(statement => statement === fn
+export function unknownValueModule(sf, fn, allowTypeImports) {
+  return sf.statements.every(statement => statement === fn
     || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)
-    || isLocalExportList(statement));
+    || isLocalExportList(statement)
+    || allowTypeImports && ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly);
+}
+
+export function guardedUnknownText(sf, fn, checker, fail, allowTypeImports = false) {
+  const declarationsOnly = unknownValueModule(sf, fn, allowTypeImports);
   const signature = checker.getSignatureFromDeclaration(fn);
   const returnedType = signature && checker.getReturnTypeOfSignature(signature);
   if (!declarationsOnly || fn.parameters.length !== 1 ||
@@ -23,7 +28,7 @@ export function guardedUnknownText(sf, fn, checker, fail) {
   const name = parameter.name.text;
   const binding = checker.getSymbolAtLocation(parameter.name);
   const sameBinding = node => ts.isIdentifier(node) && checker.getSymbolAtLocation(node) === binding;
-  const isString = node => ts.isStringLiteral(node) && node.text === 'string';
+  const isString = node => ts.isStringLiteralLike(node) && node.text === 'string';
   const isNativeTypeTest = node => ts.isTypeOfExpression(node) && sameBinding(unwrapParens(node.expression));
   const [decision, terminal, ...rest] = fn.body.statements;
   if (!decision || !ts.isIfStatement(decision) || rest.length ||

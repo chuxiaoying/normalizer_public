@@ -1,0 +1,5 @@
+entry: src/main.ts#run
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - unknown guard must have exactly a native type decision and one return and one throw

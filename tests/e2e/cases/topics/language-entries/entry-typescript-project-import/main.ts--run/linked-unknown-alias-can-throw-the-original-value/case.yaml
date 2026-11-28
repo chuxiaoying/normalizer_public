@@ -1,0 +1,9 @@
+entry: src/main.ts#run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/main.ts#run, returns: void}
+  P: {parameters: {value: {position: 0, type: unknown}}}
+  throws:
+    - when: 'true'
+      payload: value
+      payload_type: unknown

@@ -47,3 +47,5 @@ R: value + 1
 入口与帮助模块都可从工程内另一个文件 `import type { Domain }`。当严格 TypeScript 检查确认 `Domain` 正是 `number`、`boolean` 或 `string` 时，P 和返回值分别仍是原有 `number`、`bool`、`text`；换一个别名不改变业务域，引用本身不产生外部观察。不能只按别名拼写猜值域，也不能扩大一个受限或混合的类型来让它通过。
 
 这与拿 `.d.ts` 给运行时函数充当实现不同。声明文件只说明签名，不能执行实际帮助函数。导入工程内的辅助模块也不能用 `@ts-nocheck` 或 `@ts-ignore` 绕过[强类型准入](../../../chapters/04-AI救赎.md#ai-04-强类型准入)；即使选定入口看起来有完整类型，也拒绝生成 PERS。
+
+若 `import type { Payload }` 解析到 `Payload = unknown`，仍按[符号执行的宽类型规则](../../../chapters/01-符号执行.md#se-03-宽类型值按源码语义执行)执行。原样返回或抛出时保留接到的值；若 `typeof value !== "string"` 则抛出原来的 `TypeError`，只在文本路径返回同一个入参。把字符串标签换成无插值模板字面量，类型条件保持不变。单独写 `value as string` 不执行类型检查，不能当成收窄证据。
