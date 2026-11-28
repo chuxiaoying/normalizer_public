@@ -1,0 +1,8 @@
+entry: src/Bounds.java#Bounds.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Bounds.java#Bounds.run, returns: bool}
+  P:
+    parameters:
+      x: {position: 0, type: number}
+  R: 'false'

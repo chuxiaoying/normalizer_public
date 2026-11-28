@@ -943,14 +943,14 @@ fn intersect_intervals(left: Interval, right: Interval) -> Interval {
 }
 
 fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
-    if let (Some(lower), Some(upper)) = (interval.lower, interval.upper) {
+    if let (Some(lower), Some(upper)) = (interval.lower.as_ref(), interval.upper.as_ref()) {
         // Over exact integers, open endpoints can also delimit a
         // singleton (9 < x + y < 11). Only use the shifted endpoints
         // to prove emptiness or a point; keep the original representatives
         // for a wider interval so the endpoint rules cannot oscillate.
         if super::integer_ac::total_integer(subject) {
-            let first = crate::Integer::from(lower.value) + i32::from(!lower.inclusive);
-            let last = crate::Integer::from(upper.value) - i32::from(!upper.inclusive);
+            let first = &lower.value + i32::from(!lower.inclusive);
+            let last = &upper.value - i32::from(!upper.inclusive);
             match first.cmp(&last) {
                 std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
                 std::cmp::Ordering::Equal => return vec![builder::eq(subject.clone(), builder::lit_integer(first))],
@@ -960,7 +960,7 @@ fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
         match lower.value.cmp(&upper.value) {
             std::cmp::Ordering::Greater => return vec![builder::lit_bool(false)],
             std::cmp::Ordering::Equal => return vec![if lower.inclusive && upper.inclusive {
-                builder::eq(subject.clone(), builder::lit_int(lower.value))
+                builder::eq(subject.clone(), builder::lit_integer(lower.value.clone()))
             } else {
                 builder::lit_bool(false)
             }],
@@ -978,7 +978,7 @@ fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
         constraints.push(builder::binop_public(
             op,
             subject.clone(),
-            builder::lit_int(lower.value),
+            builder::lit_integer(lower.value),
         ));
     }
     if let Some(upper) = interval.upper {
@@ -990,7 +990,7 @@ fn interval_to_constraints(subject: &Expr, interval: Interval) -> Vec<Expr> {
         constraints.push(builder::binop_public(
             op,
             subject.clone(),
-            builder::lit_int(upper.value),
+            builder::lit_integer(upper.value),
         ));
     }
     constraints
@@ -1055,13 +1055,11 @@ fn or_all_branches_imply(or_expr: &Expr, target: &Expr) -> bool {
     })
 }
 
-#[derive(Clone, Copy)]
 struct Bound {
-    value: i64,
+    value: crate::Integer,
     inclusive: bool,
 }
 
-#[derive(Clone, Copy)]
 struct Interval {
     lower: Option<Bound>,
     upper: Option<Bound>,
@@ -1070,9 +1068,9 @@ struct Interval {
 fn ordered_comparison_interval(expr: &Expr) -> Option<(Expr, Interval)> {
     let (op, subject, value) = super::constraint::comparison_literal_rhs(
         expr.as_binop()?,
-        super::constraint::compact_integer,
+        super::constraint::integer_literal,
     )?;
-    let bound = |inclusive| Some(Bound { value, inclusive });
+    let bound = |inclusive| Some(Bound { value: value.clone(), inclusive });
     use BinOpKind::*;
     let (lower, upper) = match op {
         Lt => (None, bound(false)),
@@ -1146,12 +1144,11 @@ fn absorb_two_ordered_comparisons(a: &Expr, b: &Expr) -> Option<Expr> {
     if left_a != left_b || op_a != op_b {
         return None;
     }
-    let (Some(Lit::Int(ra)), Some(Lit::Int(rb))) = (right_a.as_lit(), right_b.as_lit()) else {
-        return None;
-    };
+    let ra = super::constraint::integer_literal(right_a)?;
+    let rb = super::constraint::integer_literal(right_b)?;
 
     let rhs = match op_a {
-        BinOpKind::Le | BinOpKind::Lt => builder::lit_int((*ra).max(*rb)),
+        BinOpKind::Le | BinOpKind::Lt => builder::lit_integer(ra.max(rb)),
         _ => return None,
     };
     Some(builder::binop_public(*op_a, left_a.clone(), rhs))

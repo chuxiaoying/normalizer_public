@@ -9,11 +9,11 @@ use crate::domains::relation::RelationExpr;
 use crate::expr::{Expr, RelationAggregateKind};
 use std::time::Instant;
 
-/// Admit only a bare Count with a compact integer bound. Both source
+/// Admit only a bare Count with an exact integer bound. Both source
 /// orientations share the comparison owner and cannot certify projections.
-pub(super) fn relation_count_bound(expr: &Expr) -> Option<(crate::BinOpKind, &RelationExpr, i64)> {
+pub(super) fn relation_count_bound(expr: &Expr) -> Option<(crate::BinOpKind, &RelationExpr, crate::Integer)> {
     let (op, count, bound) =
-        super::constraint::comparison_literal_rhs(expr.as_binop()?, super::constraint::compact_integer)?;
+        super::constraint::comparison_literal_rhs(expr.as_binop()?, super::constraint::integer_literal)?;
     let (RelationAggregateKind::Count, relation, None, None) = count.as_relation_aggregate()?
     else {
         return None;
@@ -24,9 +24,8 @@ pub(super) fn relation_count_bound(expr: &Expr) -> Option<(crate::BinOpKind, &Re
 /// Exact cardinality is nonnegative and is zero exactly for an empty relation.
 fn rewrite_count_zero_comparison(expr: &Expr) -> Option<Expr> {
     use crate::BinOpKind::*;
-    let (op, relation, 0) = relation_count_bound(expr)? else {
-        return None;
-    };
+    let (op, relation, bound) = relation_count_bound(expr)?;
+    if bound != 0.into() { return None; }
     let exists = || crate::domains::relation::relation_exists(relation.clone());
     Some(match op {
         Eq | Le => builder::not(exists()),

@@ -22,7 +22,7 @@ pub(super) fn relation_count_nonzero_implies_exists(left: &Expr, right: &Expr) -
     let Some((op, left_relation, bound)) = relation_count_bound(left) else {
         return false;
     };
-    if op != BinOpKind::Gt || bound < 0 {
+    if op != BinOpKind::Gt || bound < 0.into() {
         return false;
     }
     let Some(right_relation) = relation_exists_true_relation(right) else {
@@ -39,8 +39,8 @@ pub(super) fn empty_relation_is_within_count(empty: &Expr, count: &Expr) -> bool
         (relation_exists_true_relation(exists), relation_count_bound(count))
     else { return false; };
     empty == relation && match op {
-        BinOpKind::Lt => bound > 0,
-        BinOpKind::Le => bound >= 0,
+        BinOpKind::Lt => bound > 0.into(),
+        BinOpKind::Le => bound >= 0.into(),
         _ => false,
     }
 }

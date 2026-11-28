@@ -1,7 +1,7 @@
 //! Exact bound proofs for an acquired integer subject. Strict bounds
 //! become inclusive endpoints without using a machine-word limit.
 
-use crate::expr::{BinOpKind, Comparison, Expr, ExprKind, Lit};
+use crate::expr::{BinOpKind, Comparison, Expr, ExprKind};
 use num_bigint::BigInt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,18 +38,14 @@ fn align_comparison_literal<'a, T>(
     }
 }
 
-// A separate bounded legacy matcher; not used by the proof below.
-pub(super) fn compact_integer(expr: &Expr) -> Option<i64> {
-    match expr.as_lit()? {
-        Lit::Int(value) => Some(*value),
-        _ => None,
-    }
+pub(super) fn integer_literal(expr: &Expr) -> Option<BigInt> {
+    expr.as_lit()?.as_integer()
 }
 
 fn extract_linear_constraint(expr: &Expr) -> Option<LinearConstraint> {
     let (op, left, right) = expr.as_binop()?;
     let (op, subject, value) =
-        align_comparison_literal(op.comparison()?, left, right, |literal| literal.as_lit()?.as_integer())?;
+        align_comparison_literal(op.comparison()?, left, right, integer_literal)?;
     if subject.as_lit().is_some() || !super::integer_ac::total_integer(subject) {
         return None;
     }
