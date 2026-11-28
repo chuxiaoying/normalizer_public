@@ -61,3 +61,22 @@ R: |-
 若两个独立的文本分支分别是 `"paused" → 2` 和 `"ready" → 1`，调换源码中的位置不改变任何输入的命中结果。只有在标签互斥且观察不变时，最终的 CASE 才按[共享结构与顺序](../../../chapters/08-统一定形.md#cf-02-共享结构与顺序)把 `mode == "paused"` 放在 `mode == "ready"` 之前。标签与结果始终一起移动；换的是标签对应的返回值，PERS 就必须不同。
 
 文本标签按规范码点排序：`U+E000` 在 `U+10000` 之前，不沿用宿主 UTF-16 码元的比较顺序。合法代理对先合成一个字符；孤立的 `U+D800` 与 `U+D801` 都保留，仍是两个不同的标签，不能一起替换成 `U+FFFD`。
+
+
+## 箭头分支仍是原生语句
+
+```java
+class SwitchMode {
+    static int classify(int code) {
+        int result = 0;
+        switch (code) {
+            case 1 -> result = 10;
+            case 2 -> { result = 20; }
+            default -> {}
+        }
+        return result;
+    }
+}
+```
+
+**原样通过。** 箭头右侧是赋值语句或块，执行选中的分支后直接继续到 `return result`，不会落入下一分支。因此它与原例交付同一整份 PERS。作为 **语句** 的 `switch` 不接受 `case 1 -> 10;` 这样的裸值；同一个 `switch` 也不能混用冒号组和箭头规则。见 [JLS §14.11.1–3](https://docs.oracle.com/javase/specs/jls/se25/html/jls-14.html#jls-14.11.1)。

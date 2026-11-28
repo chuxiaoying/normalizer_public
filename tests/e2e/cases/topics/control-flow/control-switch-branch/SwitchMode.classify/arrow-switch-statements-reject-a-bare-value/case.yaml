@@ -1,0 +1,7 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-SWITCH]"
+    - "arrow in a switch statement requires a block, throw or statement expression"

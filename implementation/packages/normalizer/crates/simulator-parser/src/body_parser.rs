@@ -171,6 +171,10 @@ impl<'a> Parser<'a> {
 
         // 否则是表达式语句（含赋值）
         let expr = self.parse_expression()?;
+        self.finish_expression_statement(expr)
+    }
+
+    fn finish_expression_statement(&mut self, expr: JavaExpr) -> Result<JavaStatement, ParseError> {
         self.skip_ws();
         // 赋值表达式在 statement 位置仍归一为 JavaStatement::Assign，
         // 让 loop lift / 静态分析等 statement-level 语义继续看到赋值信号。
@@ -241,6 +245,7 @@ impl<'a> Parser<'a> {
         let mut seen = std::collections::BTreeSet::new();
         let mut seen_text = std::collections::BTreeSet::new();
         let mut default = None;
+        let mut rule_style = None;
         while !self.eat_char(b'}') {
             let label = if self.eat_keyword("case") {
                 let expression = self.parse_expression()?;
@@ -278,47 +283,76 @@ impl<'a> Parser<'a> {
             } else {
                 return Err(self.err("[JAVA-SWITCH] expected case or default label"));
             };
-            self.require_delimiter(b':', "expected ':' after switch label")?;
-            let mut body = Vec::new();
-            let mut breaks = false;
-            loop {
-                self.skip_ws();
-                let next = self.pos;
-                let boundary = self.peek() == Some(b'}')
-                    || self.eat_keyword("case") || self.eat_keyword("default");
-                self.pos = next;
-                if boundary { break; }
-                if self.eat_keyword("break") {
-                    self.reject_after_direct_return(&body)?;
-                    self.require_semicolon("switch break")?;
-                    breaks = true;
-                    break;
-                }
-                let statement = self.parse_statement(&mut body)?;
-                body.push(statement);
-            }
-            if body.iter().any(|statement| matches!(statement, JavaStatement::VarDecl { .. })) {
-                return Err(self.err("[JAVA-SWITCH] case-local declarations require an explicit block"));
-            }
-            fn exits(statement: &JavaStatement) -> bool {
-                match statement {
-                    JavaStatement::Return(_) | JavaStatement::Throw(_) => true,
-                    JavaStatement::Block(body) => body.last().is_some_and(exits),
-                    JavaStatement::If { then_block, else_block: Some(other), .. } =>
-                        then_block.last().is_some_and(exits) && other.last().is_some_and(exits),
-                    _ => false,
-                }
-            }
-            // Only independent groups are presently admitted; never interpret
-            // a colon-marked fall-through as an independent conditional arm.
             self.skip_ws();
-            if !breaks && self.peek() != Some(b'}') && !body.last().is_some_and(exits) {
-                return Err(self.err("[JAVA-SWITCH] fall-through between case groups is not yet supported"));
+            let arrow = self.starts_with("->");
+            if arrow { self.pos += 2; }
+            else { self.require_delimiter(b':', "expected ':' or '->' after switch label")?; }
+            if rule_style.is_some_and(|previous| previous != arrow) {
+                return Err(self.err("[JAVA-SWITCH] cannot mix ':' and '->' switch groups"));
             }
+            rule_style = Some(arrow);
+            let body = if arrow { self.parse_switch_rule()? } else { self.parse_switch_colon_group()? };
             if let Some(label) = label { cases.push((label, body)); }
             else { default = Some(body); }
         }
         Ok(JavaStatement::Switch { selector, cases, default: default.unwrap_or_default() })
+    }
+
+    fn parse_switch_rule(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
+        self.skip_ws();
+        if self.peek() == Some(b'{') {
+            return self.parse_braced_statements();
+        }
+        if self.eat_keyword("throw") {
+            return Ok(vec![self.parse_throw()?]);
+        }
+        let expr = self.parse_expression()?;
+        use JavaUnaryOp::{PostDec, PostInc, PreDec, PreInc};
+        if !matches!(expr, JavaExpr::Assign { .. } | JavaExpr::MethodCall { .. } | JavaExpr::New { .. }
+            | JavaExpr::UnaryOp { op: PreInc | PreDec | PostInc | PostDec, .. }) {
+            return Err(self.err("[JAVA-SWITCH] arrow in a switch statement requires a block, throw or statement expression"));
+        }
+        Ok(vec![self.finish_expression_statement(expr)?])
+    }
+
+    fn parse_switch_colon_group(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
+        let mut body = Vec::new();
+        let mut breaks = false;
+        loop {
+            self.skip_ws();
+            let next = self.pos;
+            let boundary = self.peek() == Some(b'}')
+                || self.eat_keyword("case") || self.eat_keyword("default");
+            self.pos = next;
+            if boundary { break; }
+            if self.eat_keyword("break") {
+                self.reject_after_direct_return(&body)?;
+                self.require_semicolon("switch break")?;
+                breaks = true;
+                break;
+            }
+            let statement = self.parse_statement(&mut body)?;
+            body.push(statement);
+        }
+        if body.iter().any(|statement| matches!(statement, JavaStatement::VarDecl { .. })) {
+            return Err(self.err("[JAVA-SWITCH] case-local declarations require an explicit block"));
+        }
+        fn exits(statement: &JavaStatement) -> bool {
+            match statement {
+                JavaStatement::Return(_) | JavaStatement::Throw(_) => true,
+                JavaStatement::Block(body) => body.last().is_some_and(exits),
+                JavaStatement::If { then_block, else_block: Some(other), .. } =>
+                    then_block.last().is_some_and(exits) && other.last().is_some_and(exits),
+                _ => false,
+            }
+        }
+        // Only independent groups are presently admitted; never interpret
+        // a colon-marked fall-through as an independent conditional arm.
+        self.skip_ws();
+        if !breaks && self.peek() != Some(b'}') && !body.last().is_some_and(exits) {
+            return Err(self.err("[JAVA-SWITCH] fall-through between case groups is not yet supported"));
+        }
+        Ok(body)
     }
 
     fn parse_while(&mut self) -> Result<JavaStatement, ParseError> {
@@ -731,7 +765,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         // Supported arithmetic compound assignments are not binary operators.
         // Leave their tokens for assignment parsing.
-        if self.is_at_compound_assign_op() {
+        if self.is_at_compound_assign_op() || self.starts_with("->") {
             return None;
         }
         // 多字节运算符优先
