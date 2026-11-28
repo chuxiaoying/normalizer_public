@@ -1,0 +1,5 @@
+entry: src/main.ts#run
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - "expected one defined exported function: run"
