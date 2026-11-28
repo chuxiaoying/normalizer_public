@@ -2129,23 +2129,24 @@ impl<'a> Engine<'a> {
                             // A fresh source allocation has an exact receiver.
                             // Execute its visible instance method on that same
                             // heap object, retaining the original this binding.
+                            let caller = id.rsplit_once('.').unwrap().0;
                             if let Some((member, declaration)) = self
                                 .program
                                 .find_class(&interface)
-                                .and_then(|class| {
-                                    crate::normalized::named_method_for_arity(
+                                .zip(self.program.find_class(caller))
+                                .and_then(|(class, caller)| {
+                                    crate::normalized::assembled_instance_method(
+                                        caller,
                                         class,
                                         method,
                                         args.len(),
                                     )
                                 })
-                                .filter(|(_, declaration)| {
-                                    !declaration.is_static() && declaration.body().is_some()
-                                })
                             {
                                 if let Ok(reference) = receiver.scalar() {
-                                    if self.source_objects.dispatch_owner(&reference)
-                                        == Some(interface.as_str())
+                                    if reference.is_null()
+                                        || self.source_objects.dispatch_owner(&reference)
+                                            == Some(interface.as_str())
                                     {
                                         let receiver = receiver.clone();
                                         for ((expected, _), actual) in
@@ -3035,13 +3036,6 @@ impl Engine<'_> {
                 "initial assembly setter is not a live receiver mutation contract",
             ));
         }
-        self.java_calls += 1;
-        let parent_completion = (!self.active.is_empty()).then(|| self.realtime_completion.clone());
-        need(
-            self.active.insert(format!("java:{id}")),
-            "recursive Java call",
-        )?;
-        self.max_active_calls = self.max_active_calls.max(self.active.len());
         let method = self
             .methods
             .get(id)
@@ -3062,6 +3056,23 @@ impl Engine<'_> {
             }
             need(*expected == v.ty(), "Java argument type mismatch")?;
         }
+        // Receiver acquisition and argument evaluation happened in the
+        // caller. A null instance receiver ends that invocation before
+        // creating a callee frame, even for an otherwise recursive target.
+        if !m.is_static()
+            && matches!(&receiver, Some(Value::Term(Ty::Ref, reference)) if reference.is_null())
+        {
+            let returns = method.returns.clone();
+            self.throw_source_on_path(path, "java.lang.NullPointerException");
+            return Ok(Value::Term(returns, b::lit_null()));
+        }
+        self.java_calls += 1;
+        let parent_completion = (!self.active.is_empty()).then(|| self.realtime_completion.clone());
+        need(
+            self.active.insert(format!("java:{id}")),
+            "recursive Java call",
+        )?;
+        self.max_active_calls = self.max_active_calls.max(self.active.len());
         let value = if let Some(binding) = method.binding.clone() {
             self.call(id, &binding, args, path)?
         } else if let Some(proof) = crate::normalized::affine_recursion::prove(m) {

@@ -40,6 +40,8 @@ R: delta + input + 1
 - **非法捕获在执行前拒绝。** 若 `offset` 在初始化后又被赋值，它不再是有效 final。程序在源码准入失败，不能把它按最后一个值或引用捕获继续模拟。
 - Lambda 的目标类型、函数体和捕获绑定以原语言声明为准，见 [JLS §15.27](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.27)。这个种子不主张把闭包本身发布进 PERS。
 
+捕获局部引用时，闭包保留的是同一个堆对象的身份，不是创建时的字段快照。比如在创建 `step -> receiver.read(step)` 后，通过别名把接收对象的 `value` 写成 9，之后调用仍会读到 9。直接调用 `receiver.read(1 / zero)` 时，若 `zero` 为 0，实参先抛除零异常；只有实参正常完成，才检查接收者是否为 null。
+
 
 ## 对照：绑定方法引用在创建时检查接收者
 

@@ -1,0 +1,8 @@
+entry: src/Quote.java#Quote.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Quote.java#Quote.run, returns: number}
+  P: {parameters: {active: {position: 0, type: bool}}}
+  throws:
+    - {type: java.lang.ArithmeticException, when: active}
+    - {type: java.lang.NullPointerException, when: NOT (active)}

@@ -1,0 +1,6 @@
+entry: src/Quote.java#Quote.run
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-PROJECT]"
+    - Java argument type mismatch

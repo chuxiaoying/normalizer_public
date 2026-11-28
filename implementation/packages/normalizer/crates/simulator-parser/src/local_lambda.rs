@@ -6,6 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 type Names = BTreeSet<String>;
 type Callables = BTreeMap<String, Callable>;
+type SourceMembers = BTreeMap<(String, String, usize), SourceSignature>;
+
+struct SourceSignature {
+    package: String,
+    parameters: Vec<JavaType>,
+    returns: JavaType,
+}
 
 #[derive(Clone)]
 struct Callable {
@@ -51,11 +58,55 @@ pub(crate) fn link(program: &mut JavaProgram) -> Result<(), String> {
             .then(|| (class.full_name(), sam.clone()))
         })
         .collect();
+    let mut source_members = SourceMembers::new();
+    for class in program.classes.iter().filter(|class| {
+        !class.is_interface && class.supertype.is_none() && class.type_parameters.is_empty()
+    }) {
+        for method in &class.methods {
+            if method.is_static
+                || method.is_private
+                || method.is_native
+                || method.is_constructor
+                || method.body.is_none()
+                || !method.type_parameters.is_empty()
+                || !method.throws.is_empty()
+                || !scalar(&method.return_type)
+                || !method.params.iter().all(|(ty, _)| scalar(ty))
+            {
+                continue;
+            }
+            if class
+                .methods
+                .iter()
+                .filter(|candidate| {
+                    candidate.name == method.name && candidate.params.len() == method.params.len()
+                })
+                .count()
+                == 1
+            {
+                source_members.insert(
+                    (class.full_name(), method.name.clone(), method.params.len()),
+                    SourceSignature {
+                        package: class.package.clone(),
+                        parameters: method.params.iter().map(|(ty, _)| ty.clone()).collect(),
+                        returns: method.return_type.clone(),
+                    },
+                );
+            }
+        }
+    }
     for class in &mut program.classes {
         let mut helpers = Vec::new();
         for method in &mut class.methods {
             if let Some(body) = &mut method.body {
-                lower(body, &method.params, &interfaces, &mut helpers)?;
+                lower(
+                    body,
+                    &method.params,
+                    &interfaces,
+                    &source_members,
+                    &class.package,
+                    &mut helpers,
+                )?;
             }
         }
         class.methods.extend(helpers);
@@ -67,6 +118,8 @@ fn lower(
     body: &mut Vec<JavaStatement>,
     parameters: &[(JavaType, String)],
     interfaces: &BTreeMap<String, JavaMethod>,
+    source_members: &SourceMembers,
+    caller_package: &str,
     helpers: &mut Vec<JavaMethod>,
 ) -> Result<(), String> {
     let mut declarations = BTreeMap::<String, usize>::new();
@@ -78,7 +131,7 @@ fn lower(
         } = stmt
         {
             let mut free = Names::new();
-            reads(value, &mut free)?;
+            body_reads(value, &mut free)?;
             captured_names.extend(free.into_iter().filter(|name| !parameters.contains(name)));
         }
     }
@@ -174,7 +227,15 @@ fn lower(
                 ));
             }
             let mut free = Names::new();
-            reads(value, &mut free)?;
+            body_reads(value, &mut free)?;
+            let reference = reference_body(
+                value,
+                &known,
+                &helper_formals(sam, lambda_params),
+                &sam.return_type,
+                source_members,
+                caller_package,
+            )?;
             let captured = free.difference(&formals).cloned().collect::<Vec<_>>();
             let mut helper_params = sam
                 .params
@@ -186,9 +247,12 @@ fn lower(
                 if writes.contains(capture) || declarations.get(capture) != Some(&1) {
                     return Err(error("captured local is not effectively final"));
                 }
-                let ty = known.get(capture).filter(|ty| scalar(ty)).ok_or_else(|| {
-                    error("lambda capture must be an initialized scalar lexical binding")
-                })?;
+                let ty = known
+                    .get(capture)
+                    .filter(|ty| scalar(ty) || reference == Some(capture.as_str()))
+                    .ok_or_else(|| {
+                        error("lambda capture must be an initialized scalar lexical binding")
+                    })?;
                 helper_params.push((ty.clone(), capture.clone()));
             }
             // Angle brackets and colon cannot appear in a source identifier.
@@ -347,6 +411,75 @@ fn simple_initial_assignment<'a>(stmt: &'a JavaStatement, name: &str) -> Option<
     (target == name && !mentions(value, name)).then_some(value)
 }
 
+fn helper_formals(sam: &JavaMethod, parameters: &[String]) -> BTreeMap<String, JavaType> {
+    sam.params
+        .iter()
+        .zip(parameters)
+        .map(|((ty, _), name)| (name.clone(), ty.clone()))
+        .collect()
+}
+
+/// A source reference is admitted only as the receiver of a closed, visible
+/// instance call. The helper keeps the original receiver identity and closure
+/// invocation path; this is not a new public function or an external port.
+fn reference_body<'a>(
+    value: &'a JavaExpr,
+    known: &BTreeMap<String, JavaType>,
+    formals: &BTreeMap<String, JavaType>,
+    result: &JavaType,
+    members: &SourceMembers,
+    caller_package: &str,
+) -> Result<Option<&'a str>, String> {
+    let JavaExpr::MethodCall {
+        target: Some(target),
+        method,
+        args,
+    } = value
+    else {
+        return Ok(None);
+    };
+    let JavaExpr::Ident(receiver) = target.as_ref() else {
+        return Err(error("lambda receiver must be a lexical source binding"));
+    };
+    let Some(JavaType::Class(owner)) = known.get(receiver) else {
+        return Err(error(
+            "lambda receiver must be an initialized source-class binding",
+        ));
+    };
+    let Some(member) = members.get(&(owner.clone(), method.clone(), args.len())) else {
+        return Err(error(
+            "lambda receiver call needs a unique closed instance declaration",
+        ));
+    };
+    if member.package != caller_package
+        || member.returns != *result
+        || !member.parameters.iter().zip(args).all(
+            |(ty, arg)| matches!(arg, JavaExpr::Ident(formal) if formals.get(formal) == Some(ty)),
+        )
+    {
+        return Err(error(
+            "lambda receiver call needs a visible exact scalar signature",
+        ));
+    }
+    Ok(Some(receiver))
+}
+
+fn body_reads(expr: &JavaExpr, out: &mut Names) -> Result<(), String> {
+    if let JavaExpr::MethodCall {
+        target: Some(target),
+        args,
+        ..
+    } = expr
+    {
+        reads(target, out)?;
+        for arg in args {
+            reads(arg, out)?;
+        }
+        return Ok(());
+    }
+    reads(expr, out)
+}
+
 fn reads(expr: &JavaExpr, out: &mut Names) -> Result<(), String> {
     use JavaExpr::*;
     match expr {
@@ -401,7 +534,7 @@ fn rewrite(expr: &mut JavaExpr, callables: &Callables) -> Result<(), String> {
                     }
                     *target = None;
                     *method = callable.helper.clone();
-                    // Lexical primitive bindings are proved effectively final.
+                    // Lexical bindings are proved effectively final.
                     // Reading them after the real arguments cannot change the
                     // captured value or add an observable action.
                     args.extend(callable.captured.iter().cloned().map(Ident));

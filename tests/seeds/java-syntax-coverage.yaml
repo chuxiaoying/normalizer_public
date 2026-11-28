@@ -121,9 +121,14 @@ families:
           - [Quote.run, unused-closure-does-not-evaluate-its-body, pers]
           - [Quote.run, invoked-closure-throws-only-on-the-call-path, pers]
       reference-receiver-in-lambda:
-        focus: 延迟执行的 Lambda 捕获引用，空接收者只在实际调用时抛异常
+        focus: 闭合 Lambda 保留引用和调用参数顺序，空接收者只在实际调用时抛异常
         seed: java-closed-lambda
-        gap: implementation
+        evidence:
+          - [Quote.run, reference-capture-does-not-check-null-at-creation, pers]
+          - [Quote.run, reference-capture-checks-null-on-the-invocation-path, pers]
+          - [Quote.run, reference-capture-reads-the-same-heap-object, pers]
+          - [Quote.run, reference-capture-keeps-caller-argument-failure-first, pers]
+          - [Quote.run, unused-lambda-still-needs-a-valid-receiver-member, reject]
       general-lambda-body-and-scope:
         focus: 嵌套块声明、显式参数类型、多语句体、泛型目标类型和函数值流动
         seed: java-closed-lambda
@@ -279,6 +284,12 @@ families:
       static-and-instance:
         focus: 静态入口、实例接收者和求值顺序
         gap: review
+      null-receiver-argument-order:
+        focus: 直接实例调用先求实参，再因空接收者异常完成；空值不豁免参数类型
+        seed: java-closed-lambda
+        evidence:
+          - [Quote.run, plain-null-receiver-checks-arguments-first, pers]
+          - [Quote.run, plain-null-receiver-does-not-admit-a-boolean-number-argument, reject]
       overload-varargs:
         focus: 重载、可变参数、方法隐藏及调用解析
         gap: review
