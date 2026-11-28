@@ -1,0 +1,5 @@
+entry: src/Counter.java#Beans.ENTRY.read
+reject:
+  fragments:
+    - "[NORM-ENTRY]"
+    - "receiver assembly requires a unique constructor of the invoked arity"

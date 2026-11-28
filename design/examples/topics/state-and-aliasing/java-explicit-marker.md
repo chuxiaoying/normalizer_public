@@ -97,3 +97,5 @@ R: amber.units + zebra.units
 装配若改为 `new Counter(7)`，且构造器用参数给已声明的 `this.value` 赋值，仍选择同一已装配入口。7 属于启动时的初值，不是每次调用前的值。P 仍为空，E 仍是当次 `Beans.ENTRY.value`，R 为 `value + 1`，本次调用不产生构造器写入。
 
 重复导入同一个 `normalizer.intrinsics.N` 不会改变标记的归属；这和两个不同类型争用名字 `N` 不同。
+
+再增加一个合法的无参构造重载 `Counter() {}`，`new Counter(7)` 仍唯一定位原来的一参构造；P、E、R 保持不变。反过来，若静态装配写成 `new Counter(7, 9)` 却没有两参构造，入口拒绝，不能挑一个现有重载来假定接收者已经装好。

@@ -32,14 +32,19 @@ impl SourceReceiver {
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
     /// assembly is admitted by this route.
     fn certify(program: &JavaProgram, class: &JavaClass, args: &[JavaExpr]) -> Result<()> {
-        let mut constructors = class.methods().iter().filter(|m| m.is_constructor());
-        let constructor = constructors.next();
-        if constructors.next().is_some() || class.is_interface() || class.supertype().is_some() || !class.static_initializers().is_empty() {
+        if class.is_interface() || class.supertype().is_some() || !class.static_initializers().is_empty() {
             return Err("unsupported receiver assembly class".into());
         }
-        if constructor.is_none() && !has_zero_argument_implicit_constructor(class) {
-            return Err("record components require a canonical constructor; not inert receiver assembly".into());
-        }
+        let constructor = if class.methods().iter().any(|method| method.is_constructor()) {
+            let (_, selected) = crate::normalized::constructor_for_arity(class, args.len())
+                .ok_or("receiver assembly requires a unique constructor of the invoked arity")?;
+            Some(selected)
+        } else {
+            if !has_zero_argument_implicit_constructor(class) {
+                return Err("record components require a canonical constructor; not inert receiver assembly".into());
+            }
+            None
+        };
         let params = constructor.map(|m| m.params()).unwrap_or_default();
         if params.len() != args.len() || !params.iter().zip(args).all(|((ty, _), arg)| assembly_argument(program, ty, arg)) {
             return Err("unsupported or mismatched receiver constructor arguments".into());
@@ -122,7 +127,7 @@ impl SourceReceiver {
                     JavaExpr::ArrayAllocation { element_type, length }
                         if matches!(assigned_type, JavaType::Array(item) if item.as_ref() == element_type)
                             && matches!(element_type, JavaType::Primitive(name) if name == "int") =>
-                        matches!(length.as_ref(), JavaExpr::Lit(JavaLit::Int(n)) if (0..=256).contains(n)),
+                        matches!(length.as_ref(), JavaExpr::Lit(JavaLit::Int(n)) if *n >= 0),
                     _ => assembly_argument(program, assigned_type, value) || assembly_allocation(program, assigned_type, value),
                 };
                 if !valid {
