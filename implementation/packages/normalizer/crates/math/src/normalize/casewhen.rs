@@ -240,7 +240,10 @@ fn simplify_impl(
         // already imply. Run the same projection inside this rule so a
         // later range pass cannot restore and publish the redundant bound.
         let (guards, _) = strip_redundant_path_guards(&arms);
-        return crate::builder::case_when(guards, fallback);
+        let ranged = crate::builder::case_when(guards, fallback);
+        return ranged.as_case_when()
+            .and_then(|branches| canonical_disjoint_literal_arms(branches, ctx))
+            .unwrap_or(ranged);
     }
 
     // 0. 路径守卫冗余消除（新增规则）：
@@ -338,7 +341,7 @@ fn simplify_impl(
         return collapsed;
     }
 
-    if let Some(reordered) = canonical_disjoint_text_arms(&filtered, ctx) {
+    if let Some(reordered) = canonical_disjoint_literal_arms(&filtered, ctx) {
         return reordered;
     }
 
@@ -363,10 +366,10 @@ fn simplify_impl(
     expr.clone()
 }
 
-/// Distinct text equalities against one total, bound text parameter cannot
-/// overlap. The selector is already acquired; matching it and returning a
-/// literal adds no observations. Only the published value is reordered.
-fn canonical_disjoint_text_arms(
+/// Distinct literal equalities against one total, bound parameter cannot
+/// overlap within either of the checked exact domains below. The selector
+/// is already acquired and evaluating these terms adds no observations.
+fn canonical_disjoint_literal_arms(
     branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
 ) -> Option<Expr> {
     use crate::{BinOpKind::Eq, SymVarOrigin};
@@ -375,19 +378,30 @@ fn canonical_disjoint_text_arms(
         return None;
     }
     let mut selector: Option<&Expr> = None;
+    #[derive(Eq, Hash, PartialEq)]
+    enum Label {
+        Text(Vec<u16>),
+        Integer(num_bigint::BigInt),
+    }
+
     let mut labels = HashSet::new();
     for (guard, result) in arms {
         result.as_lit()?;
         let (Eq, left, right) = guard.as_binop()? else { return None; };
-        let (subject, units) = if let Some(units) = right.as_lit().and_then(Lit::text_units) {
-            (left, units)
+        let (subject, literal) = if let Some(literal) = right.as_lit() {
+            (left, literal)
         } else {
-            (right, left.as_lit().and_then(Lit::text_units)?)
+            (right, left.as_lit()?)
         };
-        if !matches!(subject.as_sym_var(), Some(SymVarOrigin::Parameter { primitive_type, .. })
-            if primitive_type == "text")
-            || selector.is_some_and(|previous| previous != subject)
-            || !labels.insert(units) {
+        let Some(SymVarOrigin::Parameter { primitive_type, .. }) = subject.as_sym_var() else {
+            return None;
+        };
+        let label = match primitive_type.as_str() {
+            "text" => Label::Text(literal.text_units()?),
+            "integer" => Label::Integer(literal.as_integer()?),
+            _ => return None,
+        };
+        if selector.is_some_and(|previous| previous != subject) || !labels.insert(label) {
             return None;
         }
         selector = Some(subject);
