@@ -1,0 +1,6 @@
+entry: src/DecimalRound.java#DecimalRound.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/DecimalRound.java#DecimalRound.run, returns: number}
+  P: {parameters: {}}
+  R: '-3.015'

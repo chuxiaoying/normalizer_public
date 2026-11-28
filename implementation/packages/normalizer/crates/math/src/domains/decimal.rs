@@ -176,10 +176,6 @@ pub fn multiply(a: Expr, b: Expr) -> Expr {
     apply(PRODUCT, vec![a, b], vec![Primitive::Composite, Primitive::Composite])
 }
 
-pub fn round(value: Expr, scale: u32, mode: Mode) -> Expr {
-    round_at(value, b::lit_int(i64::from(scale)), mode)
-}
-
 /// Round a declared exact decimal with an already evaluated integer scale.
 /// Negative scales round to tens, hundreds, and so on.
 pub fn round_at(value: Expr, scale: Expr, mode: Mode) -> Expr {

@@ -10,7 +10,11 @@ fn decimal(expr: &Decimal, env: &Env) -> Result<Expr> {
             need(value.ty() == Ty::Decimal, "decimal operand must have the exact decimal carrier")?;
             value.scalar()
         }
-        Decimal::Literal { coefficient, scale } => Ok(number::literal(coefficient.clone(), *scale)),
+        Decimal::Literal { coefficient, scale } => {
+            let scale = u32::try_from(*scale)
+                .map_err(|_| "[NORM-ANALYSIS-INCOMPLETE] exact decimal literal exceeds the scale representation")?;
+            Ok(number::literal(coefficient.clone(), scale))
+        }
         Decimal::Product(factors) => {
             if factors.len() > 32 {
                 return Err("[NORM-ANALYSIS-INCOMPLETE] decimal product exceeds its factor budget".into());
@@ -27,11 +31,11 @@ impl Engine<'_> {
         need(crate::normalized::exact_decimal_type(declare),
             "decimal IR requires a declared java.math.BigDecimal local")?;
         let value = decimal(&op.value, env)?;
-        let value = match op.round {
+        let value = match &op.round {
             None => value,
             Some((scale, source)) => {
                 let mode = match source { Mode::HalfUp => number::Mode::HalfUp, Mode::HalfEven => number::Mode::HalfEven };
-                number::round(value, scale, mode)
+                number::round_at(value, b::lit_integer(scale.clone()), mode)
             }
         };
         env.insert(op.binding.clone(), Value::Term(Ty::Decimal, value));
