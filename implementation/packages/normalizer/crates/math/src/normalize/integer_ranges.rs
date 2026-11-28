@@ -138,9 +138,33 @@ fn cell_representative(lo: &Endpoint, hi: &Endpoint) -> BigInt {
     lo.as_ref().or(hi.as_ref()).cloned().unwrap_or_default()
 }
 
+/// Two strict comparisons may partition one already-evaluated exact
+/// input value even if that value was read through a protected field path.
+/// This certifies only the two tests of the same value; it does not treat
+/// arbitrary fields as globally available to the range solver.
+pub(super) fn acquired_integer_strict_bound(expr: &Expr) -> Option<(B, &Expr, BigInt)> {
+    let (op, value, limit) = super::constraint::comparison_literal_rhs(
+        expr.as_binop()?, |rhs| rhs.as_lit().and_then(Lit::as_integer))?;
+    (matches!(op, B::Gt | B::Lt)
+        && matches!(value.as_sym_var(), Some(crate::SymVarOrigin::Parameter { primitive_type, .. })
+            if primitive_type == "integer")).then_some((op, value, limit))
+}
+
+pub(super) fn adjacent_acquired_integer_bounds(left: &Expr, right: &Expr) -> bool {
+    let (Some((a_op, a, m)), Some((b_op, z, n))) =
+        (acquired_integer_strict_bound(left), acquired_integer_strict_bound(right)) else { return false; };
+    if a != z { return false; }
+    match (a_op, b_op) {
+        (B::Gt, B::Lt) => m + 1 == n,
+        (B::Lt, B::Gt) => n + 1 == m,
+        _ => false,
+    }
+}
+
 /// Strict integer boundaries can be complementary at adjacent endpoints.
 /// This proof never uses a displayed LENGTH/name as a type certificate.
 pub(super) fn complementary_guards(left: &Expr, right: &Expr) -> bool {
+    if adjacent_acquired_integer_bounds(left, right) { return true; }
     let mut subject = None;
     let mut cuts = Vec::new();
     let Some(left) = guard(left, &mut subject, &mut cuts) else { return false; };

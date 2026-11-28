@@ -1,0 +1,13 @@
+entry: src/Decision.java#Decision.choose
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Decision.java#Decision.choose, returns: number}
+  P: {parameters: {box: {position: 0, type: "Box?"}}}
+  types:
+    Box: {fields: {value: number }}
+  R: |-
+    CASE
+      WHEN box == null THEN 3
+      WHEN 2 > box.value THEN 9
+      ELSE 5
+    END

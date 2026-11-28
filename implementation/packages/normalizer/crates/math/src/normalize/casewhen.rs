@@ -264,6 +264,10 @@ fn simplify_impl(
     }
 
 
+    if let Some(rewritten) = orient_adjacent_integer_suffix(&filtered, ctx) {
+        return rewritten;
+    }
+
     // Try the two-value first-match form without splitting a disjunction
     // into several copies of the same result arm.
     if let Some(collapsed) = collapse_two_value_exhaustive_to_default(&filtered, ctx) {
@@ -289,6 +293,30 @@ fn simplify_impl(
         return Expr::new(ExprKind::CaseWhen { branches: filtered });
     }
     expr.clone()
+}
+
+/// On the remaining domain, the last two strict tests of exactly the
+/// same acquired integer are an exhaustive binary CASE. Keep the whole
+/// suffix behind every earlier arm (notably a null/definedness check).
+fn orient_adjacent_integer_suffix(
+    branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
+) -> Option<Expr> {
+    let [prefix @ .., (yes_guard, yes), (no_guard, no)] = branches else { return None; };
+    use super::integer_ranges::{acquired_integer_strict_bound, adjacent_acquired_integer_bounds};
+    if acquired_integer_strict_bound(yes_guard).is_none()
+        || no_guard.as_bool() != Some(true) && !adjacent_acquired_integer_bounds(yes_guard, no_guard)
+    {
+        return None;
+    }
+    let pair = crate::builder::case_when(vec![(yes_guard.clone(), yes.clone())], no.clone());
+    let pair = crate::case_orientation::canonicalize_binary_case(&pair, ctx, None).unwrap_or(pair);
+    let ([(guard, selected)], fallback) = pair.as_total_case_when()? else { return None; };
+    if no_guard.as_bool() == Some(true) && guard == yes_guard && selected == yes && fallback == no {
+        return None;
+    }
+    let mut arms = prefix.to_vec();
+    arms.push((guard.clone(), selected.clone()));
+    Some(crate::builder::case_when(arms, fallback.clone()))
 }
 
 /// 嵌套 CaseWhen 展平：若 branch value 是 CaseWhen，展开为笛卡尔积。
@@ -759,6 +787,7 @@ fn is_not_of(cond: &Expr, expected_inner: &Expr) -> bool {
         } => operand == expected_inner,
         _ => {
             cond.is_comparison_complement(expected_inner)
+                || super::integer_ranges::adjacent_acquired_integer_bounds(cond, expected_inner)
                 || adjacent_integer_complement(cond, expected_inner)
         }
     }
