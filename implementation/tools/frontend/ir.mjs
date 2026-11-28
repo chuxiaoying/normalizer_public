@@ -100,17 +100,22 @@ export function textWireValue(text) {
   return text;
 }
 
+export function staticMemberName(node) {
+  if (node.questionDotToken) return undefined; // Optional access is not an unconditional read.
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)) {
+    // A bracket string supplies one exact property key, even if it contains ".".
+    return node.argumentExpression.text;
+  }
+}
+
 function pathOf(node) {
   if (ts.isIdentifier(node)) return [node.text];
   if (node.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
-  if (node.questionDotToken) return undefined; // Optional access is not a plain path read.
-  const property = ts.isPropertyAccessExpression(node) ? node.name
-    : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)
-      ? node.argumentExpression : undefined;
-  if (property) {
+  const member = staticMemberName(node);
+  if (member !== undefined) {
     const parent = pathOf(node.expression);
-    // A bracket string supplies one exact property key, even if it contains ".".
-    if (parent) return [...parent, property.text];
+    if (parent) return [...parent, member];
   }
 }
 
