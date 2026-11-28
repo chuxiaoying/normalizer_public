@@ -128,10 +128,6 @@ impl RelationExpr {
         }
     }
 
-    pub fn acquired_table(table: &str, binding: u64) -> Self {
-        Self::Base { name: table.into(), alias: table.into(), snapshot: Some(binding) }
-    }
-
     pub fn vector<S: Into<String>>(value: Expr, alias: S) -> Self {
         Self::Vector {
             value,

@@ -127,10 +127,12 @@ impl<'a> Engine<'a> {
                 return entry.declared_relation_input(name, primitive_type);
             }
             if let Some((op, left, right)) = expr.as_binop() {
-                return matches!(op, BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne
+                return match op {
+                    BinOpKind::And | BinOpKind::Or | BinOpKind::Eq | BinOpKind::Ne
                     | BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
-                    | BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul)
-                    && closed(left, table, columns, entry) && closed(right, table, columns, entry);
+                    | BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul =>
+                        closed(left, table, columns, entry) && closed(right, table, columns, entry),
+                };
             }
             false
         }
@@ -176,7 +178,7 @@ impl<'a> Engine<'a> {
             .collect()
     }
 
-    fn acquire_table_rows(&mut self, table: &str, path: &Expr) -> RelationExpr {
+    fn acquire_table_snapshot(&mut self, table: &str, path: &Expr) -> TableSource {
         use super::realtime_state::{Acquisition, EffectOperation};
         let guard = self.normal_path(path.clone());
         let after: Vec<_> = self.realtime_effects.events().iter().filter_map(|event| {
@@ -202,18 +204,19 @@ impl<'a> Engine<'a> {
             let relative = if dominant { b::lit_bool(true) } else { when };
             Some((receipt.binding_id(), relative))
         }).collect();
-        if guard.as_bool() == Some(false) { return RelationExpr::base(table, table); }
+        let initial = || TableSource { name: table.into(), snapshot: None };
+        if guard.as_bool() == Some(false) { return initial(); }
         // A plain table binding can represent the unconditional initial
         // snapshot. It has no occurrence condition: a guarded first read
         // needs an acquisition even if no prior write could affect it.
         // A later physical read is a separate observation in either case.
         let first = self.source_relations.physically_read.insert(table.into());
         if first && after.is_empty() && guard.as_bool() == Some(true) {
-            return RelationExpr::base(table, table);
+            return initial();
         }
         let id = self.fresh_binding();
         self.realtime_effects.acquire(guard, Acquisition::Sql { source: table.into(), after }, id);
-        RelationExpr::acquired_table(table, id)
+        TableSource { name: table.into(), snapshot: Some(id) }
     }
 
     fn table_rows(
@@ -281,27 +284,28 @@ impl<'a> Engine<'a> {
             .tables
             .entry(query.source.clone())
             .or_default();
-        for (name, ty) in &columns {
-            let business_type = super::business_sql::column_type(ty, nullable_columns.contains(name))
+        let mut typed_columns = Vec::with_capacity(columns.len());
+        for (name, ty) in columns {
+            let business_type = super::business_sql::column_type(&ty, nullable_columns.contains(&name))
                 .ok_or_else(|| fail("unsupported table column type"))?;
             super::business_sql::register_column(
-                table, &query.source, name, business_type, super::business_sql::ColumnEvidence::Declaration,
+                table, &query.source, &name, business_type, super::business_sql::ColumnEvidence::Declaration,
             )?;
+            typed_columns.push((name, ty, business_type));
         }
-        let input = self.acquire_table_rows(&query.source, path);
-        let RelationExpr::Base { ref name, snapshot, .. } = input else {
-            unreachable!("table acquisition always returns a base snapshot")
+        let table = self.acquire_table_snapshot(&query.source, path);
+        let input = RelationExpr::Base {
+            name: table.name.clone(),
+            alias: table.name.clone(),
+            snapshot: table.snapshot,
         };
-        let table = TableSource { name: name.clone(), snapshot };
         Ok(Rows {
             input,
-            fields: columns
+            fields: typed_columns
                 .into_iter()
-                .map(|(n, t)| {
-                    let ty = super::business_sql::column_type(&t, nullable_columns.contains(&n))
-                        .expect("column was checked before acquisition");
-                    let value = b::sql_column(&query.source, table.clone(), 0, &n, ty);
-                    (n, Value::Term(t, value))
+                .map(|(name, ty, business_type)| {
+                    let value = b::sql_column(&query.source, table.clone(), 0, &name, business_type);
+                    (name, Value::Term(ty, value))
                 })
                 .collect(),
             ordering: vec![],
