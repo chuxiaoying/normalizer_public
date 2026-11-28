@@ -102,6 +102,7 @@ seeds:
   object-nested-record: { kind: topic, topic: objects-and-types, related: [] }
   object-optional-field: { kind: topic, topic: objects-and-types, related: [basic-contracts] }
   object-structural-vs-identity: { kind: topic, topic: objects-and-types, related: [state-and-aliasing, unified-canonical-form] }
+  java-closed-lambda: { kind: topic, topic: objects-and-types, related: [control-flow] }
   object-polymorphic-dispatch: { kind: topic, topic: objects-and-types, related: [language-entries] }
   object-collection-records: { kind: topic, topic: objects-and-types, related: [collections] }
   control-try-catch-finally: { kind: topic, topic: control-flow, related: [external-boundaries, state-and-aliasing] }

@@ -102,6 +102,7 @@ entry-typescript-function: topics/language-entries/typescript-function.md
 entry-javascript-module: topics/language-entries/javascript-module.md
 entry-async-await: topics/language-entries/javascript-async-function.md
 collection-alias-and-mutation: topics/collections/java-alias-mutation.md
+java-closed-lambda: topics/objects-and-types/java-closed-lambda.md
 object-polymorphic-dispatch: topics/objects-and-types/java-polymorphic-dispatch.md
 state-cycle-and-observable-output: topics/state-and-aliasing/java-cycle-observable.md
 composition-map-arithmetic: compositions/collections-and-expression-simplification/java-map-arithmetic.md

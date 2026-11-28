@@ -80,15 +80,19 @@ families:
     leaves:
       expression-and-block-body:
         focus: 目标类型明确时，表达式体与等价的块返回体
+        seed: java-closed-lambda
         gap: implementation
       effectively-final-capture:
         focus: 捕获有效 final 局部变量，区分捕获值和调用实参
+        seed: java-closed-lambda
         gap: implementation
       invalid-mutable-capture:
         focus: 被重新赋值的局部变量不得作为合法捕获
+        seed: java-closed-lambda
         gap: review
       creation-versus-invocation:
         focus: 建立函数值时不执行本体，实际调用才产生行为
+        seed: java-closed-lambda
         gap: review
   interface-default-methods:
     title: 接口默认方法与分派
@@ -123,3 +127,174 @@ families:
         focus: 默认方法中的普通接收者调用仍应动态分派
         seed: object-polymorphic-dispatch
         gap: implementation
+  lexical-literals:
+    title: 词法与字面量
+    leaves:
+      unicode-text:
+        focus: Unicode 源码转义、转义资格与补充字符
+        seed: canonical-text-order
+        evidence:
+          - [CanonicalLabel.label, unicode-paired-escapes-form-the-supplementary-character, pers]
+      character-code:
+        focus: 字符单码元、转义和数值提升
+        seed: canonical-text-order
+        evidence:
+          - [CanonicalLabel.charCode, original, pers]
+      numeric-lexemes:
+        focus: 各种进制、分隔符、指数和后缀
+        gap: review
+      text-block:
+        focus: 文本块缩进、换行和转义
+        gap: review
+  declarations-and-binding:
+    title: 声明、作用域与绑定
+    leaves:
+      nested-static-class:
+        focus: 嵌套类型的入口和封闭名称
+        seed: java-invalid-declaration
+        evidence:
+          - [TicketCode.Nested.readNested, original, pers]
+      branch-local-scope:
+        focus: 不同块中的局部名称及其作用域
+        seed: java-lexical-declaration-scope
+        evidence:
+          - [LexicalScope.INSTANCE.read, original, pers]
+      local-inference:
+        focus: 局部 var 推断及初始化要求
+        gap: review
+      member-access:
+        focus: 包名、导入、访问控制、字段隐藏与类型名遮蔽
+        gap: review
+      annotations-and-modifiers:
+        focus: 声明标记、访问性、final 和实际影响业务的修饰符
+        gap: review
+  type-relationships:
+    title: 类型、继承和转换
+    leaves:
+      cast-and-instanceof:
+        focus: 强制转换、类型测试、模式变量与 null
+        gap: review
+      generics-and-inference:
+        focus: 类型参数、边界、通配符、原始类型及泛型推断
+        gap: review
+      boxing-and-conversion:
+        focus: 装箱拆箱、赋值转换、窄化和算术提升
+        gap: review
+      reference-shapes:
+        focus: 类、记录、枚举、匿名类和封闭继承关系
+        gap: review
+      constructors-and-initializers:
+        focus: 委托构造、超类构造、实例字段和静态初始化时点
+        gap: review
+  invocation:
+    title: 调用与函数值
+    leaves:
+      static-and-instance:
+        focus: 静态入口、实例接收者和求值顺序
+        gap: review
+      overload-varargs:
+        focus: 重载、可变参数、方法隐藏及调用解析
+        gap: review
+      method-reference:
+        focus: 静态、绑定或未绑定接收者的引用，以及构造器引用
+        gap: review
+      nested-receivers:
+        focus: 内部类接收者、限定 this 和显式父类调用
+        gap: review
+  expressions:
+    title: 普通表达式与赋值
+    leaves:
+      precedence-and-parentheses:
+        focus: 括号与一元符号在当前源码位置的含义
+        seed: java-grouping-signed-operand
+        evidence:
+          - [SignedGrouping.read, original, pers]
+      short-circuit-observable:
+        focus: 右操作数只在条件命中时调用外部端口
+        seed: control-short-circuit
+        evidence:
+          - [GuardWithProbe.INSTANCE.allowed, original, pers]
+      conditional-expression:
+        focus: 条件表达式的分支求值、类型合并与实际选择
+        gap: review
+      assignment-and-updates:
+        focus: 赋值表达式、复合赋值、前后自增与地址求值一次
+        gap: review
+      arithmetic-and-comparison:
+        focus: 数值运算、显式位模式、比较和文本连接
+        gap: review
+  arrays:
+    title: 数组创建、读写与身份
+    leaves:
+      sized-array:
+        focus: 指定长度创建、默认值和索引读取
+        seed: canonical-constant-array
+        evidence:
+          - [CanonicalArray.sized, original, pers]
+      initializer-and-bounds:
+        focus: 数组初始化与索引越界只出现在实际路径
+        seed: canonical-constant-array
+        evidence:
+          - [CanonicalArray.guarded, original, pers]
+      multidimensional-and-covariance:
+        focus: 多维、协变、运行时存储类型、别名与越界
+        gap: review
+  branch-and-exit:
+    title: 普通分支、块与完成
+    leaves:
+      early-return:
+        focus: 提前返回不执行后续逻辑
+        seed: control-early-return
+        evidence:
+          - [Early.choose, original, pers]
+      labelled-transfer:
+        focus: 标签语句、跨层 break、continue 及返回目标
+        gap: review
+      empty-and-assert:
+        focus: 空语句及具有实际执行条件的断言
+        gap: review
+  loops:
+    title: 循环与有界控制转移
+    leaves:
+      counted-for:
+        focus: 原生 for 初始化、判断和更新
+        seed: loop-constant-bound
+        evidence:
+          - [SmallLoop.total, original, pers]
+      break-and-continue:
+        focus: 原生 break 和 continue 对本轮和后续轮的不同影响
+        seed: loop-break-continue
+        evidence:
+          - [BreakContinue.sum, original, pers]
+      enhanced-for:
+        focus: 数组和可迭代对象的增强 for、取值顺序和终止条件
+        gap: review
+      while-and-do:
+        focus: while 先判断与 do-while 至少执行一次
+        gap: review
+  exceptions-and-resources:
+    title: 异常、清理与资源
+    leaves:
+      typed-catch-finally:
+        focus: catch 处理异常，finally 在两种路径都执行
+        seed: control-try-catch-finally
+        evidence:
+          - [FinallyService.INSTANCE.read, original, pers]
+      multi-catch-and-rethrow:
+        focus: 多类型捕获、优先顺序、精确重抛和 finally 覆盖
+        gap: review
+      try-with-resources:
+        focus: 资源从左到右取得、逆序关闭、主异常与 suppressed 异常
+        gap: review
+  host-dependent-syntax:
+    title: 依赖宿主或环境的语法
+    leaves:
+      monitor-and-concurrency:
+        focus: synchronized 与宿主调度何时改变外部可观察行为
+        gap: review
+      native-and-linkage:
+        focus: native、不可见实现及宿主链接；不可伪造源码或默认值
+        gap: review
+      module-and-visibility:
+        focus: 源码模块和可见性；区分 Java 语法合法与分析依赖闭合
+        gap: review

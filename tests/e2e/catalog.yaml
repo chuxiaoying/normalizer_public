@@ -443,4 +443,5 @@ seeds:
   composition-relation-distinct-aggregate:
     source:
       - DistinctMemo.count
-pending: []
+pending:
+  - java-closed-lambda
