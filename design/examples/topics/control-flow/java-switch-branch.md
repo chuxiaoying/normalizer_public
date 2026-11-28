@@ -84,3 +84,22 @@ class SwitchMode {
 如果同一分支写 `case 1, 3`，命中任一值都执行同一个分支体。没有两份执行或两处异常源；异常守卫是 `code == 1 OR code == 3`。若输出是在命中时返回 7、默认返回 0，整棵二分 CASE 的两种方向成本相同，按[统一定形](../../../chapters/08-统一定形.md#cf-04-完整二分-case)，`AND` 排在 `OR` 前，故写成 `CASE WHEN code != 1 AND code != 3 THEN 0 ELSE 7 END`。重复标签仍须跨整个 `switch` 检查，不能因标签分属不同逗号列表而放行。
 
 编译期闭整数表达式可以作为标签。例如 `case 1 + 1` 匹配 `2`；若同一个 `switch` 又写了 `case 2`，前置校验按折叠后的值拒绝重复。这里的示例不涉及 Java 固定字宽的回卷。
+
+
+## 冒号语句组可以贯穿
+
+```java
+class SwitchMode {
+    static int classify(int code) {
+        int result = 0;
+        switch (code) {
+            case 1: result = 10;
+            case 2: result += 5; break;
+            default: result = 1;
+        }
+        return result;
+    }
+}
+```
+
+**原样通过。** `code = 1` 先赋 10，再执行下一组的加 5，结果为 15。直接命中 `code = 2` 时结果为 5，其他输入走默认得到 1。在第一组补一个 `break` 后，只有 `code = 1` 的结果变成 10。默认组即使写在中间，也只在没有标签命中时直接选中；从前一组贯穿到默认组则照常执行。已经返回或抛出的路径不进入后面的组。

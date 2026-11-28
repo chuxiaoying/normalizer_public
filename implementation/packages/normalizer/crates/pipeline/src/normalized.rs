@@ -1213,7 +1213,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                     statements(b, at, calls, catch_admission)?;
                 }
             }
-            S::Switch { selector, cases, default } => {
+            S::Switch { selector, cases, default, .. } => {
                 expr(selector, at, calls)?;
                 for (_, body) in cases {
                     statements(body, at, calls, catch_admission)?;

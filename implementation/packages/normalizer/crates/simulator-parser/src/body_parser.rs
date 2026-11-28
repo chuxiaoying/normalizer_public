@@ -246,6 +246,8 @@ impl<'a> Parser<'a> {
         let mut seen_text = std::collections::BTreeSet::new();
         let mut default = None;
         let mut rule_style = None;
+        let mut continues = Vec::new();
+        let mut default_position = None;
         while !self.eat_char(b'}') {
             let labels = if self.eat_keyword("case") {
                 let mut group = Vec::new();
@@ -270,11 +272,18 @@ impl<'a> Parser<'a> {
                 return Err(self.err("[JAVA-SWITCH] cannot mix ':' and '->' switch groups"));
             }
             rule_style = Some(arrow);
-            let body = if arrow { self.parse_switch_rule()? } else { self.parse_switch_colon_group()? };
+            let (body, enters_next) = if arrow { (self.parse_switch_rule()?, false) }
+                else { self.parse_switch_colon_group()? };
             if let Some(labels) = labels { cases.push((labels, body)); }
-            else { default = Some(body); }
+            else {
+                default = Some(body);
+                default_position = Some(continues.len());
+            }
+            continues.push(enters_next);
         }
-        Ok(JavaStatement::Switch { selector, cases, default: default.unwrap_or_default() })
+        let fall_through = continues.iter().any(|&next| next)
+            .then_some(SwitchFallThrough { default_position, continues });
+        Ok(JavaStatement::Switch { selector, cases, default: default.unwrap_or_default(), fall_through })
     }
 
     fn parse_switch_label(
@@ -343,7 +352,7 @@ impl<'a> Parser<'a> {
         Ok(vec![self.finish_expression_statement(expr)?])
     }
 
-    fn parse_switch_colon_group(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
+    fn parse_switch_colon_group(&mut self) -> Result<(Vec<JavaStatement>, bool), ParseError> {
         let mut body = Vec::new();
         let mut breaks = false;
         loop {
@@ -374,13 +383,9 @@ impl<'a> Parser<'a> {
                 _ => false,
             }
         }
-        // Only independent groups are presently admitted; never interpret
-        // a colon-marked fall-through as an independent conditional arm.
         self.skip_ws();
-        if !breaks && self.peek() != Some(b'}') && !body.last().is_some_and(exits) {
-            return Err(self.err("[JAVA-SWITCH] fall-through between case groups is not yet supported"));
-        }
-        Ok(body)
+        let enters_next = !breaks && self.peek() != Some(b'}') && !body.last().is_some_and(exits);
+        Ok((body, enters_next))
     }
 
     fn parse_while(&mut self) -> Result<JavaStatement, ParseError> {

@@ -400,6 +400,26 @@ pub(super) fn case_ranges(branches: &[(Expr, Expr)]) -> Option<(Vec<(Expr, Expr)
         }
         segments.push((start, end, value));
     }
+    // A shared unbounded value outside distinct singleton exceptions has
+    // a smaller or equal-cost representative with one equality per
+    // exception. The first-match partition above is the proof: changing
+    // the displayed default does not move any reads or change a result.
+    if let (Some((None, _, fallback)), Some((_, None, last))) =
+        (segments.first(), segments.last())
+    {
+        if fallback == last && fallback.as_lit().is_some() {
+            let mut distinct = std::collections::HashSet::new();
+            let points = segments.iter().filter(|(_, _, value)| value != fallback)
+                .map(|(lo, hi, value)| {
+                    let point = lo.as_ref()?;
+                    (hi.as_ref()? == point && value.as_lit().is_some() && distinct.insert(value))
+                        .then(|| (b::eq(subject.clone(), b::lit_integer(point.clone())), value.clone()))
+                }).collect::<Option<Vec<_>>>();
+            if let Some(points) = points.filter(|points| points.len() >= 2) {
+                return Some((points, fallback.clone()));
+            }
+        }
+    }
     // Keep the explicit default and the source's first occurrence of each
     // non-default payload. Partition cells determine effective domains, not a
     // new payload order. In particular do not split a previously grouped

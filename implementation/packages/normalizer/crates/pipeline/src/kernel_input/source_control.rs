@@ -34,6 +34,13 @@ impl Engine<'_> {
         let Some(((labels, body), rest)) = cases.split_first() else {
             return self.source_scope(default, id, env, path);
         };
+        let condition = self.condition_under_path(Self::switch_guard(&selector, labels)?, &path);
+        self.source_branch(condition, env, path,
+            |engine, locals, path| engine.source_scope(body, id, locals, path),
+            |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))
+    }
+
+    fn switch_guard(selector: &Expr, labels: &[simulator_parser::ast::JavaExpr]) -> Result<Expr> {
         use simulator_parser::ast::{JavaExpr, JavaLit};
         let mut group_condition = b::lit_bool(false);
         for label in labels {
@@ -47,12 +54,38 @@ impl Engine<'_> {
             // String switch matches text content, not Java's reference ==.
             group_condition = b::or(group_condition, b::eq(selector.clone(), label));
         }
-        // Labels carry no evaluation or state. Their union selects one
-        // lexical body, including a single set of observable actions.
-        let condition = self.condition_under_path(group_condition, &path);
-        self.source_branch(condition, env, path,
-            |engine, locals, path| engine.source_scope(body, id, locals, path),
-            |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))
+        Ok(group_condition)
+    }
+
+    pub(super) fn source_switch_through(
+        &mut self, selector: Expr, cases: &[(Vec<simulator_parser::ast::JavaExpr>, Vec<S>)],
+        default: &[S], flow: &simulator_parser::ast::SwitchFallThrough,
+        id: &str, env: &mut Env, path: Expr,
+    ) -> Result<()> {
+        let guards = cases.iter().map(|(labels, _)| Self::switch_guard(&selector, labels))
+            .collect::<Result<Vec<_>>>()?;
+        // Default is selected directly only if no label matches, even
+        // when its source group occurs before the matching label.
+        let default_guard = b::not(guards.iter().cloned().fold(b::lit_bool(false), b::or));
+        let mut groups = cases.iter().zip(guards).map(|((_, body), guard)| (body.as_slice(), guard))
+            .collect::<Vec<_>>();
+        if let Some(position) = flow.default_position { groups.insert(position, (default, default_guard)); }
+
+        // Execute each lexical group once under the union of its incoming
+        // paths; never copy an effectful tail into multiple symbolic arms.
+        let mut incoming = b::lit_bool(false);
+        for ((body, direct), continues) in groups.into_iter().zip(&flow.continues) {
+            let live = self.normal_path(math::normalize(b::and(
+                path.clone(), self.realtime_completion.continuing_guard())));
+            if live.as_bool() == Some(false) { break; }
+            let condition = self.condition_under_path(b::or(direct, incoming), &live);
+            self.source_branch(condition.clone(), env, live.clone(),
+                |engine, locals, active| engine.source_scope(body, id, locals, active),
+                |_, _, _| Ok(()))?;
+            incoming = if *continues { self.normal_path(b::and(live, condition)) }
+                else { b::lit_bool(false) };
+        }
+        Ok(())
     }
 
     fn source_if_arm(

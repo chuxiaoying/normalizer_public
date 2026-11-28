@@ -309,7 +309,7 @@ impl Names<'_> {
                     self.block(then_block, types, &mut yes);
                     if let Some(body) = else_block { self.block(body, types, &mut no); }
                 }
-                Switch {selector, cases, default} => {
+                Switch {selector, cases, default, ..} => {
                     self.expr(selector, types, locals);
                     for (labels, body) in cases {
                         for label in labels {

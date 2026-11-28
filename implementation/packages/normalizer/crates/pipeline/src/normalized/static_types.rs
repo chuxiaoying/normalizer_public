@@ -898,7 +898,7 @@ impl Admission<'_> {
                     self.block(then_block, &mut yes)?;
                     if let Some(body) = else_block { self.block(body, &mut no)?; }
                 }
-                S::Switch { selector, cases, default } => {
+                S::Switch { selector, cases, default, .. } => {
                     let actual = self.expression(selector, scope)?;
                     let text = actual == Kind::Text;
                     if !text && (actual != Kind::Number || self.integer_width(selector, scope) != Some(IntegerWidth::IntFamily)) {

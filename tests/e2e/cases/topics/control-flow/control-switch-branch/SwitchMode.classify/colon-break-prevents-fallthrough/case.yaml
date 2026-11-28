@@ -1,0 +1,11 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/SwitchMode.java#SwitchMode.classify, returns: number}
+  P: {parameters: {code: {position: 0, type: number}}}
+  R: |-
+    CASE
+      WHEN code == 1 THEN 10
+      WHEN code == 2 THEN 5
+      ELSE 1
+    END

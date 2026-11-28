@@ -64,7 +64,11 @@ families:
       colon-fall-through:
         focus: 命中后继续执行下一组，直到离开 switch
         seed: control-switch-branch
-        gap: implementation
+        evidence:
+          - [SwitchMode.classify, colon-fallthrough-updates-the-next-group, pers]
+          - [SwitchMode.classify, colon-default-in-the-middle-only-matches-if-no-label-does, pers]
+          - [SwitchMode.classify, colon-break-prevents-fallthrough, pers]
+          - [SwitchMode.classify, earlier-return-cannot-enter-a-later-switch-group, pers]
       nested-break:
         focus: 嵌套条件里的无标签 break 只退出最近的 switch
         seed: control-switch-branch

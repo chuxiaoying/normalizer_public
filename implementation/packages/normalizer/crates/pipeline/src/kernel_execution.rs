@@ -786,7 +786,7 @@ impl<'a> Engine<'a> {
                     let condition = self.condition_under_path(test.scalar()?, &path);
                     self.source_if(condition, then_block, else_block.as_deref().unwrap_or_default(), matched, id, env, path)?;
                 }
-                S::Switch { selector, cases, default } => {
+                S::Switch { selector, cases, default, fall_through } => {
                     let selector = self.java_expr(selector, id, env, path.clone())?;
                     let path = self.normal_path(path);
                     if path.as_bool() == Some(false) { continue; }
@@ -805,7 +805,11 @@ impl<'a> Engine<'a> {
                     }
                     let path = self.normal_path(path);
                     if path.as_bool() != Some(false) {
-                        self.source_switch(selector, cases, default, id, env, path)?;
+                        if let Some(flow) = fall_through {
+                            self.source_switch_through(selector, cases, default, flow, id, env, path)?;
+                        } else {
+                            self.source_switch(selector, cases, default, id, env, path)?;
+                        }
                     }
                 }
                 S::For {init,cond,update,body} => {

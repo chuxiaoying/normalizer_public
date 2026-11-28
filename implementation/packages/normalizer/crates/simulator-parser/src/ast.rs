@@ -332,6 +332,9 @@ pub enum JavaStatement {
         selector: JavaExpr,
         cases: Vec<(Vec<JavaExpr>, Vec<JavaStatement>)>,
         default: Vec<JavaStatement>,
+        // For actual colon fall-through, preserve each source group and
+        // the default's lexical position. Independent switches need none.
+        fall_through: Option<SwitchFallThrough>,
     },
 
     /// while 循环
@@ -523,6 +526,12 @@ pub enum JavaExpr {
         target: Box<JavaExpr>,
         index: Box<JavaExpr>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct SwitchFallThrough {
+    pub default_position: Option<usize>,
+    pub continues: Vec<bool>,
 }
 
 /// A type-pattern condition and the Boolean branch where it binds.
