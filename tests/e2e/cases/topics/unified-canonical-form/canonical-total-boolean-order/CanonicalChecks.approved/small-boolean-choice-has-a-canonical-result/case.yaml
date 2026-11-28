@@ -1,0 +1,13 @@
+entry: src/BooleanBudget.java#BooleanBudget.classify
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/BooleanBudget.java#BooleanBudget.classify, returns: number}
+  P:
+    parameters:
+      flag0: {position: 0, type: bool}
+      flag1: {position: 1, type: bool}
+  R: |-
+    CASE
+      WHEN flag0 OR flag1 THEN 1
+      ELSE 0
+    END

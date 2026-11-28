@@ -246,7 +246,7 @@ impl std::error::Error for NormalizationLimit {}
 ///
 /// 反复应用化简规则直到不动点（最多 MAX_ITERATIONS 轮）。
 pub fn normalize_with(expr: Expr, ctx: &dyn crate::sort_context::SortContext) -> Expr {
-    try_normalize_with(expr, ctx).unwrap_or_else(|error| panic!("{error}"))
+    try_normalize_with(expr, ctx).unwrap_or_else(|error| std::panic::panic_any(error))
 }
 
 pub(crate) fn exact_acquired_arithmetic(value: &Expr, ctx: &dyn crate::SortContext) -> bool {
@@ -397,7 +397,7 @@ pub fn normalize(expr: Expr) -> Expr {
                 });
                 return key;
             }
-            panic!("{error}");
+            std::panic::panic_any(error);
         }
     };
     admit_cache(&DEFAULT_NORMALIZE_CACHE, "normalize", key, &out);

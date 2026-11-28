@@ -2,7 +2,7 @@
 //! scope, and the index exists only in the relation's predicates and projection.
 use super::*;
 use math::domains::relation::positional::{count, integer_polynomial, interval_sum, sum_polynomial};
-use normalizer_ir::local::relation::{IntegerBound, IntegerRange, Op, RangeOperation, Scalar};
+use normalizer_ir::local::relation::{IntegerBound, IntegerRange, Op, RangeOperation, RangeScope, Scalar};
 
 fn integer(value: Value) -> Result<Expr> {
     need(value.ty() == Ty::Integer, "integer range requires an exact integer")?;
@@ -163,10 +163,10 @@ fn upper_bounded_by(value: &Expr, limit: &Expr, active: &Expr) -> bool {
 }
 
 fn indexed_domain<'a, 'program>(
-    engine: &'a Engine<'program>, range: &'a IntegerRange, env: &Env,
+    engine: &'a Engine<'program>, scope: &'a RangeScope, env: &Env,
     lower: &'a Expr, upper: &'a Expr, path: &'a Expr,
 ) -> Result<(RelationExpr, Env, Position<'a, 'program>, String)> {
-    let alias = range.alias.as_ref().ok_or_else(|| fail("range operation needs an index binding"))?;
+    let alias = &scope.alias;
     let mut index = "i".to_owned();
     while engine.selected_entry.syntax.params().iter().any(|(_, public)| *public == index) { index.push('_'); }
     let position = Position { engine, alias, lower, upper, path };
@@ -177,7 +177,7 @@ fn indexed_domain<'a, 'program>(
     } else {
         RelationExpr::vector(math::domains::relation::positional::range(lower.clone(), upper.clone()), &index)
     };
-    for filter in &range.filters {
+    for filter in &scope.filters {
         let predicate = expression(filter, &local, Some(&position))?;
         need(predicate.ty() == Ty::Bool, "integer range filter requires a boolean")?;
         domain = RelationExpr::select(predicate.scalar()?, domain);
@@ -200,16 +200,16 @@ impl Engine<'_> {
         let lower = integer(expression(&range.lower, env, None)?)?;
         let upper = integer(expression(&range.upper, env, None)?)?;
         let value = match &range.select {
-            RangeOperation::Count if range.filters.is_empty() => count(lower, upper),
-            RangeOperation::Count => {
-                let (domain, _, _, _) = indexed_domain(self, range, env, &lower, &upper, path)?;
+            RangeOperation::Count => count(lower, upper),
+            RangeOperation::FilteredCount(scope) => {
+                let (domain, _, _, _) = indexed_domain(self, scope, env, &lower, &upper, path)?;
                 r::relation_sum(domain, b::lit_int(1))
             }
-            RangeOperation::Sum(None) => interval_sum(lower, upper),
-            RangeOperation::Sum(Some(term)) => {
-                let (domain, local, position, index) = indexed_domain(self, range, env, &lower, &upper, path)?;
+            RangeOperation::Sum => interval_sum(lower, upper),
+            RangeOperation::ProjectedSum { scope, value: term } => {
+                let (domain, local, position, index) = indexed_domain(self, scope, env, &lower, &upper, path)?;
                 let value = integer(expression(term, &local, Some(&position))?)?;
-                if !range.filters.is_empty() {
+                if !scope.filters.is_empty() {
                     r::relation_sum(domain, value)
                 } else if let Some(coefficients) = integer_polynomial(&value, &index) {
                     sum_polynomial(coefficients, lower, upper)
@@ -217,8 +217,8 @@ impl Engine<'_> {
                     r::relation_sum(domain, value)
                 }
             }
-            RangeOperation::First { value, fallback } => {
-                let (domain, local, position, _) = indexed_domain(self, range, env, &lower, &upper, path)?;
+            RangeOperation::First { scope, value, fallback } => {
+                let (domain, local, position, _) = indexed_domain(self, scope, env, &lower, &upper, path)?;
                 r::relation_first_value(domain, integer(expression(value, &local, Some(&position))?)?,
                     integer(expression(fallback, env, None)?)?)
             }

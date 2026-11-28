@@ -24,16 +24,22 @@ pub struct IntegerRange {
     pub accumulate: bool,
     pub lower: Scalar,
     pub upper: Scalar,
-    pub alias: Option<String>,
-    pub filters: Vec<Scalar>,
     pub select: RangeOperation,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RangeOperation {
     Count,
-    Sum(Option<Scalar>),
-    First { value: Scalar, fallback: Scalar },
+    Sum,
+    FilteredCount(RangeScope),
+    ProjectedSum { scope: RangeScope, value: Scalar },
+    First { scope: RangeScope, value: Scalar, fallback: Scalar },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RangeScope {
+    pub alias: String,
+    pub filters: Vec<Scalar>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -216,30 +222,31 @@ pub(super) fn parse_range(
         filters.push(scalar(t)?);
         while t.take("and") { filters.push(scalar(t)?); }
     }
-    let select = match kind {
-        Kind::Count if !accumulate || filters.is_empty() => RangeOperation::Count,
-        Kind::Sum if alias.is_none() => RangeOperation::Sum(None),
-        Kind::Sum => {
+    let select = match (kind, alias) {
+        (Kind::Count, _) if filters.is_empty() => RangeOperation::Count,
+        (Kind::Count, Some(alias)) if !accumulate =>
+            RangeOperation::FilteredCount(RangeScope { alias, filters }),
+        (Kind::Sum, None) => RangeOperation::Sum,
+        (Kind::Sum, Some(alias)) => {
             t.expect("yield")?;
             let value = scalar(t)?;
             if filters.is_empty() && matches!(&value, Scalar::Path(parts)
-                if parts.len() == 1 && alias.as_ref() == parts.first()) {
-                RangeOperation::Sum(None)
-            } else { RangeOperation::Sum(Some(value)) }
+                if parts.as_slice() == std::slice::from_ref(&alias)) {
+                RangeOperation::Sum
+            } else {
+                RangeOperation::ProjectedSum { scope: RangeScope { alias, filters }, value }
+            }
         }
-        Kind::First if alias.is_some() && !accumulate => {
+        (Kind::First, Some(alias)) if !accumulate => {
             t.expect("yield")?;
             let value = scalar(t)?;
             t.expect("else")?;
-            RangeOperation::First { value, fallback: scalar(t)? }
+            RangeOperation::First { scope: RangeScope { alias, filters }, value, fallback: scalar(t)? }
         }
         _ => return Err("unsupported range operation contract".into()),
     };
     t.end("trailing integer range input")?;
-    let alias = if filters.is_empty() && matches!(select, RangeOperation::Count | RangeOperation::Sum(None)) {
-        None
-    } else { alias };
-    Ok(Some(IntegerRange { binding: binding.into(), accumulate, lower, upper, alias, filters, select }))
+    Ok(Some(IntegerRange { binding: binding.into(), accumulate, lower, upper, select }))
 }
 
 pub(super) fn parse(

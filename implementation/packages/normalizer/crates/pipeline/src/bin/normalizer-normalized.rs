@@ -36,14 +36,26 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 fn main() {
+    // A proven analysis limit aborts execution rather than publishing a
+    // partial normal form. Keep unexpected panics on the ordinary error path.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        if !panic.payload().is::<math::NormalizationLimit>() {
+            default_hook(panic);
+        }
+    }));
     match std::panic::catch_unwind(run) {
         Ok(Ok(())) => (),
         Ok(Err(e)) => {
             eprintln!("{e}");
             std::process::exit(1);
         }
-        Err(_) => {
-            eprintln!("[NORM-ENGINE-FAILURE] no successful result produced");
+        Err(payload) => {
+            if let Some(limit) = payload.downcast_ref::<math::NormalizationLimit>() {
+                eprintln!("[NORM-ANALYSIS-INCOMPLETE] {limit}");
+            } else {
+                eprintln!("[NORM-ENGINE-FAILURE] no successful result produced");
+            }
             std::process::exit(1);
         }
     }

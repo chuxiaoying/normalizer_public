@@ -1,0 +1,5 @@
+entry: src/BooleanBudget.java#BooleanBudget.classify
+reject:
+  fragments:
+    - "[NORM-ANALYSIS-INCOMPLETE]"
+    - no canonical result was produced

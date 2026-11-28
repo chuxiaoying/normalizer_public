@@ -1,0 +1,6 @@
+entry: src/VariableLoop.java#VariableLoop.count
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/VariableLoop.java#VariableLoop.count, returns: number}
+  P: {parameters: {}}
+  R: "2"
