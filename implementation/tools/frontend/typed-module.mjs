@@ -76,17 +76,32 @@ const nativeTypes = new Set([
   'ReturnType', 'Parameters', 'Awaited', 'Error', 'TypeError',
 ]);
 const nativeValues = new Set(['Map', 'Error', 'TypeError', 'String', 'Boolean', 'undefined']);
+const nativeMembers = new Set([
+  'Array.length', 'ReadonlyArray.length', 'String.length', 'Error.message', 'Promise.then',
+]);
 
 function assertClosedPlatformReferences(sf, checker, fail) {
   const failAt = (node, detail) => {
     const {line, character} = sf.getLineAndCharacterOfPosition(node.getStart(sf));
     fail(`[NORM-IMPORT] ${sf.fileName}:${line + 1}:${character + 1}: ${detail}`);
   };
-  const isLibraryGlobal = declaration => {
+  const isLibraryDeclaration = declaration => {
     const source = declaration.getSourceFile();
-    if (!source.isDeclarationFile || !/^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(source.fileName))) return false;
+    return source.isDeclarationFile && /^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(source.fileName));
+  };
+  const isLibraryGlobal = declaration => {
+    if (!isLibraryDeclaration(declaration)) return false;
     const statement = ts.isVariableDeclaration(declaration) ? declaration.parent.parent : declaration;
     return ts.isSourceFile(statement.parent);
+  };
+  const checkMember = (node, member) => {
+    for (const declaration of member?.declarations ?? []) {
+      if (!isLibraryDeclaration(declaration)) continue;
+      const owner = declaration.parent.name;
+      if (!owner || !ts.isIdentifier(owner) || !nativeMembers.has(owner.text + '.' + member.getName())) {
+        failAt(node, 'platform member ' + node.getText(sf) + ' has no admitted source contract');
+      }
+    }
   };
   const visit = node => {
     if (ts.isImportTypeNode(node) || (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)) {
@@ -116,6 +131,15 @@ function assertClosedPlatformReferences(sf, checker, fail) {
       }
     }
     ts.forEachChild(node, visit);
+    if (ts.isPropertyAccessExpression(node)) {
+      checkMember(node, checker.getSymbolAtLocation(node.name));
+    } else if (ts.isElementAccessExpression(node)) {
+      const type = checker.getTypeAtLocation(node.argumentExpression);
+      const receiver = checker.getApparentType(checker.getNonNullableType(checker.getTypeAtLocation(node.expression)));
+      for (const key of type.isUnion() ? type.types : [type]) {
+        if (key.isStringLiteral()) checkMember(node, checker.getPropertyOfType(receiver, key.value));
+      }
+    }
   };
   visit(sf);
 }
