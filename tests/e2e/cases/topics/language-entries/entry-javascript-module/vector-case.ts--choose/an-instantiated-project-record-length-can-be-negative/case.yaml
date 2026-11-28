@@ -1,0 +1,11 @@
+entry: src/vector-case.ts#choose
+expected:
+  schema: normalizer.pers/1
+  types:
+    ReadonlyArray:
+      fields: {length: number}
+  entry: {function: src/vector-case.ts#choose, returns: bool}
+  P:
+    parameters:
+      value: {position: 0, type: ReadonlyArray}
+  R: '0 > value.length'

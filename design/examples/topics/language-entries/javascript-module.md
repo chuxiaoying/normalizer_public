@@ -228,6 +228,8 @@ R: |-
 
 工程若自行声明 `type ReadonlyArray<T> = number` 或 `type ReadonlyMap<K,V> = number`，入口标注虽然碰巧采用标准库名字，实际入参和返回仍是 `number`。反过来，`type Values = ReadonlyArray<number>` 确实解析到标准库数组时，可保留 `number[]` 和其 `LENGTH`；`type Labels = ReadonlyMap<string,string>` 指向标准库类型时，可保留有序映射的完整值。归一化不靠名字猜类型，也不把工程内同名声明替换成标准库。
 
+若工程的 `ReadonlyArray<T>` 实际声明了一个 `length: T` 字段，实参 `T = number` 后，它是有一个数值字段的具名记录。返回该字段的结果是 `value.length`，不是 `LENGTH(value)`；判断它小于零也不能借用真实数组的非负长度事实。按[比较的定形规则](../../../chapters/08-统一定形.md#cf-08-二分的比较基准)，字面量比字段取值少一次运算，所以把 `value.length < 0` 写成 `0 > value.length`，而不是化成 false。
+
 ### 原生文本比较保留内容和可空分支
 
 严格 TypeScript 的 `mode === "pickup"` 比较的是文本内容，不是对象身份。文本中孤立的 UTF-16 代理项保持原样，不用替换字符替代。若入口接收 `string | null`，`value === null ? "fallback" : value` 只在匹配 `null` 时返回兜底；空字符串仍返回原值。改成 `null !== value ? value : "fallback"` 也得到同一 CASE。窄化只适用于这次受检的绑定，不保证另一个可空输入也是文本。这些都是原生表达式，无需预处理为别的语言或标准库调用。

@@ -30,7 +30,10 @@ const carrier = domain => domain === readonlyVector ? 'int[]'
 const valueType = domain => domain === readonlyVector ? 'vector<number>'
   : domain === 'string' ? 'text?' : domain === 'unknown' ? 'ts_unknown_input' : parameter(domain);
 function declaredParameter(node, checker) {
-  const type = node && checker?.getTypeAtLocation(node);
+  return resolvedParameter(node && checker?.getTypeAtLocation(node), checker);
+}
+
+function resolvedParameter(type, checker) {
   // Compare the compiler's native array type, not a source identifier
   // named ReadonlyArray. A tuple or branded primitive is not a vector.
   if (type && checker.isArrayType(type) && type.target?.symbol?.name === 'ReadonlyArray') {
@@ -49,13 +52,13 @@ function declaredParameter(node, checker) {
 }
 
 function declaredRecord(node, checker) {
-  if (!node || !checker || !ts.isTypeReferenceNode(node) || node.typeArguments?.length) return;
+  if (!node || !checker || !ts.isTypeReferenceNode(node)) return;
   const type = checker.getTypeAtLocation(node);
   if (!(type.flags & ts.TypeFlags.Object)) return;
   const symbol = type.aliasSymbol ?? type.getSymbol();
   if (symbol?.declarations?.length !== 1) return;
   const [declaration] = symbol.declarations;
-  if (declaration.getSourceFile().isDeclarationFile || declaration.typeParameters?.length) return;
+  if (declaration.getSourceFile().isDeclarationFile) return;
   const members = ts.isInterfaceDeclaration(declaration) && !declaration.heritageClauses?.length
     ? declaration.members
     : ts.isTypeAliasDeclaration(declaration) && ts.isTypeLiteralNode(declaration.type)
@@ -66,9 +69,12 @@ function declaredRecord(node, checker) {
   const fields = new Map();
   for (const member of members) {
     if (!ts.isPropertySignature(member) || member.questionToken || !ts.isIdentifier(member.name)) return;
-    const domain = declaredParameter(member.type, checker);
-    if (!['number', 'boolean', 'string', nullableText].includes(domain) || fields.has(member.name.text)) return;
-    fields.set(member.name.text, domain);
+    const key = member.name.text;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || fields.has(key)) return;
+    const property = checker.getPropertyOfType(type, key);
+    const domain = property && resolvedParameter(checker.getTypeOfSymbolAtLocation(property, node), checker);
+    if (!['number', 'boolean', 'string', nullableText].includes(domain)) return;
+    fields.set(key, domain);
   }
   const wire = 'record<' + Array.from(fields, ([key, domain]) => key + ':' + valueType(domain)).sort().join(',') + '>';
   return {name, declaration, fields, wire};
@@ -302,8 +308,8 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
     if (record) {
       const existing = boundRecords.get(record.name);
-      if (existing && existing.declaration !== record.declaration)
-        fail('same public record name resolves to two declarations: ' + record.name);
+      if (existing && (existing.declaration !== record.declaration || existing.wire !== record.wire))
+        fail('same public record name resolves to different declarations or field domains: ' + record.name);
       boundRecords.set(record.name, record);
     }
     names.set(param.name.text, {name: binding, type: record ? record.name : parameter(domain), record});

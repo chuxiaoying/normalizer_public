@@ -1,5 +1,11 @@
 entry: src/vector-case.ts#choose
-reject:
-  fragments:
-    - "[NORM-TS-MODULE]"
-    - expected declared business scalar or non-null readonly Vector for value
+expected:
+  schema: normalizer.pers/1
+  types:
+    ReadonlyArray:
+      fields: {length: number}
+  entry: {function: src/vector-case.ts#choose, returns: number}
+  P:
+    parameters:
+      value: {position: 0, type: ReadonlyArray}
+  R: value.length
