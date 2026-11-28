@@ -391,3 +391,5 @@ throws:
 **PERS 验收要点**：一次页面动作的成果要由状态变化、外部交互和完成结果共同表达。返回 `void` 不等于没有业务输出；产出源码或局部计算公式，也不能代替完整动作的归一化结果。
 
 入口与输入声明的共性见[基础案例](../expression-simplification/java-static.md)，业务类型的共性见[对象案例](../objects-and-types/java-static-object.md)。
+
+**读取状态的时点。** 如果事件先令 `before = arrears.total`，再写 `arrears.total = before + delta`，`before` 仍代表入口旧值，而随后的 `arrears.total` 读取应取得新值。依次将旧值和新值写入两个独立字段时，两个写入的值不能合并或都退回入口快照。

@@ -1,0 +1,6 @@
+entry: src/main.ts#run
+reject:
+  location: src/main.ts
+  fragments:
+    - "[NORM-ANALYSIS-INCOMPLETE]"
+    - linked result size budget exceeded

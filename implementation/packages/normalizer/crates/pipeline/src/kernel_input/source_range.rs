@@ -162,53 +162,68 @@ fn upper_bounded_by(value: &Expr, limit: &Expr, active: &Expr) -> bool {
     false
 }
 
+fn indexed_domain<'a, 'program>(
+    engine: &'a Engine<'program>, range: &'a IntegerRange, env: &Env,
+    lower: &'a Expr, upper: &'a Expr, path: &'a Expr,
+) -> Result<(RelationExpr, Env, Position<'a, 'program>, String)> {
+    let alias = range.alias.as_ref().ok_or_else(|| fail("range operation needs an index binding"))?;
+    let mut index = "i".to_owned();
+    while engine.selected_entry.syntax.params().iter().any(|(_, public)| *public == index) { index.push('_'); }
+    let position = Position { engine, alias, lower, upper, path };
+    let mut local = env.clone();
+    local.insert(alias.clone(), Value::Term(Ty::Integer, b::row_value(&index)));
+    let mut domain = if math::normalize(b::ge(lower.clone(), upper.clone())).as_bool() == Some(true) {
+        RelationExpr::Empty
+    } else {
+        RelationExpr::vector(math::domains::relation::positional::range(lower.clone(), upper.clone()), &index)
+    };
+    for filter in &range.filters {
+        let predicate = expression(filter, &local, Some(&position))?;
+        need(predicate.ty() == Ty::Bool, "integer range filter requires a boolean")?;
+        domain = RelationExpr::select(predicate.scalar()?, domain);
+    }
+    Ok((domain, local, position, index))
+}
+
 impl Engine<'_> {
     pub(super) fn source_integer_range(&self, range: &IntegerRange, env: &mut Env, path: &Expr, declared: bool) -> Result<()> {
+        let target_error = "range operation requires a declared integer output";
         let prior = env.get(&range.binding);
-        need(prior.is_some_and(|value| value.ty() == Ty::Integer) || (!range.accumulate && declared),
-            "range operation requires a declared integer output")?;
+        let initial = if range.accumulate {
+            let prior = prior.ok_or_else(|| fail(target_error))?;
+            need(prior.ty() == Ty::Integer, target_error)?;
+            Some(prior.scalar()?)
+        } else {
+            need(prior.is_some_and(|value| value.ty() == Ty::Integer) || declared, target_error)?;
+            None
+        };
         let lower = integer(expression(&range.lower, env, None)?)?;
         let upper = integer(expression(&range.upper, env, None)?)?;
         let value = match &range.select {
             RangeOperation::Count if range.filters.is_empty() => count(lower, upper),
+            RangeOperation::Count => {
+                let (domain, _, _, _) = indexed_domain(self, range, env, &lower, &upper, path)?;
+                r::relation_sum(domain, b::lit_int(1))
+            }
             RangeOperation::Sum(None) => interval_sum(lower, upper),
-            op => {
-                let alias = range.alias.as_ref().ok_or_else(|| fail("range operation needs an index binding"))?;
-                let mut index = "i".to_owned();
-                while self.selected_entry.syntax.params().iter().any(|(_, public)| *public == index) { index.push('_'); }
-                let position = Position { engine: self, alias, lower: &lower, upper: &upper, path };
-                let mut local = env.clone();
-                local.insert(alias.clone(), Value::Term(Ty::Integer, b::row_value(&index)));
-                let mut domain = if math::normalize(b::ge(lower.clone(), upper.clone())).as_bool() == Some(true) {
-                    RelationExpr::Empty
+            RangeOperation::Sum(Some(term)) => {
+                let (domain, local, position, index) = indexed_domain(self, range, env, &lower, &upper, path)?;
+                let value = integer(expression(term, &local, Some(&position))?)?;
+                if !range.filters.is_empty() {
+                    r::relation_sum(domain, value)
+                } else if let Some(coefficients) = integer_polynomial(&value, &index) {
+                    sum_polynomial(coefficients, lower, upper)
                 } else {
-                    RelationExpr::vector(math::domains::relation::positional::range(lower.clone(), upper.clone()), &index)
-                };
-                for filter in &range.filters {
-                    let predicate = expression(filter, &local, Some(&position))?;
-                    need(predicate.ty() == Ty::Bool, "integer range filter requires a boolean")?;
-                    let p = predicate.scalar()?;
-                    domain = RelationExpr::select(p, domain);
-                }
-                match op {
-                    RangeOperation::Count => r::relation_sum(domain, b::lit_int(1)),
-                    RangeOperation::Sum(Some(term)) => {
-                        let value = integer(expression(term, &local, Some(&position))?)?;
-                        if !range.filters.is_empty() {
-                            r::relation_sum(domain, value)
-                        } else if let Some(coefficients) = integer_polynomial(&value, &index) {
-                            sum_polynomial(coefficients, lower, upper)
-                        } else {
-                            r::relation_sum(domain, value)
-                        }
-                    }
-                    RangeOperation::First { value, fallback } => r::relation_first_value(
-                        domain, integer(expression(value, &local, Some(&position))?)?, integer(expression(fallback, env, None)?)?),
-                    RangeOperation::Sum(None) => unreachable!("identity projection handled above"),
+                    r::relation_sum(domain, value)
                 }
             }
+            RangeOperation::First { value, fallback } => {
+                let (domain, local, position, _) = indexed_domain(self, range, env, &lower, &upper, path)?;
+                r::relation_first_value(domain, integer(expression(value, &local, Some(&position))?)?,
+                    integer(expression(fallback, env, None)?)?)
+            }
         };
-        let value = if range.accumulate { b::add(integer(prior.expect("accumulation requires the prior value").clone())?, value) } else { value };
+        let value = match initial { Some(initial) => b::add(initial, value), None => value };
         env.insert(range.binding.clone(), Value::Term(Ty::Integer, math::normalize(value)));
         Ok(())
     }

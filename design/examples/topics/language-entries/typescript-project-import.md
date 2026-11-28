@@ -39,3 +39,5 @@ R: value + 1
 ## 项目内的默认导出
 
 将入口改成 `import { default as plusOne } from "./helper.js"`，将帮助模块里的实现改成 `export default function plusOne(value: number): number { return value + 1; }`，得到与上面一样的完整 PERS。默认导出确实存在，局部名 `plusOne` 不是据以匹配远端名字。如果帮助模块只保留 `export function plusOne`，则没有默认导出，应拒绝且不生成 PERS。
+
+**分析预算与输入合同分开。** 同样是已定位的纯整数帮助函数，若 `double(x)` 返回 `x + x`，嵌套两次得到四次参数使用。增加嵌套时，若当前执行器不能在预算内完成展开，应报分析未完成且不输出 PERS；输入仍然具有同一语义，不能改成「需要预处理」、截断，也不能发布部分表达式。具体上限不是设计约定。
