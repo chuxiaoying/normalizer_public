@@ -1,0 +1,11 @@
+entry: src/main.ts#run
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quote:
+      fields: {amount: number}
+  entry: {function: src/main.ts#run, returns: number}
+  P:
+    parameters:
+      value: {position: 0, type: Quote}
+  R: value.amount
