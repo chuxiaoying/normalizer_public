@@ -89,6 +89,17 @@ families:
           - [SwitchMode.classify, switch-expression-cannot-consist-only-of-throws, reject]
           - [SwitchMode.classify, switch-expression-needs-an-exhaustive-default, reject]
           - [SwitchMode.classify, switch-expression-throw-does-not-produce-an-arm-value, pers]
+      selector-local-update:
+        focus: int 选择器前置与后置自增自减只执行一次，分支读取写入后的值
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, switch-selector-postfix-decrement-keeps-write-on-default, pers]
+          - [SwitchMode.classify, switch-selector-postfix-increment-dispatches-on-old-value, pers]
+          - [SwitchMode.classify, switch-selector-prefix-decrement-dispatches-on-new-value, pers]
+          - [SwitchMode.classify, switch-selector-prefix-increment-dispatches-on-new-value, pers]
+          - [SwitchMode.classify, switch-selector-rejects-final-operand, reject]
+          - [SwitchMode.classify, switch-selector-rejects-uninitialized-operand, reject]
+          - [SwitchMode.classify, switch-selector-updates-before-symbolic-dispatch, pers]
       other-switch-value-contexts:
         focus: 嵌套或赋值位置的 switch 表达式、更一般的 yield 和冒号表达式组
         gap: review

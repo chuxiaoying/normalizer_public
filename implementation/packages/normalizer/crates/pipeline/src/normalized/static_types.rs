@@ -1364,13 +1364,23 @@ impl Admission<'_> {
                     if let Some(body) = else_block { self.block(body, &mut no)?; }
                 }
                 S::Switch { selector, cases, default, .. } => {
-                    let actual = self.expression(selector, scope)?;
+                    let (actual, width, target) = if let Some((name, _)) = super::switch_local_update(selector) {
+                        let binding = scope.get(name).filter(|binding| {
+                            matches!(&binding.ty, JavaType::Primitive(ty) if ty == "int")
+                                && binding.initialized_local
+                        }).ok_or_else(|| self.diagnostic("NORM-SOURCE-TYPE",
+                            "switch update requires an initialized local int binding"))?;
+                        self.check_writable(&E::Ident(name.into()), scope)?;
+                        (Kind::Number, Some(IntegerWidth::IntFamily), Some(binding.ty.clone()))
+                    } else {
+                        (self.expression(selector, scope)?, self.integer_width(selector, scope),
+                            self.declared_type(selector, scope))
+                    };
                     let text = actual == Kind::Text;
-                    if !text && (actual != Kind::Number || self.integer_width(selector, scope) != Some(IntegerWidth::IntFamily)) {
+                    if !text && (actual != Kind::Number || width != Some(IntegerWidth::IntFamily)) {
                         return Err(self.diagnostic("NORM-SOURCE-TYPE",
                             "switch selector requires a proven byte, short, char or int value or native String"));
                     }
-                    let target = self.declared_type(selector, scope);
                     for (labels, body) in cases {
                         for label in labels {
                             let text_label = matches!(label, E::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)));

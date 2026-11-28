@@ -1,0 +1,6 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - switch update requires an initialized local int binding

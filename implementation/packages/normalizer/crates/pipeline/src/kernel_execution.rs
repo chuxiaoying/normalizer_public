@@ -1188,7 +1188,33 @@ impl<'a> Engine<'a> {
                     default,
                     fall_through,
                 } => {
-                    let selector = self.java_expr(selector, id, env, path.clone())?;
+                    let selector = if let Some((name, op)) =
+                        crate::normalized::switch_local_update(selector)
+                    {
+                        let old = env
+                            .get(name)
+                            .filter(|value| value.ty() == Ty::Integer)
+                            .ok_or_else(|| fail("switch update lost its checked int binding"))?
+                            .scalar()?;
+                        let delta = if matches!(op, U::PreInc | U::PostInc) {
+                            1
+                        } else {
+                            -1
+                        };
+                        let new =
+                            self.normalize_execution_value(b::add(old.clone(), b::lit_int(delta)));
+                        env.insert(name.into(), Value::Term(Ty::Integer, new.clone()));
+                        Value::Term(
+                            Ty::Integer,
+                            if matches!(op, U::PreInc | U::PreDec) {
+                                new
+                            } else {
+                                old
+                            },
+                        )
+                    } else {
+                        self.java_expr(selector, id, env, path.clone())?
+                    };
                     let path = self.normal_path(path);
                     if path.as_bool() == Some(false) {
                         continue;

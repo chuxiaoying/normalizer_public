@@ -1996,7 +1996,9 @@ fn statements(
                 default,
                 ..
             } => {
-                expr(selector, at, calls)?;
+                if switch_local_update(selector).is_none() {
+                    expr(selector, at, calls)?;
+                }
                 for (_, body) in cases {
                     statements(body, at, calls, catch_admission)?;
                 }
@@ -2103,6 +2105,21 @@ pub(crate) fn int_array_component(ty: &JavaType) -> bool {
 
 fn inline_int_array_initializer(e: &E) -> bool {
     matches!(e, E::ArrayInitializer { element_type, .. } if java_int(element_type))
+}
+
+/// A whole selector can update a lexical int once before any case is forked.
+pub(crate) fn switch_local_update(selector: &E) -> Option<(&str, U)> {
+    let E::UnaryOp {
+        op: op @ (U::PreInc | U::PreDec | U::PostInc | U::PostDec),
+        operand,
+    } = selector
+    else {
+        return None;
+    };
+    let E::Ident(name) = operand.as_ref() else {
+        return None;
+    };
+    Some((name, *op))
 }
 
 fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), String> {
