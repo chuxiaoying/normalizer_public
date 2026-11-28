@@ -39,3 +39,42 @@ R: delta + input + 1
 - **不调用不执行。** 如果函数体改为 `value -> value / divisor`，并且只在条件成立时调用，那么除零只可能发生在调用路径。不能在 Lambda 建立时抛出，也不能在调用已发生时丢掉异常。
 - **非法捕获在执行前拒绝。** 若 `offset` 在初始化后又被赋值，它不再是有效 final。程序在源码准入失败，不能把它按最后一个值或引用捕获继续模拟。
 - Lambda 的目标类型、函数体和捕获绑定以原语言声明为准，见 [JLS §15.27](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.27)。这个种子不主张把闭包本身发布进 PERS。
+
+
+## 对照：绑定方法引用在创建时检查接收者
+
+```java
+interface Reader {
+    int get();
+}
+
+class Receiver {
+    int read() { return 9; }
+}
+
+class Quote {
+    static int bound() {
+        Receiver receiver = null;
+        Reader reader = receiver::read;
+        return 7;
+    }
+
+    static int unusedLambda() {
+        Receiver receiver = null;
+        Reader reader = () -> receiver.read();
+        return 7;
+    }
+
+    static int invokedLambda() {
+        Receiver receiver = null;
+        Reader reader = () -> receiver.read();
+        return reader.get();
+    }
+}
+```
+
+- `bound` 创建绑定引用时立即抛出 `java.lang.NullPointerException`，不会返回 7。
+- `unusedLambda` 只建立函数值，未调用函数体，正常返回 7。
+- `invokedLambda` 在调用时执行函数体，才抛出同一种异常。
+
+这三个入口都没有额外的 P、E 或 S；出现异常的入口没有正常 R。按 [方法引用的求值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.13.3)和 [Lambda 的求值规则](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.27.4)，不能把两种写法当成等价，也不以分别创建的 Lambda 是否引用同一对象作为断言。

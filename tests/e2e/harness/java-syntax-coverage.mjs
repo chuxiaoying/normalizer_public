@@ -21,8 +21,9 @@ function describe(value, at) {
 
 export function loadJavaSyntaxCoverage(root, entries, seeds = loadSeeds(root)) {
   const data = YAML.parse(readFileSync(join(root, index), 'utf8'));
-  record(data, index, ['version', 'families']);
+  record(data, index, ['version', 'java_edition', 'families']);
   assert.equal(data.version, 1, index + ': unsupported version');
+  assert.equal(data.java_edition, 25, index + ': review the syntax inventory before changing its Java edition');
   const fixtures = new Map();
   for (const { seedId, language, scene, entry, cases } of entries) {
     if (language !== 'java' || scene) continue;

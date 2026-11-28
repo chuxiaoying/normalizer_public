@@ -79,3 +79,31 @@ class Billing {
 ```
 
 **原样通过。** 外层虚调用进入 `FixedFee.apply`；里面的 `Fee.super.apply` 只调用选定的父接口实现，接收者仍是同一个对象。不会再次分派到 `FixedFee.apply`，也不会选 `AlternativeFee`。P 只有 `value: number`，R 为 `value + 11`。静态方法没有这个接收者；未直接实现的接口也不能作这个限定名，两者都是源码准入错误。
+
+
+## 子接口可以继承、替换或撤回默认实现
+
+```java
+interface Parent {
+    default int read() { return 1; }
+}
+interface Inherited extends Parent {}
+interface Specific extends Parent {
+    default int read() { return 2; }
+}
+interface Required extends Parent {
+    int read();
+}
+class FromParent implements Inherited {}
+class FromChild implements Specific {}
+class Concrete implements Required {
+    public int read() { return 3; }
+}
+class Billing {
+    static int inherited() { Inherited target = new FromParent(); return target.read(); }
+    static int overridden() { Specific target = new FromChild(); return target.read(); }
+    static int implemented() { Required target = new Concrete(); return target.read(); }
+}
+```
+
+三个入口分别返回 1、2、3。若只移除 `Concrete.read`，整个源码工程应在执行前拒绝：`Required.read` 已撤回父接口的默认实现，不能回退到 `Parent.read`。依据 [JLS §9.4.1](https://docs.oracle.com/javase/specs/jls/se25/html/jls-9.html#jls-9.4.1)。

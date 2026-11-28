@@ -1,4 +1,5 @@
 version: 1
+java_edition: 25
 families:
   switch:
     title: 分支选择 switch
@@ -95,9 +96,9 @@ families:
         seed: java-closed-lambda
         gap: review
       creation-versus-invocation:
-        focus: 建立函数值时不执行本体，实际调用才产生行为
+        focus: 创建 Lambda 不执行本体；空接收者只在实际调用时抛异常
         seed: java-closed-lambda
-        gap: review
+        gap: implementation
   interface-default-methods:
     title: 接口默认方法与分派
     leaves:
@@ -124,7 +125,15 @@ families:
           - [Billing.chargeClosed, qualified-super-cannot-select-an-unimplemented-interface, reject]
           - [Billing.chargeClosed, qualified-super-cannot-run-from-a-static-method, reject]
       inherited-through-subinterface:
-        focus: 子接口继承默认体，或以最具体的覆盖消解父接口选择
+        focus: 子接口未覆盖时继承父接口的默认本体
+        seed: object-polymorphic-dispatch
+        gap: implementation
+      more-specific-interface-default:
+        focus: 较具体子接口重新定义默认本体时选择子接口实现
+        seed: object-polymorphic-dispatch
+        gap: implementation
+      abstract-redeclaration-of-default:
+        focus: 子接口把继承的默认方法重新声明为抽象方法；实现类须提供实现
         seed: object-polymorphic-dispatch
         gap: implementation
       dispatch-inside-default-body:
@@ -169,6 +178,9 @@ families:
       member-access:
         focus: 包名、导入、访问控制、字段隐藏与类型名遮蔽
         gap: review
+      compact-compilation-unit:
+        focus: 紧凑编译单元的隐式类、成员绑定和入口定位
+        gap: review
       annotations-and-modifiers:
         focus: 声明标记、访问性、final 和实际影响业务的修饰符
         gap: review
@@ -209,6 +221,9 @@ families:
       constructors-and-initializers:
         focus: 委托构造、超类构造、实例字段和静态初始化时点
         gap: review
+      statements-before-constructor-invocation:
+        focus: 显式 this(...) 或 super(...) 前的构造器前置语句，保留求值和早期构造限制
+        gap: implementation
   invocation:
     title: 调用与函数值
     leaves:
@@ -219,8 +234,12 @@ families:
         focus: 重载、可变参数、方法隐藏及调用解析
         gap: review
       method-reference:
-        focus: 静态、绑定或未绑定接收者的引用，以及构造器引用
+        focus: 静态、未绑定接收者的方法引用，以及构造器引用
         gap: review
+      bound-method-reference-acquisition:
+        focus: 创建绑定方法引用时立即取得并校验接收者，即使后续从不调用
+        seed: java-closed-lambda
+        gap: implementation
       nested-receivers:
         focus: 内部类接收者、限定 this 和显式父类调用
         gap: review
@@ -337,4 +356,7 @@ families:
         gap: review
       module-and-visibility:
         focus: 源码模块和可见性；区分 Java 语法合法与分析依赖闭合
+        gap: review
+      single-module-import:
+        focus: import module 的单模块导入；区分语言绑定与外部依赖闭合
         gap: review
