@@ -1,0 +1,5 @@
+entry: 'src/main.ts'
+reject:
+  fragments:
+    - '[NORM-TS-MODULE]'
+    - 'expected a project-relative source path#exported entry'

@@ -485,7 +485,7 @@ function publishKernelFailure(result) {
 }
 
 try {
-  const [kernel, rootArg, flag, locator] = process.argv.slice(2);
+  const [kernel, rootArg, flag, locator = ''] = process.argv.slice(2);
   if (flag !== '--entry') fail('expected --entry path.ts#exportedFunction');
   const {file, name: entry} = entryLocator(locator, fail);
   if (!file.endsWith('.ts') || file.endsWith('.d.ts')) fail('standalone entry must be an executable .ts source file');

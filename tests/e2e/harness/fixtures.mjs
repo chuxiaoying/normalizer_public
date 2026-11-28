@@ -34,18 +34,30 @@ function loadFixture(root, directory, language, entry, scene, inputs, caseId) {
     file + ': declare exactly one outcome');
   assert.deepEqual(Object.keys(fixture).sort(),
     ['entry', reject ? 'reject' : 'expected'], file);
-  const [main, symbol, extra] = typeof locator === 'string' ? locator.split('#') : [];
-  assert.ok(symbol && extra === undefined && sourcePath.test(main), file + ': invalid CLI entry locator');
+  assert.equal(typeof locator, 'string', file + ': expected a CLI entry string');
+  const [main, symbol, extra] = locator.split('#');
+  const tsInvocation = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+  const canonical = Boolean(symbol && extra === undefined && sourcePath.test(main) && posix.normalize(main) === main
+    && (language !== 'typescript' || tsInvocation.test(symbol)));
+  // For a syntax rejection, invoke the actual standalone CLI with the
+  // literal argument. The positive fixture convention is not its parser.
+  const malformedModule = !canonical && !scene && language === 'typescript' && Boolean(reject);
+  assert.ok(canonical || malformedModule, file + ': invalid CLI entry locator');
   const sources = readSources(root, directory).sort(([left], [right]) => left.localeCompare(right));
   const input = Object.fromEntries(sources);
-  assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
-  if (scene) {
+  if (malformedModule) {
+    assert.ok(!locator.includes('\0') && reject.fragments?.length > 1
+      && Object.hasOwn(input, 'src/' + entry.split('#')[0]),
+    file + ': malformed locator rejection needs an ordinary seed source and a precise diagnostic');
+  } else if (scene) {
+    assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
     assert.ok(main.endsWith('.ts') && symbol === entry, file + ': invalid prepared frontend locator');
   } else if (language === 'typescript') {
-    assert.match(symbol, /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/, file + ': invalid TypeScript invocation');
+    assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
     assert.equal(main, 'src/' + entry.split('#')[0], file + ': standalone TypeScript source must match the catalog');
     if (caseId === 'original') assert.equal(locator, 'src/' + entry, file + ': original TypeScript locator must match the catalog');
   } else {
+    assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
     assert.ok(main.endsWith('.java'), file + ': Java case requires a Java input');
   }
   if (reject) {
