@@ -31,13 +31,18 @@ function literalShape(node, type, checker) {
     const properties = new Map(type.getProperties().map(property => [property.getName(), property]));
     const fields = Object.create(null);
     for (const property of node.properties) {
-      if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)
-          || property.name.text === '__proto__' || Object.hasOwn(fields, property.name.text)) {
+      // A quoted identifier names the same field; arbitrary keys still need
+      // an agreed PERS path contract and are outside this admission change.
+      const name = ts.isPropertyAssignment(property)
+        && (ts.isIdentifier(property.name)
+          || (ts.isStringLiteral(property.name) && ts.isIdentifierText(property.name.text, ts.ScriptTarget.ES2022)))
+        ? property.name.text : undefined;
+      if (name === undefined || name === '__proto__' || Object.hasOwn(fields, name)) {
         fail('@entryState requires a plain data record with distinct named properties');
       }
-      const field = properties.get(property.name.text);
+      const field = properties.get(name);
       if (!field || field.flags & ts.SymbolFlags.Optional) fail('@entryState requires a declared, present state field');
-      fields[property.name.text] = literalShape(property.initializer,
+      fields[name] = literalShape(property.initializer,
         checker.getTypeOfSymbolAtLocation(field, property.name), checker);
     }
     if (properties.size !== Object.keys(fields).length) fail('@entryState record does not match its declared fields');
