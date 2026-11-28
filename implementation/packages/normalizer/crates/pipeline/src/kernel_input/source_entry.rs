@@ -39,6 +39,12 @@ pub(crate) enum AssemblyObject {
     ConstructorArgument(usize),
 }
 
+#[derive(Clone, Copy)]
+enum AssemblyArgument<'a> {
+    Literal,
+    Object(&'a JavaClass),
+}
+
 /// The implicit constructor of an ordinary class has no parameters. A
 /// record instead has its canonical component parameters, even though the
 /// source parser does not synthesize a constructor declaration.
@@ -125,9 +131,12 @@ impl SourceReceiver {
             None
         };
         let params = constructor.map(|m| m.params()).unwrap_or_default();
-        if params.len() != args.len() || !params.iter().zip(args).all(|((ty, _), arg)| assembly_argument(program, ty, arg)) {
+        if params.len() != args.len() {
             return Err("unsupported or mismatched receiver constructor arguments".into());
         }
+        let checked_args = params.iter().zip(args)
+            .map(|((ty, _), arg)| assembly_argument(program, ty, arg))
+            .collect::<Option<Vec<_>>>().ok_or("unsupported or mismatched receiver constructor arguments")?;
         let mut attached_ports = BTreeSet::new();
         let mut dependencies = BTreeMap::new();
         if let Some(constructor) = constructor {
@@ -146,14 +155,17 @@ impl SourceReceiver {
                 let index = params.iter().position(|(ty, name)| name == parameter && ty == declaration.java_type())
                     .ok_or("receiver constructor must assign a parameter of the declared field type")?;
                 if crate::normalized::source_ports::marked(class, declaration) {
-                    if !matches!(args[index], JavaExpr::New { .. }) {
+                    if !matches!(checked_args[index], AssemblyArgument::Object(_)) {
                         return Err("external receiver field must be bound to a declared port object".into());
                     }
                     attached_ports.insert(field.as_str());
                 } else if !crate::normalized::entry_state(class, declaration) {
-                    let dependency = declaration.annotations().is_empty()
-                        .then(|| allocated_dependency(program, declaration.java_type(), &args[index]))
-                        .flatten().ok_or("receiver constructor writes a field outside its entry contract")?;
+                    let AssemblyArgument::Object(dependency) = checked_args[index] else {
+                        return Err("receiver constructor writes a field outside its entry contract".into());
+                    };
+                    if !declaration.annotations().is_empty() {
+                        return Err("receiver constructor writes a field outside its entry contract".into());
+                    }
                     dependencies.insert(field.to_owned(), AssemblyLink {
                         receiver_class: class.full_name(),
                         object: AssemblyObject::ConstructorArgument(index),
@@ -222,7 +234,8 @@ impl SourceReceiver {
                         if matches!(assigned_type, JavaType::Array(item) if item.as_ref() == element_type)
                             && matches!(element_type, JavaType::Primitive(name) if name == "int") =>
                         matches!(length.as_ref(), JavaExpr::Lit(JavaLit::Int(n)) if *n >= 0),
-                    _ => assembly_argument(program, assigned_type, value) || assembly_allocation(program, assigned_type, value),
+                    _ => assembly_argument(program, assigned_type, value).is_some()
+                        || assembly_allocation(program, assigned_type, value),
                 };
                 if !valid {
                     return Err("static assembly value is not a checked literal or local declaration".into());
@@ -274,14 +287,16 @@ pub(crate) fn inert_instance_method<'a>(
         (class, method, crate::normalized::method_key(class, index, method)))
 }
 
-fn assembly_argument(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {
+fn assembly_argument<'a>(program: &'a JavaProgram, ty: &JavaType, arg: &JavaExpr) -> Option<AssemblyArgument<'a>> {
+    use AssemblyArgument::{Literal, Object};
     match (ty, arg) {
-        (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Bool(_))) => name == "boolean",
-        (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Int(_))) => matches!(name.as_str(), "int" | "long"),
-        (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Long(_))) => name == "long",
-        (JavaType::Class(name), JavaExpr::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_))) => matches!(name.as_str(), "String" | "java.lang.String"),
-        (_, JavaExpr::New { .. }) => allocated_dependency(program, ty, arg).is_some(),
-        _ => false,
+        (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Bool(_))) if name == "boolean" => Some(Literal),
+        (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Int(_))) if matches!(name.as_str(), "int" | "long") => Some(Literal),
+        (JavaType::Primitive(name), JavaExpr::Lit(JavaLit::Long(_))) if name == "long" => Some(Literal),
+        (JavaType::Class(name), JavaExpr::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)))
+            if matches!(name.as_str(), "String" | "java.lang.String") => Some(Literal),
+        (_, JavaExpr::New { .. }) => allocated_dependency(program, ty, arg).map(Object),
+        _ => None,
     }
 }
 
