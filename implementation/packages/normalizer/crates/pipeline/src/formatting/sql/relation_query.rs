@@ -151,6 +151,7 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
     let record_array = matches!(input, RelationExpr::Base { name, .. } if ctx.record_arrays.contains(name));
     let nested = matches!(input, RelationExpr::Base {name, ..} if ctx.nested_arrays.contains(name));
     let correlated = matches!(input, RelationExpr::Vector {value, ..} if value.as_row_value().is_some());
+    let finite_indices = r::positional::integer_domain(input).map(|(_, alias)| alias);
     let from = match input {
         RelationExpr::Base { name, alias, snapshot: None } if record_array || nested => format!("{name} AS {alias}"),
         RelationExpr::Base { name, .. } if scalar_array.is_some() =>
@@ -195,6 +196,9 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
                 .join(", ")
         ))
     }
+    if kind == math::RelationAggregateKind::FirstValue && keys.is_empty() {
+        if let Some(index) = finite_indices { clauses.push(format!("ORDER BY {index}")); }
+    }
     if let Some(index) = nth {
         return Some(format!("(SELECT {projection} {})[{index}]", inline_body(&clauses)));
     }
@@ -225,14 +229,14 @@ fn render_aggregate(expr: &Expr, ctx: &mut crate::FormatCtx, empty: bool) -> Opt
         // trigger this fallback. Use the same FIRST observation as a
         // zero index; do not render a second SELECT/LIMIT convention.
         let fallback = fmt(default?, ctx);
-        if scalar_array.is_some() || record_array || nested || correlated {
+        if scalar_array.is_some() || record_array || nested || correlated || finite_indices.is_some() {
             return Some(format!("COALESCE(FIRST({projection} {}), {fallback})", inline_body(&clauses)));
         }
         return Some(format!("COALESCE(\n  FIRST({projection}\n    {}\n  ),\n  {fallback}\n)", clauses.join("\n    ")));
     }
     if kind != math::RelationAggregateKind::Sum { return None; }
     let (lead, default) = ("SUM(", "0");
-    if scalar_array.is_some() || record_array || nested || correlated {
+    if scalar_array.is_some() || record_array || nested || correlated || finite_indices.is_some() {
         return Some(format!("COALESCE({lead}SELECT {projection} {}), {default})", inline_body(&clauses)));
     }
     Some(format!(

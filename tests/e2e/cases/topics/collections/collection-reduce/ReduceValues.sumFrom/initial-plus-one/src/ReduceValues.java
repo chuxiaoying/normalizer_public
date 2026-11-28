@@ -1,9 +1,7 @@
 class ReduceValues {
     static int sumFrom(int[] values, int initial) {
-        int total;
-        /* @normalizer-ir
-           total = reduce values from initial + 1 as (sum, value) yield sum + value
-        */
+        int total = initial + 1;
+        /* @normalizer-ir total += sum from values as value yield value */
         return total;
     }
 }

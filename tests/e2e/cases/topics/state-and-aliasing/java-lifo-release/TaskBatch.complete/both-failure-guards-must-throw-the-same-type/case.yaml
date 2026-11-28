@@ -2,4 +2,4 @@ entry: src/TaskBatch.java#TaskBatch.complete
 reject:
   fragments:
     - "[SOURCE-PARSE-FAILED]"
-    - ordered stack reduction requires the same exception type in both failure guards
+    - "[NORM-UNSUPPORTED-LOCAL-IR]"

@@ -8,4 +8,4 @@ expected:
       enabled: { position: 1, type: bool }
       initial: { position: 2, type: number }
       step: { position: 3, type: number }
-  R: REDUCE(values FROM initial AS (acc, item) YIELD item + step + acc * 2) * REDUCE(values FROM initial AS (acc, item) YIELD item + step + acc * 2)
+  R: initial + COALESCE(SUM(SELECT value + step FROM values), 0) * COALESCE(SUM(SELECT value + step FROM values), 0)

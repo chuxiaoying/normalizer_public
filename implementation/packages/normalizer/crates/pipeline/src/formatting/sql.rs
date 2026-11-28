@@ -29,7 +29,6 @@ pub struct FormatCtx {
     nested_arrays: std::collections::BTreeSet<String>,
     record_arrays: std::collections::BTreeSet<String>,
     temporal_names: std::collections::BTreeMap<u64, usize>,
-    reductions: std::collections::BTreeMap<u64, math::ReduceShape>,
     total_temporals: std::collections::BTreeSet<u64>,
     relation_scope: scoped_relation::Scope,
     scoped_plans: Option<scoped_relation::ScopedPlans>,
@@ -59,7 +58,6 @@ impl Default for FormatCtx {
             nested_arrays: Default::default(),
             record_arrays: Default::default(),
             temporal_names: Default::default(),
-            reductions: Default::default(),
             total_temporals: Default::default(),
             relation_scope: Default::default(),
             scoped_plans: None,
@@ -147,7 +145,7 @@ impl FormatCtx {
         CanonicalNames {
             heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
             external: (!external.is_empty()).then_some(external),
-            total_temporals: None, reductions: Some(&self.reductions),
+            total_temporals: None,
             temporals: (!self.temporal_names.is_empty()).then_some(&self.temporal_names),
         }
     }
@@ -156,18 +154,9 @@ impl FormatCtx {
         self.temporal_names = names;
     }
 
-    pub(crate) fn set_reductions(
-        &mut self, reductions: std::collections::BTreeMap<u64, math::ReduceShape>,
-        total: std::collections::BTreeSet<u64>,
-    ) {
-        self.reductions = reductions;
+    pub(crate) fn set_total_temporals(&mut self, total: std::collections::BTreeSet<u64>) {
         self.total_temporals = total;
     }
-    fn is_total_reduce(&self, value: &Expr) -> bool {
-        matches!(value.as_sym_var(), Some(SymVarOrigin::Temporal { binding_id, .. })
-            if self.total_temporals.contains(binding_id) && self.reductions.contains_key(binding_id))
-    }
-
     pub(crate) fn set_relation_slots(&mut self, slots: Vec<scoped_relation::Slot>) {
         self.relation_scope.slots = slots.into();
     }
@@ -175,7 +164,6 @@ impl FormatCtx {
     fn uncaptured_name(&self, namespace: &str, name: &str) -> String {
         let root = name.split('.').next().unwrap_or(name);
         if self.relation_scope.members.values().any(|member| member == root)
-            || (self.relation_scope.in_reduce_yield && matches!(root, "acc" | "item"))
         {
             format!("{namespace}.{name}")
         } else {
@@ -190,7 +178,7 @@ impl FormatCtx {
             Operand::Parameter(name) => self.uncaptured_name("P", name),
             Operand::Acquired(name) => self.uncaptured_name("E", name),
             Operand::Prior(slot) => self.relation_slot(*slot),
-            Operand::Arithmetic(expression) => format_expr_with_ctx(expression, self),
+            Operand::Computed { value, .. } => format_expr_with_ctx(value, self),
         }
     }
 
@@ -198,33 +186,13 @@ impl FormatCtx {
         use scoped_relation::Slot;
         let slots = self.relation_scope.slots.clone();
         match &slots[slot] {
-            Slot::Fold { source, initial, body } => self.format_fold(source, initial, body, None),
             Slot::Choice { .. } => self.relation_scope.members.get(&slot)
                 .expect("choice must be bound in its certified acquisition domain").clone(),
         }
     }
 
-    fn format_fold(&mut self, source: &str, initial: &scoped_relation::Operand, body: &Expr, indent: Option<usize>) -> String {
-        let source = self.uncaptured_name("P", source);
-        let initial = self.relation_operand(initial);
-        let prior = std::mem::replace(&mut self.relation_scope.in_reduce_yield, true);
-        let body = format_expr_with_ctx(body, self);
-        self.relation_scope.in_reduce_yield = prior;
-        let gap = indent.map_or_else(|| " ".into(), |n| format!("\n{}", " ".repeat(n + "REDUCE(".len())));
-        format!("REDUCE({source} FROM {initial} AS (acc, item){gap}YIELD {body})")
-    }
-
     fn format_let_definition(&mut self, name: &str, expression: &Expr) -> String {
-        let prefix = format!("LET {name} = ");
-        if let Some(SymVarOrigin::Temporal { binding_id, .. }) = expression.as_sym_var() {
-            if let Some(&slot) = self.temporal_names.get(binding_id) {
-                let slots = self.relation_scope.slots.clone();
-                if let scoped_relation::Slot::Fold { source, initial, body } = &slots[slot] {
-                    return format!("{prefix}{}", self.format_fold(source, initial, body, Some(prefix.len())));
-                }
-            }
-        }
-        format!("{prefix}{}", format_expr_with_ctx(expression, self))
+        format!("LET {name} = {}", format_expr_with_ctx(expression, self))
     }
 
     fn eligible_choices(
@@ -255,7 +223,6 @@ impl FormatCtx {
     ) -> math::ValuePlan {
         let location = scoped_relation::ValueLocation {
             value: value.clone(), domain: active.clone(), members: bound.to_vec(),
-            in_reduce_body: self.relation_scope.in_reduce_yield,
         };
         let cache = self.scoped_plans.as_ref().filter(|plans| &plans.external == external).map(|plans| &plans.plans);
         if let Some(plan) = cache.and_then(|cache| cache.borrow().get(&location).cloned()) { return plan; }
@@ -263,8 +230,8 @@ impl FormatCtx {
         let compare = crate::canonical_names::ScopedValueKeys {
             base: CanonicalNames { heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
                 external: (!external.is_empty()).then_some(external), total_temporals: Some(&self.total_temporals),
-                reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) },
-            slots: &keys.lexical, cases: &keys.cases, in_reduce_body: self.relation_scope.in_reduce_yield,
+                temporals: Some(&self.temporal_names) },
+            slots: &keys.lexical, cases: &keys.cases,
         };
         let payload = math::canonicalize_bound_integer_ops(value, &compare);
         let plan = math::canonical_let_plan(&payload, &compare, &keys.prefix,
@@ -284,16 +251,13 @@ impl FormatCtx {
         let empty_cases = HashMap::new();
         let base = || CanonicalNames { heap: &self.heap_bindings, captured: self.captured_parameters(), completion_classes: None,
             external: (!external.is_empty()).then_some(external), total_temporals: None,
-            reductions: Some(&self.reductions), temporals: Some(&self.temporal_names) };
+            temporals: Some(&self.temporal_names) };
         if enter {
             for slot in self.eligible_choices(expression, active, bound) {
-                let Slot::Choice { shape, .. } = &self.relation_scope.slots[slot] else {
-                    unreachable!("certified choice slot");
-                };
+                let Slot::Choice { shape, .. } = &self.relation_scope.slots[slot];
                 let compare = crate::canonical_names::ScopedValueKeys {
                     base: base(), slots: &prepared.lexical, cases: &empty_cases,
-                    in_reduce_body: self.relation_scope.in_reduce_yield,
-                };
+                        };
                 prepared.prefix.push((shape.source.key(&compare), shape.fallback.key(&compare)));
                 order.push(slot);
                 prepared.lexical = self.choice_keys(&order);
@@ -309,8 +273,7 @@ impl FormatCtx {
                 let inner = self.prepare_value_keys(child, external, domain, &order, false);
                 let compare = crate::canonical_names::ScopedValueKeys {
                     base: base(), slots: &inner.lexical, cases: &inner.cases,
-                    in_reduce_body: self.relation_scope.in_reduce_yield,
-                };
+                        };
                 math::canonical_order_key(child, &compare)
             };
             let mut remaining = active.clone();
@@ -335,7 +298,8 @@ impl FormatCtx {
         let slots = self.relation_scope.slots.clone();
         let mut bindings = Vec::new();
         for slot in needed {
-            if let scoped_relation::Slot::Choice { members, empty, .. } = &slots[slot] {
+            let scoped_relation::Slot::Choice { members, empty, .. } = &slots[slot];
+            {
                 let empty = self.relation_operand(empty);
                 let members = self.uncaptured_name("P", members);
                 let name = format!("member{}", self.relation_scope.members.len());
@@ -344,14 +308,7 @@ impl FormatCtx {
                 bindings.push((slot, format!("CHOOSE({members} DEFAULT {empty} AS {name} YIELD")));
             }
         }
-        let mut block_yield = expression.as_array_lit().is_some();
-        if !bindings.is_empty() {
-            expression.walk_pruned(&mut |expr| {
-                block_yield |= matches!(expr.as_sym_var(), Some(SymVarOrigin::Temporal { binding_id, .. })
-                    if self.reductions.contains_key(binding_id));
-                !block_yield
-            });
-        }
+        let block_yield = expression.as_array_lit().is_some();
         let mut value = render(self);
         for (depth, (slot, prefix)) in bindings.into_iter().rev().enumerate() {
             self.relation_scope.members.remove(&slot);
@@ -544,9 +501,9 @@ fn format_expr_inner(expr: &Expr, ctx: &mut FormatCtx) -> String {
         let public = crate::canonical_names::ScopedValueKeys { base: CanonicalNames {
             heap: &ctx.heap_bindings, captured: ctx.captured_parameters(), completion_classes: None,
             external: (!external.is_empty()).then_some(external),
-            total_temporals: None, reductions: Some(&ctx.reductions),
+            total_temporals: None,
             temporals: (!ctx.temporal_names.is_empty()).then_some(&ctx.temporal_names),
-        }, slots: &keys.lexical, cases: &keys.cases, in_reduce_body: ctx.relation_scope.in_reduce_yield };
+        }, slots: &keys.lexical, cases: &keys.cases };
         // Only an actual reversal changes the original operands. Both
         // orientations use the established binary rendering below.
         let let_bindings = if let_arithmetic {
@@ -827,11 +784,6 @@ fn format_lit(lit: &Lit) -> String {
 fn format_sym_var(origin: &SymVarOrigin, ctx: &mut FormatCtx) -> String {
     match origin {
         SymVarOrigin::Parameter { name, .. } => {
-            if ctx.relation_scope.in_reduce_yield {
-                if let Some((_, display)) = math::ReduceBodyContext::resolve(name) {
-                    return display.to_owned();
-                }
-            }
             let display = ctx.business_inputs.as_ref().and_then(|names| names.get(name)).map_or(name.as_str(), String::as_str);
             ctx.uncaptured_name("P", display)
         }

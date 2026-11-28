@@ -1,0 +1,5 @@
+entry: src/PrefixSelection.java#PrefixSelection.firstAbove
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - "index projection cannot prove its subscript stays within the sequence"

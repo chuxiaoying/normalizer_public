@@ -1,0 +1,4 @@
+entry: src/Weighted.java#Weighted.run
+reject:
+  fragments:
+    - "[NORM-LOOP]"

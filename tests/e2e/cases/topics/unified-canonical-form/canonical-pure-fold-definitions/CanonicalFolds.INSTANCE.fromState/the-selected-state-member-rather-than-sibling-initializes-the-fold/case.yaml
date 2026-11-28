@@ -17,4 +17,4 @@ expected:
         value: number
         offset: number
   R: |-
-    REDUCE(values FROM seed.offset AS (acc, item) YIELD item + acc * 2)
+    COALESCE(SUM(SELECT value + seed.offset FROM values), 0)

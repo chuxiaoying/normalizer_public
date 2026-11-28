@@ -12,6 +12,4 @@ expected:
       backup:
         position: 1
         type: number
-  R: |-
-    CHOOSE(values DEFAULT backup AS member0 YIELD
-      member0 + REDUCE(values FROM member0 AS (acc, item) YIELD item + acc * 2))
+  R: CHOOSE(values DEFAULT backup AS member0 YIELD member0 + COALESCE(SUM(SELECT value + member0 FROM values), 0))

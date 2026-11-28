@@ -26,4 +26,4 @@ expected:
         returns: number
         result: $e_1
   R: |-
-    REDUCE(values FROM $e_1 AS (acc, item) YIELD item + acc * 2)
+    COALESCE(SUM(SELECT value + $e_1 FROM values), 0)

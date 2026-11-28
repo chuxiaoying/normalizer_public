@@ -28,13 +28,11 @@ class TaskBatch {
 
 ## AI 预处理结果
 
-两段循环分别交付按序 push 和按序检查并 pop；第二段在空栈或编号不配时停止并抛出原异常。栈为局部值。输入保证所有打开操作在关闭前完成，因此内核可以把逐次弹栈归约成反向位置匹配。
+局部栈不逃逸，两个失败抛同一种无载荷异常。先定义两边有位置可比较的共同前缀，再用反向下标比编号。宿主代码决定是否抛异常。
 
 ```diff
---- a/src/TaskBatch.java
-+++ b/src/TaskBatch.java
-@@ -1,13 +1,17 @@
 -import java.util.ArrayDeque;
+-
  record Task(int id) {}
  class TaskBatch {
      static boolean complete(Task[] opened, Task[] closed) {
@@ -45,23 +43,21 @@ class TaskBatch {
 -                throw new IllegalArgumentException();
 -        }
 -        return stack.isEmpty();
++        int n = opened.length;
++        int m = closed.length;
++        int mismatches;
 +        /* @normalizer-ir
-+           stack = fold opened from [] as (s, task) yield value.push(s, task)
++           mismatches = count from [0, min(n, m)) as i
++                        where closed[i].id != opened[n - 1 - i].id
 +        */
-+        /* @normalizer-ir
-+           stack = fold closed from stack as (s, task)
-+             when value.length(s) == 0 throw IllegalArgumentException
-+             when value.last_or(s, task).id != task.id throw IllegalArgumentException
-+             yield value.pop(s)
-+        */
-+        boolean empty;
-+        /* @normalizer-ir empty = value.length(stack) == 0 */
-+        return empty;
++        if (m > n) throw new IllegalArgumentException();
++        if (mismatches > 0) throw new IllegalArgumentException();
++        return m == n;
      }
  }
 ```
 
-预处理保留原记录和 id 的绑定，不改动数组位置、重复元素或字段值。局部 IR 表达两段有序折叠。每步按列出的顺序检查异常，正常时才交付下一栈；空栈已先被拦截。错配前的临时栈不会逃出本方法。[关系代数的有序集合归约](../../../chapters/05-关系代数.md)
+比较只读共同前缀，保留原有记录身份、字段、重复值和位置。两边同时为空时没有访问，也没有错误。
 
 ## 归一化最终结果
 

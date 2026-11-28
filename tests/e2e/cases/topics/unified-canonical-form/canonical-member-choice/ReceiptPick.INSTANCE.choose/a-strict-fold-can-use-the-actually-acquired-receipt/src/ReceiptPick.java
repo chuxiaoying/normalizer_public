@@ -11,7 +11,7 @@ class ReceiptPick {
         int first = checkpoints.read(code);
         int second = checkpoints.read(first);
         int selected;
-        /* @normalizer-ir selected = reduce values from second as (acc, item) yield acc * 2 + item */
+        /* @normalizer-ir selected = sum from values as item yield item + second */
         return selected;
     }
 }

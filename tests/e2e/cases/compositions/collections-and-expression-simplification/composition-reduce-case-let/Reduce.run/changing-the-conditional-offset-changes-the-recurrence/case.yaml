@@ -9,6 +9,5 @@ expected:
       initial: { position: 2, type: number }
       step: { position: 3, type: number }
   R: |-
-    LET $l_0 = REDUCE(values FROM initial AS (acc, item)
-                      YIELD item + acc * 2 + CASE WHEN enabled THEN 0 ELSE step END)
-    IN $l_0 * $l_0
+    LET $l_0 = COALESCE(SUM(SELECT value + CASE WHEN enabled THEN 0 ELSE step END FROM values), 0)
+    IN initial + $l_0 * $l_0

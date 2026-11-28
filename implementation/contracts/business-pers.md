@@ -7,7 +7,7 @@
 | 校验 YAML 文档结构、字段、值类型写法 | [机器 schema](pers/schema.yaml)，是工具实际校验的结构，不是新的业务语义。 |
 | 生成入口、参数、环境与正常结果 | `pipeline/src/kernel_input/business_entry.rs` |
 | 发布有序调用、写入、SQL 和完成绑定 | `pipeline/src/kernel_input/business_event.rs`、`business_sql.rs`、`port_completion.rs` |
-| 渲染表达式作用域内的递推、成员选择及其绑定 | 同目录的 `pure_fold.rs`、`member_choice.rs`、`temporal_graph.rs` |
+| 渲染表达式作用域内的成员选择及其绑定 | 同目录的 `member_choice.rs`、`temporal_graph.rs` |
 | 固定格式版本和区分最终产物与调试表示 | `pipeline/src/kernel_result.rs` |
 
 `pipeline/` 相对 `implementation/packages/normalizer/crates/`。对接方用 YAML 读取结果；公式保持表达式文本，不由 YAML 库执行。正式回归会在同一次用例执行中先校验预期和实际的 PERS 结构，再比较完整内容，见[测试入口](../../tests/README.md)。变更先核对设计；若仅调整序列化，仍须证明完整输出没有失去来源绑定、观察顺序或完成域。不在这里维护第二套 YAML 示例。

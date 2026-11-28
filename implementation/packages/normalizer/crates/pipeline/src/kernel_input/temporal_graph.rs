@@ -1,18 +1,16 @@
-//! One identity and publication graph for deterministic folds and independent choices.
+//! One identity and publication graph for independent member choices.
 use super::*;
 use super::member_choice::{Candidates, Fallback, Occurrence};
 use crate::formatting::sql::scoped_relation::{ChoiceOuter, ChoiceShape, Operand, Slot};
 
 #[derive(PartialEq, Eq)]
 pub(super) enum Definition {
-    Fold(super::pure_fold::Definition),
     Choice(Occurrence),
 }
 
 impl Definition {
     fn operand(&self) -> Option<&Expr> {
         match self {
-            Self::Fold(node) => Some(&node.shape.initial),
             Self::Choice(node) => match &node.empty {
                 Fallback::Integer(value) => Some(value),
                 Fallback::RecordParameter {..} => None,
@@ -22,7 +20,6 @@ impl Definition {
 
     fn is_total(&self) -> bool {
         match self {
-            Self::Fold(node) => node.guard.as_bool() == Some(true),
             Self::Choice(node) => node.guard.as_bool() == Some(true),
         }
     }
@@ -33,7 +30,6 @@ pub(super) struct Publication {
     pub(super) aliases: BTreeMap<u64, usize>,
     pub(super) total: BTreeSet<u64>,
     pub(super) slots: Vec<Slot>,
-    pub(super) reductions: BTreeMap<u64, math::ReduceShape>,
 }
 
 /// Supported computed operands are already acquired exact integers.
@@ -64,10 +60,12 @@ pub(super) fn publish(
     let mut inspect: Vec<_> = pending.iter().copied().collect();
     while let Some(id) = inspect.pop() {
         let node = nodes.get(id as usize).ok_or_else(|| fail("undefined temporal definition"))?;
-        let mut dependencies: Vec<_> = node.operand().and_then(integer_definition_id).into_iter().collect();
-        if let Definition::Choice(choice) = node {
-            choice.guard.walk(&mut |part| dependencies.extend(integer_definition_id(part)));
+        let mut dependencies = Vec::new();
+        let Definition::Choice(choice) = node;
+        if let Some(operand) = node.operand() {
+            operand.walk(&mut |part| dependencies.extend(integer_definition_id(part)));
         }
+        choice.guard.walk(&mut |part| dependencies.extend(integer_definition_id(part)));
         for dep in dependencies {
             need(dep < id, "temporal dependency must already be defined")?;
             if pending.insert(dep) { inspect.push(dep); }
@@ -78,7 +76,7 @@ pub(super) fn publish(
         .ok_or_else(|| fail("temporal source requires a published array parameter"));
     // Dependency validation above proves that ascending acquisition order
     // is topological. These handles are only for wiring rendering, not a
-    // second structural ordering for REDUCE.
+    // second structural ordering for values.
     for id in pending {
         let node = &nodes[id as usize];
         let value = if let Definition::Choice(Occurrence {empty: Fallback::RecordParameter {owner, name}, ..}) = node {
@@ -88,9 +86,9 @@ pub(super) fn publish(
             let operand = node.operand().ok_or_else(|| fail("missing scalar temporal operand"))?;
             if let Some(dep) = integer_definition_id(operand) {
                 let &slot = published.aliases.get(&dep).ok_or_else(|| fail("relation dependency was not published"))?;
-                let guard = match node { Definition::Fold(fold) => &fold.guard, Definition::Choice(choice) => &choice.guard };
+                let Definition::Choice(current) = node;
+                let guard = &current.guard;
                 let prior_guard = match &nodes[dep as usize] {
-                    Definition::Fold(fold) => &fold.guard,
                     Definition::Choice(choice) => &choice.guard,
                 };
                 need(b::path_implies(guard, prior_guard),
@@ -108,21 +106,41 @@ pub(super) fn publish(
                 need(primitive_type == "integer", "temporal acquired value must be a declared number")?;
                 Operand::Acquired(acquired_path(*binding_id, path)
                     .ok_or_else(|| fail("temporal input requires an acquired declared integer"))?)
-            } else if acquired_integer_math(operand, domains, names) {
-                Operand::Arithmetic(operand.clone())
             } else {
-                return Err(fail(match node {
-                    Definition::Fold(_) => "pure fold initial must be supported acquired integer arithmetic, an acquired state field, or a prior scoped value",
-                    Definition::Choice(_) => "member choice fallback must be supported acquired integer arithmetic or a prior scoped value",
-                }));
+                let Definition::Choice(current) = node;
+                let mut seen = BTreeSet::new();
+                let mut well_bound = true;
+                operand.walk(&mut |part| {
+                    if let Some(dep) = integer_definition_id(part) {
+                        if let (Some(&slot), Some(Definition::Choice(prior))) = (published.aliases.get(&dep), nodes.get(dep as usize)) {
+                            if b::path_implies(&current.guard, &prior.guard) { seen.insert(slot); }
+                            else { well_bound = false; }
+                        } else { well_bound = false; }
+                    }
+                });
+                let closed_sum = {
+                    let mut closed = well_bound;
+                    operand.walk(&mut |part| {
+                        closed &= if let Some((kind, relation, _, _)) = part.as_relation_aggregate() {
+                            kind == math::RelationAggregateKind::Sum &&
+                                matches!(relation, RelationExpr::Base { name, alias, snapshot: None }
+                                    if arrays.contains(name) && alias == "value")
+                        } else if let Some(row) = part.as_row_value() { row == "value" }
+                        else if let Some(SymVarOrigin::External { binding_id, path, primitive_type }) = part.as_sym_var() {
+                            primitive_type == "integer" && acquired_path(*binding_id, path).is_some()
+                        } else {
+                            integer_definition_id(part).is_some() || acquired_integer_math(part, domains, names)
+                            || part.as_binop().is_some_and(|(op, _, _)| matches!(op, BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul))
+                        }
+                    });
+                    closed
+                };
+                need(closed_sum, "member choice fallback must be an acquired integer expression")?;
+                Operand::Computed { value: operand.clone(), dependencies: seen.into_iter().collect() }
             }
         };
         let slot = published.aliases.len();
         let row = match &nodes[id as usize] {
-            Definition::Fold(fold) => {
-                published.reductions.insert(id, fold.shape.clone());
-                Slot::Fold { source: array_name(&fold.shape.source)?.clone(), initial: value, body: fold.shape.body.clone() }
-            }
             Definition::Choice(choice) => {
                 let mut entry_guard = true;
                 choice.guard.walk(&mut |node| {
@@ -174,9 +192,8 @@ pub(super) fn same_support_choice(
     let left = integer_definition_id(selected)?;
     let right = integer_definition_id(otherwise)?;
     if left == right { return None; }
-    let (Definition::Choice(left), Definition::Choice(right)) =
-        (definitions.get(left as usize)?, definitions.get(right as usize)?)
-    else { return None; };
+    let Definition::Choice(left) = definitions.get(left as usize)?;
+    let Definition::Choice(right) = definitions.get(right as usize)?;
     if left.members != right.members { return None; }
     let (Fallback::Integer(left_empty), Fallback::Integer(right_empty)) = (&left.empty, &right.empty)
     else { return None; };
@@ -215,10 +232,6 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
         if let Some(id) = temporal_definition_id(expression) {
             let def = nodes.get(id as usize).ok_or_else(|| fail("unknown temporal reference"))?;
             return match def {
-                Definition::Fold(fold) => {
-                    need(b::path_implies(active, &fold.guard), "fold use outside its source path")?;
-                    check(&fold.shape.initial, active, nodes)
-                },
                 Definition::Choice(choice) => {
                     need(b::path_implies(active, &choice.guard),
                         "member choice read outside its acquisition guard")?;
@@ -245,6 +258,14 @@ pub(super) fn validate_reads(expression: &Expr, nodes: &[Definition]) -> Result<
             check(right, active, nodes)?;
         } else if let Some((_, operand)) = expression.as_unary_op() {
             check(operand, active, nodes)?;
+        } else if expression.as_relation_aggregate().is_some() {
+            let mut result = Ok(());
+            expression.walk(&mut |part| {
+                if result.is_ok() && temporal_definition_id(part).is_some() {
+                    result = check(part, active, nodes);
+                }
+            });
+            result?;
         } else if let Some(args) = expression.as_array_lit().or_else(|| expression.as_call().map(|(_, args)| args)) {
             for arg in args { check(arg, active, nodes)?; }
         }

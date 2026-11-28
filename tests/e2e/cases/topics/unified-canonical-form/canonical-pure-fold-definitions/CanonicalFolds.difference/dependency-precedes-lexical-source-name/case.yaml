@@ -16,4 +16,4 @@ expected:
         position: 2
         type: number
   R: |-
-    REDUCE(left FROM REDUCE(right FROM initial AS (acc, item) YIELD item + acc * 2) AS (acc, item) YIELD item + acc * 2) - REDUCE(right FROM initial AS (acc, item) YIELD item + acc * 2)
+    COALESCE(SUM(SELECT value + COALESCE(SUM(SELECT value + initial FROM right), 0) FROM left), 0) - COALESCE(SUM(SELECT value + initial FROM right), 0)

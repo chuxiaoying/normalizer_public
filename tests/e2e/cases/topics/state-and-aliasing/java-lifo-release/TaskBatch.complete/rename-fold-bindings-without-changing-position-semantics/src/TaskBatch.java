@@ -1,17 +1,15 @@
 record Task(int id) {}
 class TaskBatch {
     static boolean complete(Task[] opened, Task[] closed) {
+        int n = opened.length;
+        int m = closed.length;
+        int mismatches;
         /* @normalizer-ir
-           stack = fold opened from [] as (running, member) yield value.push(running, member)
+           mismatches = count from [0, min(n, m)) as position
+                        where closed[position].id != opened[n - 1 - position].id
         */
-        /* @normalizer-ir
-           stack = fold closed from stack as (running, member)
-             when value.length(running) == 0 throw IllegalArgumentException
-             when value.last_or(running, member).id != member.id throw IllegalArgumentException
-             yield value.pop(running)
-        */
-        boolean empty;
-        /* @normalizer-ir empty = value.length(stack) == 0 */
-        return empty;
+        if (m > n) throw new IllegalArgumentException();
+        if (mismatches > 0) throw new IllegalArgumentException();
+        return m == n;
     }
 }

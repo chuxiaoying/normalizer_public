@@ -8,7 +8,7 @@ fn direct_input(value: &Expr, ctx: &FormatCtx) -> bool {
 }
 
 fn total_value(value: &Expr, ctx: &FormatCtx, row: Option<&str>) -> bool {
-    if value.as_lit().is_some() || direct_input(value, ctx) || ctx.is_total_reduce(value) { return true; }
+    if value.as_lit().is_some() || direct_input(value, ctx) { return true; }
     if let Some(alias) = value.as_row_value() { return row == Some(alias); }
     if let Some((_, operand)) = value.as_unary_op() { return total_value(operand, ctx, row); }
     if let Some((_, left, right)) = value.as_binop() {

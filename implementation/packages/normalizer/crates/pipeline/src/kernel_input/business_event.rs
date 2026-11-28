@@ -369,7 +369,7 @@ pub(super) fn observations(
     let public_guards = crate::canonical_names::CanonicalNames {
         heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: Some(&completion_classes),
         external: Some(ctx.observation_identities()),
-        total_temporals: None, reductions: None, temporals: None,
+        total_temporals: None, temporals: None,
     };
     for (_, _, guard) in &mut exceptions {
         let stable_guard = math::try_normalize_with(guard.clone(), &public_guards)
@@ -393,7 +393,7 @@ pub(super) fn observations(
         let public = crate::canonical_names::CanonicalNames {
             heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: None,
             external: Some(identities),
-            total_temporals: None, reductions: None, temporals: None,
+            total_temporals: None, temporals: None,
         };
         exceptions.sort_by_cached_key(|(name, payload, cond)| (
             name.clone(),
@@ -451,7 +451,7 @@ pub(super) fn observations(
             let normalized = math::try_normalize_with(returned, &crate::canonical_names::CanonicalNames {
                 heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: Some(&completion_classes),
                 external: Some(observation_identities),
-                total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: Some(temporal_names),
+                total_temporals: Some(&publication.total), temporals: Some(temporal_names),
             }).map_err(|error| fail(error.to_string()))?;
             super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
             normalized
@@ -461,7 +461,7 @@ pub(super) fn observations(
         } else { returned };
         ctx.set_temporal_names(publication.aliases);
         ctx.set_relation_slots(publication.slots);
-        ctx.set_reductions(publication.reductions, publication.total);
+        ctx.set_total_temporals(publication.total);
         let normal_domain = math::normalize(alternatives.as_slice().iter()
             .filter(|alternative| matches!(&alternative.outcome, TerminalOutcome::Return(_)))
             .fold(b::lit_bool(false), |domain, alternative| b::or(domain, alternative.guard.clone())));

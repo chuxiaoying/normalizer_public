@@ -112,7 +112,7 @@ topics:
       - id: canonical-pure-fold-definitions
         status: seeded
         surface: java
-        focus: 纯有序递推依赖、局部词法绑定和稳定值表达式
+        focus: 纯聚合的依赖、局部词法绑定、公开来源和无等价递推的拒绝
         test_status: covered
       - id: canonical-ordinary-case-reuse
         status: seeded
@@ -312,13 +312,13 @@ topics:
         focus: 内部循环引用和最终出口投影
   loops-and-termination:
     title: 循环与终止
-    scope: 循环次数、终止边界、折叠、提前退出和递归
+    scope: 循环次数、终止边界、区间聚合、提前退出和递归
     seeds:
       - id: java-loop-fold
         status: seeded
         test_status: covered
         surface: java
-        focus: for-each 折叠为关系聚合
+        focus: for-each 交付为关系聚合，或从循环边界得到整数区间聚合
       - id: java-loop-early-exit
         status: seeded
         test_status: covered

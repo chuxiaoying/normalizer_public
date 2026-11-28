@@ -959,12 +959,12 @@ impl CatchAdmission<'_> {
         Ok(name)
     }
 
-    fn bind_stack_failure(&mut self, at: &str, raw: &str) -> Result<(), String> {
+    fn bind_type_only_throw(&mut self, at: &str, raw: &str) -> Result<(), String> {
         let owner = at.rsplit_once('.').map_or("", |(owner, _)| owner);
         let name = exception_name(raw, owner, self.parents)
             .filter(|name| builtin_exception_name(name).is_some()
                 || self.program.find_class(name).is_some_and(|class| class.fields().is_empty()))
-            .ok_or_else(|| error("NORM-STACK-EXCEPTION", &format!("{at}: {raw} requires a declared type-only exception")))?;
+            .ok_or_else(|| error("NORM-EXPLICIT-THROW", &format!("{at}: {raw} requires a declared type-only exception")))?;
         self.resolved.insert(raw.into(), name);
         Ok(())
     }
@@ -990,13 +990,8 @@ fn unsupported_finally_throw(at: &str) -> String {
 fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_admission: &mut CatchAdmission<'_>, inside_finally: bool) -> Result<(), String> {
     for stmt in body {
         match stmt {
-            S::LocalIr(normalizer_ir::local::LocalIr::Stack(
-                normalizer_ir::local::stack::Action::CheckAndPop { exception, .. },
-            )) => catch_admission.bind_stack_failure(at, exception)?,
-            S::LocalIr(normalizer_ir::local::LocalIr::CountRange { .. }
-                | normalizer_ir::local::LocalIr::FoldIndexRange { .. }
-                | normalizer_ir::local::LocalIr::MemberChoice { .. }
-                | normalizer_ir::local::LocalIr::Stack(_)) => {}
+            S::LocalIr(normalizer_ir::local::LocalIr::IntegerRange(_)
+                | normalizer_ir::local::LocalIr::MemberChoice { .. }) => {}
             S::For { .. } if fixed_for::RectangularCounter::from_for(stmt).is_some() => {}
             S::For { .. } if fixed_for::BoundedControlFor::from_for(stmt).is_some() => {}
             S::LoopBreak | S::LoopContinue => return Err(error("NORM-LOOP", at)),
@@ -1122,7 +1117,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
             S::Throw(e) if runtime_throw_message(e).is_some() => (),
             S::Throw(e) if !inside_finally => {
                 if let Some(class) = finally_throw(stmt) {
-                    catch_admission.bind_finally_throw(at, class)?;
+                    catch_admission.bind_type_only_throw(at, class)?;
                 } else {
                     expr(e, at, calls)?;
                     return Err(error("NORM-EXPLICIT-THROW", at));

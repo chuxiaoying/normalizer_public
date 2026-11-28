@@ -317,6 +317,7 @@ impl<'a> Engine<'a> {
         locals: &Env,
     ) -> Result<Value> {
         match scalar {
+            Scalar::IntegerBound(_, _) | Scalar::Indexed { .. } => Err(fail("integer bound operations require an integer range")),
             Scalar::Bool(value) => Ok(Value::Term(Ty::Bool, b::lit_bool(*value))),
             Scalar::Text(text) => Ok(Value::Term(Ty::Text, b::lit_str(text))),
             Scalar::Integer(n) => {
@@ -770,35 +771,6 @@ impl<'a> Engine<'a> {
                 let remaining = remaining.iter().map(physical_column).collect::<Result<Vec<_>>>()?;
                 let grouped = RelationExpr::grouped(TableSource { name: name.clone(), snapshot: *snapshot }, first, remaining);
                 Value::Term(Ty::Integer, r::relation_sum(grouped, b::lit_int(1)))
-            }
-            RowOperation::Fold { accumulator, initial, body } => {
-                // The direct row-element recurrence has a bag-sum form.
-                // Other supported arithmetic uses the ordered fold path.
-                // The parsed reduce has no row clauses. Keep the acquired
-                // array root instead of recovering it from the generic Rows.
-                let Some(Value::Sequence { item: Ty::Integer, name, .. }) = env.get(&query.source) else {
-                    return Err(fail("reduce requires a bound numeric array"));
-                };
-                let start = Self::query_value(initial, "", &BTreeMap::new(), env)?;
-                need(start.ty() == Ty::Integer, "reduce needs an exact integer initial value")?;
-                match body {
-                    Scalar::Binary(op @ (Op::Add | Op::Sub), left, term)
-                        if matches!(left.as_ref(), Scalar::Path(parts)
-                            if parts.as_slice() == std::slice::from_ref(accumulator))
-                            && matches!(term.as_ref(), Scalar::Path(parts)
-                                if parts.as_slice() == std::slice::from_ref(&query.alias)) =>
-                    {
-                        let sum = r::relation_sum(RelationExpr::base(name, "value"),
-                            b::acquired_integer_row("value"));
-                        let value = match op {
-                            Op::Add => add_closed_integer_sum(start.scalar()?, sum, |name| self.declared_relation_input(name, "integer")),
-                            Op::Sub => b::sub(start.scalar()?, sum),
-                            _ => unreachable!("fold above admits only add/sub"),
-                        };
-                        Value::Term(Ty::Integer, math::normalize(value))
-                    }
-                    _ => self.retain_pure_fold(name, accumulator, &query.alias, start.scalar()?, body, guard, env)?,
-                }
             }
             RowOperation::FirstValue { value, fallback } => {
                 let mut keys = rows.ordering.into_iter();

@@ -44,6 +44,7 @@ impl LocalIrInitializer {
             LocalIr::LocalMapGet { binding, .. } => (binding.as_str(), Self::NullableText),
             LocalIr::MemberChoice { binding, .. } => (binding.as_str(), Self::MemberChoice),
             LocalIr::ProjectedUnionCount { binding, .. } => (binding.as_str(), Self::Integer),
+            LocalIr::IntegerRange(range) if !range.accumulate => (range.binding.as_str(), Self::Integer),
             LocalIr::SqlWrite(write) => (write.binding.as_str(), Self::Integer),
             LocalIr::Relation(query) if !query.accumulate => (query.binding.as_str(), Self::Relation),
             LocalIr::Decimal(decimal) => (decimal.binding.as_str(), Self::Decimal),
@@ -103,8 +104,7 @@ pub(super) struct Engine<'a> {
     pub(super) max_active_calls: usize,
 }
 
-// Execution and publication compare the same retained REDUCE, not the
-// integer handle that happens to identify it in the execution ledger.
+// Execution and publication share stable identities, not display handles.
 pub(super) struct ExecutionOrder<'a> {
     definitions: &'a [super::temporal_graph::Definition],
     captured: BTreeMap<String, String>,
@@ -135,21 +135,7 @@ impl math::SortContext for ExecutionOrder<'_> {
                 if receipt.binding_id() == binding && !completion.throwing()))
     }
 
-    fn reduce_shape(&self, id: u64) -> Option<&math::ReduceShape> {
-        match self.definitions.get(usize::try_from(id).ok()?)? {
-            super::temporal_graph::Definition::Fold(fold) => Some(&fold.shape),
-            super::temporal_graph::Definition::Choice(_) => None,
-        }
-    }
 
-    fn has_reduce_shapes(&self) -> bool { !self.definitions.is_empty() }
-
-    fn temporal_is_total(&self, id: u64) -> bool {
-        usize::try_from(id).ok().and_then(|i| self.definitions.get(i)).is_some_and(|definition| {
-            matches!(definition, super::temporal_graph::Definition::Fold(fold)
-                if fold.guard.as_bool() == Some(true))
-        })
-    }
 }
 
 impl<'a> Engine<'a> {
@@ -492,9 +478,7 @@ impl<'a> Engine<'a> {
     }
 
     pub(super) fn source_steps(&mut self, body: &[S], id: &str, env: &mut Env, entry_path: Expr) -> Result<()> {
-        let mut consumed_through = 0;
         for (i, s) in body.iter().enumerate() {
-            if i < consumed_through { continue; }
             let path = math::normalize(b::and(entry_path.clone(), self.realtime_completion.continuing_guard()));
             if path.as_bool() == Some(false) { break; }
             self.budget()?;
@@ -587,9 +571,6 @@ impl<'a> Engine<'a> {
                         None => false,
                     };
                     need(binds && !env.contains_key(name),"uninitialized local requires a following typed local IR definition")?;
-                }
-                S::LocalIr(normalizer_ir::local::LocalIr::Stack(_)) => {
-                    consumed_through = i + self.execute_closed_source_stack(&body[i..], id, env, path)?;
                 }
                 S::LocalIr(normalizer_ir::local::LocalIr::LocalMapEmpty { binding }) => {
                     need(preceding_uninitialized(body, i, binding).is_some_and(|ty| self.declared_local_text_map(ty)),
@@ -788,13 +769,9 @@ impl<'a> Engine<'a> {
                         .ok_or_else(|| fail("member choice must follow its uninitialized local declaration"))?;
                     self.choose_source_member(binding, members, empty, java_type, id, env, path)?;
                 }
-                S::LocalIr(normalizer_ir::local::LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after }) => {
-                    self.execute_index_fold(binding, lower, upper, skip_before, stop_after, env)?;
-                }
-                S::LocalIr(normalizer_ir::local::LocalIr::CountRange {binding,accumulate,lower,upper}) => {
-                    let declared = env.get(binding).is_some_and(|value| value.ty()==Ty::Integer);
-                    need(declared,"count requires a declared integer output")?;
-                    self.count_range(binding,*accumulate,lower,upper,env)?;
+                S::LocalIr(normalizer_ir::local::LocalIr::IntegerRange(range)) => {
+                    let declared = preceding_uninitialized(body, i, &range.binding).is_some_and(crate::normalized::integral);
+                    self.source_integer_range(range, env, &path, declared)?;
                 }
                 S::ExprStmt(call @ J::MethodCall { .. }) => {
                     self.java_expr(call, id, env, path)?;
@@ -947,7 +924,8 @@ impl<'a> Engine<'a> {
                     self.budget()?;
                     return Ok(Some(self.normalize_execution_value(array.length_expr())));
                 }
-                if let Some(Value::Sequence { item: Ty::Integer, name: root, null, .. }) = env.get(name) {
+                if let Some(Value::Sequence { item, name: root, null, .. }) = env.get(name) {
+                    if *item != Ty::Integer && !self.source_relations.record_inputs.contains_key(root) { return Ok(None); }
                     // This Java expression path has no adapter-signature
                     // body. Length does not read or convert any element.
                     // Keep the actual P or E root of a local alias.

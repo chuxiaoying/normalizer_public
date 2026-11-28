@@ -1,4 +1,4 @@
-//! Independent source-owned choices. Unlike a pure fold, every occurrence has
+//! Independent source-owned choices. Every occurrence has
 //! an identity and stays in execution order even when candidate sets agree.
 use super::*;
 use normalizer_ir::local::MemberChoiceFallback;

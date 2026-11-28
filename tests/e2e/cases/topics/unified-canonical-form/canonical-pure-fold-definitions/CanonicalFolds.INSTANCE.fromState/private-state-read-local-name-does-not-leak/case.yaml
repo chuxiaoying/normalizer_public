@@ -16,4 +16,4 @@ expected:
       fields:
         value: number
   R: |-
-    REDUCE(values FROM seed.value AS (acc, item) YIELD item + acc * 2)
+    COALESCE(SUM(SELECT value + seed.value FROM values), 0)

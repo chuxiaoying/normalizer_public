@@ -181,7 +181,6 @@ fn binding(class: Class, ty: &str, id: Identity) -> Rc<CanonicalKey> {
 struct Keys<'a> {
     context: &'a dyn SortContext,
     memo: HashMap<Expr, Rc<CanonicalKey>>,
-    in_reduce_body: bool,
 }
 
 impl Keys<'_> {
@@ -234,13 +233,12 @@ impl Keys<'_> {
             SymVar { origin } => {
                 let (class, id) = match origin {
                     SymVarOrigin::Parameter { name, primitive_type: _ } => {
-                        let local = self.in_reduce_body.then(|| crate::ReduceBodyContext::resolve(name)).flatten();
                         let captured = ctx.captured_parameters().and_then(|parameters| parameters.get(name));
-                        let class = if local.is_none() && captured.is_none() && name.contains('.') {
+                        let class = if captured.is_none() && name.contains('.') {
                             Class::Read
                         } else { Class::Reference };
                         let name = captured.map_or(name.as_str(), String::as_str);
-                        (class, local.map_or_else(|| Identity::Parameter(path(name)), |(slot, _)| Identity::Local(slot)))
+                        (class, Identity::Parameter(path(name)))
                     },
                     SymVarOrigin::External { binding_id, path: parts, primitive_type: _ } => {
                         let id = match observation(ctx, *binding_id) {
@@ -252,15 +250,6 @@ impl Keys<'_> {
                         (if parts.is_empty() { Class::Reference } else { Class::Read }, id)
                     }
                     SymVarOrigin::Temporal { binding_id, primitive_type: _ } => {
-                        if let Some(reduce) = ctx.reduce_shape(*binding_id) {
-                            let source = binding(Class::Reference, "number[]",
-                                Identity::Parameter(path(&reduce.source)));
-                            let initial = self.expr(&reduce.initial);
-                            let mut scope = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: true };
-                            let body = scope.expr(&reduce.body);
-                            return node(Class::Relation, named("reduce"), vec!["number".into()],
-                                vec![], vec![], vec![Some(source), Some(initial), Some(body)], None, 0, 1);
-                        }
                         if let Some(&slot) = ctx.choice_slots().and_then(|slots| slots.get(binding_id)) {
                             return binding(Class::Reference, origin.primitive_type(), Identity::Local(slot));
                         }
@@ -448,9 +437,9 @@ thread_local! {
 }
 
 pub fn canonical_order_key(expr: &Expr, ctx: &dyn SortContext) -> Rc<CanonicalKey> {
-    let mut keys = Keys { context: ctx, memo: HashMap::new(), in_reduce_body: ctx.in_reduce_body() };
+    let mut keys = Keys { context: ctx, memo: HashMap::new() };
     if expr.has_heap_ref() || ctx.temporal_aliases().is_some() || ctx.observation_identities().is_some()
-        || ctx.in_reduce_body() || ctx.has_case_arm_keys() || ctx.choice_slots().is_some() || ctx.has_reduce_shapes()
+        || ctx.has_case_arm_keys() || ctx.choice_slots().is_some()
         || ctx.captured_parameters().is_some()
     {
         return keys.expr(expr);
@@ -482,12 +471,7 @@ pub(crate) fn comparison_operands_are_bound(expr: &Expr, ctx: &dyn SortContext) 
         if !bound || ctx.case_arm_keys(part).is_some() { return false; }
         match part.kind() {
             ExprKind::SymVar { origin: SymVarOrigin::Temporal { binding_id, .. } } => {
-                bound = if let Some(reduce) = ctx.reduce_shape(*binding_id) {
-                    comparison_operands_are_bound(&reduce.initial, ctx)
-                        && comparison_operands_are_bound(&reduce.body, ctx)
-                } else {
-                    ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id))
-                };
+                bound = ctx.choice_slots().is_some_and(|slots| slots.contains_key(binding_id));
             }
             ExprKind::SymVar { origin: SymVarOrigin::External { binding_id, .. } } =>
                 bound = ctx.observation_identities().is_some_and(|ids| ids.contains_key(binding_id)),
@@ -674,8 +658,7 @@ pub fn canonical_let_plan(
         expr: &Expr, key: &Rc<CanonicalKey>, eligible: &impl Fn(&Expr) -> bool,
         counts: &mut HashMap<Expr, (usize, Rc<CanonicalKey>)>,
     ) {
-        // A retained REDUCE owns the CASEs in its YIELD; an acquisition
-        // reference or LET reference does not own any expression behind it.
+        // An acquisition or LET reference owns no expression behind it.
         if key.arms == BigUint::default() { return; }
         if eligible(expr) {
             counts.entry(expr.clone()).or_insert_with(|| (0, key.clone())).0 += 1;

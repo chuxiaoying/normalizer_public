@@ -1,0 +1,10 @@
+entry: src/PrefixSelection.java#PrefixSelection.firstAbove
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/PrefixSelection.java#PrefixSelection.firstAbove, returns: number}
+  P:
+    parameters:
+      tariff: {position: 0, type: 'number[]'}
+      cutoff: {position: 1, type: number}
+      fallback: {position: 2, type: number}
+  R: COALESCE(FIRST(tariff[i] FROM indices(COALESCE(FIRST(i FROM indices(LENGTH(tariff)) AS i WHERE 0 == tariff[i] ORDER BY i), LENGTH(tariff))) AS i WHERE cutoff < tariff[i] ORDER BY i), fallback)

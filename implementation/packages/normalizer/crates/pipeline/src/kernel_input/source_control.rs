@@ -4,7 +4,6 @@ use super::{
     realtime_state::{Completion, CompletionAlternative, CompletionOutcome},
     Engine, Env, Expr, Result, Ty, Value, S,
 };
-use normalizer_ir::local::IntegerOperand;
 use simulator_parser::ast::CatchClause;
 use simulator_parser::JavaType;
 
@@ -129,79 +128,6 @@ impl Engine<'_> {
             initial,
         );
         env.insert(rectangle.target.into(), Value::Term(Ty::Integer, math::normalize(result)));
-        Ok(())
-    }
-
-    pub(super) fn execute_index_fold(
-        &self, binding: &str, lower: &math::Integer, upper: &str,
-        skip_before: &math::Integer, stop_after: &math::Integer, env: &mut Env,
-    ) -> Result<()> {
-        let current = env.get(binding).ok_or_else(|| fail("indexed fold needs an initialized accumulator"))?;
-        need(current.ty() == Ty::Integer, "indexed fold needs a numeric accumulator")?;
-        let mut total = current.scalar()?;
-        let bound = env.get(upper).ok_or_else(|| fail("unbound indexed fold upper bound"))?;
-        need(bound.ty() == Ty::Integer, "indexed fold upper bound must be numeric")?;
-        let end = bound.scalar()?;
-        let first = std::cmp::max(lower, skip_before);
-        if stop_after < first { return Ok(()); }
-        let span: math::Integer = stop_after - first + 1;
-        let budget_error = || fail("[NORM-ANALYSIS-INCOMPLETE] indexed fold prefix exceeds its analysis budget");
-        let span: usize = span.try_into().map_err(|_| budget_error())?;
-        if span > 256 { return Err(budget_error()); }
-        // The break guard prevents any further committed update. Compute
-        // one result for each possible prefix of the remaining indices.
-        let mut branches = Vec::with_capacity(span + 1);
-        branches.push((b::le(end.clone(), b::lit_integer(first.clone())), total.clone()));
-        for n in 0..span {
-            let index = first + n;
-            total = math::normalize(b::add(total, b::lit_integer(index.clone())));
-            if n + 1 < span {
-                branches.push((b::eq(end.clone(), b::lit_integer(index + 1)), total.clone()));
-            }
-        }
-        env.insert(binding.into(), Value::Term(Ty::Integer, math::normalize(b::case_when(branches, total))));
-        Ok(())
-    }
-
-    pub(super) fn count_range(
-        &self,
-        binding: &str,
-        accumulate: bool,
-        lower: &IntegerOperand,
-        upper: &IntegerOperand,
-        env: &mut Env,
-    ) -> Result<()> {
-        let endpoint = |value: &IntegerOperand| match value {
-            IntegerOperand::Integer(n) => Ok(b::lit_integer(n.clone())),
-            IntegerOperand::Local(n) => {
-                let value = env
-                    .get(n)
-                    .ok_or_else(|| fail(format!("unbound range endpoint {n}")))?;
-                need(value.ty() == Ty::Integer, "integer range endpoint required")?;
-                value.scalar()
-            }
-        };
-        let length = math::normalize(b::sub(endpoint(upper)?, endpoint(lower)?));
-        let count = b::case_when(
-            vec![(b::gt(length.clone(), b::lit_int(0)), length)],
-            b::lit_int(0),
-        );
-        let value = if accumulate {
-            let current = env
-                .get(binding)
-                .ok_or_else(|| fail("undeclared count accumulator"))?;
-            need(
-                current.ty() == Ty::Integer,
-                "integer count accumulator required",
-            )?;
-            b::add(current.scalar()?, count)
-        } else {
-            count
-        };
-        env.insert(
-            binding.to_owned(),
-            Value::Term(Ty::Integer, math::normalize(value)),
-        );
         Ok(())
     }
 

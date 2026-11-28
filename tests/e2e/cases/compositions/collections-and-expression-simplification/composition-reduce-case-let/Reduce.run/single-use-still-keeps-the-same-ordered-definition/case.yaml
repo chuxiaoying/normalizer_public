@@ -8,4 +8,4 @@ expected:
       enabled: { position: 1, type: bool }
       initial: { position: 2, type: number }
       step: { position: 3, type: number }
-  R: REDUCE(values FROM initial AS (acc, item) YIELD item + acc * 2 + CASE WHEN enabled THEN step ELSE 0 END)
+  R: initial + COALESCE(SUM(SELECT value + CASE WHEN enabled THEN step ELSE 0 END FROM values), 0)

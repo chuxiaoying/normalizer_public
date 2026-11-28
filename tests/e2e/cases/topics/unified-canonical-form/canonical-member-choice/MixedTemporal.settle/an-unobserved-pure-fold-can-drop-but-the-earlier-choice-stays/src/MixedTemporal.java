@@ -3,7 +3,7 @@ class MixedTemporal {
         int picked;
         /* @normalizer-ir picked = choose from values else backup */
         int total;
-        /* @normalizer-ir total = reduce values from picked as (acc, item) yield acc * 2 + item */
+        /* @normalizer-ir total = sum from values as item yield item + picked */
         return picked;
     }
 }

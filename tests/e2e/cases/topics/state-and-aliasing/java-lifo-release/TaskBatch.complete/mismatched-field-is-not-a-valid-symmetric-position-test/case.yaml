@@ -1,7 +1,5 @@
 entry: src/TaskBatch.java#TaskBatch.complete
 reject:
   fragments:
-    - "[SOURCE-PARSE-FAILED]"
-    - "matching member fields"
-    - "id"
-    - "other"
+    - "[NORM-PROJECT]"
+    - "undeclared indexed field other"

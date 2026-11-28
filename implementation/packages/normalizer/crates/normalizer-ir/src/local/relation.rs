@@ -6,11 +6,34 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scalar {
     Path(Vec<String>),
+    Indexed { source: String, index: Box<Scalar>, fields: Vec<String> },
     Integer(num_bigint::BigInt),
     Text(String),
     Bool(bool),
+    IntegerBound(IntegerBound, Vec<Scalar>),
     Binary(Op, Box<Scalar>, Box<Scalar>),
     NullPredicate { owner: String, column: String, negated: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum IntegerBound { Min, Max, Length }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IntegerRange {
+    pub binding: String,
+    pub accumulate: bool,
+    pub lower: Scalar,
+    pub upper: Scalar,
+    pub alias: Option<String>,
+    pub filters: Vec<Scalar>,
+    pub select: RangeOperation,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RangeOperation {
+    Count,
+    Sum(Option<Scalar>),
+    First { value: Scalar, fallback: Scalar },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,7 +74,6 @@ pub enum RowOperation {
     GroupCount { first: Scalar, remaining: Vec<Scalar> },
     FirstValue { value: Scalar, fallback: Scalar },
     FirstRow,
-    Fold { accumulator: String, initial: Scalar, body: Scalar },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -89,6 +111,28 @@ fn atom(t: &mut Tokens<'_>) -> Result<Scalar, String> {
     match t.value()? {
         ScalarOperand::Local(n) if n == "true" || n == "false" => Ok(Scalar::Bool(n == "true")),
         ScalarOperand::Local(n) => {
+            let call = match n.as_str() {
+                "min" => Some(IntegerBound::Min),
+                "max" => Some(IntegerBound::Max),
+                "length" => Some(IntegerBound::Length),
+                _ => None,
+            };
+            if let Some(call) = call.filter(|_| t.take("(")) {
+                let mut args = vec![sum(t)?];
+                if call != IntegerBound::Length {
+                    t.expect(",")?;
+                    args.push(sum(t)?);
+                }
+                t.expect(")")?;
+                return Ok(Scalar::IntegerBound(call, args));
+            }
+            if t.take("[") {
+                let index = Box::new(sum(t)?);
+                t.expect("]")?;
+                let mut fields = Vec::new();
+                while t.take(".") { fields.push(t.name()?); }
+                return Ok(Scalar::Indexed { source: n, index, fields });
+            }
             let mut path = vec![n];
             while t.take(".") {
                 path.push(t.name()?);
@@ -150,29 +194,59 @@ fn scalar(t: &mut Tokens<'_>) -> Result<Scalar, String> {
     Ok(left)
 }
 
+pub(super) fn parse_range(
+    binding: &str,
+    accumulate: bool,
+    t: &mut Tokens<'_>,
+) -> Result<Option<IntegerRange>, String> {
+    let kind = if t.take("count") { Kind::Count }
+        else if t.take("sum") { Kind::Sum }
+        else if t.take("first") { Kind::First }
+        else { return Ok(None); };
+    if !t.take("from") || !t.take("[") { return Ok(None); }
+
+    let lower = sum(t)?;
+    t.expect(",")?;
+    let upper = sum(t)?;
+    t.expect(")")?;
+    let alias = if t.take("as") { Some(t.name()?) } else { None };
+    let mut filters = Vec::new();
+    if t.take("where") {
+        if alias.is_none() { return Err("range predicates require an index binding".into()); }
+        filters.push(scalar(t)?);
+        while t.take("and") { filters.push(scalar(t)?); }
+    }
+    let select = match kind {
+        Kind::Count if !accumulate || filters.is_empty() => RangeOperation::Count,
+        Kind::Sum if alias.is_none() => RangeOperation::Sum(None),
+        Kind::Sum => {
+            t.expect("yield")?;
+            let value = scalar(t)?;
+            if filters.is_empty() && matches!(&value, Scalar::Path(parts)
+                if parts.len() == 1 && alias.as_ref() == parts.first()) {
+                RangeOperation::Sum(None)
+            } else { RangeOperation::Sum(Some(value)) }
+        }
+        Kind::First if alias.is_some() && !accumulate => {
+            t.expect("yield")?;
+            let value = scalar(t)?;
+            t.expect("else")?;
+            RangeOperation::First { value, fallback: scalar(t)? }
+        }
+        _ => return Err("unsupported range operation contract".into()),
+    };
+    t.end("trailing integer range input")?;
+    let alias = if filters.is_empty() && matches!(select, RangeOperation::Count | RangeOperation::Sum(None)) {
+        None
+    } else { alias };
+    Ok(Some(IntegerRange { binding: binding.into(), accumulate, lower, upper, alias, filters, select }))
+}
+
 pub(super) fn parse(
     binding: String,
     accumulate: bool,
     t: &mut Tokens<'_>,
 ) -> Result<Option<Query>, String> {
-    if t.take("reduce") {
-        if accumulate { return Err("reduce has its own initial value; cannot use +=".into()); }
-        let source = t.name()?;
-        t.expect("from")?;
-        let initial = scalar(t)?;
-        t.expect("as")?;
-        t.expect("(")?;
-        let accumulator = t.name()?;
-        t.expect(",")?;
-        let alias = t.name()?;
-        t.expect(")")?;
-        if accumulator == alias { return Err("reduce has duplicate binders".into()); }
-        t.expect("yield")?;
-        let body = scalar(t)?;
-        t.end("trailing reduce relation input")?;
-        return Ok(Some(Query { binding, accumulate, source, alias, clauses: vec![],
-            operation: Operation::OnRows(RowOperation::Fold { accumulator, initial, body }) }));
-    }
     let kind = if t.take("sum") {
         Kind::Sum
     } else if t.take("first") {

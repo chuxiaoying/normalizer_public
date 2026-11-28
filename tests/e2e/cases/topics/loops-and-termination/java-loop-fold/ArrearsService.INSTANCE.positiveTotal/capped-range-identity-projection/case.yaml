@@ -1,0 +1,7 @@
+entry: src/RangeFold.java#RangeFold.total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/RangeFold.java#RangeFold.total, returns: number}
+  P:
+    parameters: {}
+  R: "45150"

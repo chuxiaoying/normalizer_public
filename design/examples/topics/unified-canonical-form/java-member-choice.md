@@ -150,13 +150,13 @@ class MixedTemporal {
         int picked;
         /* @normalizer-ir picked = choose from values else backup */
         int total;
-        /* @normalizer-ir total = reduce values from picked as (acc, item) yield acc * 2 + item */
+        /* @normalizer-ir total = sum from values as item yield item + picked */
         return total + picked;
     }
 }
 ```
 
-**原样通过。** 任选一次，所得成员既是递推初值，也是加法的一个操作数。递推写在选择的 `YIELD` 里，两处引用都是同一成员。改变纯加法的书写方向不改变这项依赖。
+**原样通过。** 任选一次，所得成员既是每项的增量，也是加法的一个操作数。聚合写在选择的 `YIELD` 里，两处引用都是同一成员。改变纯加法的书写方向不改变这项依赖。
 
 ```yaml
 schema: normalizer.pers/1
@@ -165,9 +165,7 @@ P:
   parameters:
     values: { position: 0, type: 'number[]' }
     backup: { position: 1, type: number }
-R: |-
-  CHOOSE(values DEFAULT backup AS member0 YIELD
-    member0 + REDUCE(values FROM member0 AS (acc, item) YIELD item + acc * 2))
+R: CHOOSE(values DEFAULT backup AS member0 YIELD member0 + COALESCE(SUM(SELECT value + member0 FROM values), 0))
 ```
 
 若新增已取得的布尔参数 `enabled` 并仅在 `!enabled` 时选择，则 R 写 `CASE WHEN enabled THEN backup ELSE CHOOSE(values DEFAULT backup AS member0 YIELD member0) END`。真臂不选，假臂才选；空数组仍取备用值。

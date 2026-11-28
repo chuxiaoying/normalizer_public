@@ -3,8 +3,8 @@ class Reduce {
         int offset = step;
         int result;
         /* @normalizer-ir
-           result = reduce values from initial as (acc, item) yield acc * 2 + item + offset
+           result = sum from values as value yield value + offset
         */
-        return result * result;
+        return initial + result * result;
     }
 }

@@ -7,9 +7,7 @@ class CanonicalFolds {
     int fromState(int[] values) {
         int before = seed.value;
         int result;
-        /* @normalizer-ir
-           result = reduce values from before as (acc, item) yield acc * 2 + item
-        */
+        /* @normalizer-ir result = sum from values as item yield item + before */
         return result;
     }
 }

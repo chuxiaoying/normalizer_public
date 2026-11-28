@@ -35,7 +35,7 @@ pub use canonical_order::{
     canonical_let_plan, let_arithmetic_needs_swap, let_eager_children, named_parameter_key, wrap_choices, ChoiceOperands, ValuePlan,
 };
 pub use primitive_enum::Primitive;
-pub use sort_context::{CaseArmKeys, DefaultSortContext, HeapBindingIdentity, ObservationIdentity, ReduceBodyContext, ReduceShape, SortContext};
+pub use sort_context::{CaseArmKeys, DefaultSortContext, HeapBindingIdentity, ObservationIdentity, SortContext};
 pub use symvar::{ScalarSymbolType, SymVarOrigin};
 
 /// Exact mathematical integer, distinct from source-language machine words.

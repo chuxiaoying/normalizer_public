@@ -894,7 +894,6 @@ impl Loaded {
         })
     }
 }
-mod pure_fold;
 mod member_choice;
 mod temporal_graph;
 mod business_entry;
@@ -908,7 +907,7 @@ mod business_sql;
 mod source_objects;
 mod source_arrays;
 mod source_map;
-mod source_stack;
+mod source_range;
 mod tuple_observation;
 mod source_decimal;
 pub mod standalone_closure;

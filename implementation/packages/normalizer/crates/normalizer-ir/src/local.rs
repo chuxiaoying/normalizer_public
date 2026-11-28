@@ -2,7 +2,6 @@
 use std::collections::BTreeSet;
 
 pub mod relation;
-pub mod stack;
 pub mod decimal;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -13,15 +12,7 @@ pub enum LocalIr {
     LocalMapGet { binding: String, source: String, key: String, fallback: MapText },
     ProjectedUnionCount { binding: String, first: (String, String), remaining: Vec<(String, String)> },
     MemberChoice { binding: String, members: String, empty: MemberChoiceFallback },
-    Stack(stack::Action),
-    CountRange { binding: String, accumulate: bool, lower: IntegerOperand, upper: IntegerOperand },
-    FoldIndexRange {
-        binding: String,
-        lower: num_bigint::BigInt,
-        upper: String,
-        skip_before: num_bigint::BigInt,
-        stop_after: num_bigint::BigInt,
-    },
+    IntegerRange(relation::IntegerRange),
     Relation(relation::Query),
     Decimal(decimal::Assignment),
 }
@@ -60,23 +51,6 @@ pub enum ScalarOperand {
     Local(String),
     Text(String),
     Integer(num_bigint::BigInt),
-}
-
-/// The closed endpoints of an integer range.
-#[derive(Clone, Debug, PartialEq)]
-pub enum IntegerOperand {
-    Local(String),
-    Integer(num_bigint::BigInt),
-}
-
-impl IntegerOperand {
-    fn parse(value: ScalarOperand, error: &str) -> Result<Self, String> {
-        match value {
-            ScalarOperand::Local(name) => Ok(Self::Local(name)),
-            ScalarOperand::Integer(value) => Ok(Self::Integer(value)),
-            ScalarOperand::Text(_) => Err(error.into()),
-        }
-    }
 }
 
 impl SqlWrite {
@@ -195,10 +169,9 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
             return Ok(LocalIr::Decimal(assignment));
         }
     }
-    let mut ordered = Tokens { source: tokens.source };
-    if let Some(action) = stack::parse(&binding, &mut ordered)? {
-        if accumulate { return Err("local stack uses only the = binding".into()); }
-        return Ok(LocalIr::Stack(action));
+    let mut retired = Tokens { source: tokens.source };
+    if retired.take("fold") || retired.take("reduce") || (retired.take("value") && retired.take(".") && retired.take("length")) {
+        return Err("[NORM-UNSUPPORTED-LOCAL-IR] retired loop control; supply an equivalent relation expression".into());
     }
     if let Some(source) = tokens.rest().strip_prefix("value")
         .and_then(|tail| tail.trim_start().strip_prefix('.'))
@@ -265,18 +238,8 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         return Ok(LocalIr::ProjectedUnionCount { binding, first, remaining });
     }
     let mut range = Tokens { source: tokens.source };
-    if range.take("count") && range.take("from") && range.take("[") {
-        tokens = range;
-        let lower = tokens.value()?;
-        tokens.expect(",")?;
-        let upper = tokens.value()?;
-        tokens.expect(")")?;
-        tokens.expect("as")?;
-        tokens.name()?; // The binder ranges over each integer; count needs no projection.
-        tokens.end("trailing count-range clauses")?;
-        let lower = IntegerOperand::parse(lower, "count range endpoints must be integers")?;
-        let upper = IntegerOperand::parse(upper, "count range endpoints must be integers")?;
-        return Ok(LocalIr::CountRange { binding, accumulate, lower, upper });
+    if let Some(query) = relation::parse_range(&binding, accumulate, &mut range)? {
+        return Ok(LocalIr::IntegerRange(query));
     }
     if tokens.take("choose") {
         if accumulate { return Err("member choice must initialize its binding with =".into()); }
@@ -290,37 +253,6 @@ pub fn parse(input: &str) -> Result<LocalIr, String> {
         };
         tokens.end("trailing member choice clauses")?;
         return Ok(LocalIr::MemberChoice { binding, members, empty });
-    }
-    if tokens.take("fold") {
-        if accumulate { return Err("indexed fold updates its existing accumulator; use =".into()); }
-        let integer = |t: &mut Tokens<'_>| match t.value()? {
-            ScalarOperand::Integer(n) => Ok(n),
-            _ => Err("expected a literal integer in indexed fold".to_owned()),
-        };
-        tokens.expect("[")?;
-        let lower = integer(&mut tokens)?;
-        tokens.expect(",")?;
-        let upper = tokens.name()?;
-        tokens.expect(")")?;
-        tokens.expect("as")?;
-        let index = tokens.name()?;
-        if index == binding || upper == index || upper == binding {
-            return Err("indexed fold needs separate bound, accumulator and index".into());
-        }
-        tokens.expect("when")?;
-        tokens.bound(&index, "unbound indexed fold variable")?;
-        tokens.expect("<")?;
-        let skip_before = integer(&mut tokens)?;
-        tokens.expect("continue")?;
-        tokens.expect("when")?;
-        tokens.bound(&index, "unbound indexed fold variable")?;
-        tokens.expect(">")?;
-        let stop_after = integer(&mut tokens)?;
-        tokens.expect("break")?;
-        tokens.expect("yield")?;
-        tokens.bound(&index, "unbound indexed fold variable")?;
-        tokens.end("trailing indexed fold input")?;
-        return Ok(LocalIr::FoldIndexRange { binding, lower, upper, skip_before, stop_after });
     }
     if let Some(query) = relation::parse(binding.clone(), accumulate, &mut tokens)? {
         return Ok(LocalIr::Relation(query));

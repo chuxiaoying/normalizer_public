@@ -7,8 +7,7 @@ expected:
       hi: {position: 0, type: number}
   R: |-
     CASE
-      WHEN hi < 2 THEN 0
-      WHEN hi == 2 THEN 1
-      WHEN hi == 3 THEN 3
-      ELSE 6
+      WHEN hi > 301 THEN 45150
+      WHEN hi > 1 THEN QUOTIENT(hi * (hi - 1), 2)
+      ELSE 0
     END

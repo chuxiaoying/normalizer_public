@@ -1,4 +1,4 @@
-//! Internal graph projection for the lexical REDUCE and CHOOSE forms of RA-09.
+//! Internal graph projection for the lexical CHOOSE form of RA-09.
 use math::Expr;
 use std::{collections::{BTreeMap, BTreeSet, HashMap}, rc::Rc};
 
@@ -8,12 +8,11 @@ pub(crate) enum Operand {
     Parameter(String),
     Acquired(String),
     Prior(usize),
-    Arithmetic(Expr),
+    Computed { value: Expr, dependencies: Vec<usize> },
 }
 
 #[derive(Clone)]
 pub(crate) enum Slot {
-    Fold { source: String, initial: Operand, body: Expr },
     Choice { members: String, empty: Operand, guard: Expr, shape: ChoiceShape },
 }
 
@@ -49,7 +48,6 @@ pub(super) struct ValueLocation {
     pub(super) value: Expr,
     pub(super) domain: Expr,
     pub(super) members: Vec<usize>,
-    pub(super) in_reduce_body: bool,
 }
 
 #[derive(Default)]
@@ -65,14 +63,15 @@ pub(super) struct Scope {
     pub(super) active: Option<Expr>,
     pub(super) members: BTreeMap<usize, String>,
     pub(super) member_order: Vec<usize>,
-    pub(super) in_reduce_yield: bool,
 }
 
 pub(super) fn add_dependencies(slots: &[Slot], slot: usize, needed: &mut BTreeSet<usize>) {
     if needed.insert(slot) {
         match &slots[slot] {
-            Slot::Fold { initial: Operand::Prior(dep), .. } | Slot::Choice { empty: Operand::Prior(dep), .. } =>
-                add_dependencies(slots, *dep, needed),
+            Slot::Choice { empty: Operand::Prior(dep), .. } => add_dependencies(slots, *dep, needed),
+            Slot::Choice { empty: Operand::Computed { dependencies, .. }, .. } => {
+                for &dep in dependencies { add_dependencies(slots, dep, needed); }
+            }
             _ => {}
         }
     }

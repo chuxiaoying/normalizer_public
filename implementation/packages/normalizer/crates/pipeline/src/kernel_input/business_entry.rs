@@ -526,6 +526,7 @@ impl EntryContext {
             }
             let mut closed = true;
             let mut scalar_element = false;
+            let mut index_bindings = std::collections::BTreeSet::new();
             let mut record_rows = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
             let mut correlated = std::collections::BTreeSet::new();
             expression.walk(&mut |node| {
@@ -551,6 +552,9 @@ impl EntryContext {
                             }
                         }
                     }
+                    if let Some((_, alias)) = math::domains::relation::positional::integer_domain(relation) {
+                        index_bindings.insert(alias.to_owned());
+                    }
                     scalar_element |= super::business_relation::is_scalar_array_relation(relation, &arrays);
                     if let Some((name, alias)) = super::business_relation::relation_base(relation) {
                         if let Some(fields) = record_inputs.get(name) {
@@ -575,6 +579,14 @@ impl EntryContext {
                     Some(SymVarOrigin::Temporal { .. }) => super::temporal_definition_id(node)
                         .is_some_and(|id| definition_names.contains_key(&id)),
                     None => super::business_relation::is_table_expression(node, &result.source_tables, &arrays, scalar_element, &nested_arrays, &correlated, &record_inputs, &record_rows)
+                        || node.as_relation_aggregate().is_some_and(|(_, relation, _, _)|
+                            math::domains::relation::positional::integer_domain(relation).is_some())
+                        || node.as_row_value().is_some_and(|alias| index_bindings.contains(alias))
+                        || math::domains::relation::positional::range_bounds(node).is_some()
+                        || math::domains::relation::positional::minimum_bounds(node).is_some()
+                        || math::domains::relation::positional::field_projection(node).is_some_and(|(source, _, field, ty)|
+                            self.has_record_array_field(source, field,
+                                if ty == math::Primitive::Boolean { "bool" } else { "number" }))
                         || ((certified_composite_return || record_fields.is_some()) && node.as_array_lit().is_some())
                         || (certified_composite_return && self.returns == "map<text,text>"
                             && math::domains::composite::ordered_text_map_entries(node).is_some())
@@ -598,7 +610,7 @@ impl EntryContext {
                 let public = crate::canonical_names::CanonicalNames {
                     heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: None,
                     external: (!states.is_empty()).then_some(ctx.observation_identities()),
-                    total_temporals: Some(&publication.total), reductions: Some(&publication.reductions), temporals: (!definition_names.is_empty()).then_some(definition_names),
+                    total_temporals: Some(&publication.total), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
                     .map_err(|error| error.to_string())?
@@ -613,7 +625,7 @@ impl EntryContext {
             }
             ctx.set_temporal_names(definition_names.clone());
             ctx.set_relation_slots(publication.slots.clone());
-            ctx.set_reductions(publication.reductions.clone(), publication.total.clone());
+            ctx.set_total_temporals(publication.total.clone());
             ctx.set_scalar_arrays(arrays.clone());
             ctx.declare_nullable_columns(&result.source_tables);
             ctx.set_nested_arrays(nested_arrays.clone());
