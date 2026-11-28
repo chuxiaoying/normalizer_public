@@ -103,6 +103,21 @@ impl JavaClass {
         self.is_public && !self.simple_name.contains('.')
     }
 
+    /// A zero-argument constructor that adds no behavior to ordinary
+    /// default construction. For a named constructor this proof deliberately
+    /// requires public visibility; its caller need not guess access rights.
+    pub fn has_trivial_noarg_constructor(&self) -> bool {
+        let mut declared = self.methods.iter().filter(|method| method.is_constructor).peekable();
+        if declared.peek().is_none() {
+            return !self.is_record || self.fields.is_empty();
+        }
+        let mut empty_signature = declared.filter(|method| method.params.is_empty());
+        empty_signature.next().is_some_and(|method| {
+            method.is_public && !method.is_private && method.throws.is_empty()
+                && method.annotations.is_empty() && method.body.as_ref().is_some_and(Vec::is_empty)
+        }) && empty_signature.next().is_none()
+    }
+
     pub fn full_name(&self) -> String {
         if self.package.is_empty() { self.simple_name.clone() }
         else { format!("{}.{}", self.package, self.simple_name) }

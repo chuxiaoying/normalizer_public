@@ -45,7 +45,7 @@ impl JavaProgram {
                 && std::path::Path::new(&class.source_file).file_stem().and_then(|name| name.to_str())
                     == Some(class.simple_name.as_str())
                 && class.type_parameters.is_empty() && class.supertype.is_none()
-                && !class.methods.iter().any(|method| method.is_constructor)
+                && class.has_trivial_noarg_constructor()
         ).map(JavaClass::full_name).collect::<BTreeSet<_>>();
         for class in &mut self.classes {
             let owner = class.full_name();
@@ -120,7 +120,7 @@ struct Names<'a> {
 
 impl Names<'_> {
     /// An explicit static immutable bootstrap root can name a public
-    /// top-level class and its public implicit zero-argument constructor.
+    /// top-level class and its public zero-argument constructor.
     /// This proves those two references, not access to any of its members.
     fn bind_public_bootstrap_allocation(&self, field: &mut JavaField) -> bool {
         if !self.qualify_names || !field.is_static || !field.is_final { return false; }

@@ -1,0 +1,6 @@
+entry: src/app/Beans.java#app.Beans.QUOTE_CONTROLLER.quote
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-LINK-FAILED]"
+    - 'cross-package access to steps.QuoteService requires a member access proof'

@@ -269,9 +269,8 @@ pub(crate) fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &Ja
     let (JavaType::Class(name), JavaExpr::New { java_type, args }) = (ty, arg) else { return false; };
     ty == java_type && args.is_empty() && program.find_class(name).is_some_and(|class|
         !class.is_interface() && class.supertype().is_none() && class.static_initializers().is_empty()
-        && has_zero_argument_implicit_constructor(class)
-        && class.fields().iter().all(|f| !f.is_static() && !f.has_initializer())
-        && !class.methods().iter().any(|method| method.is_constructor()))
+        && class.has_trivial_noarg_constructor()
+        && class.fields().iter().all(|f| !f.is_static() && !f.has_initializer()))
 }
 
 impl SourceEntry {
