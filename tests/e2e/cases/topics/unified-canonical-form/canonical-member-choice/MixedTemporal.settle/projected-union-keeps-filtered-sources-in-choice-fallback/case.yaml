@@ -1,0 +1,16 @@
+entry: src/BillReport.java#BillReport.countAccounts
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/BillReport.java#BillReport.countAccounts, returns: number}
+  P:
+    parameters:
+      options: {position: 0, type: 'number[]'}
+  E:
+    pending_bill: {kind: table, source: pending_bill, columns: {account_id: number}}
+    posted_bill: {kind: table, source: posted_bill, columns: {account_id: number}}
+  R: |-
+    CHOOSE(options DEFAULT SELECT COUNT(*) FROM (
+      SELECT account_id FROM pending_bill
+      UNION
+      SELECT account_id FROM posted_bill WHERE account_id > 0
+    ) AS accounts AS member0 YIELD member0)

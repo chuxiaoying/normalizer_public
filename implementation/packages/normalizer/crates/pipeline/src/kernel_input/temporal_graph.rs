@@ -32,18 +32,58 @@ pub(super) struct Publication {
     pub(super) slots: Vec<Slot>,
 }
 
-/// A closed aggregate may use an acquired scalar array or the same finite integer
-/// domain that is available to ordinary relation results. Bind each row
-/// at its own relation site, including rows mentioned in filters.
-fn aggregate_row<'a>(relation: &'a RelationExpr, arrays: &BTreeSet<String>) -> Option<&'a str> {
+type TableColumns = BTreeMap<String, BTreeMap<String, String>>;
+
+#[derive(Clone, Copy)]
+enum RowSlot<'a> {
+    Scalar(&'a str),
+    Table { alias: &'a str, columns: &'a BTreeMap<String, String> },
+}
+
+impl RowSlot<'_> {
+    fn binds(&self, field: &str) -> bool {
+        match self {
+            Self::Scalar(alias) => field == *alias,
+            Self::Table { alias, columns } => field.split_once('.')
+                .is_some_and(|(owner, field)| owner == *alias && columns.contains_key(field)),
+        }
+    }
+}
+
+// Every relation contributing to an acquired fallback has its own row
+// scope. A physical table denotes a particular already acquired snapshot.
+fn aggregate_row<'a>(
+    relation: &'a RelationExpr, arrays: &BTreeSet<String>, tables: &'a TableColumns,
+    acquired_table: &impl Fn(&str, u64) -> bool,
+) -> Option<RowSlot<'a>> {
     use math::domains::relation::positional::integer_domain;
-    if let Some((_, alias)) = integer_domain(relation) { return Some(alias); }
-    if super::business_relation::is_scalar_array_relation(relation, arrays) { return Some("value"); }
-    None
+    if let Some((_, alias)) = integer_domain(relation) { return Some(RowSlot::Scalar(alias)); }
+    let mut source = relation;
+    while let RelationExpr::Select { input, .. } = source { source = input; }
+    match source {
+        RelationExpr::Base { name, alias, snapshot: Some(snapshot) } if acquired_table(name, *snapshot) =>
+            Some(RowSlot::Table { alias, columns: tables.get(name)? }),
+        RelationExpr::Base { name, alias, snapshot: None } if alias == "value" && arrays.contains(name) =>
+            Some(RowSlot::Scalar(alias)),
+        // An initial unconditional table read has no event handle. The
+        // table/column declarations describe that entry snapshot directly.
+        RelationExpr::Base { name, alias, snapshot: None } if alias == name =>
+            Some(RowSlot::Table { alias, columns: tables.get(name)? }),
+        _ => None,
+    }
+}
+
+fn acquired_columns<'a>(
+    table: &math::domains::relation::TableSource, tables: &'a TableColumns,
+    acquired: &impl Fn(&str, u64) -> bool,
+) -> Option<&'a BTreeMap<String, String>> {
+    if table.snapshot.is_some_and(|snapshot| !acquired(&table.name, snapshot)) { return None; }
+    tables.get(&table.name)
 }
 
 fn closed_computed_value(
-    value: &Expr, rows: &[&str], arrays: &BTreeSet<String>, acquired: &impl Fn(&Expr) -> bool,
+    value: &Expr, rows: &[RowSlot<'_>], arrays: &BTreeSet<String>, tables: &TableColumns,
+    acquired: &impl Fn(&Expr) -> bool, acquired_table: &impl Fn(&str, u64) -> bool,
 ) -> bool {
     let mut closed = true;
     value.walk_pruned(&mut |part| {
@@ -57,16 +97,48 @@ fn closed_computed_value(
             {
                 return false;
             }
+            let counts_rows = kind == Sum && select == Some(&b::lit_int(1)) && fallback.is_none();
+            match relation {
+                RelationExpr::Grouped(group) => {
+                    closed = counts_rows && acquired_columns(group.table(), tables, acquired_table)
+                        .is_some_and(|columns| group.columns().all(|name| columns.contains_key(name)));
+                    return false;
+                }
+                RelationExpr::Join { left, right, on, filters } => {
+                    let mut scoped = rows.to_vec();
+                    for (table, alias) in [left, right] {
+                        let Some(columns) = acquired_columns(table, tables, acquired_table) else {
+                            closed = false;
+                            return false;
+                        };
+                        scoped.push(RowSlot::Table { alias, columns });
+                    }
+                    closed = counts_rows && std::iter::once(on).chain(filters).all(|value|
+                        closed_computed_value(value, &scoped, arrays, tables, acquired, acquired_table));
+                    return false;
+                }
+                RelationExpr::ProjectedUnion(branches) => {
+                    closed = kind == Count && select.is_none() && fallback.is_none() &&
+                        branches.iter().all(|branch| {
+                            let Some(columns) = acquired_columns(&branch.table, tables, acquired_table) else { return false; };
+                            if !columns.contains_key(&branch.column) { return false; }
+                            let mut scoped = rows.to_vec();
+                            scoped.push(RowSlot::Table { alias: &branch.table.name, columns });
+                            branch.filters.iter().all(|value|
+                                closed_computed_value(value, &scoped, arrays, tables, acquired, acquired_table))
+                        });
+                    return false;
+                }
+                _ => {}
+            }
             let source_relation = match relation {
                 RelationExpr::Distinct(input) if kind == Count => input,
                 other => other,
             };
-            let supported = match kind {
-                Sum | FirstValue => true,
-                Count => super::business_relation::is_scalar_array_relation(source_relation, arrays),
-                _ => false,
-            };
-            let Some(row) = supported.then(|| aggregate_row(source_relation, arrays)).flatten() else {
+            let (source_relation, ordering) = math::domains::relation::order_components(source_relation)
+                .unwrap_or((source_relation, &[]));
+            let supported = matches!(kind, Sum | FirstValue | Count);
+            let Some(row) = supported.then(|| aggregate_row(source_relation, arrays, tables, acquired_table)).flatten() else {
                 closed = false;
                 return false;
             };
@@ -74,28 +146,30 @@ fn closed_computed_value(
             scoped.push(row);
             let mut source = source_relation;
             while let RelationExpr::Select { predicate, input } = source {
-                closed &= closed_computed_value(predicate, &scoped, arrays, acquired);
+                closed &= closed_computed_value(predicate, &scoped, arrays, tables, acquired, acquired_table);
                 source = input;
             }
             if let RelationExpr::Vector { value, .. } = source {
                 // Bounds live in the enclosing scope, not the row scope.
-                closed &= closed_computed_value(value, rows, arrays, acquired);
+                closed &= closed_computed_value(value, rows, arrays, tables, acquired, acquired_table);
             }
-            closed &= select.is_some_and(|value| closed_computed_value(value, &scoped, arrays, acquired));
-            // Only the projection and filters see the current row. A FIRST
+            closed &= select.is_some_and(|value| closed_computed_value(value, &scoped, arrays, tables, acquired, acquired_table));
+            closed &= ordering.iter().all(|key|
+                closed_computed_value(key, &scoped, arrays, tables, acquired, acquired_table));
+            // Only the projection, filters and order keys see the current row. A FIRST
             // default follows the same outer-scope rule as its interval.
             closed &= match fallback {
-                Some(value) if kind == FirstValue => closed_computed_value(value, rows, arrays, acquired),
+                Some(value) if kind == FirstValue => closed_computed_value(value, rows, arrays, tables, acquired, acquired_table),
                 None => kind != FirstValue,
                 _ => false,
             };
             return false;
         }
         use math::domains::relation::positional::{minimum_bounds, range_bounds};
-        closed = if let Some(row) = part.as_row_value() { rows.contains(&row) }
+        closed = if let Some(row) = part.as_row_value() { rows.iter().rev().any(|slot| slot.binds(row)) }
             else {
                 acquired(part)
-                || part.as_lit().is_some_and(|lit| lit.as_integer().is_some() || matches!(lit, math::Lit::Bool(_)))
+                || part.as_lit().is_some_and(|lit| lit.as_integer().is_some() || matches!(lit, math::Lit::Bool(_) | math::Lit::Str(_) | math::Lit::StrUnits(_) | math::Lit::Null))
                 || part.as_binop().is_some()
                 || matches!(part.as_unary_op(), Some((math::UnaryOpKind::Neg | math::UnaryOpKind::Not, _)))
                 || part.as_total_case_when().is_some()
@@ -111,6 +185,7 @@ pub(super) fn publish(
     nodes: &[Definition], expression: Option<&Expr>, arrays: &BTreeSet<String>,
     domains: &BTreeMap<String, String>, names: &BTreeMap<String, String>,
     acquired_path: impl Fn(u64, &[String]) -> Option<String>,
+    tables: &TableColumns, acquired_table: impl Fn(&str, u64, &Expr) -> bool,
 ) -> Result<Publication> {
     let mut pending = BTreeSet::new();
     if let Some(expression) = expression {
@@ -177,17 +252,19 @@ pub(super) fn publish(
                 });
                 let acquired = |part: &Expr| match part.as_sym_var() {
                     Some(SymVarOrigin::External { binding_id, path, primitive_type }) =>
-                        matches!(primitive_type.as_str(), "integer" | "boolean")
+                        matches!(primitive_type.as_str(), "integer" | "boolean" | "text" | "text?")
                             && acquired_path(*binding_id, path).is_some(),
                     Some(SymVarOrigin::Parameter {name, primitive_type}) => {
                         let domain = match primitive_type.as_str() {
-                            "integer" => "number", "boolean" => "bool", _ => return false,
+                            "integer" => "number", "boolean" => "bool",
+                            "text" => "text", "text?" => "text?", _ => return false,
                         };
                         domains.get(name).is_some_and(|kind| kind == domain) && names.contains_key(name)
                     }
                     _ => integer_definition_id(part).is_some(),
                 };
-                need(well_bound && closed_computed_value(operand, &[], arrays, &acquired),
+                let snapshot_available = |table: &str, snapshot| acquired_table(table, snapshot, &current.guard);
+                need(well_bound && closed_computed_value(operand, &[], arrays, tables, &acquired, &snapshot_available),
                     "member choice fallback must be an acquired integer expression")?;
                 Operand::Computed { value: operand.clone(), dependencies: seen.into_iter().collect() }
             }

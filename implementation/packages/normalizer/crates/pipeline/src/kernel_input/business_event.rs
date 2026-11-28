@@ -452,7 +452,7 @@ pub(super) fn observations(
                 heap: &heap_keys, captured: ctx.captured_parameters(), completion_classes: Some(&completion_classes),
                 external: Some(observation_identities),
                 total_temporals: Some(&publication.total), temporals: Some(temporal_names),
-            }).map_err(|error| fail(error.to_string()))?;
+            }).map_err(|error| format!("[NORM-ANALYSIS-INCOMPLETE] {error}"))?;
             super::temporal_graph::validate_reads(&normalized, &result.temporal_definitions)?;
             normalized
         };

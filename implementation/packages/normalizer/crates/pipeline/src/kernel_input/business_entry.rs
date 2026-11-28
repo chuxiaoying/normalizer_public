@@ -457,8 +457,17 @@ impl EntryContext {
         acquired_path: impl Fn(u64, &[String]) -> Option<String>,
     ) -> Result<super::temporal_graph::Publication> {
         let domains = self.parameters.iter().map(|(n, p)| (n.clone(), p.ty.clone())).collect();
+        use super::realtime_state::{Acquisition, EffectOperation};
+        let table_available = |source: &str, snapshot, active: &Expr| {
+            result.realtime_effects.events().iter().any(|event| {
+                matches!(&event.operation, EffectOperation::Acquire {
+                    acquisition: Acquisition::Sql { source: acquired, .. }, binding_id
+                } if *binding_id == snapshot && acquired == source)
+                    && math::builder::path_implies(active, &event.guard)
+            })
+        };
         super::temporal_graph::publish(&result.temporal_definitions, returned,
-            &self.scalar_array_symbols(), &domains, names, acquired_path)
+            &self.scalar_array_symbols(), &domains, names, acquired_path, &result.source_tables, table_available)
     }
 
     fn certifies_composite_return(&self, typed: &super::Ty) -> bool {
@@ -613,7 +622,7 @@ impl EntryContext {
                     total_temporals: Some(&publication.total), temporals: (!definition_names.is_empty()).then_some(definition_names),
                 };
                 math::try_normalize_with(expression.clone(), &public)
-                    .map_err(|error| error.to_string())?
+                    .map_err(|error| format!("[NORM-ANALYSIS-INCOMPLETE] {error}"))?
             } else {
                 expression.clone()
             };
