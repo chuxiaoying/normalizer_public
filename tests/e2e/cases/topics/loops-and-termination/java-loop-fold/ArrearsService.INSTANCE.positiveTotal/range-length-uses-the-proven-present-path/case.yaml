@@ -1,0 +1,12 @@
+entry: src/RangeLength.java#RangeLength.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/RangeLength.java#RangeLength.run, returns: number}
+  P:
+    parameters:
+      values: {position: 0, type: 'number[]?'}
+  R: |-
+    CASE
+      WHEN values == null THEN 0
+      ELSE LENGTH(values)
+    END

@@ -9,7 +9,9 @@ fn integer(value: Value) -> Result<Expr> {
     value.scalar()
 }
 
-fn expression(scalar: &Scalar, env: &Env, position: Option<&Position<'_, '_>>) -> Result<Value> {
+fn expression(
+    scalar: &Scalar, env: &Env, position: Option<&Position<'_, '_>>, active: &Expr,
+) -> Result<Value> {
     let (ty, value) = match scalar {
         Scalar::Integer(n) => (Ty::Integer, b::lit_integer(n.clone())),
         Scalar::Bool(value) => (Ty::Bool, b::lit_bool(*value)),
@@ -24,18 +26,21 @@ fn expression(scalar: &Scalar, env: &Env, position: Option<&Position<'_, '_>>) -
             .ok_or_else(|| fail("index projection requires a proved integer relation domain"))?
             .read(source, index, fields, env),
         Scalar::IntegerBound(IntegerBound::Length, args) => {
-            let value = expression(&args[0], env, position)?;
+            let value = expression(&args[0], env, position, active)?;
             let length = match value {
-                Value::Sequence { name, null, .. } if null.as_bool() == Some(false) =>
-                    super::source_arrays::borrowed_array_length(&name),
+                Value::Sequence { name, null, .. } => {
+                    need(b::path_implies(active, &math::normalize(b::not(null))),
+                        "length requires an acquired non-null sequence")?;
+                    super::source_arrays::borrowed_array_length(&name)
+                }
                 Value::LocalIntArray(array) => array.length_expr(),
                 _ => return Err(fail("length requires an acquired non-null sequence")),
             };
             (Ty::Integer, length)
         }
         Scalar::IntegerBound(bound, args) => {
-            let left = integer(expression(&args[0], env, position)?)?;
-            let right = integer(expression(&args[1], env, position)?)?;
+            let left = integer(expression(&args[0], env, position, active)?)?;
+            let right = integer(expression(&args[1], env, position, active)?)?;
             if *bound == IntegerBound::Min && is_sequence_length(&left) && is_sequence_length(&right) {
                 return Ok(Value::Term(Ty::Integer, math::domains::relation::positional::minimum(left, right)));
             }
@@ -43,8 +48,8 @@ fn expression(scalar: &Scalar, env: &Env, position: Option<&Position<'_, '_>>) -
             (Ty::Integer, b::case_when(vec![(cmp(left.clone(), right.clone()), left)], right))
         }
         Scalar::Binary(op, lhs, rhs) => {
-            let left = expression(lhs, env, position)?;
-            let right = expression(rhs, env, position)?;
+            let left = expression(lhs, env, position, active)?;
+            let right = expression(rhs, env, position, active)?;
             need(left.ty() == right.ty(), "range operands have different domains")?;
             if !matches!(op, Op::Eq | Op::Ne) {
                 need(left.ty() == Ty::Integer, "range arithmetic or order requires integers")?;
@@ -90,9 +95,9 @@ impl Position<'_, '_> {
             env.insert(self.alias.into(), Value::Term(Ty::Integer, index));
         };
         substitute(&mut endpoints, self.lower.clone());
-        let first = integer(expression(index, &endpoints, None)?)?;
+        let first = integer(expression(index, &endpoints, None, self.path)?)?;
         substitute(&mut endpoints, math::normalize(b::sub(self.upper.clone(), b::lit_int(1))));
-        let last = integer(expression(index, &endpoints, None)?)?;
+        let last = integer(expression(index, &endpoints, None, self.path)?)?;
         let coefficient = slope(index, self.alias).ok_or_else(|| fail("indexed projection needs a provable affine subscript"))?;
         let (low, high) = if coefficient < 0 { (last, first) } else { (first, last) };
         let nonempty = math::normalize(b::and(self.path.clone(), b::lt(self.lower.clone(), self.upper.clone())));
@@ -100,7 +105,7 @@ impl Position<'_, '_> {
         let mut probe = env.clone();
         let row = b::row_value("$position_proof");
         substitute(&mut probe, row.clone());
-        let subscript = integer(expression(index, &probe, None)?)?;
+        let subscript = integer(expression(index, &probe, None, &nonempty)?)?;
         let reverse = math::normalize(b::sub(b::sub(length.clone(), b::lit_int(1)), row.clone()));
         let direct_or_reversed_from_zero = self.lower.as_lit().and_then(math::Lit::as_integer).is_some_and(|n| n == 0.into())
             && (subscript == row || subscript == reverse);
@@ -112,7 +117,7 @@ impl Position<'_, '_> {
             || b::path_implies(&nonempty, &math::normalize(b::ge(low, b::lit_int(0))))
                 && upper_bounded_by(&high_exclusive, &length, &nonempty),
             "index projection cannot prove its subscript stays within the sequence")?;
-        let index = integer(expression(index, env, None)?)?;
+        let index = integer(expression(index, env, None, &nonempty)?)?;
         if fields.is_empty() && *item == Ty::Integer {
             return Ok(Value::Term(Ty::Integer, r::relation_nth_value(RelationExpr::base(name, "value"), index)));
         }
@@ -178,7 +183,7 @@ fn indexed_domain<'a, 'program>(
         RelationExpr::vector(math::domains::relation::positional::range(lower.clone(), upper.clone()), &index)
     };
     for filter in &scope.filters {
-        let predicate = expression(filter, &local, Some(&position))?;
+        let predicate = expression(filter, &local, Some(&position), path)?;
         need(predicate.ty() == Ty::Bool, "integer range filter requires a boolean")?;
         domain = RelationExpr::select(predicate.scalar()?, domain);
     }
@@ -197,8 +202,8 @@ impl Engine<'_> {
             need(prior.is_some_and(|value| value.ty() == Ty::Integer) || declared, target_error)?;
             None
         };
-        let lower = integer(expression(&range.lower, env, None)?)?;
-        let upper = integer(expression(&range.upper, env, None)?)?;
+        let lower = integer(expression(&range.lower, env, None, path)?)?;
+        let upper = integer(expression(&range.upper, env, None, path)?)?;
         let value = match &range.select {
             RangeOperation::Count => count(lower, upper),
             RangeOperation::FilteredCount(scope) => {
@@ -208,7 +213,7 @@ impl Engine<'_> {
             RangeOperation::Sum => interval_sum(lower, upper),
             RangeOperation::ProjectedSum { scope, value: term } => {
                 let (domain, local, position, index) = indexed_domain(self, scope, env, &lower, &upper, path)?;
-                let value = integer(expression(term, &local, Some(&position))?)?;
+                let value = integer(expression(term, &local, Some(&position), path)?)?;
                 if !scope.filters.is_empty() {
                     r::relation_sum(domain, value)
                 } else if let Some(coefficients) = integer_polynomial(&value, &index) {
@@ -219,8 +224,8 @@ impl Engine<'_> {
             }
             RangeOperation::First { scope, value, fallback } => {
                 let (domain, local, position, _) = indexed_domain(self, scope, env, &lower, &upper, path)?;
-                r::relation_first_value(domain, integer(expression(value, &local, Some(&position))?)?,
-                    integer(expression(fallback, env, None)?)?)
+                r::relation_first_value(domain, integer(expression(value, &local, Some(&position), path)?)?,
+                    integer(expression(fallback, env, None, path)?)?)
             }
         };
         let value = match initial { Some(initial) => b::add(initial, value), None => value };

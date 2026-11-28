@@ -1,0 +1,5 @@
+entry: src/RangeLength.java#RangeLength.run
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - "length requires an acquired non-null sequence"
