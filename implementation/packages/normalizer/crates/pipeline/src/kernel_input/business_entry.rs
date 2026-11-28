@@ -121,7 +121,7 @@ impl Loaded {
             None => entry,
         };
         let (class, method) = self.entry_method(method_key)?;
-        let source = Path::new(class.source_file().ok_or("missing entry source location")?);
+        let source = Path::new(class.source_file());
         let path = source.strip_prefix(root).map_err(|_| "entry file outside project")?;
         let result = self.normalize(method_key)?;
         let signature = method.params().iter().map(|(ty, _)| ty).chain([method.return_type()]);

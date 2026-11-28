@@ -554,7 +554,7 @@ impl<'a> Parser<'a> {
         let body_text = self.skip_balanced_braces()?;
 
         let mut class = JavaClass {
-            source_file: Some(self.file.clone()),
+            source_file: self.file.clone(),
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
             has_unknown_import_origins: self.has_unknown_import_origins,
@@ -703,7 +703,7 @@ fn parse_class_body(
             let nested_at = p.pos + 1;
             let nested_body = p.skip_balanced_braces()?;
             let mut nested_class = JavaClass {
-                source_file: Some(file.to_owned()),
+                source_file: file.to_owned(),
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
                 has_unknown_import_origins: class.has_unknown_import_origins,

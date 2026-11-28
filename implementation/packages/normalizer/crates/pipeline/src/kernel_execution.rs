@@ -1186,7 +1186,7 @@ impl<'a> Engine<'a> {
                         if let Some((owner, declaration, key)) =
                             super::inert_instance_method(self.program, root, field, method, args.len())
                         {
-                            let source = Path::new(root.source_file().ok_or("missing static receiver source")?);
+                            let source = Path::new(root.source_file());
                             let path_from_root = source.strip_prefix(self.source_root.unwrap())
                                 .map_err(|_| "static receiver source outside project")?;
                             let locator = format!("{}#{}.{field}", path_from_root.display(), root.full_name());

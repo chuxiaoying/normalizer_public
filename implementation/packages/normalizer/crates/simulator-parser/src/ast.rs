@@ -41,7 +41,7 @@ impl JavaProgram {
 /// Java 类。
 #[derive(Debug, Clone)]
 pub struct JavaClass {
-    pub(crate) source_file: Option<String>,
+    pub(crate) source_file: String,
     /// 显式 import 的完整限定名列表（`import x.y.Z;`）
     ///
     /// parser 原始输出，不做 FQN 化决策——FQN 化由 resolver 在类型推断收口点完成。
@@ -68,8 +68,9 @@ impl JavaClass {
 
     pub fn type_parameters(&self) -> &[String] { &self.type_parameters }
 
-    pub fn source_file(&self) -> Option<&str> {
-        self.source_file.as_deref()
+    /// Origin supplied when this declaration was parsed.
+    pub fn source_file(&self) -> &str {
+        &self.source_file
     }
 
     pub fn imports(&self) -> &[String] {

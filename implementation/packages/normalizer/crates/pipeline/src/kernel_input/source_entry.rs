@@ -246,7 +246,7 @@ impl SourceEntry {
             (None, None) => return Err(fail("undeclared invocation root class or receiver")),
         };
         let root_name = class.full_name();
-        let declaration_file = class.source_file().ok_or_else(|| fail("missing invocation root source declaration"))?;
+        let declaration_file = class.source_file();
         if Path::new(declaration_file).strip_prefix(root).ok() != Some(Path::new(file)) {
             return Err(fail("file does not declare the invocation root class"));
         }

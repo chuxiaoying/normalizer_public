@@ -97,7 +97,7 @@ pub(crate) fn declarations(
                         id.clone(),
                         SourcePort {
                             interface: interface.clone(),
-                            source_path: declaration.source_file().unwrap_or(&interface).to_owned(),
+                            source_path: declaration.source_file().to_owned(),
                             endpoint,
                             returns: method.return_type().clone(),
                             params: method.params().to_vec(),
