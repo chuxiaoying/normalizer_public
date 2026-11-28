@@ -1,0 +1,14 @@
+entry: src/Account.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Account.java#Beans.ENTRY.read, returns: text}
+  P: {parameters: {fallback: {position: 0, type: text}}}
+  E:
+    label: {kind: state, source: src/Account.java#Beans.ENTRY.label, type: "text?"}
+  R: |-
+    CASE
+      WHEN label == null THEN fallback
+      ELSE label
+    END
+  S:
+    - write: {target: label, value: 'null'}

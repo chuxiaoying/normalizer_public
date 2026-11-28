@@ -1,0 +1,8 @@
+entry: src/Identity.java#Identity.sameIdentity
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Identity.java#Identity.sameIdentity, returns: bool}
+  P:
+    parameters:
+      a: {position: 0, type: unknown}
+  R: 'false'

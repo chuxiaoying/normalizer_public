@@ -1,0 +1,5 @@
+entry: src/Account.java#Beans.ENTRY.read
+reject:
+  fragments:
+    - "[NORM-PROJECT]"
+    - entry scalar state assignment type mismatch

@@ -1,0 +1,11 @@
+entry: src/Identity.java#Identity.sameIdentity
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Identity.java#Identity.sameIdentity, returns: bool}
+  P:
+    parameters:
+      b: {position: 0, type: unknown}
+      a: {position: 1, type: Box}
+  R: 'b != a'
+  types:
+    Box: {fields: {value: number}}
