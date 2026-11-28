@@ -1,0 +1,18 @@
+entry: src/Dispatch.ts#dispatch
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Dispatch.ts#dispatch, returns: void}
+  P:
+    parameters:
+      deliver: {position: 0, type: bool}
+  E:
+    ledger:
+      kind: state
+      source: src/Dispatch.ts#ledger
+      fields: {status: {ready: bool}}
+  S:
+    - call: {external: src/Dispatch.ts#audit.registered, args: [], returns: void, result: $e_0}
+    - write: {target: ledger.status.ready, value: true, when: deliver}
+    - call: {external: src/Dispatch.ts#notices.sent, args: [], returns: void, result: $e_1, when: deliver}
+    - write: {target: ledger.status.ready, value: false, when: deliver}
+  R: void
