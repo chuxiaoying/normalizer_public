@@ -4,6 +4,7 @@ import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadFixtureEntries } from './harness/fixtures.mjs';
+import { loadJavaSyntaxCoverage } from './harness/java-syntax-coverage.mjs';
 import { assertPers } from './harness/pers-schema.mjs';
 import { assertRejection } from './harness/rejection.mjs';
 import { test } from 'node:test';
@@ -12,7 +13,10 @@ import YAML from '../../implementation/tools/frontend/node_modules/yaml/dist/ind
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
-for (const { seedId, entry, scene, language, cases } of loadFixtureEntries(root)) {
+const entries = [...loadFixtureEntries(root)];
+loadJavaSyntaxCoverage(root, entries);
+
+for (const { seedId, entry, scene, language, cases } of entries) {
   for (const fixture of cases) {
     test([seedId, entry, fixture.name].join(' / '), t => {
       const project = mkdtempSync(join(tmpdir(), 'normalizer-example-'));

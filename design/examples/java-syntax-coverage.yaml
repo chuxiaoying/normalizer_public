@@ -1,0 +1,114 @@
+version: 1
+families:
+  switch:
+    title: 分支选择 switch
+    leaves:
+      independent-colon-groups:
+        focus: 冒号分支的整数标签、默认分支和互斥分支的定形
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, original, pers]
+          - [SwitchMode.classify, same-integer-cases-in-reverse-order, pers]
+          - [SwitchMode.classify, change-default, pers]
+      arrow-rules:
+        focus: 箭头规则中的块、赋值后继续和异常完成
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, arrow-rules-keep-the-same-return-paths, pers]
+          - [SwitchMode.classify, arrow-assignment-is-executed-before-the-continuation, pers]
+          - [SwitchMode.classify, arrow-throw-is-abrupt-only-on-its-own-path, pers]
+      grouped-labels:
+        focus: 多个标签共用一个分支体，保留单一异常来源
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, comma-labels-also-apply-to-colon-groups, pers]
+          - [SwitchMode.classify, comma-labels-share-one-return-arm, pers]
+          - [SwitchMode.classify, comma-labels-share-one-abrupt-site, pers]
+      exact-constant-labels:
+        focus: 不回卷的闭整数加、减、乘标签按常量值匹配
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, constant-arithmetic-labels-are-native, pers]
+      text-matching:
+        focus: String 选择按内容匹配，重排等价分支不改变 PERS
+        seed: control-switch-branch
+        evidence:
+          - [Stage.read, original, pers]
+          - [Stage.read, disjoint-text-labels-paused-first, pers]
+          - [Stage.read, disjoint-text-labels-ready-first, pers]
+          - [Stage.read, disjoint-text-labels-distinct-results, pers]
+      nullable-text-selector:
+        focus: 不含空值标签时，可空 String 的 null 走异常而非默认分支
+        seed: control-switch-branch
+        evidence:
+          - [Stage.read, null-throws-instead-of-selecting-default, pers]
+      unicode-label-order:
+        focus: 补充码点与孤立代理项按统一定形规则排序
+        seed: control-switch-branch
+        evidence:
+          - [Stage.read, case-label-order-is-codepoints-with-isolated-units, pers]
+          - [Stage.read, opposite-source-order-keeps-same-unicode-case-result, pers]
+      duplicate-labels:
+        focus: 重复标签按值拒绝，包括逗号列表、整数折叠和 Unicode 转义
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, comma-list-does-not-hide-a-duplicate, reject]
+          - [SwitchMode.classify, duplicate-discovered-after-constant-folding, reject]
+          - [Stage.read, unicode-escape-does-not-make-a-different-label, reject]
+      invalid-rule-shapes:
+        focus: 非语句表达式、同一块混用冒号组和箭头规则须拒绝
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, arrow-switch-statements-reject-a-bare-value, reject]
+          - [SwitchMode.classify, switch-block-cannot-mix-arrow-and-colon, reject]
+      colon-fall-through:
+        focus: 命中后继续执行下一组，直到离开 switch
+        seed: control-switch-branch
+        gap: implementation
+      nested-break:
+        focus: 嵌套条件里的无标签 break 只退出最近的 switch
+        seed: control-switch-branch
+        gap: implementation
+      value-expression:
+        focus: 产生值的 switch 表达式，区分箭头值与块内 yield
+        gap: review
+      pattern-and-null-labels:
+        focus: 模式绑定、显式 null 标签和守卫的匹配范围
+        gap: review
+  lambda:
+    title: Lambda 表达式与调用
+    leaves:
+      expression-and-block-body:
+        focus: 目标类型明确时，表达式体与等价的块返回体
+        gap: review
+      effectively-final-capture:
+        focus: 捕获有效 final 局部变量，区分捕获值和调用实参
+        gap: review
+      invalid-mutable-capture:
+        focus: 被重新赋值的局部变量不得作为合法捕获
+        gap: review
+      creation-versus-invocation:
+        focus: 建立函数值时不执行本体，实际调用才产生行为
+        gap: review
+  interface-default-methods:
+    title: 接口默认方法与分派
+    leaves:
+      inherited-default:
+        focus: 确定接收者执行实际继承的默认本体
+        seed: object-polymorphic-dispatch
+        evidence:
+          - [Billing.chargeClosed, closed-default-body-is-ordinary-native-dispatch, pers]
+      explicit-class-override:
+        focus: 类覆盖消解多个接口的默认方法冲突
+        seed: object-polymorphic-dispatch
+        evidence:
+          - [Billing.chargeClosed, one-explicit-override-resolves-two-interface-defaults, pers]
+      ambiguous-defaults:
+        focus: 无覆盖时不靠接口排列顺序消解默认方法冲突
+        seed: object-polymorphic-dispatch
+        evidence:
+          - [Billing.chargeClosed, ambiguous-defaults-cannot-be-resolved-by-interface-order, reject]
+      qualified-super:
+        focus: 接口名.super 调用选定接口的默认本体而非动态覆盖
+        seed: object-polymorphic-dispatch
+        gap: review
