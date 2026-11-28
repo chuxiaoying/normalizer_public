@@ -274,6 +274,13 @@ impl<'a> Engine<'a> {
                 ).ok_or_else(|| fail("unsupported native type-guard completion"))?;
                 Ok(Value::Term(Ty::Text, text))
             }
+            Node::NativeTextFlow { flow } => {
+                need(path.as_bool() == Some(true), "native text flow must own the complete entry domain")?;
+                let completion = self.source_text_flow(flow, env, env, path)?;
+                let value = completion.normal_return_value().unwrap_or_else(b::lit_null);
+                self.realtime_completion = completion;
+                Ok(Value::Term(Ty::Text, value))
+            }
             Node::NumberVector { items } => {
                 let mut values = Vec::with_capacity(items.len());
                 for item in items {

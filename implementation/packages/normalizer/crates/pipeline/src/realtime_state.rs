@@ -91,6 +91,11 @@ impl TerminalAlternatives {
             let value = returns.into_iter().next().map_or(last.1, |(_, value)| value);
             return Some(canonicalize_realtime_case(value));
         }
+        if let [first] = returns.as_slice() {
+            if let Some(expression) = native_text_partition(first, &last) {
+                return Some(canonicalize_realtime_case(expression));
+            }
+        }
         Self::strip_suffix_acquired_tags(&mut returns, &last.0);
         let expression = math::normalize(b::normal_return_case_when(returns, last));
         Some(canonicalize_realtime_case(expression))
@@ -108,6 +113,11 @@ impl TerminalAlternatives {
             }
         }).collect();
         let (last_guard, fallback) = returns.pop()?;
+        if let [first] = returns.as_slice() {
+            if let Some(expression) = native_text_partition(first, &(last_guard.clone(), fallback.clone())) {
+                return Some(canonicalize_realtime_case(expression));
+            }
+        }
         Self::strip_suffix_acquired_tags(&mut returns, &last_guard);
         Some(canonicalize_realtime_case(math::normalize(b::case_when(returns, fallback))))
     }
@@ -119,10 +129,12 @@ impl TerminalAlternatives {
         // Preserve it if even one remaining normal outcome does not prove it.
         let normal_guards: Vec<_> = returns.iter().map(|(guard, _)| guard.clone())
             .chain(std::iter::once(last_guard.clone())).collect();
-        for (i, (guard, _)) in returns.iter_mut().enumerate().skip(1) {
+        for (i, (guard, _)) in returns.iter_mut().enumerate() {
             let mut terms = Vec::new();
             guard.for_each_conjunct(|term| {
-                let redundant = math::domains::completion::throw_tag(term).is_some()
+                let scoped = (i > 0 && math::domains::completion::throw_tag(term).is_some())
+                    || math::domains::source_type_guard::is_positive_text_guard(term);
+                let redundant = scoped
                     && normal_guards[i..].iter().all(|alternative| b::path_implies(alternative, term));
                 if !redundant { terms.push(term.clone()); }
             });
@@ -130,6 +142,38 @@ impl TerminalAlternatives {
         }
     }
 
+}
+
+/// Two different exact text members of one acquired native operand cannot
+/// both match. When these are the only normal exits, either member's test
+/// selects its original result on the same normal-completion domain.
+fn native_text_partition(first: &(Expr, Expr), last: &(Expr, Expr)) -> Option<Expr> {
+    fn tests(guard: &Expr) -> Vec<(Expr, Expr, Expr)> {
+        let mut result = Vec::new();
+        guard.for_each_conjunct(|term| {
+            let Some((math::BinOpKind::Eq, a, z)) = term.as_binop() else { return; };
+            let unknown = math::domains::source_type_guard::is_native_unknown_parameter;
+            let text = |expr: &Expr| expr.as_lit().is_some_and(math::Lit::is_text);
+            let (input, literal) = if unknown(a) && text(z) { (a, z) }
+                else if unknown(z) && text(a) { (z, a) } else { return; };
+            result.push((input.clone(), literal.clone(), term.clone()));
+        });
+        result
+    }
+    let last_tests = tests(&last.0);
+    let mut best = None;
+    for (input, literal, test) in tests(&first.0) {
+        for (_, _, opposite) in last_tests.iter().filter(|(other, value, _)| other == &input && value != &literal) {
+            for (test, taken, fallback) in [(&test, &first.1, &last.1), (opposite, &last.1, &first.1)] {
+                let candidate = b::case_when(vec![(test.clone(), taken.clone())], fallback.clone());
+                let key = math::canonical_order_key(&candidate, &math::DefaultSortContext);
+                if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
+                    best = Some((key, candidate));
+                }
+            }
+        }
+    }
+    best.map(|(_, expression)| expression)
 }
 
 impl Completion {

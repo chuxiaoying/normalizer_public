@@ -13,7 +13,7 @@ import { compileTypedTuple } from './module-tuple.mjs';
 import { compileTypedListener } from './module-listener.mjs';
 import { checkedTypeScript, failTypedModule, isCompilerLibrary, typedModuleAst } from './typed-module.mjs';
 import { entryLocator } from './entry-locator.mjs';
-import { guardedUnknownText, unknownValueModule } from './module-unknown-text.mjs';
+import { guardedUnknownText, nativeTextFlow, unknownValueModule } from './module-unknown-text.mjs';
 import { projectSources } from './project-source.mjs';
 import {isOfficialNamespaceImport, standardCalls} from './standard-library.mjs';
 
@@ -180,6 +180,11 @@ function compileUnknownValue(sf, fn, file, entry, checker, allowTypeImports = fa
       return projectInput(file, entry, params, 'unknown', false, 'unknown',
         {op: 'var', name}, fn.getText(sf));
     }
+  }
+  const general = nativeTextFlow(sf, fn, checker, file + '#' + entry, allowTypeImports);
+  if (general) {
+    return projectInput(file, entry, general.params, 'string', false, 'text',
+      {op: 'source.native_text_flow', flow: general.flow}, fn.getText(sf), {exceptions: general.exceptions});
   }
   const proof = guardedUnknownText(sf, fn, checker, fail, allowTypeImports);
   const params = [{publicName: proof.name, name: proof.name, position: 0, domain: 'unknown'}];

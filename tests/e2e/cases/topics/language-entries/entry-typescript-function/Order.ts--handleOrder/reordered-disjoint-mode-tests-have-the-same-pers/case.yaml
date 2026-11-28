@@ -1,0 +1,20 @@
+entry: src/Order.ts#handleOrder
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Order.ts#handleOrder, returns: text}
+  P:
+    parameters:
+      mode: {position: 0, type: unknown}
+      value: {position: 1, type: unknown}
+  R: |-
+    CASE
+      WHEN mode == "delivery" THEN "送达：" + value
+      ELSE "门店：" + value
+    END
+  throws:
+    - type: Error
+      when: '"string" != typeof(value)'
+      payload: '"Expected text"'
+    - type: Error
+      when: 'mode != "delivery" AND mode != "pickup" AND "string" == typeof(value)'
+      payload: '"Unknown mode"'

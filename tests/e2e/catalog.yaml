@@ -373,6 +373,7 @@ seeds:
   entry-typescript-function:
     module:
       - value.ts#read
+      - Order.ts#handleOrder
   entry-javascript-module:
     module:
       - total.ts#total

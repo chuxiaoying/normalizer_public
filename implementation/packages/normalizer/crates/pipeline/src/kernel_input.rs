@@ -322,6 +322,8 @@ enum Node {
     /// non-coercing projection only on the admitted normal completion.
     #[serde(rename = "source.guard_unknown_text")]
     GuardUnknownText { name: String, message: WireText },
+    #[serde(rename = "source.native_text_flow")]
+    NativeTextFlow { flow: Box<NativeTextFlow> },
     #[serde(rename = "source.throw_unknown_input")]
     ThrowUnknownInput { name: String },
     #[serde(rename = "source.clock")]
@@ -806,14 +808,18 @@ impl Loaded {
                 need(ty == *override_type.as_ref().unwrap_or(fallback), "semantic parameter type mismatch")?;
                 if ty == Ty::UnknownInput {
                     let entry_context = self.project.entry_contexts.get(id);
-                    need(*fallback == Ty::Ref && parameters.is_empty() && f.params.len() == 1
+                    let single_input = parameters.is_empty() && f.params.len() == 1;
+                    need(*fallback == Ty::Ref
                         && entry_context.is_some_and(|context| context.parameter_type(&p.name) == Some("unknown")
                             && match &f.body {
-                                Node::GuardUnknownText { name, .. } if name == &p.name =>
+                                Node::GuardUnknownText { name, .. } if single_input && name == &p.name =>
                                     context.return_type() == "text" && self.project.exceptions.get("TypeError")
                                         .is_some_and(|domain| domain == "text"),
-                                Node::ThrowUnknownInput { name } if name == &p.name => context.return_type() == "void",
-                                Node::Var { name } if name == &p.name =>
+                                Node::NativeTextFlow { flow } =>
+                                    context.return_type() == "text" && flow.declared_throws(&self.project.exceptions),
+                                Node::ThrowUnknownInput { name } if single_input && name == &p.name =>
+                                    context.return_type() == "void",
+                                Node::Var { name } if single_input && name == &p.name =>
                                     context.return_type() == "unknown" && declared.returns == Ty::UnknownInput,
                                 _ => false,
                             }),
@@ -926,6 +932,8 @@ mod source_map;
 mod source_range;
 mod tuple_observation;
 mod source_decimal;
+mod source_text_flow;
+use source_text_flow::NativeTextFlow;
 pub mod standalone_closure;
 mod source_ports;
 #[path = "kernel_result.rs"]
