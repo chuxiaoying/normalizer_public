@@ -1,0 +1,6 @@
+entry: src/labels.ts#normalized
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/labels.ts#normalized, returns: text}
+  P: {parameters: {value: {position: 0, type: "text?"}}}
+  R: 'N.defaultIfBlank(value, "fallback")'

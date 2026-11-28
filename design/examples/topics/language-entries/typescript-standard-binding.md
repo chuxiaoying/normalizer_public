@@ -38,3 +38,5 @@ R: N.defaultIfBlank(N.trim(raw), fallback)
 - 入口形参 `N: string` 遮蔽导入时，`N.trim()` 实际是宿主对象方法，不是官方操作；不产出 PERS。
 - 缺失导入、错误签名和非 namespace 绑定均拒绝，不产出 PERS。
 - 本地相对模块的文本辅助函数也可自己绑定官方 namespace；把 `trim` 放到这个闭合的辅助函数时完整 PERS 不变。项目依赖缺失或辅助函数的参数遮蔽官方 namespace 时，另一文件的有效导入不能补上这项证据。
+
+若入参使用 `type Label = string | null`，严格类型检查已经查到同一个可空文本域。它仍作为 `text?` 传给标准文本操作，不凭别名拼写丢掉 `null`。

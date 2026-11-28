@@ -1,0 +1,5 @@
+entry: src/vector-case.ts#choose
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - expected declared business scalar or non-null readonly Vector for value

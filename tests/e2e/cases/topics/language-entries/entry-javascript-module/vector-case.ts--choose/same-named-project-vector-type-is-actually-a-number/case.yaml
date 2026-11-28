@@ -1,0 +1,8 @@
+entry: src/vector-case.ts#choose
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/vector-case.ts#choose, returns: "number"}
+  P:
+    parameters:
+      value: {position: 0, type: "number"}
+  R: 'value'
