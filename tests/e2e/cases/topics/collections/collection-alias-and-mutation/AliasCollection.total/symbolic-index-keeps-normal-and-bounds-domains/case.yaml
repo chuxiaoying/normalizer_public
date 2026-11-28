@@ -1,0 +1,12 @@
+entry: src/AliasCollection.java#AliasCollection.total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/AliasCollection.java#AliasCollection.total, returns: number}
+  P:
+    parameters:
+      values: {position: 0, type: 'number[]'}
+      index: {position: 1, type: number}
+  R: values[index]
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: index < 0 OR index >= LENGTH(values)
