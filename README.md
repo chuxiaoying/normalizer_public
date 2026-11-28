@@ -15,7 +15,7 @@ Normalizer 从选定的业务入口归一化参数、返回值、状态、外部
 
 | 目录 | 负责回答 | 怎么组织 |
 |---|---|---|
-| [`design/`](design/README.md) | 系统应该做什么、何时拒绝、输出怎样才唯一 | `chapters/` 的各章及其规则区是唯一裁决依据；目录页只导航。 |
+| [`design/`](design/README.md) | 系统应该做什么、何时拒绝、输出怎样才唯一 | `chapters/` 的各章是唯一裁决依据；目录页只导航。 |
 | [`implementation/`](implementation/README.md) | 规则怎样落到代码，出错在哪一层查 | `packages/` 放内核，`tools/` 放 CLI 和适配工具，`apps/` 放阅览器等应用。`contracts/` 放机器接口、内部交接与交付约束；`docs/` 放维护者的接线、定位、构建与诊断说明。 |
 | [`tests/`](tests/README.md) | 怎样证明正式 CLI 符合设计 | [`seeds/`](tests/seeds/README.md) 放语义例证和种子清单，按基础主题或联合主题归档。`e2e/catalog.yaml` 按种子 ID 登记 CLI 入口；`e2e/cases/` [沿用种子的主题路径](tests/README.md#登记及文件布局)，每个种子下按入口、原例和变体展开：`src/` 存完整分析工程，`case.yaml` 存入口和一份独立推导的完整 PERS 或拒绝断言。测试不另定主题归属。 |
 | [`usage/`](usage/README.md) | 使用者怎么准备输入、运行和处理失败 | 入门示例负责从零跑通；命令、参数、场景与诊断集中到 CLI 参考。`skills/` 放人或 agent 调用 CLI 前要执行的预处理指南。只交代用户需要操作的部分；实现接线和内部协议链接回实现区。 |
