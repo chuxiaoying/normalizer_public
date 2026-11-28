@@ -1,0 +1,6 @@
+entry: src/Shape.java#Shape.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - location=Shape.unused
+    - a conditional arm cannot return void

@@ -315,8 +315,17 @@ impl Admission<'_> {
             }
         };
         if owner.is_interface() {
-            return super::interface_member(self.program, owner, method, arity)
-                .map(|(_, _, member)| member);
+            if super::plain_source_interface(owner) {
+                return super::interface_member(self.program, owner, method, arity)
+                    .map(|(_, _, member)| member);
+            }
+            // The ordinary dispatch contract is narrower than Java source
+            // typing. A bodyless port member can still declare void or a
+            // checked exception. Resolve only that signature here; this is
+            // neither a callable body nor proof of an external receiver.
+            return super::named_method_for_arity(owner, method, arity)
+                .filter(|_| super::source_ports::declares_bodyless_member(owner, method, arity))
+                .map(|(_, member)| member);
         }
         super::named_method_for_arity(owner, method, arity).map(|(_, member)| member)
     }
@@ -839,19 +848,18 @@ impl Admission<'_> {
                 self.condition(self.expression(cond, scope)?, "ternary condition")?;
                 let yes = self.expression_in_context(then_expr, scope, object_target)?;
                 let no = self.expression_in_context(else_expr, scope, object_target)?;
+                if [then_expr.as_ref(), else_expr.as_ref()]
+                    .into_iter()
+                    .any(|arm| self.declared_type(arm, scope) == Some(JavaType::Void))
+                {
+                    return Err(
+                        self.diagnostic("NORM-SOURCE-TYPE", "a conditional arm cannot return void")
+                    );
+                }
                 if object_target {
                     // A reference conditional in an Object assignment context
-                    // can box either arm. Numeric/Boolean conditionals retain
-                    // their Java category; this is not a public union value.
-                    if [then_expr.as_ref(), else_expr.as_ref()]
-                        .into_iter()
-                        .any(|arm| self.declared_type(arm, scope) == Some(JavaType::Void))
-                    {
-                        return Err(self.diagnostic(
-                            "NORM-SOURCE-TYPE",
-                            "a conditional arm cannot return void",
-                        ));
-                    }
+                    // can box either value arm. Numeric/Boolean conditionals
+                    // retain their Java category; this is not a public union.
                     if yes == Kind::Bool && no == Kind::Bool {
                         Kind::Bool
                     } else {
