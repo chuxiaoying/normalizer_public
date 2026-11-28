@@ -1,0 +1,6 @@
+entry: src/steps/Entry.java#steps.Entry.read
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - 'constructor steps.Box is not accessible from steps.Entry'

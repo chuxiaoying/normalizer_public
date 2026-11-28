@@ -96,13 +96,16 @@ impl SourceReceiver {
     /// Establish the identity of a pre-existing receiver, not a fresh Java
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
     /// assembly is admitted by this route.
-    fn certify(program: &JavaProgram, class: &JavaClass, args: &[JavaExpr]) -> Result<()> {
+    fn certify(program: &JavaProgram, caller: &JavaClass, class: &JavaClass, args: &[JavaExpr]) -> Result<()> {
         if class.is_interface() || class.supertype().is_some() || !class.static_initializers().is_empty() {
             return Err("unsupported receiver assembly class".into());
         }
         let constructor = if class.methods().iter().any(|method| method.is_constructor()) {
             let (_, selected) = crate::normalized::constructor_for_arity(class, args.len())
                 .ok_or("receiver assembly requires a unique constructor of the invoked arity")?;
+            if !crate::normalized::instance_member_visible(caller, class, selected) {
+                return Err("receiver constructor is not accessible from the assembly class".into());
+            }
             Some(selected)
         } else {
             if !has_zero_argument_implicit_constructor(class) {
@@ -228,7 +231,7 @@ fn inert_singleton_target<'a>(program: &'a JavaProgram, owner: &JavaClass, field
     let Some(JavaExpr::New { java_type, args }) = field.initializer() else { return None; };
     if java_type != field.java_type() { return None; }
     let class = program.find_class(target)?;
-    SourceReceiver::certify(program, class, args).ok()?;
+    SourceReceiver::certify(program, owner, class, args).ok()?;
     Some(class)
 }
 
@@ -339,7 +342,7 @@ impl SourceEntry {
                 owner: root_name.clone(), field: field.name().into(), assembly_fields: BTreeSet::new(),
                 links: BTreeMap::new(), startup_setters: BTreeSet::new(),
             };
-            SourceReceiver::certify(program, declaration, args).map_err(|detail| fail(&detail))?;
+            SourceReceiver::certify(program, class, declaration, args).map_err(|detail| fail(&detail))?;
             receiver.certify_static_assembly(program, class).map_err(|detail| fail(&detail))?;
             (declaration, Some(receiver))
         } else {

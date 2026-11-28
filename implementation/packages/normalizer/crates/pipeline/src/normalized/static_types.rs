@@ -167,6 +167,25 @@ impl Admission<'_> {
         })
     }
 
+    fn source_class(&self, java_type: &JavaType) -> Option<&JavaClass> {
+        match java_type {
+            JavaType::Class(name) | JavaType::Generic(name, _) => self.program.find_class(name),
+            _ => None,
+        }
+    }
+
+    fn check_constructor_visibility(&self, java_type: &JavaType, arity: usize) -> Result<(), String> {
+        if let Some(class) = self.source_class(java_type) {
+            if let Some((_, constructor)) = super::constructor_for_arity(class, arity) {
+                if !super::instance_member_visible(self.class, class, constructor) {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                        &format!("constructor {} is not accessible from {}", class.full_name(), self.class.full_name())));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn method<'a>(&'a self, target: Option<&E>, method: &str, arity: usize, scope: &Scope) -> Option<&'a JavaMethod> {
         if let Some(target) = target {
             let root = match target {
@@ -320,8 +339,8 @@ impl Admission<'_> {
                 if field == "length" && receiver == Kind::Sequence {
                     return Ok(Kind::Number);
                 }
-                if let Some(JavaType::Class(owner)) = self.declared_type(target, scope) {
-                    if let Some(declaration) = self.program.find_class(&owner) {
+                if let Some(target_type) = self.declared_type(target, scope) {
+                    if let Some(declaration) = self.source_class(&target_type) {
                         if declaration.is_record() {
                             return Err(self.diagnostic("NORM-RECORD-ACCESS",
                                 "a passive record component is private; direct Java field access is not supported"));
@@ -329,7 +348,7 @@ impl Admission<'_> {
                         if let Some(member) = declaration.fields().iter().find(|member| member.name() == field) {
                             if !super::source_member_visible(self.class, declaration, member.is_public(), member.is_private()) {
                                 return Err(self.diagnostic("NORM-SOURCE-TYPE",
-                                    &format!("field {owner}.{field} is not accessible from {}", self.class.full_name())));
+                                    &format!("field {}.{field} is not accessible from {}", declaration.full_name(), self.class.full_name())));
                             }
                         }
                     }
@@ -398,6 +417,16 @@ impl Admission<'_> {
                         }
                     }
                 }
+                if let Some(declaration) = target.as_deref().and_then(|target| self.declared_type(target, scope))
+                    .and_then(|ty| self.source_class(&ty))
+                {
+                    if let Some((_, member)) = super::named_method_for_arity(declaration, method, args.len()) {
+                        if !super::instance_member_visible(self.class, declaration, member) {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                                &format!("method {}.{method} is not accessible from {}", declaration.full_name(), self.class.full_name())));
+                        }
+                    }
+                }
                 let callee = self.method(target.as_deref(), method, args.len(), scope);
                 for (i, arg) in args.iter().enumerate() {
                     let actual = self.expression(arg, scope)?;
@@ -411,6 +440,7 @@ impl Admission<'_> {
                 declared()
             }
             E::New { java_type: ty @ JavaType::Generic(owner, _), args } => {
+                self.check_constructor_visibility(ty, args.len())?;
                 let product = super::generic_product::instantiated(self.program, ty)
                     .ok_or_else(|| self.diagnostic("NORM-SOURCE-TYPE",
                         &format!("generic constructor {owner} needs explicit supported type arguments")))?;
@@ -427,6 +457,7 @@ impl Admission<'_> {
                 Kind::Ref
             }
             E::New { java_type, args } => {
+                self.check_constructor_visibility(java_type, args.len())?;
                 let record = match java_type {
                     JavaType::Class(name) => self.program.find_class(name).filter(|class| class.is_record()),
                     _ => None,
