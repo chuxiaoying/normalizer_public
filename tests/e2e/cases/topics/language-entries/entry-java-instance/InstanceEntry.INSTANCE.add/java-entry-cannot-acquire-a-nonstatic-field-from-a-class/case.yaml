@@ -1,0 +1,5 @@
+entry: 'src/InstanceEntry.java#Beans.ENTRY.add'
+reject:
+  fragments:
+    - '[NORM-ENTRY]'
+    - 'receiver field must be static final with a matching explicit constructor'

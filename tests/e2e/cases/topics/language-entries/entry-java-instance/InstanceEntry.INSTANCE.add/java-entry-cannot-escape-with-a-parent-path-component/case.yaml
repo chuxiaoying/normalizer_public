@@ -1,0 +1,5 @@
+entry: 'src/../InstanceEntry.java#InstanceEntry.INSTANCE.add'
+reject:
+  fragments:
+    - '[NORM-ENTRY]'
+    - 'expected a project-relative .java file'

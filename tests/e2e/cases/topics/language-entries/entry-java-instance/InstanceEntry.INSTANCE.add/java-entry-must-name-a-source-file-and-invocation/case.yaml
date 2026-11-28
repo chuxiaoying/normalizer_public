@@ -1,0 +1,5 @@
+entry: 'src/InstanceEntry.java'
+reject:
+  fragments:
+    - '[NORM-ENTRY]'
+    - 'expected project-relative Java path#static invocation'

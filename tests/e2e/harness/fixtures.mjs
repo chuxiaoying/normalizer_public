@@ -37,18 +37,21 @@ function loadFixture(root, directory, language, entry, scene, inputs, caseId) {
   assert.equal(typeof locator, 'string', file + ': expected a CLI entry string');
   const [main, symbol, extra] = locator.split('#');
   const tsInvocation = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+  const extension = language === 'typescript' ? '.ts' : '.java';
   const canonical = Boolean(symbol && extra === undefined && sourcePath.test(main) && posix.normalize(main) === main
-    && (language !== 'typescript' || tsInvocation.test(symbol)));
-  // For a syntax rejection, invoke the actual standalone CLI with the
-  // literal argument. The positive fixture convention is not its parser.
-  const malformedModule = !canonical && !scene && language === 'typescript' && Boolean(reject);
-  assert.ok(canonical || malformedModule, file + ': invalid CLI entry locator');
+    && main.endsWith(extension) && (language !== 'typescript' || tsInvocation.test(symbol)));
+  // Negative source cases send the exact invalid argument to the CLI.
+  // Keep normal locators and scenario fixtures on the positive convention.
+  const malformedSource = !canonical && !scene && Boolean(reject);
+  assert.ok(canonical || malformedSource, file + ': invalid CLI entry locator');
   const sources = readSources(root, directory).sort(([left], [right]) => left.localeCompare(right));
   const input = Object.fromEntries(sources);
-  if (malformedModule) {
-    assert.ok(!locator.includes('\0') && reject.fragments?.length > 1
-      && Object.hasOwn(input, 'src/' + entry.split('#')[0]),
-    file + ': malformed locator rejection needs an ordinary seed source and a precise diagnostic');
+  if (malformedSource) {
+    const hasSeedSource = language === 'typescript'
+      ? Object.hasOwn(input, 'src/' + entry.split('#')[0])
+      : sources.some(([path]) => path.endsWith(extension));
+    assert.ok(!locator.includes('\0') && reject.fragments?.length > 1 && hasSeedSource,
+      file + ': malformed locator rejection needs an ordinary seed source and a precise diagnostic');
   } else if (scene) {
     assert.ok(Object.hasOwn(input, main), file + ': the entry source must be in the fixture');
     assert.ok(main.endsWith('.ts') && symbol === entry, file + ': invalid prepared frontend locator');

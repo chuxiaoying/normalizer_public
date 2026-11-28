@@ -1,0 +1,5 @@
+entry: 'src/InstanceEntry.java#InstanceEntry.INSTANCE.add(int'
+reject:
+  fragments:
+    - '[NORM-ENTRY]'
+    - 'malformed source parameter signature'
