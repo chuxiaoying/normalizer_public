@@ -1,0 +1,29 @@
+usage/README.md
+  s_47ae65fe8e6220::t_95b3166aa3259d 3
+usage/getting-started.md
+  s_47ae65fe8e6220::t_95b3166aa3259d 27,56,58
+usage/skills/normalizer-preprocess/SKILL.md
+  s_47ae65fe8e6220::t_95b3166aa3259d 3,10,12-13,15-19,23,25
+  s_47ae65fe8e6220::t_8983efe5956a2e 8,14,27
+usage/cli.md
+  s_47ae65fe8e6220::t_8983efe5956a2e 36
+  s_47ae65fe8e6220::t_95b3166aa3259d 23,29-32,34,37
+usage/kernel-input.md
+  s_47ae65fe8e6220::t_95b3166aa3259d 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dfcc5ffa70657453c5b6bc537dee7bbd74d3f55e",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}
