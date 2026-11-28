@@ -61,15 +61,16 @@ pub(crate) fn simplify(
 /// Do not move a nullable field observation or a preceding guard.
 fn factor_leading_null_test(branches: &[(Expr, Expr)]) -> Option<Vec<(Expr, Expr)>> {
     use crate::BinOpKind::{Eq, Ne};
-    for (index, pair) in branches.windows(2).enumerate() {
-        let [(protected, selected), (null, on_null)] = pair else { continue; };
+    for (index, ((protected, selected), (null, on_null))) in
+        branches.iter().zip(branches.iter().skip(1)).enumerate()
+    {
         let Some((Eq, subject, nil)) = null.as_binop() else { continue; };
         if subject.as_heap_ref().is_none() || !nil.is_null() { continue; }
+        if !matches!(protected.as_binop(), Some((crate::BinOpKind::And, ..))) { continue; }
+        // A binary conjunction contributes at least two leaves.
         let parts = flatten_and(protected);
-        let Some((first, rest)) = parts.split_first() else { continue; };
-        if rest.is_empty()
-            || !matches!(first.as_binop(), Some((Ne, other, rhs)) if other == subject && rhs == nil)
-        {
+        let (first, rest) = (&parts[0], &parts[1..]);
+        if !matches!(first.as_binop(), Some((Ne, other, rhs)) if other == subject && rhs == nil) {
             continue;
         }
         let mut result = branches.to_vec();
@@ -576,41 +577,34 @@ fn group_same_value_effective_domains(branches: &[(Expr, Expr)]) -> (Vec<(Expr, 
         }
     }
 
-    let mut groups: Vec<(Expr, Vec<Expr>)> = Vec::new();
-
-    for ((_, value), domain) in branches.iter().zip(effective_domains.into_iter()) {
+    struct ValueGroup {
+        value: Expr,
+        first: Expr,
+        later: Vec<Expr>,
+    }
+    let mut groups: Vec<ValueGroup> = Vec::new();
+    for ((_, value), domain) in branches.iter().zip(effective_domains) {
         let domain = crate::normalize(domain);
         if domain.as_bool() == Some(false) {
             continue;
         }
-        if let Some((_, domains)) = groups
-            .iter_mut()
-            .find(|(group_value, _)| group_value == value)
-        {
-            domains.push(domain);
+        if let Some(group) = groups.iter_mut().find(|group| &group.value == value) {
+            group.later.push(domain);
         } else {
-            groups.push((value.clone(), vec![domain]));
+            groups.push(ValueGroup { value: value.clone(), first: domain, later: Vec::new() });
         }
     }
 
-
-    // Each input contributes to at most one nonempty group. Without
-    // a repeated payload, grouping cannot eliminate an arm.
-    if groups.iter().all(|(_, domains)| domains.len() == 1) {
+    // Each group already has its first effective domain. Without a
+    // repeated payload, grouping cannot eliminate an arm.
+    if groups.iter().all(|group| group.later.is_empty()) {
         return (branches.to_vec(), false);
     }
 
-    let mut out: Vec<(Expr, Expr)> = groups
-        .into_iter()
-        .map(|(value, domains)| {
-            let cond = domains
-                .into_iter()
-                .reduce(crate::builder::or)
-                .map(crate::normalize)
-                .unwrap_or_else(|| crate::builder::lit_bool(false));
-            (cond, value)
-        })
-        .collect();
+    let mut out: Vec<(Expr, Expr)> = groups.into_iter().map(|group| {
+        let condition = group.later.into_iter().fold(group.first, crate::builder::or);
+        (crate::normalize(condition), group.value)
+    }).collect();
 
     if let Some(default) = explicit_default {
         // Do not OR raw branch guards: moving a later same-value arm before
