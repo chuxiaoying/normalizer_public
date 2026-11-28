@@ -8,7 +8,6 @@ impl JavaProgram {
     /// Adapters that only parse a signature carrier do not use this linker.
     pub fn bind_source_names(&mut self) -> Result<(), String> {
         let qualify_names = self.classes.iter().any(|class| !class.package.is_empty());
-        let declared = self.classes.iter().map(JavaClass::full_name).collect::<BTreeSet<_>>();
         let units = self.classes.iter().map(|class| (class.full_name(), class.source_file.clone()))
             .collect::<BTreeMap<_, _>>();
         let packages = self.classes.iter().map(|class| (class.full_name(), class.package.clone()))
@@ -57,7 +56,7 @@ impl JavaProgram {
                 imports.insert(short.to_owned(), import.clone());
             }
             let issue = RefCell::new(None);
-            let scope = Names { owner: &owner, package: &class.package, declared: &declared, imports: &imports, packages: &packages,
+            let scope = Names { owner: &owner, package: &class.package, imports: &imports, packages: &packages,
                 qualify_names, private_statics: &private_statics, nests: &nests,
                 cross_package_statics: &cross_package_statics, issue: &issue };
             let types = class.type_parameters.iter().cloned().collect::<BTreeSet<_>>();
@@ -100,7 +99,6 @@ impl JavaProgram {
 struct Names<'a> {
     owner: &'a str,
     package: &'a str,
-    declared: &'a BTreeSet<String>,
     imports: &'a BTreeMap<String, String>,
     packages: &'a BTreeMap<String, String>,
     qualify_names: bool,
@@ -117,7 +115,7 @@ impl Names<'_> {
         let mut owner = self.owner;
         while owner != self.package && !owner.is_empty() {
             let nested = format!("{owner}.{raw}");
-            if self.declared.contains(&nested) { return Some(nested); }
+            if self.packages.contains_key(&nested) { return Some(nested); }
             owner = owner.rsplit_once('.').map_or("", |(outer, _)| outer);
         }
         let (short, tail) = raw.split_once('.').map_or((raw, ""), |(head, tail)| (head, tail));
@@ -125,26 +123,28 @@ impl Names<'_> {
             let candidate = if tail.is_empty() { import.clone() } else { format!("{import}.{tail}") };
             // Only project declarations bind here; built-in imports are
             // handled by the native type gate rather than inferred by name.
-            return self.declared.get(&candidate).cloned();
+            return self.packages.get_key_value(&candidate).map(|(declared, _)| declared.clone());
         }
         let in_package = if self.package.is_empty() { raw.to_owned() }
             else { format!("{}.{raw}", self.package) };
-        if self.declared.contains(&in_package) { return Some(in_package); }
-        if raw.contains('.') && self.declared.contains(raw) { return Some(raw.into()); }
+        if self.packages.contains_key(&in_package) { return Some(in_package); }
+        if raw.contains('.') && self.packages.contains_key(raw) { return Some(raw.into()); }
         None
     }
 
     fn require_member_access(&self, bound: &str, call: Option<(&str, usize)>) {
-        if let Some((member, arity)) = call {
-            if self.nests.get(self.owner) != self.nests.get(bound)
-                && self.private_statics.get(bound).is_some_and(|methods| methods.contains(&(member.to_owned(), arity)))
-                && self.packages.get(bound).is_some_and(|package| package == self.package)
-            {
-                self.issue.borrow_mut().get_or_insert_with(|| format!("private member {bound}.{member} is not accessible from {}", self.owner));
-                return;
+        // Callers only reach this check with a key just resolved from
+        // the declarations table. Every declaration owns a package and nest.
+        if self.packages[bound] == self.package {
+            if let Some((member, arity)) = call {
+                if self.nests[self.owner] != self.nests[bound]
+                    && self.private_statics.get(bound).is_some_and(|methods|
+                        methods.contains(&(member.to_owned(), arity)))
+                {
+                    self.issue.borrow_mut().get_or_insert_with(||
+                        format!("private member {bound}.{member} is not accessible from {}", self.owner));
+                }
             }
-        }
-        if self.packages.get(bound).is_none_or(|package| package == self.package) {
             return;
         }
         // Cross-package references currently pass only at an unambiguous
@@ -173,7 +173,7 @@ impl Names<'_> {
             // and explicit application bindings. Another package's short
             // name cannot shadow it.
             *name = format!("java.lang.{name}");
-        } else if !self.package.is_empty() && self.declared.contains(name) && !name.contains('.') {
+        } else if !self.package.is_empty() && self.packages.contains_key(name) && !name.contains('.') {
             // Named packages cannot refer to the unnamed package.
             *name = format!("{}.{name}", self.package);
         }
@@ -210,7 +210,7 @@ impl Names<'_> {
                     if self.qualify_names { *value = JavaExpr::Ident(bound); }
                     return;
                 }
-                if !self.package.is_empty() && self.declared.contains(&raw) && !raw.contains('.') {
+                if !self.package.is_empty() && self.packages.contains_key(&raw) && !raw.contains('.') {
                     *value = JavaExpr::Ident(format!("{}.{raw}", self.package));
                     return;
                 }
