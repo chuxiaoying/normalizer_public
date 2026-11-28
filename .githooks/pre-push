@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+checked=" "
+while read -r local_ref local_oid remote_ref remote_oid; do
+    # Deletions have a zero local OID and publish no tree.
+    case "$local_oid" in
+        *[!0]*) ;;
+        *) continue ;;
+    esac
+
+    if ! commit=$(git rev-parse --verify --quiet "$local_oid^{commit}"); then
+        printf 'Rust 格式门禁：无法检查 %s 的提交。\n' "$local_ref" >&2
+        exit 1
+    fi
+    case "$checked" in *" $commit "*) continue ;; esac
+    if ! "$root/implementation/tools/rust-format" --check --ref "$commit" </dev/null; then
+        printf '拒绝推送 %s → %s：请运行 implementation/tools/rust-format 并提交格式修正后再推。\n' "$local_ref" "$remote_ref" >&2
+        exit 1
+    fi
+    checked="$checked$commit "
+done

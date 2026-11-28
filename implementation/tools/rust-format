@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Format tracked Rust files, or check the exact tree of a Git commit."""
+
+import argparse
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def git(*args, **kwargs):
+    return subprocess.run(["git", *args], check=True, **kwargs)
+
+
+def rust_paths(listing):
+    return [os.fsdecode(p) for p in listing if p.endswith(b".rs")]
+
+
+def format_files(directory, paths, check):
+    version = (directory / "implementation/tools/rustfmt-version").read_text().strip()
+    if not paths:
+        raise ValueError("没有找到受 Git 跟踪的 Rust 源文件")
+    command = [
+        "rustup", "run", version, "rustfmt",
+        "--config-path", str(directory / "rustfmt.toml"),
+        "--config", "skip_children=true",
+    ]
+    if check:
+        command.append("--check")
+    # Each file is checked explicitly, including files not yet declared as Cargo modules.
+    for start in range(0, len(paths), 64):
+        files = paths[start:start + 64]
+        for path in files:
+            source = directory / path
+            if source.is_symlink() or not source.is_file():
+                raise ValueError(f"Rust 源文件不可用或是符号链接：{path}")
+        subprocess.run([*command, "--", *files], cwd=directory, check=True)
+    print(f"Rust 格式{'检查通过' if check else '化完成'}：{len(paths)} 个文件（{version}）")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--ref", help="检查指定提交，而不是当前工作区")
+    args = parser.parse_args()
+    if args.ref and not args.check:
+        parser.error("--ref 只能与 --check 一起使用")
+
+    root = Path(os.fsdecode(git("rev-parse", "--show-toplevel", stdout=subprocess.PIPE).stdout.rstrip(b"\n")))
+    format_paths = ("rustfmt.toml", "implementation/tools/rustfmt-version")
+    if not args.ref:
+        listing = git("-C", str(root), "ls-files", "-z", stdout=subprocess.PIPE).stdout
+        format_files(root, rust_paths(listing.split(b"\0")), args.check)
+        return
+
+    commit = git("rev-parse", "--verify", "--end-of-options", f"{args.ref}^{{commit}}",
+                 stdout=subprocess.PIPE, text=True).stdout.strip()
+    entries = git("ls-tree", "-rz", commit, stdout=subprocess.PIPE).stdout
+    tree = {}
+    for entry in entries.split(b"\0"):
+        if entry:
+            header, path = entry.split(b"\t", 1)
+            tree[path] = header.split(b" ")
+    paths = rust_paths(tree)
+    with tempfile.TemporaryDirectory(prefix="normalizer-rustfmt-") as temp:
+        # Read exact blob bytes; don't use the working tree, staging area, or checkout filters.
+        for path in (*format_paths, *paths):
+            mode, kind, oid = tree.get(os.fsencode(path), (None, None, None))
+            if mode not in (b"100644", b"100755") or kind != b"blob":
+                raise ValueError(f"提交中缺少普通文件：{path}")
+            dest = Path(temp) / path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("wb") as out:
+                git("cat-file", "blob", oid.decode("ascii"), stdout=out)
+        format_files(Path(temp), paths, True)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"Rust 格式门禁失败：{error}", file=sys.stderr)
+        sys.exit(1)

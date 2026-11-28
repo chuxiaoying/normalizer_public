@@ -1,0 +1,19 @@
+name: Rust formatting
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned rustfmt
+        run: rustup toolchain install "$(cat implementation/tools/rustfmt-version)" --profile minimal --component rustfmt
+      - name: Check all tracked Rust files
+        run: implementation/tools/rust-format --check
