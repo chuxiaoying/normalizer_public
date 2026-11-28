@@ -178,3 +178,5 @@ R: CHOOSE(values DEFAULT backup AS member0 YIELD member0 + COALESCE(SUM(SELECT v
 分组或连接得到的闭合组数、匹配数也沿同一条规则，不丢分组键、连接条件或任一已取得的表。
 
 缺省也可以使用已经取得的有序数组位置结果。先以 `first from data[1:] else 0` 取第二项，再将该结果用作 `choose` 的缺省值。若 `data` 少于两项，所取得的值是 0；不能因为候选为空而在无第二项时执行一次越界读取。
+
+二维数组的关联求和也可以作为缺省。先逐组对大于 `threshold` 的整数求和，再使用该合计。内层只看当前组，不把所有组的明细重新与外层组合。以 `groups = [[1, 8], [], [5, 3]]`、`threshold = 4` 为例，候选为空时使用 13。
