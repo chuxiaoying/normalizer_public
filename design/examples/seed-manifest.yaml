@@ -88,6 +88,7 @@ seeds:
   control-switch-branch: { kind: topic, topic: control-flow, related: [] }
   external-nondeterministic-result: { kind: topic, topic: external-boundaries, related: [] }
   entry-java-instance: { kind: topic, topic: language-entries, related: [] }
+  entry-java-wide-text-pattern: { kind: topic, topic: language-entries, related: [objects-and-types, control-flow] }
   number-money-precision: { kind: topic, topic: number-domain, related: [] }
   basic-unsupported-source-boundary: { kind: basic, topic: basic-contracts, related: [] }
   expr-unknown-condition-preservation: { kind: topic, topic: expression-simplification, related: [] }

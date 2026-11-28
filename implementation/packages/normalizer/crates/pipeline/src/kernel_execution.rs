@@ -527,13 +527,14 @@ impl<'a> Engine<'a> {
                     self.throw_source_on_path(path, "java.lang.NullPointerException");
                 }
                 S::Throw(expr) => {
-                    use crate::normalized::RuntimeThrowMessage;
-                    let (class, payload) = match crate::normalized::runtime_throw_message(expr) {
-                        Some(RuntimeThrowMessage::Absent) => (crate::normalized::RUNTIME_EXCEPTION.into(), None),
-                        Some(RuntimeThrowMessage::Null) => (crate::normalized::RUNTIME_EXCEPTION.into(), Some(b::lit_null())),
-                        Some(RuntimeThrowMessage::Text(text)) => (crate::normalized::RUNTIME_EXCEPTION.into(), Some(b::lit_str(text))),
-                        Some(RuntimeThrowMessage::TextUnits(units)) => (crate::normalized::RUNTIME_EXCEPTION.into(),
-                            Some(b::lit(math::Lit::from_text_units(units.to_vec())))),
+                    use crate::normalized::NativeThrowMessage;
+                    let (class, payload) = match crate::normalized::native_literal_throw(expr) {
+                        Some((class, message)) => (class.into(), match message {
+                            NativeThrowMessage::Absent => None,
+                            NativeThrowMessage::Null => Some(b::lit_null()),
+                            NativeThrowMessage::Text(text) => Some(b::lit_str(text)),
+                            NativeThrowMessage::TextUnits(units) => Some(b::lit(math::Lit::from_text_units(units.to_vec()))),
+                        }),
                         None => {
                             let class = crate::normalized::type_only_throw_name(s)
                                 .and_then(|raw| self.project.source_exception_bindings.get(id)?.get(raw))
@@ -731,11 +732,18 @@ impl<'a> Engine<'a> {
                     then_block,
                     else_block,
                 } => {
-                    let test=self.java_expr(cond,id,env,path.clone())?;
+                    let (test, matched) = if let J::InstanceOf { value, target, binding: Some(name) } = cond {
+                        need(crate::normalized::platform_string_type(self.program, target), "uncertified Java pattern target")?;
+                        let Some((value, _)) = self.source_operand(value, id, env, path.clone())? else { continue; };
+                        let (guard, narrowed) = self.java_string_pattern(value)?;
+                        (Value::Term(Ty::Bool, guard), Some((name.as_str(), narrowed)))
+                    } else {
+                        (self.java_expr(cond, id, env, path.clone())?, None)
+                    };
                     let path = self.normal_path(path);
                     if path.as_bool() == Some(false) { continue; }
-                    let condition=self.condition_under_path(test.scalar()?,&path);
-                    self.source_if(condition,then_block,else_block.as_deref().unwrap_or_default(),id,env,path)?;
+                    let condition = self.condition_under_path(test.scalar()?, &path);
+                    self.source_if(condition, then_block, else_block.as_deref().unwrap_or_default(), matched, id, env, path)?;
                 }
                 S::Switch { selector, cases, default } => {
                     let selector = self.java_expr(selector, id, env, path.clone())?;
@@ -1036,6 +1044,26 @@ impl<'a> Engine<'a> {
         Ok(Some((left, right, path)))
     }
 
+    fn java_string_pattern(&self, value: Value) -> Result<(Expr, Value)> {
+        let reference = value.scalar()?;
+        let (guard, text) = if reference.is_null() {
+            // No projection is consumed on an unmatched arm.
+            (b::lit_bool(false), reference)
+        } else if value.ty() == Ty::Text {
+            (b::ne(reference.clone(), b::lit_null()), reference)
+        } else if matches!(reference.as_sym_var(), Some(math::SymVarOrigin::Parameter { primitive_type, .. })
+            if primitive_type == "java_reference")
+        {
+            use math::domains::source_type_guard::{certified_text, is_native_text};
+            (is_native_text(reference.clone()), certified_text(reference))
+        } else if self.source_objects.allocation_owner(&reference).is_some() {
+            (b::lit_bool(false), b::lit_null())
+        } else {
+            return Err(fail("String instanceof needs a supported source reference"));
+        };
+        Ok((guard, Value::Term(Ty::Text, text)))
+    }
+
     pub(super) fn java_expr(
         &mut self,
         j: &J,
@@ -1067,10 +1095,14 @@ impl<'a> Engine<'a> {
                 }
                 Err(fail(format!("undefined Java variable {n}")))
             }
-            J::InstanceOf { value, target } => {
+            J::InstanceOf { value, target, binding } => {
+                need(binding.is_none(), "uncertified Java pattern binding")?;
                 let Some((value, _)) = self.source_operand(value, id, env, path)? else {
                     return Ok(Value::Term(Ty::Bool, b::lit_null()));
                 };
+                if crate::normalized::platform_string_type(self.program, target) {
+                    return Ok(Value::Term(Ty::Bool, self.java_string_pattern(value)?.0));
+                }
                 let value = value.scalar()?;
                 if crate::normalized::root_object_type(self.program, target)
                     && matches!(value.as_sym_var(), Some(math::SymVarOrigin::Parameter { primitive_type, .. })

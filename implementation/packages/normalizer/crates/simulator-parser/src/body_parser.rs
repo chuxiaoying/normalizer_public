@@ -680,7 +680,12 @@ impl<'a> Parser<'a> {
                 if !matches!(target, JavaType::Class(_) | JavaType::Array(_)) {
                     return Err(self.err_at(type_at, "[JAVA-INSTANCEOF] expected a reference type after instanceof"));
                 }
-                left = JavaExpr::InstanceOf { value: Box::new(left), target };
+                let binding_at = self.pos;
+                let binding = self.read_ident();
+                if binding.as_deref().is_some_and(super::parser::is_reserved_identifier) {
+                    return Err(self.err_at(binding_at, "[JAVA-INSTANCEOF] invalid pattern variable"));
+                }
+                left = JavaExpr::InstanceOf { value: Box::new(left), target, binding };
                 continue;
             }
             if self.starts_with("<<") || self.starts_with(">>")

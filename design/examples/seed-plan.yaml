@@ -2,8 +2,8 @@ version: 1
 model:
   name: normalizer-semantic-seed-denominator-v1
   rule: 每个条目代表一个需要独立人机对齐的语义场景，planned 只占分母，不生成源码、PERS 或 CLI 测试。
-  total: 125
-  seeded: 125
+  total: 126
+  seeded: 126
   planned: 0
 topics:
   expression-simplification:
@@ -520,6 +520,11 @@ topics:
         surface: java
         focus: Java 实例方法入口和 receiver
         test_status: covered
+      - id: entry-java-wide-text-pattern
+        status: seeded
+        test_status: covered
+        surface: java
+        focus: Java Object 的文本类型判断和模式收窄，保留未匹配分支与实际完成值
       - id: entry-javascript-module
         status: seeded
         test_status: covered

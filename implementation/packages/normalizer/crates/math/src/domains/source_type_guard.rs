@@ -4,8 +4,8 @@
 use crate::{builder as b, Expr, Primitive};
 use crate::domains::primitive::registry::FuncSemantics;
 
-pub const TYPEOF: &str = "normalized.ts.typeof";
-pub const TEXT_PROJECTION: &str = "normalized.ts.narrow_text";
+pub const TYPEOF: &str = "normalized.source.typeof";
+pub const TEXT_PROJECTION: &str = "normalized.source.narrow_text";
 
 pub fn is_native_text(value: Expr) -> Expr {
     let key = crate::register_func(TYPEOF, vec![Primitive::Composite],

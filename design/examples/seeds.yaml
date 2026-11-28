@@ -60,6 +60,7 @@ loop-constant-bound: topics/loops-and-termination/java-constant-bound.md
 control-switch-branch: topics/control-flow/java-switch-branch.md
 external-nondeterministic-result: topics/external-boundaries/java-external-reused-result.md
 entry-java-instance: topics/language-entries/java-instance-entry.md
+entry-java-wide-text-pattern: topics/language-entries/java-wide-text-pattern.md
 number-money-precision: topics/number-domain/java-money-precision.md
 basic-unsupported-source-boundary: topics/basic-contracts/java-unsupported-source-boundary.md
 expr-unknown-condition-preservation: topics/expression-simplification/java-unknown-condition.md

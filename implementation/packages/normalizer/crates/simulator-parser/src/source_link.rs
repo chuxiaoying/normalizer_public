@@ -166,11 +166,13 @@ impl Names<'_> {
         if let Some(bound) = self.declared_name(name) {
             self.require_member_access(&bound, None);
             *name = bound;
-        } else if name == "Object" && self.imports.get(name).is_none_or(|path| path == "java.lang.Object") {
+        } else if matches!(name.as_str(), "Object" | "String") &&
+            self.imports.get(name).is_none_or(|path| path.strip_prefix("java.lang.") == Some(name.as_str()))
+        {
             // The implicit java.lang import is considered only after lexical
             // and explicit application bindings. Another package's short
             // name cannot shadow it.
-            *name = "java.lang.Object".into();
+            *name = format!("java.lang.{name}");
         } else if !self.package.is_empty() && self.declared.contains(name) && !name.contains('.') {
             // Named packages cannot refer to the unnamed package.
             *name = format!("{}.{name}", self.package);
@@ -221,7 +223,7 @@ impl Names<'_> {
         use JavaExpr::*;
         match value {
             Lit(_) | Ident(_) => {}
-            InstanceOf {value, target} | Cast {operand: value, target_type: target} => {
+            InstanceOf {value, target, ..} | Cast {operand: value, target_type: target} => {
                 self.ty(target, types);
                 self.expr(value, types, locals);
             }
@@ -267,7 +269,11 @@ impl Names<'_> {
                 ExprStmt(value) | Throw(value) | Return(Some(value)) => self.expr(value, types, locals),
                 If {cond, then_block, else_block} => {
                     self.expr(cond, types, locals);
-                    self.block(then_block, types, &mut locals.clone());
+                    let mut matched = locals.clone();
+                    if let JavaExpr::InstanceOf { binding: Some(name), .. } = cond {
+                        matched.insert(name.clone());
+                    }
+                    self.block(then_block, types, &mut matched);
                     if let Some(body) = else_block { self.block(body, types, &mut locals.clone()); }
                 }
                 Switch {selector, cases, default} => {

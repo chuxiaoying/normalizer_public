@@ -314,7 +314,7 @@ pub(super) fn observations(
             TerminalOutcome::Throw { class, payload } => {
                 if let Some(value) = payload {
                     need(
-                        (project.direct_source && class == crate::normalized::RUNTIME_EXCEPTION
+                        (project.direct_source && crate::normalized::native_text_exception_type(class)
                             && matches!(value.as_lit(), Some(math::Lit::Null | math::Lit::Str(_) | math::Lit::StrUnits(_))))
                             || (!project.direct_source && class == "TypeError"
                                 && project.functions.values().any(|function| {

@@ -1,0 +1,7 @@
+entry: src/Entry.java#Entry.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Entry.java#Entry.read, returns: bool}
+  P:
+    parameters: {}
+  R: 'true'

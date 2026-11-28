@@ -1,0 +1,5 @@
+entry: src/Entry.java#Entry.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-NAME]"
+    - undeclared value text

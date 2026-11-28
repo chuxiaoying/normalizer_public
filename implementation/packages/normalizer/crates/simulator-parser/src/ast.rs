@@ -386,7 +386,7 @@ pub enum JavaExpr {
     Ident(String),
 
     /// Native non-binding Java type test.
-    InstanceOf { value: Box<JavaExpr>, target: JavaType },
+    InstanceOf { value: Box<JavaExpr>, target: JavaType, binding: Option<String> },
 
     /// 字段访问：`obj.field`
     FieldAccess {

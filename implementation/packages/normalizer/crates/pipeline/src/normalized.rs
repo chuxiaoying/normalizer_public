@@ -98,6 +98,13 @@ pub(crate) fn root_object_type(program: &JavaProgram, ty: &JavaType) -> bool {
             class.full_name().rsplit('.').next() == Some("Object")))
 }
 
+pub(crate) fn platform_string_type(program: &JavaProgram, ty: &JavaType) -> bool {
+    let JavaType::Class(name) = ty else { return false };
+    name == "java.lang.String" || (name == "String"
+        && !program.classes().iter().any(|class|
+            class.full_name().rsplit('.').next() == Some("String")))
+}
+
 pub(crate) fn numeric_array(ty: &JavaType) -> bool {
     matches!(ty, JavaType::Array(item) if integral(item))
 }
@@ -932,25 +939,33 @@ enum SourceCall {
 
 /// Direct Java payload is the explicit String constructor argument, not an
 /// observed exception object or a guessed call to getMessage().
-pub(crate) enum RuntimeThrowMessage<'a> {
+pub(crate) enum NativeThrowMessage<'a> {
     Absent,
     Null,
     Text(&'a str),
     TextUnits(&'a [u16]),
 }
 
-pub(crate) fn runtime_throw_message(e: &E) -> Option<RuntimeThrowMessage<'_>> {
+pub(crate) fn native_text_exception_type(class: &str) -> bool {
+    matches!(class, RUNTIME_EXCEPTION | "java.lang.IllegalArgumentException")
+}
+
+pub(crate) fn native_literal_throw(e: &E) -> Option<(&'static str, NativeThrowMessage<'_>)> {
     let E::New { java_type: JavaType::Class(class), args } = e else { return None; };
-    if !matches!(class.as_str(), "RuntimeException" | RUNTIME_EXCEPTION) { return None; }
-    match args.as_slice() {
-        [] => Some(RuntimeThrowMessage::Absent),
-        [E::Lit(JavaLit::Str(text))] => Some(RuntimeThrowMessage::Text(text)),
-        [E::Lit(JavaLit::StrUnits(units))] => Some(RuntimeThrowMessage::TextUnits(units)),
+    let class = builtin_exception_name(class)?;
+    // Only these certified native constructors are lowered here. An
+    // application exception with the same simple name is not a builtin.
+    if !native_text_exception_type(class) { return None; }
+    let message = match args.as_slice() {
+        [] => NativeThrowMessage::Absent,
+        [E::Lit(JavaLit::Str(text))] => NativeThrowMessage::Text(text),
+        [E::Lit(JavaLit::StrUnits(units))] => NativeThrowMessage::TextUnits(units),
         [E::Cast { target_type: JavaType::Class(ty), operand }]
             if ty == "java.lang.String"
-                && matches!(operand.as_ref(), E::Lit(JavaLit::Null)) => Some(RuntimeThrowMessage::Null),
-        _ => None,
-    }
+                && matches!(operand.as_ref(), E::Lit(JavaLit::Null)) => NativeThrowMessage::Null,
+        _ => return None,
+    };
+    Some((class, message))
 }
 
 /// Per-method exception classes for catches and terminal finally throws.
@@ -1105,7 +1120,7 @@ fn statements(body: &[S], at: &str, calls: &mut Vec<(SourceCall, usize)>, catch_
                 ..
             } => expr(value, at, calls)?,
             S::Throw(E::Lit(JavaLit::Null)) => (),
-            S::Throw(e) if runtime_throw_message(e).is_some() => (),
+            S::Throw(e) if native_literal_throw(e).is_some() => (),
             S::Throw(e) => {
                 if let Some(class) = type_only_throw_name(stmt) {
                     catch_admission.bind_type_only_throw(at, class)?;

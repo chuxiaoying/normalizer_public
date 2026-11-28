@@ -136,6 +136,9 @@ seeds:
   external-timeout:
     source:
       - Beans.ENTRY.quote
+  entry-java-wide-text-pattern:
+    source:
+      - Entry.read
   entry-java-instance:
     source:
       - InstanceEntry.INSTANCE.add

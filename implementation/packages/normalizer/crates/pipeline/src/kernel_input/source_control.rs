@@ -34,7 +34,8 @@ impl Engine<'_> {
             _ => return Err(fail("switch label requires an int or char literal")),
         };
         let condition = self.condition_under_path(b::eq(selector.clone(), b::lit_int(label)), &path);
-        self.source_branch(condition, body, id, env, path,
+        self.source_branch(condition, env, path,
+            |engine, locals, path| engine.source_scope(body, id, locals, path),
             |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))
     }
 
@@ -43,32 +44,43 @@ impl Engine<'_> {
         condition: Expr,
         yes: &[S],
         no: &[S],
+        matched: Option<(&str, Value)>,
         id: &str,
         env: &mut Env,
         path: Expr,
     ) -> Result<()> {
-        self.source_branch(condition, yes, id, env, path,
+        self.source_branch(condition, env, path,
+            |engine, locals, path| {
+                if let Some((name, value)) = matched {
+                    // A successful pattern projects the evaluated operand,
+                    // not a new acquisition or a local visible after this arm.
+                    let mut scoped = locals.clone();
+                    need(scoped.insert(name.into(), value).is_none(), "source pattern shadows an active local")?;
+                    engine.source_steps(yes, id, &mut scoped, path)?;
+                    for (name, value) in locals {
+                        *value = scoped.remove(name).expect("pattern arm preserved its outer binding");
+                    }
+                    Ok(())
+                } else {
+                    engine.source_scope(yes, id, locals, path)
+                }
+            },
             |engine, locals, path| engine.source_scope(no, id, locals, path))
     }
 
     fn source_branch(
-        &mut self, condition: Expr, yes: &[S], id: &str, env: &mut Env, path: Expr,
+        &mut self, condition: Expr, env: &mut Env, path: Expr,
+        matched: impl FnOnce(&mut Self, &mut Env, Expr) -> Result<()>,
         otherwise: impl FnOnce(&mut Self, &mut Env, Expr) -> Result<()>,
     ) -> Result<()> {
         if let Some(truth) = condition.as_bool() {
-            return if truth { self.source_scope(yes, id, env, path) }
-                else { otherwise(self, env, path) };
+            return if truth { matched(self, env, path) } else { otherwise(self, env, path) };
         }
         let parent = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
         let original_store = self.realtime_store.clone();
         let effects_start = self.realtime_effects.events().len();
         let mut yes_env = env.clone();
-        self.source_steps(
-            yes,
-            id,
-            &mut yes_env,
-            math::normalize(b::and(path.clone(), condition.clone())),
-        )?;
+        matched(self, &mut yes_env, math::normalize(b::and(path.clone(), condition.clone())))?;
         let yes_completion = std::mem::replace(&mut self.realtime_completion, Completion::Continue);
         let yes_writes = self.realtime_store.suffix_from(original_store.len());
         self.realtime_store = original_store.clone();

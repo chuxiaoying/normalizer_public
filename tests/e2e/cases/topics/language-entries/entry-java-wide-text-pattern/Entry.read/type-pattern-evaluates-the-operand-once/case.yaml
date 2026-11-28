@@ -1,0 +1,14 @@
+entry: src/Beans.java#Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Beans.java#Beans.ENTRY.read, returns: text}
+  P: {parameters: {value: {position: 0, type: unknown}}}
+  E:
+    seen: {kind: state, source: src/Beans.java#Beans.ENTRY.seen, type: number}
+  R: |-
+    CASE
+      WHEN "string" == typeof(value) THEN value
+      ELSE "fallback"
+    END
+  S:
+    - write: {target: seen, value: seen + 1}

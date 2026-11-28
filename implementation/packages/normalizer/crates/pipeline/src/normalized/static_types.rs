@@ -244,6 +244,41 @@ impl Admission<'_> {
         }
     }
 
+    fn instanceof_type(&self, value: &E, target: &JavaType, scope: &Scope) -> Result<Kind, String> {
+        let kind = self.expression(value, scope)?;
+        if super::platform_string_type(self.program, target) {
+            if kind == Kind::Null || self.declared_type(value, scope).is_some_and(|source|
+                self.root_object_target(&source) || super::platform_string_type(self.program, &source))
+                || matches!(value, E::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)))
+            {
+                return Ok(Kind::Bool);
+            }
+            return Err(self.diagnostic("NORM-SOURCE-TYPE", "String instanceof requires a compatible reference value"));
+        }
+        let JavaType::Class(target) = target else {
+            return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof needs a supported closed nominal type"));
+        };
+        if !matches!(kind, Kind::Ref | Kind::Null) ||
+           !(matches!(target.as_str(), "java.lang.Object" | "Object")
+               || self.program.find_class(target).is_some())
+        {
+            return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof needs a supported closed nominal type and a reference value"));
+        }
+        if let Some(JavaType::Class(source)) = self.declared_type(value, scope) {
+            if let (Some(source), Some(target)) =
+                (self.program.find_class(&source), self.program.find_class(target))
+            {
+                if !source.is_interface() && !target.is_interface()
+                    && source.full_name() != target.full_name()
+                    && source.supertype().is_none() && target.supertype().is_none()
+                {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof has unrelated source classes"));
+                }
+            }
+        }
+        Ok(Kind::Bool)
+    }
+
     fn root_object_target(&self, ty: &JavaType) -> bool {
         super::root_object_type(self.program, ty)
     }
@@ -465,30 +500,12 @@ impl Admission<'_> {
                     kind
                 }
             }
-            E::InstanceOf { value, target } => {
-                let kind = self.expression(value, scope)?;
-                let JavaType::Class(target) = target else {
-                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof needs a supported closed nominal type"));
-                };
-                if !matches!(kind, Kind::Ref | Kind::Null) ||
-                   !(matches!(target.as_str(), "java.lang.Object" | "Object")
-                       || self.program.find_class(target).is_some())
-                {
-                    return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof needs a supported closed nominal type and a reference value"));
+            E::InstanceOf { value, target, binding } => {
+                if binding.is_some() {
+                    return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                        "pattern binding requires a supported direct if condition"));
                 }
-                if let Some(JavaType::Class(source)) = self.declared_type(value, scope) {
-                    if let (Some(source), Some(target)) =
-                        (self.program.find_class(&source), self.program.find_class(target))
-                    {
-                        if !source.is_interface() && !target.is_interface()
-                            && source.full_name() != target.full_name()
-                            && source.supertype().is_none() && target.supertype().is_none()
-                        {
-                            return Err(self.diagnostic("NORM-SOURCE-TYPE", "instanceof has unrelated source classes"));
-                        }
-                    }
-                }
-                Kind::Bool
+                self.instanceof_type(value, target, scope)?
             }
             E::Ternary { cond, then_expr, else_expr } => {
                 self.condition(self.expression(cond, scope)?, "ternary condition")?;
@@ -800,8 +817,22 @@ impl Admission<'_> {
                     }
                 }
                 S::If { cond, then_block, else_block } => {
-                    self.condition(self.expression(cond, scope)?, "if condition")?;
-                    self.block(then_block, &mut scope.clone())?;
+                    let mut matched = scope.clone();
+                    if let E::InstanceOf { value, target, binding: Some(name) } = cond {
+                        if !super::platform_string_type(self.program, target) {
+                            return Err(self.diagnostic("NORM-SOURCE-TYPE", "pattern target requires a supported reference narrowing"));
+                        }
+                        self.instanceof_type(value, target, scope)?;
+                        self.check_local_name(name, scope)?;
+                        matched.insert(name.clone(), Binding {
+                            ty: JavaType::Class("java.lang.String".into()),
+                            initialized_final: false,
+                            initialized_local: true,
+                        });
+                    } else {
+                        self.condition(self.expression(cond, scope)?, "if condition")?;
+                    }
+                    self.block(then_block, &mut matched)?;
                     if let Some(body) = else_block { self.block(body, &mut scope.clone())?; }
                 }
                 S::Switch { selector, cases, default } => {
