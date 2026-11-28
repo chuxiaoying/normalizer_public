@@ -267,6 +267,11 @@ fn simplify_impl(
     if let Some(rewritten) = orient_adjacent_integer_suffix(&filtered, ctx) {
         return rewritten;
     }
+    if let Some(((last_guard, fallback), prior)) = filtered.split_last() {
+        if last_guard.as_bool() != Some(true) && super::integer_ranges::exhaustive_acquired_suffix(&filtered) {
+            return crate::builder::case_when(prior.to_vec(), fallback.clone());
+        }
+    }
 
     // Try the two-value first-match form without splitting a disjunction
     // into several copies of the same result arm.

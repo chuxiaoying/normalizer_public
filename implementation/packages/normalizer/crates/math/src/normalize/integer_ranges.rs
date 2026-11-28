@@ -65,16 +65,22 @@ impl Guard {
     }
 }
 fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option<Guard> {
+    guard_with_acquisitions(e, subject, cuts, false)
+}
+
+fn guard_with_acquisitions(
+    e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>, acquired_inputs: bool,
+) -> Option<Guard> {
     if let Some(v) = e.as_bool() {
         return Some(Guard::Bool(v));
     }
     if let Some(operand) = e.as_not() {
-        return Some(Guard::Not(Box::new(guard(operand, subject, cuts)?)));
+        return Some(Guard::Not(Box::new(guard_with_acquisitions(operand, subject, cuts, acquired_inputs)?)));
     }
     let (op, a, z) = e.as_binop()?;
     if matches!(op, B::And | B::Or) {
-        let a = Box::new(guard(a, subject, cuts)?);
-        let z = Box::new(guard(z, subject, cuts)?);
+        let a = Box::new(guard_with_acquisitions(a, subject, cuts, acquired_inputs)?);
+        let z = Box::new(guard_with_acquisitions(z, subject, cuts, acquired_inputs)?);
         return Some(if op == B::And {
             Guard::And(a, z)
         } else {
@@ -91,7 +97,9 @@ fn guard(e: &Expr, subject: &mut Option<Expr>, cuts: &mut Vec<BigInt>) -> Option
             crate::domains::relation::RelationExpr::Base { snapshot: None, .. }, None, None)) => true,
         _ => crate::domains::composite::vector_length_input(s).is_some_and(is_input_integer_vector),
     };
-    if !is_input_integer(s) && !closed_length { return None; }
+    let acquired_input = acquired_inputs && matches!(s.as_sym_var(),
+        Some(crate::SymVarOrigin::Parameter { primitive_type, .. }) if primitive_type == "integer");
+    if !is_input_integer(s) && !closed_length && !acquired_input { return None; }
     if let Some(old) = subject {
         if old != s {
             return None;
@@ -176,20 +184,56 @@ pub(super) fn complementary_guards(left: &Expr, right: &Expr) -> bool {
     })
 }
 
-/// Prove a small union on one certified integer domain, without assuming
-/// totality for fields, nullable values, call results or other subjects.
+/// Prove a small OR union over already-evaluated exact integer
+/// predicates. This is a predicate identity, not a proof that an
+/// unselected CASE arm's underlying source read is available.
 pub(super) fn exhaustive_union(disjuncts: &[Expr]) -> bool {
     if !(3..=16).contains(&disjuncts.len()) || disjuncts.iter().map(Expr::size).sum::<usize>() > 64 {
         return false;
     }
+    struct Partition {
+        subject: Expr,
+        guards: Vec<Guard>,
+        cuts: Vec<BigInt>,
+    }
+    let mut groups = Vec::<Partition>::new();
+    for disjunct in disjuncts {
+        let mut subject = None;
+        let mut cuts = Vec::new();
+        let Some(guard) = guard_with_acquisitions(disjunct, &mut subject, &mut cuts, true) else { continue; };
+        let Some(subject) = subject else { continue; };
+        if let Some(group) = groups.iter_mut().find(|group| group.subject == subject) {
+            group.guards.push(guard);
+            group.cuts.extend(cuts);
+        } else {
+            groups.push(Partition { subject, guards: vec![guard], cuts });
+        }
+    }
+    groups.into_iter().any(|group| {
+        group.guards.len() >= 3 && cells(group.cuts).all(|(lo, hi)| {
+            let point = cell_representative(&lo, &hi);
+            group.guards.iter().any(|guard| guard.at(&point))
+        })
+    })
+}
+
+/// The suffix remains after all earlier CASE guards. Only a complete
+/// partition on the same exact value can replace its last guard with ELSE.
+pub(super) fn exhaustive_acquired_suffix(branches: &[(Expr, Expr)]) -> bool {
+    const MAX_SIZE: usize = 64;
     let mut subject = None;
     let mut cuts = Vec::new();
-    let Some(guards) = disjuncts.iter().map(|c| guard(c, &mut subject, &mut cuts))
-        .collect::<Option<Vec<_>>>() else { return false; };
-    if subject.is_none() { return false; }
-    cells(cuts).all(|(lo, hi)| {
-        let representative = cell_representative(&lo, &hi);
-        guards.iter().any(|g| g.at(&representative))
+    let mut guards = Vec::new();
+    let mut size = 0;
+    for (condition, _) in branches.iter().rev().take(16) {
+        size += condition.size();
+        if size > MAX_SIZE { break; }
+        let Some(guard) = guard_with_acquisitions(condition, &mut subject, &mut cuts, true) else { break; };
+        guards.push(guard);
+    }
+    subject.is_some() && guards.len() >= 3 && cells(cuts).all(|(lo, hi)| {
+        let point = cell_representative(&lo, &hi);
+        guards.iter().any(|guard| guard.at(&point))
     })
 }
 
