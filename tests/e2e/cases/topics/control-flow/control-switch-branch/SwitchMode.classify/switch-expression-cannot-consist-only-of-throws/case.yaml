@@ -1,0 +1,7 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-SWITCH-EXPR]"
+    - switch expression has no result arm

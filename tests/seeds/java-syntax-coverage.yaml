@@ -79,8 +79,18 @@ families:
           - [SwitchMode.classify, inner-switch-does-not-consume-outer-break, pers]
           - [SwitchMode.classify, loop-break-does-not-leave-an-enclosing-switch, pers]
           - [SwitchMode.classify, break-without-an-enclosing-transfer-target-is-invalid, reject]
-      value-expression:
-        focus: 产生值的 switch 表达式，区分箭头值与块内 yield
+      direct-return-switch-expression:
+        focus: 直接返回 switch 表达式，验证箭头值、块内 yield、异常和穷尽性
+        seed: control-switch-branch
+        evidence:
+          - [SwitchMode.classify, switch-expression-arrow-results-match-the-statement, pers]
+          - [SwitchMode.classify, switch-expression-block-cannot-fall-out-without-a-value, reject]
+          - [SwitchMode.classify, switch-expression-block-yield-runs-its-prefix, pers]
+          - [SwitchMode.classify, switch-expression-cannot-consist-only-of-throws, reject]
+          - [SwitchMode.classify, switch-expression-needs-an-exhaustive-default, reject]
+          - [SwitchMode.classify, switch-expression-throw-does-not-produce-an-arm-value, pers]
+      other-switch-value-contexts:
+        focus: 嵌套或赋值位置的 switch 表达式、更一般的 yield 和冒号表达式组
         gap: review
       pattern-and-null-labels:
         focus: 模式绑定、显式 null 标签和守卫的匹配范围

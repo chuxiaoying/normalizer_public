@@ -86,6 +86,26 @@ class SwitchMode {
 编译期闭整数表达式可以作为标签。例如 `case 1 + 1` 匹配 `2`；若同一个 `switch` 又写了 `case 2`，前置校验按折叠后的值拒绝重复。这里的示例不涉及 Java 固定字宽的回卷。
 
 
+## 作为表达式时，箭头交出值
+
+```java
+class SwitchMode {
+    static int classify(int code) {
+        return switch (code) {
+            case 1 -> {
+                int value = 9;
+                value += 1;
+                yield value;
+            }
+            case 2 -> 20;
+            default -> 0;
+        };
+    }
+}
+```
+
+**原样通过。** 这是[原生 switch 表达式](https://docs.oracle.com/javase/specs/jls/se25/html/jls-15.html#jls-15.28)，选中块的语句先执行，再用 `yield` 把值交给这个表达式；外层 `return` 返回它。与本种子的原例是同一份 PERS。与作为语句的 `switch` 不同，这里可以在箭头右侧直接写 `20`。抛异常的臂不会伪造返回值；这些整数标签需要穷尽选择范围，块也不能无值正常退出。
+
 ## 冒号语句组可以贯穿
 
 ```java

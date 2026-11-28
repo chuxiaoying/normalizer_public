@@ -1,0 +1,7 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-SWITCH-EXPR]"
+    - constant-label switch expression must be exhaustive with default

@@ -174,7 +174,7 @@ impl<'a> Parser<'a> {
             ));
         }
         if self.eat_keyword("switch") {
-            return self.parse_switch();
+            return self.parse_switch(false);
         }
         if self.eat_keyword("do") {
             return self.parse_do_while();
@@ -279,7 +279,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_switch(&mut self) -> Result<JavaStatement, ParseError> {
+    fn parse_switch(&mut self, returning_value: bool) -> Result<JavaStatement, ParseError> {
         self.require_delimiter(b'(', "expected '(' after switch")?;
         let selector = self.parse_expression()?;
         self.require_delimiter(b')', "expected ')' after switch selector")?;
@@ -311,6 +311,9 @@ impl<'a> Parser<'a> {
             };
             self.skip_ws();
             let arrow = self.starts_with("->");
+            if returning_value && !arrow {
+                return Err(self.err("[JAVA-SWITCH-EXPR] this source shape needs arrow value arms"));
+            }
             if arrow {
                 self.pos += 2;
             } else {
@@ -320,7 +323,9 @@ impl<'a> Parser<'a> {
                 return Err(self.err("[JAVA-SWITCH] cannot mix ':' and '->' switch groups"));
             }
             rule_style = Some(arrow);
-            let (mut body, enters_next) = if arrow {
+            let (mut body, enters_next) = if returning_value {
+                (self.parse_return_switch_rule()?, false)
+            } else if arrow {
                 (self.parse_switch_rule()?, false)
             } else {
                 self.parse_switch_colon_group()?
@@ -333,6 +338,19 @@ impl<'a> Parser<'a> {
                 default_position = Some(continues.len());
             }
             continues.push(enters_next);
+        }
+        if returning_value {
+            let fallback = default.as_ref().ok_or_else(|| self.err(
+                "[JAVA-SWITCH-EXPR] constant-label switch expression must be exhaustive with default"
+            ))?;
+            if !cases
+                .iter()
+                .map(|(_, body)| body)
+                .chain(std::iter::once(fallback))
+                .any(|body| matches!(body.last(), Some(JavaStatement::Return(Some(_)))))
+            {
+                return Err(self.err("[JAVA-SWITCH-EXPR] switch expression has no result arm"));
+            }
         }
         let fall_through = continues
             .iter()
@@ -399,6 +417,51 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         }
+    }
+
+    // In a direct return context each proved value arm can exit the same
+    // method frame. It is never a source return *inside* an arm; such a
+    // return would illegally cross the switch-expression boundary.
+    fn parse_return_switch_rule(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
+        if self.eat_char(b'{') {
+            let mut body = Vec::new();
+            loop {
+                if self.eat_keyword("yield") {
+                    let value = self.parse_expression()?;
+                    self.require_semicolon("switch yield value")?;
+                    self.require_delimiter(b'}', "expected arm end after switch yield")?;
+                    body.push(JavaStatement::Return(Some(value)));
+                    return Ok(body);
+                }
+                if self.eat_keyword("throw") {
+                    body.push(self.parse_throw()?);
+                    self.require_delimiter(b'}', "expected arm end after switch throw")?;
+                    return Ok(body);
+                }
+                if self.eat_char(b'}') {
+                    return Err(
+                        self.err("[JAVA-SWITCH-EXPR] arm block must yield a value or throw")
+                    );
+                }
+                let statement = self.parse_statement(&mut body)?;
+                if !matches!(
+                    statement,
+                    JavaStatement::VarDecl { .. }
+                        | JavaStatement::Assign { .. }
+                        | JavaStatement::ExprStmt(_)
+                ) && !matches!(&statement, JavaStatement::Block(body) if body.is_empty())
+                {
+                    return Err(self.err("[JAVA-SWITCH-EXPR] unsupported control before arm yield"));
+                }
+                body.push(statement);
+            }
+        }
+        if self.eat_keyword("throw") {
+            return Ok(vec![self.parse_throw()?]);
+        }
+        let value = self.parse_expression()?;
+        self.require_semicolon("switch arm result")?;
+        Ok(vec![JavaStatement::Return(Some(value))])
     }
 
     fn parse_switch_rule(&mut self) -> Result<Vec<JavaStatement>, ParseError> {
@@ -599,6 +662,11 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         if self.eat_char(b';') {
             return Ok(JavaStatement::Return(None));
+        }
+        if self.eat_keyword("switch") {
+            let statement = self.parse_switch(true)?;
+            self.require_semicolon("returned switch expression")?;
+            return Ok(statement);
         }
         let expr = self.parse_expression()?;
         self.skip_ws();
