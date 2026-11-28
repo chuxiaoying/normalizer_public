@@ -1,0 +1,15 @@
+entry: src/Stage.java#Stage.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Stage.java#Stage.read, returns: number}
+  P:
+    parameters:
+      mode: {position: 0, type: text}
+  R: |-
+    CASE
+      WHEN mode == "\uD800" THEN 1
+      WHEN mode == "\uD801" THEN 2
+      WHEN mode == "" THEN 3
+      WHEN mode == "𐀀" THEN 4
+      ELSE 0
+    END
