@@ -28,22 +28,28 @@ impl Engine<'_> {
 
     pub(super) fn source_switch(
         &mut self, selector: Expr,
-        cases: &[(simulator_parser::ast::JavaExpr, Vec<S>)],
+        cases: &[(Vec<simulator_parser::ast::JavaExpr>, Vec<S>)],
         default: &[S], id: &str, env: &mut Env, path: Expr,
     ) -> Result<()> {
-        let Some(((label, body), rest)) = cases.split_first() else {
+        let Some(((labels, body), rest)) = cases.split_first() else {
             return self.source_scope(default, id, env, path);
         };
         use simulator_parser::ast::{JavaExpr, JavaLit};
-        let label = match label {
-            JavaExpr::Lit(JavaLit::Int(value)) => b::lit_int(i64::from(*value)),
-            JavaExpr::Lit(JavaLit::Char(value)) => b::lit_int(i64::from(*value)),
-            JavaExpr::Lit(JavaLit::Str(value)) => b::lit_str(value),
-            JavaExpr::Lit(JavaLit::StrUnits(units)) => b::lit(math::Lit::from_text_units(units.clone())),
-            _ => return Err(fail("switch label requires a checked integral or text literal")),
-        };
-        // String switch matches text content, not Java's reference ==.
-        let condition = self.condition_under_path(b::eq(selector.clone(), label), &path);
+        let mut group_condition = b::lit_bool(false);
+        for label in labels {
+            let label = match label {
+                JavaExpr::Lit(JavaLit::Int(value)) => b::lit_int(i64::from(*value)),
+                JavaExpr::Lit(JavaLit::Char(value)) => b::lit_int(i64::from(*value)),
+                JavaExpr::Lit(JavaLit::Str(value)) => b::lit_str(value),
+                JavaExpr::Lit(JavaLit::StrUnits(units)) => b::lit(math::Lit::from_text_units(units.clone())),
+                _ => return Err(fail("switch label requires a checked integral or text literal")),
+            };
+            // String switch matches text content, not Java's reference ==.
+            group_condition = b::or(group_condition, b::eq(selector.clone(), label));
+        }
+        // Labels carry no evaluation or state. Their union selects one
+        // lexical body, including a single set of observable actions.
+        let condition = self.condition_under_path(group_condition, &path);
         self.source_branch(condition, env, path,
             |engine, locals, path| engine.source_scope(body, id, locals, path),
             |engine, locals, path| engine.source_switch(selector, rest, default, id, locals, path))

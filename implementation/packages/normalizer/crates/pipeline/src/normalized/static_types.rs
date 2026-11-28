@@ -901,23 +901,25 @@ impl Admission<'_> {
                         return Err(self.diagnostic("NORM-SOURCE-TYPE",
                             "switch selector requires a proven byte, short, char or int value or native String"));
                     }
-                    for (label, body) in cases {
-                        let text_label = matches!(label, E::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)));
-                        if text != text_label {
-                            return Err(self.diagnostic("NORM-SOURCE-TYPE",
-                                "switch case type does not match its selector"));
-                        }
-                        let target = self.declared_type(selector, scope);
-                        self.check_assignment_narrowing(target.as_ref(), label, scope, "switch label")?;
-                        if let Some(JavaType::Primitive(name)) = target {
-                            let representable = Self::signed_int_literal(label).is_some_and(|value| match name.as_str() {
-                                "byte" => i8::try_from(value).is_ok(),
-                                "short" => i16::try_from(value).is_ok(),
-                                "char" => u16::try_from(value).is_ok(),
-                                _ => true,
-                            });
-                            if !representable {
-                                return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("switch label is outside the Java {name} range")));
+                    let target = self.declared_type(selector, scope);
+                    for (labels, body) in cases {
+                        for label in labels {
+                            let text_label = matches!(label, E::Lit(JavaLit::Str(_) | JavaLit::StrUnits(_)));
+                            if text != text_label {
+                                return Err(self.diagnostic("NORM-SOURCE-TYPE",
+                                    "switch case type does not match its selector"));
+                            }
+                            self.check_assignment_narrowing(target.as_ref(), label, scope, "switch label")?;
+                            if let Some(JavaType::Primitive(name)) = &target {
+                                let representable = Self::signed_int_literal(label).is_some_and(|value| match name.as_str() {
+                                    "byte" => i8::try_from(value).is_ok(),
+                                    "short" => i16::try_from(value).is_ok(),
+                                    "char" => u16::try_from(value).is_ok(),
+                                    _ => true,
+                                });
+                                if !representable {
+                                    return Err(self.diagnostic("NORM-SOURCE-TYPE", &format!("switch label is outside the Java {name} range")));
+                                }
                             }
                         }
                         self.block(body, &mut scope.clone())?;

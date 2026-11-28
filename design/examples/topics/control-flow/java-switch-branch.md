@@ -80,3 +80,5 @@ class SwitchMode {
 ```
 
 **原样通过。** 箭头右侧是赋值语句或块，执行选中的分支后直接继续到 `return result`，不会落入下一分支。因此它与原例交付同一整份 PERS。作为 **语句** 的 `switch` 不接受 `case 1 -> 10;` 这样的裸值；同一个 `switch` 也不能混用冒号组和箭头规则。见 [JLS §14.11.1–3](https://docs.oracle.com/javase/specs/jls/se25/html/jls-14.html#jls-14.11.1)。
+
+如果同一分支写 `case 1, 3`，命中任一值都执行同一个分支体。没有两份执行或两处异常源；异常守卫是 `code == 1 OR code == 3`。若输出是在命中时返回 7、默认返回 0，整棵二分 CASE 的两种方向成本相同，按[统一定形](../../../chapters/08-统一定形.md#cf-04-完整二分-case)，`AND` 排在 `OR` 前，故写成 `CASE WHEN code != 1 AND code != 3 THEN 0 ELSE 7 END`。重复标签仍须跨整个 `switch` 检查，不能因标签分属不同逗号列表而放行。

@@ -311,8 +311,10 @@ impl Names<'_> {
                 }
                 Switch {selector, cases, default} => {
                     self.expr(selector, types, locals);
-                    for (label, body) in cases {
-                        self.expr(label, types, locals);
+                    for (labels, body) in cases {
+                        for label in labels {
+                            self.expr(label, types, locals);
+                        }
                         self.block(body, types, &mut locals.clone());
                     }
                     self.block(default, types, &mut locals.clone());

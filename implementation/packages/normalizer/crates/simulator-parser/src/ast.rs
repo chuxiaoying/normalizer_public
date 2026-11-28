@@ -330,7 +330,7 @@ pub enum JavaStatement {
     /// A native bounded switch with one dispatch expression and closed arms.
     Switch {
         selector: JavaExpr,
-        cases: Vec<(JavaExpr, Vec<JavaStatement>)>,
+        cases: Vec<(Vec<JavaExpr>, Vec<JavaStatement>)>,
         default: Vec<JavaStatement>,
     },
 

@@ -247,34 +247,13 @@ impl<'a> Parser<'a> {
         let mut default = None;
         let mut rule_style = None;
         while !self.eat_char(b'}') {
-            let label = if self.eat_keyword("case") {
-                let expression = self.parse_expression()?;
-                let text_units = match &expression {
-                    JavaExpr::Lit(JavaLit::Str(text)) => Some(text.encode_utf16().collect()),
-                    JavaExpr::Lit(JavaLit::StrUnits(units)) => Some(units.clone()),
-                    _ => None,
-                };
-                if let Some(units) = text_units {
-                    if !seen_text.insert(units) {
-                        return Err(self.err("[JAVA-SWITCH] duplicate case label"));
-                    }
-                    Some(expression)
-                } else {
-                    let key = match &expression {
-                        JavaExpr::Lit(JavaLit::Int(value)) => *value,
-                        JavaExpr::Lit(JavaLit::Char(value)) => i32::from(*value),
-                        JavaExpr::UnaryOp { op: JavaUnaryOp::Neg, operand } => match operand.as_ref() {
-                            JavaExpr::Lit(JavaLit::Int(value)) => value.checked_neg()
-                                .ok_or_else(|| self.err("[JAVA-SWITCH] case requires an int literal"))?,
-                            _ => return Err(self.err("[JAVA-SWITCH] case requires a signed int literal")),
-                        },
-                        _ => return Err(self.err("[JAVA-SWITCH] case requires a closed int or char literal or a text literal")),
-                    };
-                    if !seen.insert(key) {
-                        return Err(self.err("[JAVA-SWITCH] duplicate case label"));
-                    }
-                    Some(JavaExpr::Lit(JavaLit::Int(key)))
+            let labels = if self.eat_keyword("case") {
+                let mut group = Vec::new();
+                loop {
+                    group.push(self.parse_switch_label(&mut seen, &mut seen_text)?);
+                    if !self.eat_char(b',') { break; }
                 }
+                Some(group)
             } else if self.eat_keyword("default") {
                 if default.is_some() {
                     return Err(self.err("[JAVA-SWITCH] duplicate default label"));
@@ -292,10 +271,43 @@ impl<'a> Parser<'a> {
             }
             rule_style = Some(arrow);
             let body = if arrow { self.parse_switch_rule()? } else { self.parse_switch_colon_group()? };
-            if let Some(label) = label { cases.push((label, body)); }
+            if let Some(labels) = labels { cases.push((labels, body)); }
             else { default = Some(body); }
         }
         Ok(JavaStatement::Switch { selector, cases, default: default.unwrap_or_default() })
+    }
+
+    fn parse_switch_label(
+        &mut self, seen: &mut std::collections::BTreeSet<i32>,
+        seen_text: &mut std::collections::BTreeSet<Vec<u16>>,
+    ) -> Result<JavaExpr, ParseError> {
+        let expression = self.parse_expression()?;
+        let text_units = match &expression {
+            JavaExpr::Lit(JavaLit::Str(text)) => Some(text.encode_utf16().collect()),
+            JavaExpr::Lit(JavaLit::StrUnits(units)) => Some(units.clone()),
+            _ => None,
+        };
+        if let Some(units) = text_units {
+            if !seen_text.insert(units) {
+                return Err(self.err("[JAVA-SWITCH] duplicate case label"));
+            }
+            Ok(expression)
+        } else {
+            let key = match &expression {
+                JavaExpr::Lit(JavaLit::Int(value)) => *value,
+                JavaExpr::Lit(JavaLit::Char(value)) => i32::from(*value),
+                JavaExpr::UnaryOp { op: JavaUnaryOp::Neg, operand } => match operand.as_ref() {
+                    JavaExpr::Lit(JavaLit::Int(value)) => value.checked_neg()
+                        .ok_or_else(|| self.err("[JAVA-SWITCH] case requires an int literal"))?,
+                    _ => return Err(self.err("[JAVA-SWITCH] case requires a signed int literal")),
+                },
+                _ => return Err(self.err("[JAVA-SWITCH] case requires a closed int or char literal or a text literal")),
+            };
+            if !seen.insert(key) {
+                return Err(self.err("[JAVA-SWITCH] duplicate case label"));
+            }
+            Ok(JavaExpr::Lit(JavaLit::Int(key)))
+        }
     }
 
     fn parse_switch_rule(&mut self) -> Result<Vec<JavaStatement>, ParseError> {

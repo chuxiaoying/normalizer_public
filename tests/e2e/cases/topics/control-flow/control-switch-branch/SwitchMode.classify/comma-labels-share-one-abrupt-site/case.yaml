@@ -1,0 +1,8 @@
+entry: src/SwitchMode.java#SwitchMode.classify
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/SwitchMode.java#SwitchMode.classify, returns: number}
+  P: {parameters: {code: {position: 0, type: number}}}
+  R: "0"
+  throws:
+    - {type: java.lang.IllegalArgumentException, when: code == 1 OR code == 3}
