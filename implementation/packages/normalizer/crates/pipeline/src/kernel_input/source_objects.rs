@@ -212,8 +212,7 @@ impl Engine<'_> {
         let initial = self.initial_entry_state(owner, name)?;
         if matches!(initial.ty(), Ty::Ref | Ty::Seq(_)) { return Ok(initial); }
         let root = self.scalar_state_reference(owner, name);
-        let value = self.realtime_store.read_with_initial(&root, name, path, Some(initial.scalar()?))
-            .ok_or_else(|| fail("missing entry state initial value"))?;
+        let value = self.realtime_store.read_with_initial(&root, name, path, initial.scalar()?);
         Ok(Value::Term(initial.ty(), value))
     }
 
@@ -433,10 +432,10 @@ impl Engine<'_> {
             self.check_borrowed_identity(reference, &candidate)?;
             identities.insert(other, b::eq(reference.clone(), candidate));
         }
-        let value = self.realtime_store.read_matching_with_initial(field, &path, Some(initial.scalar()?), |candidate| {
+        let value = self.realtime_store.read_matching_with_initial(field, &path, initial.scalar()?, |candidate| {
             if candidate == reference { Some(b::lit_bool(true)) }
             else { candidate.as_heap_ref().and_then(|id| identities.get(&id).cloned()) }
-        }).ok_or_else(|| fail("unresolved state read"))?;
+        });
         Ok(Value::Term(initial.ty(), value))
     }
 

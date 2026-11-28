@@ -345,9 +345,8 @@ impl Engine<'_> {
             return Ok(Value::Term(Ty::Integer, b::lit_null()));
         }
         let sources = self.array_slot_sources(&root, index);
-        let slot = self.realtime_store.read_matching_with_initial(&index.to_string(), &guard, Some(original_slot(&root, index)),
-            |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
-            .ok_or_else(|| fail("indexed observation has no value"))?;
+        let slot = self.realtime_store.read_matching_with_initial(&index.to_string(), &guard, original_slot(&root, index),
+            |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()));
         Ok(Value::Term(Ty::Integer, slot))
     }
 
@@ -414,8 +413,7 @@ impl Engine<'_> {
 
     fn read_local_array_slot(&self, array: &LocalIntArray, reference: &Expr, slot: i64, domain: &Expr) -> Result<Expr> {
         let initial = array.get(slot).ok_or_else(|| fail("local array slot outside the selected domain"))?;
-        self.realtime_store.read_with_initial(reference, &slot.to_string(), domain, Some(initial))
-            .ok_or_else(|| fail("uninitialized local array element"))
+        Ok(self.realtime_store.read_with_initial(reference, &slot.to_string(), domain, initial))
     }
 
     fn source_local_array_positions(&self, array: &LocalIntArray, reference: &Expr) -> BTreeSet<i64> {
@@ -472,9 +470,8 @@ impl Engine<'_> {
             let sources = self.array_slot_sources(root, position);
             if sources.is_empty() { continue; }
             let initial = original_slot(root, position);
-            let updated = self.realtime_store.read_matching_with_initial(&position.to_string(), &active, Some(initial.clone()),
-                |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, alias)| alias.clone()))
-                .ok_or_else(|| fail("indexed observation has no value"))?;
+            let updated = self.realtime_store.read_matching_with_initial(&position.to_string(), &active, initial.clone(),
+                |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, alias)| alias.clone()));
             if updated != initial { arms.push((selected, updated)); }
         }
         // The index selections are disjoint. The fallback is the original
@@ -516,9 +513,8 @@ impl Engine<'_> {
                 let bound = math::normalize(b::not(bounds_failure(&root, index)));
                 let valid = math::normalize(b::and(path.clone(), bound.clone()));
                 let sources = self.array_slot_sources(&root, index);
-                let updated = self.realtime_store.read_matching_with_initial(&index.to_string(), &valid, Some(original.clone()),
-                    |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()))
-                    .ok_or_else(|| fail("indexed observation has no value"))?;
+                let updated = self.realtime_store.read_matching_with_initial(&index.to_string(), &valid, original.clone(),
+                    |reference| sources.iter().find(|(identity, _)| identity == reference).map(|(_, aliases)| aliases.clone()));
                 if updated == original { continue; }
                 // Offset applies to every row before and after replacement, so
                 // it cancels between the old and new contributions.

@@ -596,27 +596,47 @@ impl SymbolicStore {
 
 
     pub(crate) fn read_on_path(&self, reference: &Expr, field: &str, path: &Expr) -> Option<Expr> {
-        self.read_with_initial(reference, field, path, None)
+        let (mut branches, fallback) = self.reaching_writes(field, path, |candidate| {
+            (candidate == reference).then(|| b::lit_bool(true))
+        });
+        let fallback = match fallback {
+            Some(value) => value,
+            None => {
+                // Only a complete set of writes can supply a value if the
+                // object has no initial field on this path.
+                let oldest = branches.last()?.1.clone();
+                let covered = coverage(branches.iter().map(|(guard, _)| guard));
+                if !b::path_implies(path, &covered) { return None; }
+                branches.pop();
+                oldest
+            }
+        };
+        Some(Self::apply_writes(branches, fallback))
     }
 
-    // Entry-state roots have a declared value before any Java statement runs.
-    // A branch-local first access must not remove that initial value on another branch.
+    // A declared initial value exists even when no write reaches the read.
     pub(crate) fn read_with_initial(
-        &self, reference: &Expr, field: &str, path: &Expr, initial: Option<Expr>,
-    ) -> Option<Expr> {
+        &self, reference: &Expr, field: &str, path: &Expr, initial: Expr,
+    ) -> Expr {
         self.read_matching_with_initial(field, path, initial, |candidate| {
             (candidate == reference).then(|| b::lit_bool(true))
         })
     }
 
-    // A write reaches a read only on paths where their source objects
-    // denote the same reference. Walk the single store in reverse order.
     pub(crate) fn read_matching_with_initial(
-        &self, field: &str, path: &Expr, initial: Option<Expr>,
-        mut aliases: impl FnMut(&Expr) -> Option<Expr>,
-    ) -> Option<Expr> {
+        &self, field: &str, path: &Expr, initial: Expr,
+        aliases: impl FnMut(&Expr) -> Option<Expr>,
+    ) -> Expr {
+        let (branches, fallback) = self.reaching_writes(field, path, aliases);
+        Self::apply_writes(branches, fallback.unwrap_or(initial))
+    }
+
+    // A write reaches a read only when the same field, source identity and
+    // path all match. Newest writes take priority over earlier ones.
+    fn reaching_writes(
+        &self, field: &str, path: &Expr, mut aliases: impl FnMut(&Expr) -> Option<Expr>,
+    ) -> (Vec<(Expr, Expr)>, Option<Expr>) {
         let mut branches = Vec::new();
-        let mut fallback = initial;
         for entry in self.entries.iter().rev().filter(|entry| entry.field == field) {
             let Some(identity) = aliases(&entry.reference) else { continue; };
             let guard = math::normalize(b::and(entry.guard.clone(), identity));
@@ -624,24 +644,17 @@ impl SymbolicStore {
                 continue;
             }
             if guard.as_bool() == Some(true) || b::path_implies(path, &guard) {
-                fallback = Some(math::normalize(entry.value.clone()));
-                break;
+                return (branches, Some(math::normalize(entry.value.clone())));
             }
             branches.push((guard, entry.value.clone()));
         }
-        if fallback.is_none() && !branches.is_empty() {
-            // Writes that separately do not cover the read may cover it
-            // together. Pick the oldest reachable write as ELSE only when
-            // the other writes plus that one exhaust this read's domain.
-            let covered = coverage(branches.iter().map(|(guard, _)| guard));
-            if b::path_implies(path, &covered) {
-                fallback = branches.pop().map(|(_, value)| value);
-            }
-        }
-        let fallback = fallback?;
-        Some(branches.into_iter().rev().fold(fallback, |old, (guard, value)| {
+        (branches, None)
+    }
+
+    fn apply_writes(branches: Vec<(Expr, Expr)>, initial: Expr) -> Expr {
+        branches.into_iter().rev().fold(initial, |old, (guard, value)| {
             join_value(guard, value, old)
-        }))
+        })
     }
 
     pub(crate) fn suffix_from(&self, start: usize) -> Self {

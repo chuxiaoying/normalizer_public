@@ -444,8 +444,7 @@ impl Engine<'_> {
         };
         let initial = b::sym_e_path(binding, fields.to_vec(), scalar);
         let reference = self.adapter_state_reference(root);
-        let value = self.realtime_store.read_with_initial(&reference, &fields.join("."), guard, Some(initial))
-            .ok_or_else(|| fail("state read has no initial or reaching write"))?;
+        let value = self.realtime_store.read_with_initial(&reference, &fields.join("."), guard, initial);
         Ok(Value::Term(ty, value))
     }
 
