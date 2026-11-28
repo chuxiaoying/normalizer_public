@@ -2,4 +2,4 @@ entry: src/main.ts#run
 reject:
   fragments:
   - "[NORM-TS-MODULE]"
-  - "src/main.ts:1:1: relative import escapes the project root"
+  - "src/main.ts:1:1: [NORM-IMPORT] relative import escapes the project root"

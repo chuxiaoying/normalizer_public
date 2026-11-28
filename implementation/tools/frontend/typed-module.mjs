@@ -73,7 +73,7 @@ export function assertTypeScript(sf, checker, errors, fail = failTypedModule) {
 const nativeTypes = new Set([
   'Array', 'ReadonlyArray', 'Map', 'ReadonlyMap', 'Promise', 'Record', 'Partial',
   'Readonly', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable',
-  'ReturnType', 'Parameters', 'Awaited', 'Error', 'TypeError',
+  'ReturnType', 'Parameters', 'Awaited', 'Generator', 'Error', 'TypeError',
 ]);
 const nativeValues = new Set(['Map', 'Error', 'TypeError', 'String', 'Boolean', 'undefined']);
 const nativeMembers = new Set([

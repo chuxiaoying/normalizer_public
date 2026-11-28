@@ -2,4 +2,4 @@ entry: src/QuotePanel.ts#refreshQuote
 reject:
   fragments:
   - "SCENARIO_MODULE_INPUT:"
-  - "unbound local props"
+  - "Cannot find name 'props'."

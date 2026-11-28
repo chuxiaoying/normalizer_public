@@ -2,4 +2,4 @@ entry: src/main.ts#run
 reject:
   fragments:
     - "[NORM-TS-MODULE]"
-    - "src/main.ts:1:1: relative import must resolve to an executable .ts source"
+    - "src/main.ts:1:1: [NORM-IMPORT] relative import must resolve to an executable .ts source"

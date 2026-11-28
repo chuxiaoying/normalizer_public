@@ -2,4 +2,5 @@ entry: src/example/use/Entry.java#example.use.Entry.run
 reject:
   fragments:
     - "[SOURCE-LINK-FAILED]"
-    - cross-package access to example.first.Tools.change requires a member access proof
+    - "[NORM-IMPORT]"
+    - import example.first.Tools does not resolve to an approved binding
