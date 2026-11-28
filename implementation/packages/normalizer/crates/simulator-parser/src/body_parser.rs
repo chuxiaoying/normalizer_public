@@ -1494,6 +1494,36 @@ impl<'a> Parser<'a> {
     }
 
     fn read_text_block(&mut self) -> Result<JavaLit, ParseError> {
+        let mut raw = Vec::new();
+        self.scan_text_block(|unit| raw.push(unit))?;
+        let content = strip_text_block_indent(&raw);
+        let mut units = Vec::with_capacity(content.len());
+        let mut offset = 0;
+        while let Some(&unit) = content.get(offset) {
+            offset += 1;
+            if unit != u16::from(b'\\') {
+                units.push(unit);
+                continue;
+            }
+            if content.get(offset) == Some(&u16::from(b'\n')) {
+                offset += 1; // A line continuation, not a string escape.
+                continue;
+            }
+            let bytes = content[offset..]
+                .iter()
+                .copied()
+                .map_while(|unit| u8::try_from(unit).ok());
+            let (escaped, width) = decode_literal_escape(bytes)
+                .ok_or_else(|| self.err("[JAVA-TEXT-BLOCK] invalid literal escape"))?;
+            offset += width;
+            units.extend_from_slice(escaped.encode_utf16(&mut [0; 2]));
+        }
+        Ok(java_string_units(units))
+    }
+
+    /// The brace and annotation scanners use the same lexical delimiter
+    /// rules, without materializing content during the structural pass.
+    pub(crate) fn scan_text_block(&mut self, mut push: impl FnMut(u16)) -> Result<(), ParseError> {
         self.pos += 3;
         while matches!(self.peek(), Some(b' ' | b'\t' | 0x0c)) {
             self.pos += 1;
@@ -1501,43 +1531,20 @@ impl<'a> Parser<'a> {
         if !self.read_text_line_terminator() {
             return Err(self.err("[JAVA-TEXT-BLOCK] opening delimiter requires a line terminator"));
         }
-        let mut raw = Vec::new();
         while self.peek().is_some() {
             if self.starts_with("\"\"\"") {
                 self.pos += 3;
-                let content = strip_text_block_indent(&raw);
-                let mut units = Vec::with_capacity(content.len());
-                let mut offset = 0;
-                while let Some(&unit) = content.get(offset) {
-                    offset += 1;
-                    if unit != u16::from(b'\\') {
-                        units.push(unit);
-                        continue;
-                    }
-                    if content.get(offset) == Some(&u16::from(b'\n')) {
-                        offset += 1; // A line continuation, not a string escape.
-                        continue;
-                    }
-                    let bytes = content[offset..]
-                        .iter()
-                        .copied()
-                        .map_while(|unit| u8::try_from(unit).ok());
-                    let (escaped, width) = decode_literal_escape(bytes)
-                        .ok_or_else(|| self.err("[JAVA-TEXT-BLOCK] invalid literal escape"))?;
-                    offset += width;
-                    units.extend_from_slice(escaped.encode_utf16(&mut [0; 2]));
-                }
-                return Ok(java_string_units(units));
+                return Ok(());
             }
             if self.read_text_line_terminator() {
-                raw.push(u16::from(b'\n'));
+                push(u16::from(b'\n'));
                 continue;
             }
             if self.peek() == Some(b'\\') {
                 self.pos += 1;
-                raw.push(u16::from(b'\\'));
+                push(u16::from(b'\\'));
                 if self.read_text_line_terminator() {
-                    raw.push(u16::from(b'\n'));
+                    push(u16::from(b'\n'));
                     continue;
                 }
                 // Validate against the physical source before stripIndent.
@@ -1546,20 +1553,22 @@ impl<'a> Parser<'a> {
                 if decode_literal_escape(rest.iter().copied()).is_none() {
                     return Err(self.err("[JAVA-TEXT-BLOCK] invalid literal escape"));
                 }
-                raw.push(u16::from(rest[0]));
+                push(u16::from(rest[0]));
                 self.pos += 1;
                 continue;
             }
             if let Some(unit) = self.surrogates.at(self.pos) {
                 self.pos += char::REPLACEMENT_CHARACTER.len_utf8();
-                raw.push(unit);
+                push(unit);
             } else {
                 let value = self.source[self.pos..]
                     .chars()
                     .next()
                     .expect("text block scanner is on a character boundary");
                 self.pos += value.len_utf8();
-                raw.extend_from_slice(value.encode_utf16(&mut [0; 2]));
+                for &unit in value.encode_utf16(&mut [0; 2]).iter() {
+                    push(unit);
+                }
             }
         }
         Err(self.err("[JAVA-TEXT-BLOCK] unterminated text block"))

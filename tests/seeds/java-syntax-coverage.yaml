@@ -214,6 +214,11 @@ families:
           - [TextBlock.read, original, pers]
           - [TextBlock.read, same-text-from-an-ordinary-literal, pers]
           - [TextBlock.read, surrogates-and-nonbreaking-space-are-not-stripped, pers]
+          - [TextBlock.read, interior-blank-line-does-not-reduce-common-indent, pers]
+          - [TextBlock.read, single-carriage-return-is-a-physical-newline, pers]
+          - [TextBlock.read, closing-delimiter-at-left-margin-keeps-indentation, pers]
+          - [TextBlock.read, unterminated-text-block-has-a-lexical-diagnostic, reject]
+          - [TextBlock.read, embedded-quote-and-braces-are-not-source-structure, pers]
   declarations-and-binding:
     title: 声明、作用域与绑定
     leaves:

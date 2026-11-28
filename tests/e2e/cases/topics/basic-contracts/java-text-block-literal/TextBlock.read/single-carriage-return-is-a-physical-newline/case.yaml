@@ -1,0 +1,6 @@
+entry: src/TextBlock.java#TextBlock.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/TextBlock.java#TextBlock.read, returns: text}
+  P: {parameters: {}}
+  R: '"first\nsecond\n"'

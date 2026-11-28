@@ -360,6 +360,7 @@ impl<'a> Parser<'a> {
                     }
                     self.pos += 1;
                 }
+                b'"' if self.starts_with("\"\"\"") => self.scan_text_block(|_| {})?,
                 b'"' | b'\'' => self.skip_quoted(c),
                 b'/' if self.peek_at(1) == Some(b'/') => self.skip_line_comment(),
                 b'/' if self.peek_at(1) == Some(b'*') => self.skip_block_comment()?,
