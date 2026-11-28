@@ -185,6 +185,9 @@ impl SourceReceiver {
                     return Err("static assembly receiver used before its declaration".into());
                 };
                 let declaration = program.find_class(owner).ok_or("missing static assembly receiver type")?;
+                if declaration.package() != root.package() {
+                    return Err("cross-package assembly requires a visible source setter, not a direct field assignment".into());
+                }
                 let member = declaration.fields().iter().find(|f| !f.is_static() && !f.is_final() && f.name() == field)
                     .ok_or("invalid static assembly field assignment")?;
                 if receiver == &self.field && !crate::normalized::entry_state(declaration, member) {
@@ -244,7 +247,8 @@ pub(crate) fn inert_instance_method<'a>(
     let mut candidates = class.methods().iter().enumerate().filter(|(_, m)|
         m.name() == name && m.arity() == arity && !m.is_constructor());
     let (index, method) = candidates.next()?;
-    (candidates.next().is_none() && !method.is_static() && method.body().is_some()).then(||
+    (candidates.next().is_none() && !method.is_static() && method.body().is_some()
+        && (class.package() == owner.package() || method.is_public())).then(||
         (class, method, crate::normalized::method_key(class, index, method)))
 }
 
@@ -354,6 +358,9 @@ impl SourceEntry {
             return Err(crate::preprocess::required(
                 "NORM-OVERLOAD", invocation, "ambiguous entry method", "入口需要显式的 Java 源码参数类型签名。",
             ));
+        }
+        if receiver.is_some() && target_class.package() != class.package() && !method.is_public() {
+            return Err(fail("cross-package receiver entry must name a public method"));
         }
 
         // The caller may include a redundant signature. PERS identifies

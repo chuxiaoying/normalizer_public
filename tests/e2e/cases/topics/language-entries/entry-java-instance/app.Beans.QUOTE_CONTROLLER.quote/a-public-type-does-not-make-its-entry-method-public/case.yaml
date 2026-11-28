@@ -1,0 +1,6 @@
+entry: src/app/Beans.java#app.Beans.QUOTE_CONTROLLER.quote
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-ENTRY]"
+    - 'cross-package receiver entry must name a public method'

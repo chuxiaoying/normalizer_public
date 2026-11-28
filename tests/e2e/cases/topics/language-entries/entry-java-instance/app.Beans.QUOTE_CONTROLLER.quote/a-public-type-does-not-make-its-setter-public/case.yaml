@@ -1,0 +1,6 @@
+entry: src/app/Beans.java#app.Beans.QUOTE_CONTROLLER.quote
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-ENTRY]"
+    - 'static assembly setter must resolve to one visible direct field assignment'

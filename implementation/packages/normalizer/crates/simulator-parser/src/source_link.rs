@@ -40,6 +40,13 @@ impl JavaProgram {
                 ).map(|method| (method.name.clone(), method.params.len())).collect::<BTreeSet<_>>();
                 (class.full_name(), methods)
             }).collect::<BTreeMap<_, _>>();
+        let public_bootstrap_classes = self.classes.iter().filter(|class|
+            class.is_public_top_level() && !class.is_interface && !class.is_record
+                && std::path::Path::new(&class.source_file).file_stem().and_then(|name| name.to_str())
+                    == Some(class.simple_name.as_str())
+                && class.type_parameters.is_empty() && class.supertype.is_none()
+                && !class.methods.iter().any(|method| method.is_constructor)
+        ).map(JavaClass::full_name).collect::<BTreeSet<_>>();
         for class in &mut self.classes {
             let owner = class.full_name();
             let mut imports = BTreeMap::<String, String>::new();
@@ -58,7 +65,8 @@ impl JavaProgram {
             let issue = RefCell::new(None);
             let scope = Names { owner: &owner, package: &class.package, imports: &imports, packages: &packages,
                 qualify_names, private_statics: &private_statics, nests: &nests,
-                cross_package_statics: &cross_package_statics, issue: &issue };
+                cross_package_statics: &cross_package_statics,
+                public_bootstrap_classes: &public_bootstrap_classes, issue: &issue };
             let types = class.type_parameters.iter().cloned().collect::<BTreeSet<_>>();
             let member_names = class.fields.iter().map(|field| field.name.clone()).collect::<BTreeSet<_>>();
             if let Some(parent) = &mut class.supertype { scope.bind_name(parent, &types); }
@@ -70,6 +78,7 @@ impl JavaProgram {
                     (name, args)
                 }).collect();
             for field in &mut class.fields {
+                if scope.bind_public_bootstrap_allocation(field) { continue; }
                 scope.ty(&mut field.java_type, &types);
                 if let Some(value) = &mut field.initializer { scope.expr(value, &types, &member_names); }
             }
@@ -105,10 +114,27 @@ struct Names<'a> {
     private_statics: &'a BTreeMap<String, BTreeSet<(String, usize)>>,
     nests: &'a BTreeMap<String, String>,
     cross_package_statics: &'a BTreeMap<String, BTreeSet<(String, usize)>>,
+    public_bootstrap_classes: &'a BTreeSet<String>,
     issue: &'a RefCell<Option<String>>,
 }
 
 impl Names<'_> {
+    /// An explicit static immutable bootstrap root can name a public
+    /// top-level class and its public implicit zero-argument constructor.
+    /// This proves those two references, not access to any of its members.
+    fn bind_public_bootstrap_allocation(&self, field: &mut JavaField) -> bool {
+        if !self.qualify_names || !field.is_static || !field.is_final { return false; }
+        let (JavaType::Class(ty), Some(JavaExpr::New { java_type: JavaType::Class(target), args })) =
+            (&mut field.java_type, &mut field.initializer) else { return false; };
+        if !args.is_empty() { return false; }
+        let Some(qualified) = self.declared_name(ty) else { return false; };
+        if !self.public_bootstrap_classes.contains(&qualified) || self.packages[&qualified] == self.package
+            || self.declared_name(target).as_ref() != Some(&qualified) { return false; }
+        *ty = qualified.clone();
+        *target = qualified;
+        true
+    }
+
     fn declared_name(&self, raw: &str) -> Option<String> {
         // An enclosing type may contribute a nested type name. Stop
         // at the package; a parent package is not a lexical scope.
