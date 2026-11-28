@@ -41,7 +41,7 @@ implementation/tools/normalizer source "$java_project" 'src/HelloWorld.java#Hell
 
 ## 2. TypeScript：运行已准备的导出函数
 
-原始 JavaScript 须先按[强类型准入规则](../design/chapters/04-AI救赎.md#ai-04-强类型准入)准备成严格 TypeScript。下面从仓库中现成的最小正例复制完整分析源码，只练习 CLI，不假装又做了一次预处理。
+从仓库用例复制已准备好的 TypeScript 模块，直接运行 CLI。自己的工程按[输入手册](kernel-input.md)准备。
 
 ```sh
 ts_project=$(mktemp -d)
@@ -53,9 +53,9 @@ implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total
 
 ## 3. 前端 VO：运行生产入口与消费入口
 
-从两个已准备的用例分别复制纯净 TypeScript 分析源码。原始 Vue 只用于种子里展示预处理对照，不进入运行工程。生产看 `onLoad` 怎样读取数据和写入页面状态；消费看某个组件属性怎样从已有状态得到展示值。两次分析相互独立，不把生产命令的输出喂给消费命令。
+从两个已准备的用例分别复制纯净 TypeScript 分析源码。生产命令选择 `onLoad`，消费命令选择 `caption`。各自传入对应的分析目录。
 
-这里各跑一个已准备入口。对真实页面，先[选定生产或消费以及入口范围](README.md#用户说把这张欠费单页面归一化)，再逐入口运行。
+这里各跑一个已准备入口。对真实页面，先[选定生产或消费以及入口范围](skills/normalizer-preprocess/SKILL.md#前端整页归一化)，再逐入口运行。
 
 **生产：查询数据并写入页面状态。**
 
@@ -95,4 +95,4 @@ else
 fi
 ```
 
-以上是上手检查，不代替按设计对完整 PERS 做独立验收。看[诊断参考](cli.md#诊断)决定先修工具链、入口还是分析副本。完成练习后，可移除本页创建的临时工程。
+看[诊断参考](cli.md#诊断)决定先修工具链、入口还是分析副本。完成练习后，可移除本页创建的临时工程。
