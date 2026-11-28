@@ -41,7 +41,7 @@ implementation/tools/normalizer source "$java_project" 'src/HelloWorld.java#Hell
 
 ## 2. TypeScript：运行已准备的导出函数
 
-原始 JavaScript 须先按[预处理 Skill](skills/normalizer-preprocess/SKILL.md)准备成严格 TypeScript。下面从仓库中现成的最小正例复制完整分析源码，只练习 CLI，不假装又做了一次预处理。
+原始 JavaScript 须先按[强类型准入规则](../design/chapters/04-AI救赎.md#ai-04-强类型准入)准备成严格 TypeScript。下面从仓库中现成的最小正例复制完整分析源码，只练习 CLI，不假装又做了一次预处理。
 
 ```sh
 ts_project=$(mktemp -d)
