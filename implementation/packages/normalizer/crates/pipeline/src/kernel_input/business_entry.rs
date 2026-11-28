@@ -365,6 +365,11 @@ impl EntryContext {
         self.has_field(source_type, tail.split('.')).then(|| format!("{}.{tail}", self.qualified("P", root)))
     }
 
+    pub(super) fn source_parameter_field_type(&self, root: &str, field: &str) -> Option<&str> {
+        let parameter = self.parameter_type(root)?;
+        self.declared_field_type(parameter, std::iter::once(field))
+    }
+
     pub(super) fn source_identity_names(&self, result: &ExecutionResult) -> BTreeMap<i64, String> {
         result.source_identity_parameters.iter().filter_map(|(id, root)| {
             let (parameter, fields) = root.split_once('.').map_or((root.as_str(), None), |(name, fields)| (name, Some(fields)));

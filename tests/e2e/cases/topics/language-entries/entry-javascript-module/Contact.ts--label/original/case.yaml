@@ -1,0 +1,11 @@
+entry: src/Contact.ts#label
+expected:
+  schema: normalizer.pers/1
+  types:
+    Contact:
+      fields: {label: "text?", useStored: bool}
+  entry: {function: src/Contact.ts#label, returns: "text?"}
+  P:
+    parameters:
+      contact: {position: 0, type: Contact}
+  R: 'CASE WHEN contact.useStored THEN contact.label ELSE null END'

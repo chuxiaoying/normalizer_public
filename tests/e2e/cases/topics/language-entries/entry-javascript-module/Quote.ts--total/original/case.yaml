@@ -1,0 +1,11 @@
+entry: src/Quote.ts#total
+expected:
+  schema: normalizer.pers/1
+  types:
+    Quote:
+      fields: {amount: number, fee: number}
+  entry: {function: src/Quote.ts#total, returns: number}
+  P:
+    parameters:
+      input: {position: 0, type: Quote}
+  R: input.amount + input.fee

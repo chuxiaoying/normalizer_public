@@ -383,6 +383,8 @@ seeds:
   entry-javascript-module:
     module:
       - total.ts#total
+      - Quote.ts#total
+      - Contact.ts#label
       - vector-case.ts#choose
       - vector-construction.ts#pair
       - ordered-map.ts#labels

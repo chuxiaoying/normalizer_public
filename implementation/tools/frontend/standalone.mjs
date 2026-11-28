@@ -48,6 +48,32 @@ function declaredParameter(node, checker) {
   if (type && (type.flags & ts.TypeFlags.Boolean)) return 'boolean';
 }
 
+function declaredRecord(node, checker) {
+  if (!node || !checker || !ts.isTypeReferenceNode(node) || node.typeArguments?.length) return;
+  const type = checker.getTypeAtLocation(node);
+  if (!(type.flags & ts.TypeFlags.Object)) return;
+  const symbol = type.aliasSymbol ?? type.getSymbol();
+  if (symbol?.declarations?.length !== 1) return;
+  const [declaration] = symbol.declarations;
+  if (declaration.getSourceFile().isDeclarationFile || declaration.typeParameters?.length) return;
+  const members = ts.isInterfaceDeclaration(declaration) && !declaration.heritageClauses?.length
+    ? declaration.members
+    : ts.isTypeAliasDeclaration(declaration) && ts.isTypeLiteralNode(declaration.type)
+      ? declaration.type.members : undefined;
+  const name = symbol.name;
+  if (!members?.length || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
+      || ['void','unknown','number','money','date','instant','bool','text','bytes'].includes(name)) return;
+  const fields = new Map();
+  for (const member of members) {
+    if (!ts.isPropertySignature(member) || member.questionToken || !ts.isIdentifier(member.name)) return;
+    const domain = declaredParameter(member.type, checker);
+    if (!['number', 'boolean', 'string', nullableText].includes(domain) || fields.has(member.name.text)) return;
+    fields.set(member.name.text, domain);
+  }
+  const wire = 'record<' + Array.from(fields, ([key, domain]) => key + ':' + valueType(domain)).sort().join(',') + '>';
+  return {name, declaration, fields, wire};
+}
+
 const compilerLibrary = dirname(ts.getDefaultLibFilePath({}));
 function declaredOrderedMap(node, checker) {
   if (!node || !checker) return false;
@@ -265,14 +291,23 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     fail('readonly Map requires an unshadowed built-in Map');
   }
   const names = new Map();
+  const boundRecords = new Map();
   const params = fn.parameters.map((param, position) => {
     const domain = declaredParameter(param.type, bindings);
-    if (!parameter(domain) || domain === 'unknown') fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
+    const record = parameter(domain) ? undefined : declaredRecord(param.type, bindings);
+    if ((!parameter(domain) || domain === 'unknown') && !record)
+      fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding)) fail('unsupported business parameter name ' + binding);
-    names.set(param.name.text, {name: binding, type: parameter(domain)});
-    return {publicName: param.name.text, name: binding, domain, position};
+    if (record) {
+      const existing = boundRecords.get(record.name);
+      if (existing && existing.declaration !== record.declaration)
+        fail('same public record name resolves to two declarations: ' + record.name);
+      boundRecords.set(record.name, record);
+    }
+    names.set(param.name.text, {name: binding, type: record ? record.name : parameter(domain), record});
+    return {publicName: param.name.text, name: binding, domain, position, record};
   });
   const active = new Set([fn]);
   let linkedCallBudget = 8_192;
@@ -399,6 +434,12 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
         return value;
       }
       const binding = lexical.get(name);
+      if (expr.target.length === 2 && binding?.record?.fields.has(field)) {
+        const domain = binding.record.fields.get(field);
+        return {type: parameter(domain), node: internal('value.field', {
+          value: binding.node ?? internal('var', {name: binding.name}), name: field,
+        })};
+      }
       if (expr.target.length !== 2 || field !== 'length' || binding?.type !== 'number[]') {
         fail('length requires a direct declared non-null readonly Vector');
       }
@@ -456,13 +497,17 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       }
     }
   }
-  return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf));
+  const types = Object.fromEntries(Array.from(boundRecords.values(), record => [record.name, {
+    fields: Object.fromEntries(Array.from(record.fields, ([name, domain]) => [name, parameter(domain)])),
+  }]));
+  return projectInput(file, entry, params, returnDomain, orderedMap, returns, body, fn.getText(sf), {types});
 }
 
 function projectInput(file, entry, params, returnDomain, orderedMap, returns, body, excerpt, typed = {}) {
   const binding = 'Entry.run';
   const moduleFile = 'Module.ts';
-  const javaParams = params.map(param => carrier(param.domain));
+  const javaParams = params.map(param => param.record ? 'Object' : carrier(param.domain));
+  const wireType = param => param.record ? param.record.wire : valueType(param.domain);
   const declarations = javaParams.map((type, index) => type + ' ' + params[index].name);
   const resultTypes = returnDomain === readonlyVector ? {ReadonlyNumbers: 'vector<number>'}
     : returnDomain === 'unknown' ? {OpenSourceValue: 'ts_unknown_input'}
@@ -475,17 +520,20 @@ function projectInput(file, entry, params, returnDomain, orderedMap, returns, bo
     result_value_types: resultTypes,
     ...(typed.ports && {ports: typed.ports}),
     ...(typed.exceptions && {exceptions: typed.exceptions}),
-    parameter_value_types: {run: Object.fromEntries(params.filter(p => p.domain === readonlyVector || p.domain === 'unknown')
-        .map(p => [p.name, valueType(p.domain)]))},
+    parameter_value_types: {run: Object.fromEntries(params.filter(p => p.record || p.domain === readonlyVector || p.domain === 'unknown')
+        .map(p => [p.name, wireType(p)]))},
     entry_contexts: {[binding]: {
       function: file + '#' + entry, returns,
       ...(typed.externalResults && {external_results: typed.externalResults}),
       ...(typed.environment && {environment: typed.environment}),
-      parameters: Object.fromEntries(params.map(param => [param.publicName, {position: param.position, type: parameter(param.domain)}])),
+      ...(typed.types && Object.keys(typed.types).length && {types: typed.types}),
+      parameters: Object.fromEntries(params.map(param => [param.publicName, {
+        position: param.position, type: param.record?.name ?? parameter(param.domain),
+      }])),
     }},
     functions: {run: {
       java: binding + '(' + javaParams.join(',') + ')',
-      params: params.map(param => ({name: param.name, type: valueType(param.domain)})),
+      params: params.map(param => ({name: param.name, type: wireType(param)})),
       returns: returns === 'void' ? 'unit' : resultTypes[returnCarrier] ?? valueType(returnDomain), origin: {path: moduleFile, excerpt},
       body,
     }},

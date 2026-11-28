@@ -239,3 +239,7 @@ R: |-
 两个操作数都已知为非空文本时，`suffix + prefix` 按原顺序拼接，不按参数名重排。两个文本常量也按原顺序折叠：`"上海" + "账单"` 得到 `"上海账单"`。如果两条路径分别拼接不同前缀，就保留各自选中的结果，例如 `CASE WHEN pickup THEN "门店：" + value ELSE "送达：" + value END`。这与[等价候选的准入](../../../chapters/08-统一定形.md#cf-01-等价候选的准入)一致：数值加法的交换规则不适用于文本拼接。
 
 拼接也保留原生文本的全部码元。高代理项 `\uD800` 在低代理项 `\uDC00` 前组成 U+10000；反过来仍是两个未配对的码元。不能把任一个孤立码元改成替换字符，也不能为了合成字符而调换顺序。
+
+### 入口参数可以是具名记录
+
+若 `Quote` 声明了必填的 `amount: number` 和 `fee: number`，`total(input: Quote)` 在 P 中仍是一个 `Quote` 参数，不拆成两个入口参数。PERS 的 `types.Quote.fields` 保留两个字段，`return input.fee + input.amount` 归到 `input.amount + input.fee`；这两个字段都来自同一个 P，不产生 E 或 S。字段 `label: string | null` 则保留为必填的 `text?` 字段，值可能为 null 不等于字段可缺省。

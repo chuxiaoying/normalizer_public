@@ -280,6 +280,26 @@ impl<'a> Engine<'a> {
             }
             Node::Field { value, name } => {
                 let acquired = self.node(value, env, path)?;
+                if let Value::Term(Ty::Record(fields), expr) = &acquired {
+                    if let Some(input) = math::domains::composite::input_name(expr) {
+                        if let Some(domain) = self.project.entry_contexts.get(self.selected_entry.id)
+                            .and_then(|entry| entry.source_parameter_field_type(input, name))
+                        {
+                            // A checked scalar leaf of P has a public
+                            // parameter path, as in the Java source route.
+                            let sort = match (fields.get(name), domain) {
+                                (Some(Ty::Integer), "number") => Some(ScalarSymbolType::Integer),
+                                (Some(Ty::Bool), "bool") => Some(ScalarSymbolType::Boolean),
+                                (Some(Ty::Text), "text") => Some(ScalarSymbolType::Text),
+                                (Some(Ty::Text), "text?") => Some(ScalarSymbolType::NullableText),
+                                _ => None,
+                            };
+                            if let Some(sort) = sort {
+                                return Ok(Value::Term(fields[name].clone(), b::param(&format!("{input}.{name}"), sort)));
+                            }
+                        }
+                    }
+                }
                 if name == "length" && matches!(&acquired, Value::Term(Ty::Vector(_), _)) {
                     let input = acquired.scalar()?;
                     let binding = math::domains::composite::input_name(&input)
