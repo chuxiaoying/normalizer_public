@@ -43,4 +43,4 @@ rename to src/total.ts
 
 入口可静态定位，执行原生调用时保留调用者提供的对象和成员名。真实调用到达 `source.read()` 后，发现它没有随工程交付的实现或合法外部合同，按 [AI-05](../../../chapters/04-AI救赎.md#ai-05-预处理停在哪儿) 报 `Panic: not-support`，定位实际调用，不产生 PERS。不能把 await 本身当作非法，也不能在普通类型和名称校验通过后把已证明不可达的调用伪造成一次执行失败。
 
-例如本例的定位是 `src/total.ts` 中 `total` 的 `source.read()`。
+例如本例的定位是 `src/total.ts` 中 `total` 的 `source.read()`。 如果只把接收结果的 `const` 换成 `let`，先调用 `source.read()` 这一点没变。若声明的 `source` 肯定非空，写成 `source?.read()` 也一定会调用；两例都应定位同一个无源码调用，而不是把写法本身报成不支持。只有接收者实际可能为空时，才能把短路路径与调用路径分开。

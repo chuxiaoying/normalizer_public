@@ -127,30 +127,32 @@ function namedParameters(parameters) {
   return {names};
 }
 
-function leadingParameterCall(fn, params) {
-  const nodes = fn.body.statements, first = nodes[0];
-  const top = first && (ts.isVariableStatement(first)
-    ? first.declarationList.declarations[0]?.initializer : first.expression);
-  const declared = new Set(params);
-  for (const [index, statement] of nodes.entries()) {
-    if (ts.isReturnStatement(statement) && index === nodes.length - 1) break;
-    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) return;
-    for (const {name, initializer} of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(name) || !initializer || declared.has(name.text)) return;
-      declared.add(name.text);
-    }
-  }
+function leadingParameterCall(fn, params, checker) {
+  const first = fn.body.statements[0];
+  if (!first || !checker) return;
+  // A declaration, return, or expression statement first evaluates its
+  // initializer/operand. Once its definite call reaches an unknown body,
+  // later statements and the const/let spelling do not affect that diagnosis.
+  const top = ts.isVariableStatement(first) ? first.declarationList.declarations[0]?.initializer
+    : ts.isReturnStatement(first) || ts.isExpressionStatement(first) ? first.expression : undefined;
   if (!top) return;
   const expression = unwrap(top);
   const awaited = ts.isAwaitExpression(expression);
   const call = awaited ? unwrap(expression.expression) : expression;
-  if (!ts.isCallExpression(call) || call.questionDotToken || call.arguments.length) return;
+  if (!ts.isCallExpression(call) || call.arguments.length) return;
   const callee = unwrap(call.expression);
-  if (!ts.isPropertyAccessExpression(callee) || callee.questionDotToken || !ts.isIdentifier(callee.name)) return;
+  if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.name)) return;
   const receiver = unwrap(callee.expression);
-  if (ts.isIdentifier(receiver) && params.has(receiver.text)) {
-    return { parameters: [...params], call: {receiver: receiver.text, member: callee.name.text, awaited} };
-  }
+  if (!ts.isIdentifier(receiver) || !params.has(receiver.text)) return;
+  const formal = fn.parameters.find(parameter => ts.isIdentifier(parameter.name) && parameter.name.text === receiver.text);
+  if (!formal || checker.getSymbolAtLocation(receiver) !== checker.getSymbolAtLocation(formal.name)) return;
+  const nonnull = node => {
+    const type = checker.getTypeAtLocation(node);
+    return !(type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never))
+      && checker.getNonNullableType(type) === type;
+  };
+  if (callee.questionDotToken && !nonnull(receiver) || call.questionDotToken && !nonnull(callee)) return;
+  return { parameters: [...params], call: {receiver: receiver.text, member: callee.name.text, awaited} };
 }
 
 function mapEntries(node, names, fail) {
@@ -300,14 +302,14 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
     fail('standalone scalar modules require closed function declarations');
   }
   if (fn.asteriskToken) fail('generator entry requires a closed completion contract: ' + entry);
-  const call = leadingParameterCall(fn, formals);
+  const bindings = linked?.checker ?? typeChecker;
+  const call = leadingParameterCall(fn, formals, bindings);
   if (call) {
     return { closure: { schema: 'normalizer.standalone-closure/1', file, entry, ...call } };
   }
   if (fn.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
-  const bindings = linked?.checker ?? typeChecker;
   const declaredReturn = fn.type;
   const orderedMap = declaredOrderedMap(declaredReturn, bindings);
   const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, bindings);
