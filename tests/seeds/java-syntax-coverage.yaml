@@ -202,8 +202,18 @@ families:
         focus: 各种进制、分隔符、指数和后缀
         gap: review
       text-block:
-        focus: 文本块缩进、换行和转义
-        gap: review
+        focus: Java 文本块先统一物理换行，再去偶然缩进，最后解释转义，保留确切文本
+        seed: java-text-block-literal
+        evidence:
+          - [TextBlock.read, closing-margin-keeps-intended-leading-spaces, pers]
+          - [TextBlock.read, crlf-normalizes-before-escaped-carriage-return, pers]
+          - [TextBlock.read, escaped-quotes-and-octal-do-not-close-the-block, pers]
+          - [TextBlock.read, inline-closing-delimiter-has-no-final-line-break, pers]
+          - [TextBlock.read, invalid-escape-is-rejected, reject]
+          - [TextBlock.read, opening-delimiter-needs-a-newline, reject]
+          - [TextBlock.read, original, pers]
+          - [TextBlock.read, same-text-from-an-ordinary-literal, pers]
+          - [TextBlock.read, surrogates-and-nonbreaking-space-are-not-stripped, pers]
   declarations-and-binding:
     title: 声明、作用域与绑定
     leaves:

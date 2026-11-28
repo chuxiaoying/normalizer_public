@@ -30,6 +30,9 @@ seeds:
   java-assignment-conversion:
     source:
       - AssignmentConversion.read
+  java-text-block-literal:
+    source:
+      - TextBlock.read
   java-grouping-signed-operand:
     source:
       - SignedGrouping.read

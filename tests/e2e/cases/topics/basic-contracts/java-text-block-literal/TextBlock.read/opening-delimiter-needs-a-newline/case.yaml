@@ -1,0 +1,7 @@
+entry: src/TextBlock.java#TextBlock.read
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[SOURCE-PARSE-FAILED]"
+    - "[JAVA-TEXT-BLOCK]"
+    - opening delimiter requires a line terminator

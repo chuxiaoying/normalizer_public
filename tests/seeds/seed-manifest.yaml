@@ -50,6 +50,7 @@ seeds:
   java-lexical-declaration-scope: { kind: basic, topic: basic-contracts, related: [language-entries] }
   java-assignment-conversion: { kind: basic, topic: basic-contracts, related: [number-domain] }
   java-grouping-signed-operand: { kind: basic, topic: basic-contracts, related: [language-entries] }
+  java-text-block-literal: { kind: basic, topic: basic-contracts, related: [language-entries] }
   java-source-name-closure: { kind: basic, topic: basic-contracts, related: [language-entries] }
   java-conditional-type-admission: { kind: basic, topic: basic-contracts, related: [control-flow] }
   java-lifo-release: { kind: topic, topic: state-and-aliasing, related: [collections] }

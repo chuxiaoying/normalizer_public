@@ -1457,6 +1457,7 @@ impl<'a> Parser<'a> {
     fn try_parse_literal(&mut self) -> Result<Option<JavaLit>, ParseError> {
         self.skip_ws();
         match self.peek() {
+            Some(b'"') if self.starts_with("\"\"\"") => Ok(Some(self.read_text_block()?)),
             Some(b'"') => Ok(Some(self.read_string_literal()?)),
             Some(b'\'') => {
                 let c = self.read_char_literal()?;
@@ -1482,33 +1483,99 @@ impl<'a> Parser<'a> {
     }
 
     fn read_literal_escape(&mut self) -> Result<char, ParseError> {
-        let escaped = self
-            .peek()
-            .ok_or_else(|| self.err("unexpected end in literal escape"))?;
-        self.pos += 1;
-        match escaped {
-            b'b' => Ok('\u{0008}'),
-            b'f' => Ok('\u{000c}'),
-            b'n' => Ok('\n'),
-            b'r' => Ok('\r'),
-            b's' => Ok(' '),
-            b't' => Ok('\t'),
-            b'\\' => Ok('\\'),
-            b'"' => Ok('"'),
-            b'\'' => Ok('\''),
-            leading @ b'0'..=b'7' => {
-                let mut value = leading - b'0';
-                let remaining = if leading <= b'3' { 2 } else { 1 };
-                for _ in 0..remaining {
-                    let Some(digit @ b'0'..=b'7') = self.peek() else {
-                        break;
-                    };
-                    self.pos += 1;
-                    value = value * 8 + (digit - b'0');
+        if self.peek().is_none() {
+            return Err(self.err("unexpected end in literal escape"));
+        }
+        let rest = self.source.as_bytes().get(self.pos..).unwrap_or_default();
+        let (value, width) = decode_literal_escape(rest.iter().copied())
+            .ok_or_else(|| self.err("invalid Java literal escape"))?;
+        self.pos += width;
+        Ok(value)
+    }
+
+    fn read_text_block(&mut self) -> Result<JavaLit, ParseError> {
+        self.pos += 3;
+        while matches!(self.peek(), Some(b' ' | b'\t' | 0x0c)) {
+            self.pos += 1;
+        }
+        if !self.read_text_line_terminator() {
+            return Err(self.err("[JAVA-TEXT-BLOCK] opening delimiter requires a line terminator"));
+        }
+        let mut raw = Vec::new();
+        while self.peek().is_some() {
+            if self.starts_with("\"\"\"") {
+                self.pos += 3;
+                let content = strip_text_block_indent(&raw);
+                let mut units = Vec::with_capacity(content.len());
+                let mut offset = 0;
+                while let Some(&unit) = content.get(offset) {
+                    offset += 1;
+                    if unit != u16::from(b'\\') {
+                        units.push(unit);
+                        continue;
+                    }
+                    if content.get(offset) == Some(&u16::from(b'\n')) {
+                        offset += 1; // A line continuation, not a string escape.
+                        continue;
+                    }
+                    let bytes = content[offset..]
+                        .iter()
+                        .copied()
+                        .map_while(|unit| u8::try_from(unit).ok());
+                    let (escaped, width) = decode_literal_escape(bytes)
+                        .ok_or_else(|| self.err("[JAVA-TEXT-BLOCK] invalid literal escape"))?;
+                    offset += width;
+                    units.extend_from_slice(escaped.encode_utf16(&mut [0; 2]));
                 }
-                Ok(char::from(value))
+                return Ok(java_string_units(units));
             }
-            _ => Err(self.err("invalid Java literal escape")),
+            if self.read_text_line_terminator() {
+                raw.push(u16::from(b'\n'));
+                continue;
+            }
+            if self.peek() == Some(b'\\') {
+                self.pos += 1;
+                raw.push(u16::from(b'\\'));
+                if self.read_text_line_terminator() {
+                    raw.push(u16::from(b'\n'));
+                    continue;
+                }
+                // Validate against the physical source before stripIndent.
+                // A non-escape after '\\' must not become valid by trimming.
+                let rest = self.source.as_bytes().get(self.pos..).unwrap_or_default();
+                if decode_literal_escape(rest.iter().copied()).is_none() {
+                    return Err(self.err("[JAVA-TEXT-BLOCK] invalid literal escape"));
+                }
+                raw.push(u16::from(rest[0]));
+                self.pos += 1;
+                continue;
+            }
+            if let Some(unit) = self.surrogates.at(self.pos) {
+                self.pos += char::REPLACEMENT_CHARACTER.len_utf8();
+                raw.push(unit);
+            } else {
+                let value = self.source[self.pos..]
+                    .chars()
+                    .next()
+                    .expect("text block scanner is on a character boundary");
+                self.pos += value.len_utf8();
+                raw.extend_from_slice(value.encode_utf16(&mut [0; 2]));
+            }
+        }
+        Err(self.err("[JAVA-TEXT-BLOCK] unterminated text block"))
+    }
+
+    fn read_text_line_terminator(&mut self) -> bool {
+        match self.peek() {
+            Some(b'\r') => {
+                self.pos += if self.peek_at(1) == Some(b'\n') { 2 } else { 1 };
+                true
+            }
+            Some(b'\n') => {
+                self.pos += 1;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -1540,10 +1607,7 @@ impl<'a> Parser<'a> {
         loop {
             if self.peek() == Some(b'"') {
                 self.pos += 1;
-                return Ok(match String::from_utf16(&units) {
-                    Ok(text) => JavaLit::Str(text),
-                    Err(_) => JavaLit::StrUnits(units),
-                });
+                return Ok(java_string_units(units));
             }
             if let Some(unit) = self.surrogates.at(self.pos) {
                 self.pos += char::REPLACEMENT_CHARACTER.len_utf8();
@@ -1840,4 +1904,73 @@ fn bind_do_once_exits(body: &mut [JavaStatement]) {
             _ => {}
         }
     }
+}
+
+fn java_string_units(units: Vec<u16>) -> JavaLit {
+    match String::from_utf16(&units) {
+        Ok(text) => JavaLit::Str(text),
+        Err(_) => JavaLit::StrUnits(units),
+    }
+}
+
+fn decode_literal_escape(mut bytes: impl Iterator<Item = u8>) -> Option<(char, usize)> {
+    let simple = match bytes.next()? {
+        b'b' => '\u{0008}',
+        b'f' => '\u{000c}',
+        b'n' => '\n',
+        b'r' => '\r',
+        b's' => ' ',
+        b't' => '\t',
+        b'\\' => '\\',
+        b'"' => '"',
+        b'\'' => '\'',
+        leading @ b'0'..=b'7' => {
+            let mut value = leading - b'0';
+            let mut width = 1;
+            let remaining = if leading <= b'3' { 2 } else { 1 };
+            for digit in bytes
+                .take(remaining)
+                .take_while(|digit| matches!(digit, b'0'..=b'7'))
+            {
+                width += 1;
+                value = value * 8 + (digit - b'0');
+            }
+            return Some((char::from(value), width));
+        }
+        _ => return None,
+    };
+    Some((simple, 1))
+}
+
+/// Java Character.isWhitespace, which excludes non-breaking spaces and
+/// differs from Rust's Unicode White_Space in the information separators.
+fn java_incidental_space(unit: u16) -> bool {
+    matches!(unit, 0x0009..=0x000d | 0x001c..=0x0020 | 0x1680 |
+        0x2000..=0x2006 | 0x2008..=0x200a | 0x2028 | 0x2029 | 0x205f | 0x3000)
+}
+
+fn strip_text_block_indent(units: &[u16]) -> Vec<u16> {
+    let lines = units
+        .split(|&unit| unit == u16::from(b'\n'))
+        .collect::<Vec<_>>();
+    let mut minimum = usize::MAX;
+    for (index, line) in lines.iter().enumerate() {
+        let prefix = line
+            .iter()
+            .take_while(|&&unit| java_incidental_space(unit))
+            .count();
+        if prefix < line.len() || index + 1 == lines.len() {
+            minimum = minimum.min(prefix);
+        }
+    }
+    let mut normalized = Vec::with_capacity(units.len());
+    for (index, line) in lines.into_iter().enumerate() {
+        if index != 0 {
+            normalized.push(u16::from(b'\n'));
+        }
+        if let Some(last) = line.iter().rposition(|&unit| !java_incidental_space(unit)) {
+            normalized.extend_from_slice(&line[minimum..=last]);
+        }
+    }
+    normalized
 }

@@ -22,6 +22,7 @@ java-invalid-declaration: topics/basic-contracts/java-invalid-declaration.md
 java-lexical-declaration-scope: topics/basic-contracts/java-lexical-declaration-scope.md
 java-assignment-conversion: topics/basic-contracts/java-assignment-conversion.md
 java-grouping-signed-operand: topics/basic-contracts/java-grouping-signed-operand.md
+java-text-block-literal: topics/basic-contracts/java-text-block-literal.md
 java-source-name-closure: topics/basic-contracts/java-source-name-closure.md
 java-conditional-type-admission: topics/basic-contracts/java-conditional-type-admission.md
 java-lifo-release: topics/state-and-aliasing/java-lifo-release.md
