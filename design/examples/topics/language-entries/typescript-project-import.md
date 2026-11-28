@@ -41,3 +41,9 @@ R: value + 1
 将入口改成 `import { default as plusOne } from "./helper.js"`，将帮助模块里的实现改成 `export default function plusOne(value: number): number { return value + 1; }`，得到与上面一样的完整 PERS。默认导出确实存在，局部名 `plusOne` 不是据以匹配远端名字。如果帮助模块只保留 `export function plusOne`，则没有默认导出，应拒绝且不生成 PERS。
 
 **分析预算与输入合同分开。** 同样是已定位的纯整数帮助函数，若 `double(x)` 返回 `x + x`，嵌套两次得到四次参数使用。增加嵌套时，若当前执行器不能在预算内完成展开，应报分析未完成且不输出 PERS；输入仍然具有同一语义，不能改成「需要预处理」、截断，也不能发布部分表达式。具体上限不是设计约定。
+
+## 类型别名按实际声明解析
+
+入口与帮助模块都可从工程内另一个文件 `import type { Domain }`。当严格 TypeScript 检查确认 `Domain` 正是 `number`、`boolean` 或 `string` 时，P 和返回值分别仍是原有 `number`、`bool`、`text`；换一个别名不改变业务域，引用本身不产生外部观察。不能只按别名拼写猜值域，也不能扩大一个受限或混合的类型来让它通过。
+
+这与拿 `.d.ts` 给运行时函数充当实现不同。声明文件只说明签名，不能执行实际帮助函数。导入工程内的辅助模块也不能用 `@ts-nocheck` 或 `@ts-ignore` 绕过[强类型准入](../../../chapters/04-AI救赎.md#ai-04-强类型准入)；即使选定入口看起来有完整类型，也拒绝生成 PERS。

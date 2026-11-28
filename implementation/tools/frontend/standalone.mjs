@@ -28,7 +28,7 @@ const carrier = domain => domain === readonlyVector ? 'int[]'
   : domain === nullableText ? 'String' : domain === 'unknown' ? 'Object' : domains.get(domain)[0];
 const valueType = domain => domain === readonlyVector ? 'vector<number>'
   : domain === 'string' ? 'text?' : domain === 'unknown' ? 'ts_unknown_input' : parameter(domain);
-function declaredParameter(node, sf) {
+function declaredParameter(node, sf, checker) {
   if (node && ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword &&
       ts.isArrayTypeNode(node.type) && node.type.elementType.kind === ts.SyntaxKind.NumberKeyword) {
     return readonlyVector;
@@ -41,6 +41,15 @@ function declaredParameter(node, sf) {
       && node.types.some(type => type.kind === ts.SyntaxKind.StringKeyword)
       && node.types.some(type => ts.isLiteralTypeNode(type)
         && type.literal.kind === ts.SyntaxKind.NullKeyword)) return nullableText;
+  if (node && checker && ts.isTypeReferenceNode(node)) {
+    // The strict compiler has already verified the declaration's origin.
+    // Only an exact scalar alias is transparent; a literal, branded,
+    // optional or mixed value domain is not widened by spelling.
+    const type = checker.getTypeAtLocation(node);
+    if (type.flags === ts.TypeFlags.Number) return 'number';
+    if (type.flags === ts.TypeFlags.String) return 'string';
+    if (type.flags & ts.TypeFlags.Boolean) return 'boolean';
+  }
   return node?.getText(sf);
 }
 function declaredOrderedMap(node) {
@@ -152,7 +161,7 @@ function compile(source, file, entry, physicalPath, linked) {
     const formals = namedParameters(fn.parameters);
     if (formals.error) fail(formals.error);
     const checker = !linked ? checkedTypeScript(physicalPath, sf, fail, {allowOfficial: official}) : undefined;
-    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, receiverAssembly: assembly, linked, officialChecker: official ? checker : undefined});
+    return compileScalar(sf, fn, file, entry, formals.names, {receiverFields: fields, receiverAssembly: assembly, linked, typeChecker: checker, officialChecker: official ? checker : undefined});
   }
   if (linked) {
     const sf = linked.ast;
@@ -216,10 +225,10 @@ function compile(source, file, entry, physicalPath, linked) {
     const returns = isListener ? 'void' : 'number';
     return projectInput(file, entry, params, returns, false, returns, shape.result, shape.excerpt, shape);
   }
-  return compileScalar(sf, fn, file, entry, formals.names, {officialChecker: usesStandard ? checker : undefined});
+  return compileScalar(sf, fn, file, entry, formals.names, {typeChecker: checker, officialChecker: usesStandard ? checker : undefined});
 }
 
-function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAssembly = [], linked, officialChecker} = {}) {
+function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAssembly = [], linked, typeChecker, officialChecker} = {}) {
   // Nonstandard imports, top-level initialization and other module state
   // require a separate certified linked graph or receiver assembly.
   if (!receiverFields && !linked && sf.statements.some(node => !ts.isFunctionDeclaration(node) &&
@@ -235,16 +244,17 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
   if (fn.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword)) {
     fail('async entry requires a closed completion contract: ' + entry);
   }
+  const bindings = linked?.checker ?? typeChecker;
   const declaredReturn = fn.type;
   const orderedMap = declaredOrderedMap(declaredReturn);
-  const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf);
+  const returnDomain = orderedMap ? readonlyMap : declaredParameter(declaredReturn, sf, bindings);
   if (!orderedMap && (!parameter(returnDomain) || returnDomain === 'unknown')) fail('expected declared business scalar or non-null readonly Vector return type');
   if (orderedMap && sf.statements.some(declaration => declaration.name?.text === 'Map')) {
     fail('readonly Map requires an unshadowed built-in Map');
   }
   const names = new Map();
   const params = fn.parameters.map((param, position) => {
-    const domain = declaredParameter(param.type, sf);
+    const domain = declaredParameter(param.type, sf, bindings);
     if (!parameter(domain) || domain === 'unknown') fail('expected declared business scalar or non-null readonly Vector for ' + param.name.text);
     if (orderedMap && param.name.text === 'Map') fail('readonly Map requires an unshadowed built-in Map');
     const binding = param.name.text;
@@ -291,7 +301,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       if (formals.error || declaration.parameters.length !== expr.args.length) fail('linked helper has wrong arity: ' + label);
       const scope = new Map();
       for (const [i, param] of declaration.parameters.entries()) {
-        const expected = parameter(declaredParameter(param.type, origin.ast));
+        const expected = parameter(declaredParameter(param.type, origin.ast, bindings));
         const actual = evaluate(expr.args[i]);
         if (!expected || actual.type !== expected) fail('linked helper argument is outside the declared value domain: ' + label);
         scope.set(param.name.text, actual);
@@ -303,7 +313,7 @@ function compileScalar(sf, fn, file, entry, formals, {receiverFields, receiverAs
       active.add(declaration);
       const result = expression(lowerExpression(statement.expression, origin.ast, lowerCall), scope);
       active.delete(declaration);
-      const returned = parameter(declaredParameter(declaration.type, origin.ast));
+      const returned = parameter(declaredParameter(declaration.type, origin.ast, bindings));
       if (!returned || result.type !== returned) fail('linked helper result is outside the declared value domain: ' + label);
       return result;
     }
