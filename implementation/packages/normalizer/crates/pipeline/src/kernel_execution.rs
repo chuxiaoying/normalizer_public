@@ -879,6 +879,16 @@ impl<'a> Engine<'a> {
         if op == Arithmetic::Sub && left == right && self.acquired_integer_receipt(&left, &path) {
             return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
         }
+        if op == Arithmetic::Mul {
+            let zero = b::lit_int(0);
+            if (left == zero && self.acquired_integer_receipt(&right, &path))
+                || (right == zero && self.acquired_integer_receipt(&left, &path))
+            {
+                // The product no longer needs the value. Its already
+                // recorded call and unsuccessful completions still matter.
+                return Ok(Value::Term(Ty::Integer, zero));
+            }
+        }
         Ok(Value::Term(Ty::Integer, self.normalize_execution_value(op.build(left, right))))
     }
 
@@ -1705,6 +1715,7 @@ impl Engine<'_> {
     fn acquired_integer_receipt(&self, value: &Expr, path: &Expr) -> bool {
         enum Observation<'a> {
             Scalar(u64),
+            CompletedScalar(&'a Expr),
             Field(u64, &'a str),
             ProjectedField(&'a Expr, &'a str),
         }
@@ -1716,6 +1727,10 @@ impl Engine<'_> {
                 [field] => Observation::Field(*binding_id, field),
                 _ => return false,
             }
+        } else if value.as_call().is_some_and(|(key, _)|
+            math::domains::completion::output_name(&math::func_name(key)) == "completion.value")
+        {
+            Observation::CompletedScalar(value)
         } else if let Some((record, field, math::Primitive::Number)) =
             math::domains::composite::field_projection(value)
         {
@@ -1739,6 +1754,12 @@ impl Engine<'_> {
             let field = match observation {
                 Observation::Scalar(binding) =>
                     return receipt.binding_id() == binding && b::path_implies(&path, &event.guard),
+                Observation::CompletedScalar(value) => {
+                    let response = receipt.response();
+                    let acquired = b::and(event.guard.clone(), spec.normal_condition(response));
+                    return spec.returns == Ty::Integer && value == &spec.normal_value(response)
+                        && b::path_implies(&path, &acquired);
+                }
                 Observation::Field(binding, field) if receipt.binding_id() == binding => field,
                 Observation::ProjectedField(_, field) => field,
                 _ => return false,

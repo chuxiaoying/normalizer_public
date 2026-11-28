@@ -154,3 +154,5 @@ R: |-
 **PERS 验收要点**：把重试过程收束为完成条件与结果的关系，消除重复控制流痕迹，同时保留每次调用的独立性和先后依赖。
 
 入口、P 和数值域的共性见[基础案例](../expression-simplification/java-static.md)；条件归约的共性见[表达式化简](../expression-simplification/java-expression-simplification.md)。
+
+若第一次只在 `Transient` 时再试一次，而两次都可能独立抛 `Terminal`，终态不能只写成「两次中任一次抛 Terminal」。第二次仅在第一次为 `Transient` 时已发出，故这个守卫先选择读第二次的终态，其他路径才读第一次的终态。第一次的 `Transient` 已被捕获；第二次若抛该异常才继续传播。不能把两次同名异常当作同一个回执。

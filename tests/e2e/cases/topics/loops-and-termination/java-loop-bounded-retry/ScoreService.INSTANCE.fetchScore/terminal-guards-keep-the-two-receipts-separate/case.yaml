@@ -1,0 +1,37 @@
+entry: src/FetchService.java#FetchService.INSTANCE.fetch
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/FetchService.java#FetchService.INSTANCE.fetch, returns: number}
+  P:
+    parameters:
+      input: {position: 0, type: number}
+  R: |-
+    CASE
+      WHEN completion.is_return($e_0) THEN $e_0
+      ELSE $e_1
+    END
+  S:
+    - call:
+        external: src/FetchService.java#FetchService.INSTANCE.client.read
+        args: [input]
+        returns: number
+        result: $e_0
+    - call:
+        external: src/FetchService.java#FetchService.INSTANCE.client.read
+        args: [input + 1]
+        returns: number
+        result: $e_1
+        when: completion.is_throw($e_0, Transient)
+  throws:
+    - type: Terminal
+      when: |-
+        CASE
+          WHEN completion.is_throw($e_0, Transient) THEN completion.is_throw($e_1, Terminal)
+          ELSE completion.is_throw($e_0, Terminal)
+        END
+    - type: Transient
+      when: |-
+        CASE
+          WHEN completion.is_throw($e_0, Transient) THEN completion.is_throw($e_1, Transient)
+          ELSE false
+        END

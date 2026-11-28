@@ -183,36 +183,3 @@ pub fn payload(completion: Expr, class: &str, ty: Primitive) -> Expr {
         ty,
     )
 }
-
-#[cfg(test)]
-mod tag_partitions {
-    use super::*;
-
-    #[test]
-    fn terminal_guard_keeps_the_second_observation_under_its_issue_tag() {
-        let first = b::external_completion(0);
-        let second = b::external_completion(1);
-        let retry = is_throw(first.clone(), "Transient");
-        let refused = is_throw(first, "Terminal");
-        let second_terminal = is_throw(second.clone(), "Terminal");
-        let ordinary = b::or(refused.clone(), b::and(retry.clone(), second_terminal.clone()));
-        assert_eq!(factor_terminal_tag_guard(&ordinary),
-            Some(b::case_when(vec![(retry, second_terminal.clone())], refused.clone())));
-        let separate = b::or(refused, b::and(is_throw(second, "Transient"), second_terminal));
-        assert!(factor_terminal_tag_guard(&separate).is_none());
-    }
-
-    #[test]
-    fn one_present_receipt_has_only_one_throw_class() {
-        let receipt = b::external_completion(0);
-        let transient = is_throw(receipt.clone(), "Transient");
-        let terminal = is_throw(receipt, "Terminal");
-        let other = is_throw(b::external_completion(1), "Terminal");
-        assert_eq!(crate::normalize(b::and(transient.clone(), terminal.clone())).as_bool(), Some(false));
-        assert_eq!(crate::normalize(b::and(b::not(terminal.clone()), transient.clone())), transient);
-        assert_eq!(crate::normalize(b::and(transient.clone(), b::not(terminal.clone()))), transient);
-        assert!(b::path_implies(&transient, &b::not(terminal)));
-        assert!(!b::path_implies(&transient, &b::not(other.clone())));
-        assert!(crate::normalize(b::and(transient, other)).as_bool().is_none());
-    }
-}

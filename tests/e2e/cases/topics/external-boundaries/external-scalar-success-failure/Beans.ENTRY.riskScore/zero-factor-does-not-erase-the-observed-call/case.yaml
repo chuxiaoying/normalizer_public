@@ -1,0 +1,19 @@
+entry: src/FetchService.java#FetchService.INSTANCE.fetch
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/FetchService.java#FetchService.INSTANCE.fetch, returns: number}
+  P:
+    parameters:
+      input: {position: 0, type: number}
+      enabled: {position: 1, type: bool}
+  R: CASE WHEN enabled THEN 0 ELSE 1 END
+  S:
+    - call:
+        external: src/FetchService.java#FetchService.INSTANCE.client.read
+        args: [input]
+        returns: number
+        result: $e_0
+        when: enabled
+  throws:
+    - type: Terminal
+      when: CASE WHEN enabled THEN completion.is_throw($e_0, Terminal) ELSE false END
