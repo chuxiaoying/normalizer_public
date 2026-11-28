@@ -129,7 +129,7 @@ function mapEntries(node, names, fail) {
 }
 
 const numericOperators = {
-  '+': ['number', 'add'], '-': ['number', 'sub'],
+  '+': ['number', 'add'], '-': ['number', 'sub'], '*': ['number', 'mul'],
   '>': ['bool', 'gt'], '<': ['bool', 'lt'],
   '>=': ['bool', 'lt', true], '<=': ['bool', 'gt', true],
   '===': ['bool', 'eq'], '!==': ['bool', 'eq', true],

@@ -354,6 +354,10 @@ enum Node {
         left: Box<Node>,
         right: Box<Node>,
     },
+    Mul {
+        left: Box<Node>,
+        right: Box<Node>,
+    },
     Var {
         name: String,
     },

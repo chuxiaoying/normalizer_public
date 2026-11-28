@@ -1,13 +1,13 @@
 use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum JavaArithmetic {
+enum Arithmetic {
     Add,
     Sub,
     Mul,
 }
 
-impl JavaArithmetic {
+impl Arithmetic {
     fn build(self, left: Expr, right: Expr) -> Expr {
         match self {
             Self::Add => b::add(left, right),
@@ -179,6 +179,13 @@ impl<'a> Engine<'a> {
     fn diagnostic_entry(&self) -> &str {
         self.public_source_entry.unwrap_or(self.selected_entry.id)
     }
+    fn node_arithmetic(&mut self, op: Arithmetic, left: &Node, right: &Node, env: &mut Env, path: Expr) -> Result<Value> {
+        let left = self.node(left, env, path.clone())?;
+        let right = self.node(right, env, path)?;
+        need(left.ty() == Ty::Integer && right.ty() == Ty::Integer, "exact arithmetic requires business numbers")?;
+        Ok(Value::Term(Ty::Integer, self.normalize_execution_value(op.build(left.scalar()?, right.scalar()?))))
+    }
+
     fn node_inner(&mut self, n: &Node, env: &mut Env, path: Expr) -> Result<Value> {
         self.budget()?;
         self.node_visits += 1;
@@ -271,13 +278,9 @@ impl<'a> Engine<'a> {
             Node::Settled { returns, steps } =>
                 self.action_scope(returns, steps.as_slice(), env, path, true),
             Node::Action { returns, steps } => self.action_scope(returns, steps, env, path, false),
-            Node::Add { left, right } | Node::Sub { left, right } => {
-                let left = self.node(left, env, path.clone())?;
-                let right = self.node(right, env, path)?;
-                need(left.ty() == Ty::Integer && right.ty() == Ty::Integer, "exact arithmetic requires business numbers")?;
-                let op = if matches!(n, Node::Add { .. }) { b::add } else { b::sub };
-                Ok(Value::Term(Ty::Integer, self.normalize_execution_value(op(left.scalar()?, right.scalar()?))))
-            }
+            Node::Add { left, right } => self.node_arithmetic(Arithmetic::Add, left, right, env, path),
+            Node::Sub { left, right } => self.node_arithmetic(Arithmetic::Sub, left, right, env, path),
+            Node::Mul { left, right } => self.node_arithmetic(Arithmetic::Mul, left, right, env, path),
             Node::Var { name } => env
                 .get(name)
                 .cloned()
@@ -802,7 +805,7 @@ impl<'a> Engine<'a> {
 
     fn java_arithmetic(
         &mut self,
-        op: JavaArithmetic,
+        op: Arithmetic,
         operands: (&J, &J),
         id: &str,
         env: &mut Env,
@@ -813,7 +816,7 @@ impl<'a> Engine<'a> {
             // must consult that completion before inspecting this carrier.
             return Ok(Value::Term(Ty::Integer, b::lit_null()));
         };
-        if op == JavaArithmetic::Add && (left.ty() == Ty::Text || right.ty() == Ty::Text) {
+        if op == Arithmetic::Add && (left.ty() == Ty::Text || right.ty() == Ty::Text) {
             let (left, right) = (left.scalar()?, right.scalar()?);
             let text = |value: Expr| match value.as_lit() {
                 Some(literal) if literal.is_text() => Some(value),
@@ -830,9 +833,9 @@ impl<'a> Engine<'a> {
                 && matches!(right.ty(), Ty::Integer | Ty::Decimal), "numeric operands required")?;
             use math::domains::decimal::Operator;
             let binary = match op {
-                JavaArithmetic::Add => Operator::Add,
-                JavaArithmetic::Sub => Operator::Sub,
-                JavaArithmetic::Mul => Operator::Mul,
+                Arithmetic::Add => Operator::Add,
+                Arithmetic::Sub => Operator::Sub,
+                Arithmetic::Mul => Operator::Mul,
             };
             return Ok(Value::Term(Ty::Decimal,
                 math::domains::decimal::binary(binary, left.scalar()?, right.scalar()?)));
@@ -841,7 +844,7 @@ impl<'a> Engine<'a> {
             left.ty() == Ty::Integer && right.ty() == Ty::Integer,
             "integer operands required",
         )?;
-        if op == JavaArithmetic::Add
+        if op == Arithmetic::Add
             && (matches!(left, Value::IntegerFloor { .. }) || matches!(right, Value::IntegerFloor { .. }))
         {
             let domain = self.normal_path(path.clone());
@@ -854,7 +857,7 @@ impl<'a> Engine<'a> {
         }
         // The same acquired count is a total exact integer on this path.
         // Distinct SQL acquisition identities remain part of expression equality.
-        if op == JavaArithmetic::Sub
+        if op == Arithmetic::Sub
             && matches!(left, Value::IntegerFloor { .. })
             && matches!(right, Value::IntegerFloor { .. })
             && left.scalar()? == right.scalar()?
@@ -867,7 +870,7 @@ impl<'a> Engine<'a> {
         let (left, right) = (left.scalar()?, right.scalar()?);
         // Operand evaluation is already recorded in S. An identical
         // numeric receipt can cancel only on a path that acquired it.
-        if op == JavaArithmetic::Sub && left == right && self.acquired_integer_receipt(&left, &path) {
+        if op == Arithmetic::Sub && left == right && self.acquired_integer_receipt(&left, &path) {
             return Ok(Value::Term(Ty::Integer, b::lit_int(0)));
         }
         Ok(Value::Term(Ty::Integer, self.normalize_execution_value(op.build(left, right))))
@@ -1412,11 +1415,11 @@ impl<'a> Engine<'a> {
                 ))
             }
             J::BinOp { op: B::Add, left, right } =>
-                self.java_arithmetic(JavaArithmetic::Add, (left, right), id, env, path),
+                self.java_arithmetic(Arithmetic::Add, (left, right), id, env, path),
             J::BinOp { op: B::Sub, left, right } =>
-                self.java_arithmetic(JavaArithmetic::Sub, (left, right), id, env, path),
+                self.java_arithmetic(Arithmetic::Sub, (left, right), id, env, path),
             J::BinOp { op: B::Mul, left, right } =>
-                self.java_arithmetic(JavaArithmetic::Mul, (left, right), id, env, path),
+                self.java_arithmetic(Arithmetic::Mul, (left, right), id, env, path),
             J::BinOp { op: op @ (B::Div | B::Mod), left, right } => {
                 let no_value = || Value::Term(Ty::Integer, b::lit_null());
                 let Some((left, right, normal)) = self.source_binary_operands((left, right), id, env, path)? else {

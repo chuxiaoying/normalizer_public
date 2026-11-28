@@ -1,0 +1,16 @@
+entry: src/vector-construction.ts#pair
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/vector-construction.ts#pair, returns: 'number[]'}
+  P:
+    parameters:
+      enabled: {position: 0, type: bool}
+      ready: {position: 1, type: bool}
+      left: {position: 2, type: number}
+      right: {position: 3, type: number}
+      fixed: {position: 4, type: number}
+  R: |-
+    CASE
+      WHEN enabled AND ready THEN [left + 1, fixed + 3]
+      ELSE [right + 2, fixed - 3]
+    END

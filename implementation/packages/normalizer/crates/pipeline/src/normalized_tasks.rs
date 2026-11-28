@@ -9,6 +9,7 @@ pub(super) fn expression_is_closed(node: &Node) -> bool {
         Node::Field { value, .. } | Node::Not { value } => expression_is_closed(value),
         Node::Add { left, right }
         | Node::Sub { left, right }
+        | Node::Mul { left, right }
         | Node::Gt { left, right }
         | Node::Lt { left, right }
         | Node::Eq { left, right } => expression_is_closed(left) && expression_is_closed(right),

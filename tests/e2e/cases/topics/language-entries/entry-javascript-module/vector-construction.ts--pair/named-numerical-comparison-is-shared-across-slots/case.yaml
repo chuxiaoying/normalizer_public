@@ -1,0 +1,15 @@
+entry: src/vector-construction.ts#pair
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/vector-construction.ts#pair, returns: 'number[]'}
+  P:
+    parameters:
+      left: {position: 0, type: number}
+      right: {position: 1, type: number}
+      fixed: {position: 2, type: number}
+      base: {position: 3, type: number}
+  R: |-
+    CASE
+      WHEN left < right THEN [fixed, fixed + 1]
+      ELSE [base, base + 1]
+    END

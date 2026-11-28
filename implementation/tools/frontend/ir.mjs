@@ -36,7 +36,7 @@ export function definedModuleExport(sf, entry, fail) {
 }
 
 const BINARY = new Map([
-  [ts.SyntaxKind.PlusToken, '+'], [ts.SyntaxKind.MinusToken, '-'],
+  [ts.SyntaxKind.PlusToken, '+'], [ts.SyntaxKind.MinusToken, '-'], [ts.SyntaxKind.AsteriskToken, '*'],
   [ts.SyntaxKind.GreaterThanToken, '>'], [ts.SyntaxKind.LessThanToken, '<'],
   [ts.SyntaxKind.GreaterThanEqualsToken, '>='], [ts.SyntaxKind.LessThanEqualsToken, '<='],
   [ts.SyntaxKind.EqualsEqualsEqualsToken, '==='], [ts.SyntaxKind.ExclamationEqualsEqualsToken, '!=='],
