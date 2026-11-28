@@ -62,3 +62,5 @@ R: fee + value
 
 第四章把服务发现改成 `new AddOne()` 后，`Entry`、`Op` 和 `AddOne` 保留在 `demo` 包，入口为 `src/demo/Entry.java#demo.Entry.run`，执行同包接口调用得到 `x + 1`。另一个包即使也有简单类名 `Add`，也不是所选的声明。文件和包限定的类名必须同时匹配，不能从其中一个猜另一个。若词法作用域里的局部对象与同包类型同名，调用仍绑定局部对象。
 这也不允许工程自行声明 `normalizer.intrinsics.N` 来替换真正的内置类型。
+
+直接调用跨包的公开静态方法时，显式导入与完全限定名各定位自己的公开声明。若两个同名 `Tools` 分别返回 11 和 29，表达式 `Tools.change(units) * 10 + example.second.Tools.change(units)` 返回 139。类或成员没有对调用方公开时，不能只凭名字放行。若 `Tools` 实际是局部变量，则沿局部接收者调用，而不是改成导入的静态方法。

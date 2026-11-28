@@ -1,0 +1,8 @@
+entry: src/example/use/Entry.java#example.use.Entry.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/example/use/Entry.java#example.use.Entry.run, returns: number}
+  P:
+    parameters:
+      units: {position: 0, type: number}
+  R: '139'

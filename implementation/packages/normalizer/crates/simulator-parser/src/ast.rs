@@ -43,6 +43,7 @@ impl JavaProgram {
 pub struct JavaClass {
     pub(crate) source_file: String,
     pub(crate) package: String,
+    pub(crate) is_public: bool,
     /// 显式 import 的完整限定名列表（`import x.y.Z;`）
     ///
     /// parser 原始输出，不做 FQN 化决策——FQN 化由 resolver 在类型推断收口点完成。
@@ -96,6 +97,10 @@ impl JavaClass {
     }
     pub fn package(&self) -> &str {
         &self.package
+    }
+
+    pub fn is_public_top_level(&self) -> bool {
+        self.is_public && !self.simple_name.contains('.')
     }
 
     pub fn full_name(&self) -> String {

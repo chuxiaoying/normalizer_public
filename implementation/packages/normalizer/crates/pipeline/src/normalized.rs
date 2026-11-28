@@ -457,7 +457,9 @@ pub(crate) fn nullable_text_return(class: &simulator_parser::JavaClass, method: 
 
 fn supported_source_imports(program: &JavaProgram, class: &JavaClass) -> bool {
     class.imports().iter().all(|name| {
-        program.find_class(name).is_some_and(|target| target.package() == class.package()) || matches!(
+        program.find_class(name).is_some_and(|target|
+            target.package() == class.package() || target.is_public_top_level()
+        ) || matches!(
             name.as_str(),
             N_IMPORT | "java.util.List" | "java.math.BigDecimal" | "java.time.LocalDate"
         )

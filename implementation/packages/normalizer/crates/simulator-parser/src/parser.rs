@@ -559,6 +559,7 @@ impl<'a> Parser<'a> {
         let mut class = JavaClass {
             source_file: self.file.clone(),
             package: package.to_owned(),
+            is_public: seen.contains("public"),
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
             has_unknown_import_origins: self.has_unknown_import_origins,
@@ -709,6 +710,7 @@ fn parse_class_body(
             let mut nested_class = JavaClass {
                 source_file: file.to_owned(),
                 package: class.package.clone(),
+                is_public,
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
                 has_unknown_import_origins: class.has_unknown_import_origins,

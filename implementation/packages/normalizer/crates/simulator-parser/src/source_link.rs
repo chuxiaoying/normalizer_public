@@ -13,6 +13,18 @@ impl JavaProgram {
             .collect::<BTreeMap<_, _>>();
         let packages = self.classes.iter().map(|class| (class.full_name(), class.package.clone()))
             .collect::<BTreeMap<_, _>>();
+        let cross_package_statics = self.classes.iter().filter(|class| class.is_public_top_level())
+            .map(|class| {
+                let methods = class.methods.iter().filter(|method|
+                    method.is_static && method.is_public && method.body.is_some()
+                    && !method.is_constructor && method.type_parameters.is_empty()
+                    && matches!(method.return_type, JavaType::Primitive(_) | JavaType::Void)
+                    && method.params.iter().all(|(ty, _)| matches!(ty, JavaType::Primitive(_)))
+                    && class.methods.iter().filter(|candidate| candidate.is_static
+                        && candidate.name == method.name && candidate.params.len() == method.params.len()).count() == 1
+                ).map(|method| (method.name.clone(), method.params.len())).collect::<BTreeSet<_>>();
+                (class.full_name(), methods)
+            }).collect::<BTreeMap<_, _>>();
         for class in &mut self.classes {
             let owner = class.full_name();
             let mut imports = BTreeMap::<String, String>::new();
@@ -29,7 +41,8 @@ impl JavaProgram {
                 imports.insert(short.to_owned(), import.clone());
             }
             let issue = RefCell::new(None);
-            let scope = Names { owner: &owner, package: &class.package, declared: &declared, imports: &imports, packages: &packages, issue: &issue };
+            let scope = Names { owner: &owner, package: &class.package, declared: &declared, imports: &imports, packages: &packages,
+                cross_package_statics: &cross_package_statics, issue: &issue };
             let types = class.type_parameters.iter().cloned().collect::<BTreeSet<_>>();
             let member_names = class.fields.iter().map(|field| field.name.clone()).collect::<BTreeSet<_>>();
             if let Some(parent) = &mut class.supertype { scope.bind_name(parent, &types); }
@@ -73,6 +86,7 @@ struct Names<'a> {
     declared: &'a BTreeSet<String>,
     imports: &'a BTreeMap<String, String>,
     packages: &'a BTreeMap<String, String>,
+    cross_package_statics: &'a BTreeMap<String, BTreeSet<(String, usize)>>,
     issue: &'a RefCell<Option<String>>,
 }
 
@@ -100,16 +114,27 @@ impl Names<'_> {
         None
     }
 
-    fn require_local_access(&self, bound: &str) {
-        if self.packages.get(bound).is_some_and(|package| package != self.package) {
-            self.issue.borrow_mut().get_or_insert_with(|| bound.to_owned());
+    fn require_member_access(&self, bound: &str, call: Option<(&str, usize)>) {
+        if self.packages.get(bound).is_none_or(|package| package == self.package) {
+            return;
         }
+        // Cross-package references currently pass only at an unambiguous
+        // direct call to a public top-level scalar method. Type references,
+        // fields and instance receivers still need distinct access evidence.
+        if call.is_some_and(|(member, arity)| self.cross_package_statics.get(bound)
+            .is_some_and(|methods| methods.contains(&(member.to_owned(), arity))))
+        {
+            return;
+        }
+        self.issue.borrow_mut().get_or_insert_with(|| {
+            call.map_or_else(|| bound.to_owned(), |(member, _)| format!("{bound}.{member}"))
+        });
     }
 
     fn bind_name(&self, name: &mut String, type_parameters: &BTreeSet<String>) {
         if type_parameters.contains(name) { return; }
         if let Some(bound) = self.declared_name(name) {
-            self.require_local_access(&bound);
+            self.require_member_access(&bound, None);
             *name = bound;
         } else if !self.package.is_empty() && self.declared.contains(name) && !name.contains('.') {
             // Named packages cannot refer to the unnamed package.
@@ -129,7 +154,10 @@ impl Names<'_> {
         }
     }
 
-    fn receiver(&self, value: &mut JavaExpr, types: &BTreeSet<String>, locals: &BTreeSet<String>) {
+    fn receiver(
+        &self, value: &mut JavaExpr, types: &BTreeSet<String>, locals: &BTreeSet<String>,
+        call: Option<(&str, usize)>,
+    ) {
         fn path(expr: &JavaExpr) -> Option<String> {
             match expr {
                 JavaExpr::Ident(name) => Some(name.clone()),
@@ -141,7 +169,7 @@ impl Names<'_> {
             let first = raw.split('.').next().unwrap_or(&raw);
             if !locals.contains(first) && !types.contains(first) && first != "this" {
                 if let Some(bound) = self.declared_name(&raw) {
-                    self.require_local_access(&bound);
+                    self.require_member_access(&bound, call);
                     *value = JavaExpr::Ident(bound);
                     return;
                 }
@@ -162,9 +190,9 @@ impl Names<'_> {
                 self.ty(target, types);
                 self.expr(value, types, locals);
             }
-            FieldAccess {target, ..} => self.receiver(target, types, locals),
-            MethodCall {target, args, ..} => {
-                if let Some(target) = target { self.receiver(target, types, locals); }
+            FieldAccess {target, ..} => self.receiver(target, types, locals, None),
+            MethodCall {target, method, args} => {
+                if let Some(target) = target { self.receiver(target, types, locals, Some((method, args.len()))); }
                 for arg in args { self.expr(arg, types, locals); }
             }
             New {java_type: element_type, args: elements} | ArrayInitializer {element_type, elements} => {
