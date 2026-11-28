@@ -1,0 +1,18 @@
+entry: src/AliasCollection.java#AliasCollection.total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/AliasCollection.java#AliasCollection.total, returns: number}
+  P:
+    parameters:
+      values: {position: 0, type: 'number[]'}
+      index: {position: 1, type: number}
+      next: {position: 2, type: number}
+  S:
+    - write:
+        target: values[1]
+        value: next
+        when: 1 < LENGTH(values)
+  R: CASE WHEN index == 1 THEN next ELSE values[index] END
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: index < 0 OR 2 > LENGTH(values) OR index >= LENGTH(values)

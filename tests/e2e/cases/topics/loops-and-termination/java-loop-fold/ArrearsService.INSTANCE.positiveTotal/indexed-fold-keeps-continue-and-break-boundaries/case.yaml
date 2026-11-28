@@ -1,0 +1,14 @@
+entry: src/RangeFold.java#RangeFold.total
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/RangeFold.java#RangeFold.total, returns: number}
+  P:
+    parameters:
+      hi: {position: 0, type: number}
+  R: |-
+    CASE
+      WHEN hi < 2 THEN 0
+      WHEN hi == 2 THEN 1
+      WHEN hi == 3 THEN 3
+      ELSE 6
+    END

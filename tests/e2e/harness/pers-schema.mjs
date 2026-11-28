@@ -87,7 +87,9 @@ export function assertPers(document, label) {
       else fields(type, field);
     }
   };
-  typeRef(document.entry.returns, 'entry.returns');
+  // SE-03: a wide value can leave the entry unchanged. Allow the exact
+  // declared wide return type, without admitting arbitrary undeclared types.
+  if (document.entry.returns !== 'unknown') typeRef(document.entry.returns, 'entry.returns');
   for (const [name, declaration] of Object.entries(types)) fields(declaration.fields, 'types.' + name);
   for (const [name, parameter] of Object.entries(document.P.parameters)) {
     if (parameter.type !== 'unknown') typeRef(parameter.type, 'P.' + name);

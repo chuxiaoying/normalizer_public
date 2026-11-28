@@ -1,0 +1,8 @@
+entry: src/Identity.java#Identity.readSelected
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Identity.java#Identity.readSelected, returns: number}
+  P:
+    parameters:
+      pickLeft: {position: 0, type: bool}
+  R: CASE WHEN pickLeft THEN 2 ELSE 3 END

@@ -1,0 +1,11 @@
+entry: src/value.ts#read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/value.ts#read, returns: void}
+  P:
+    parameters:
+      value: {position: 0, type: unknown}
+  throws:
+    - when: 'true'
+      payload: value
+      payload_type: unknown
