@@ -1,6 +1,6 @@
 # Normalizer 实现原则
 
-业务语义由[八章设计](../../design/README.md)裁决，细则归对应章节；实现文档不能另定规则。输入、输出和规则自身的验收分别见[源码交接](../contracts/normalized-source-contract.md)、[机器接口](../contracts/business-pers.md)与[正式测试](../../tests/README.md)。
+业务语义由[设计章节](../../design/README.md)裁决，细则归对应章节；实现文档不能另定规则。输入、输出和规则自身的验收分别见[源码交接](../contracts/normalized-source-contract.md)、[机器接口](../contracts/business-pers.md)与[正式测试](../../tests/README.md)。
 
 ## 改动与诊断
 

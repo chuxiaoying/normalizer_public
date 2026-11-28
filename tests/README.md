@@ -40,7 +40,7 @@ node --test --test-name-pattern='^control-early-return / Early\.choose / origina
 
 ## 如何写预期
 
-从[八章设计](../design/README.md)、源码和真实观察范围独立推导。[统一定形](../design/chapters/08-统一定形.md)裁决唯一表达形式，含 [LET 的整值比较](../design/chapters/08-统一定形.md#cf-09-let-的整值比较)。等价变体仍须写出同一份完整预期；不从 actual 反填、不规范化实际值后再验收、不省略真实异常或效果。测试区只管理可复验的种子派生用例，不存单次审核和运行记录。
+从[设计章节](../design/README.md)、源码和真实观察范围独立推导。[统一定形](../design/chapters/08-统一定形.md)裁决唯一表达形式，含 [LET 的整值比较](../design/chapters/08-统一定形.md#cf-09-let-的整值比较)。等价变体仍须写出同一份完整预期；不从 actual 反填、不规范化实际值后再验收、不省略真实异常或效果。测试区只管理可复验的种子派生用例，不存单次审核和运行记录。
 
 ## 从种子补齐测试
 
