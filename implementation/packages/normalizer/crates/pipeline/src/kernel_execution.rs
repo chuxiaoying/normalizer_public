@@ -475,7 +475,7 @@ impl<'a> Engine<'a> {
         need(
             (actual == *expected || (!interface && self.project.source_owner(&actual) == Some(owner)))
                 || interface && self.project.source_owner(&actual).and_then(|name| self.program.find_class(name))
-                    .is_some_and(|class| crate::normalized::implements_specialization(class, expected)),
+                    .is_some_and(|class| crate::normalized::implements_specialization(self.program, class, expected)),
             "source reference assignment requires the declared owner or interface type",
         )
     }
@@ -1189,8 +1189,8 @@ impl<'a> Engine<'a> {
                         .ok_or_else(|| fail("instanceof allocation has no declared class"))?;
                     if let Some(target) = self.program.find_class(target) {
                         allocated.full_name() == target.full_name() ||
-                            allocated.interfaces().iter().any(|name| self.program.find_class(name)
-                                .is_some_and(|interface| interface.full_name() == target.full_name()))
+                            crate::normalized::implements_specialization(self.program, allocated,
+                                &JavaType::Class(target.full_name()))
                     } else {
                         need(matches!(target.as_str(), "java.lang.Object" | "Object"), "instanceof class is not declared")?;
                         true
@@ -1293,6 +1293,18 @@ impl<'a> Engine<'a> {
                 method,
                 args,
             } => {
+                if target.is_none() || matches!(target.as_deref(), Some(J::Ident(name)) if name == "this") {
+                    let owner = id.rsplit_once('.').unwrap().0;
+                    if let Some(interface) = self.program.find_class(owner).filter(|class| class.is_interface()) {
+                        let (_, _, signature) = crate::normalized::interface_member(self.program, interface, method, args.len())
+                            .ok_or_else(|| fail("missing declared interface signature"))?;
+                        let receiver = env.get("this").ok_or_else(|| fail("interface default needs its bound receiver"))?.scalar()?;
+                        let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                            return Ok(Value::Term(self.project.declared_result_type(signature.return_type())?, b::lit_null()));
+                        };
+                        return self.invoke_interface(owner, &JavaType::Class(owner.into()), method, receiver, values, path);
+                    }
+                }
                 if let Some(qualifier) = target.as_deref().and_then(crate::normalized::interface_super_qualifier) {
                     let owner = id.rsplit_once('.').unwrap().0;
                     let (member, declaration) = self.program.find_class(owner)
@@ -1379,8 +1391,8 @@ impl<'a> Engine<'a> {
                         if let Some(interface) = crate::normalized::specialized_interface(self.program, &receiver_type) {
                             let receiver = receiver.scalar()?;
                             let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
-                                let signature = interface.methods().iter()
-                                    .find(|decl| decl.name() == method && decl.arity() == args.len())
+                                let (_, _, signature) = crate::normalized::interface_member(
+                                    self.program, interface, method, args.len())
                                     .ok_or_else(|| fail("missing declared interface return type"))?;
                                 let ty = self.project.declared_result_type(signature.return_type())?;
                                 return Ok(Value::Term(ty, b::lit_null()));
@@ -1990,20 +2002,12 @@ impl Engine<'_> {
         let owner = self.source_objects.allocation_owner(&receiver)
             .unwrap_or_else(|| crate::preprocess::out_of_source(self.diagnostic_entry(), &target));
         let class = self.program.find_class(owner).ok_or_else(|| fail("missing selected implementation"))?;
-        need(crate::normalized::implements_specialization(class, receiver_type), "selected receiver does not implement declared interface specialization")?;
+        need(crate::normalized::implements_specialization(self.program, class, receiver_type), "selected receiver does not implement declared interface specialization")?;
         let declaration = self.program.find_class(interface).ok_or_else(|| fail("missing selected interface"))?;
-        let mut signatures = declaration.methods().iter().enumerate()
-            .filter(|(_, method)| method.name() == member && method.arity() == args.len());
-        let (default_index, signature) = signatures.next().ok_or_else(|| fail("missing interface signature"))?;
-        need(signatures.next().is_none(), "ambiguous interface method")?;
-        let override_key = class.methods().iter().enumerate().find_map(|(index, body)|
-            crate::normalized::override_matches(signature, body).then(||
-                crate::normalized::method_key(class, index, body)));
-        let actual = match override_key {
-            Some(actual) => actual,
-            None if signature.is_default() => crate::normalized::method_key(declaration, default_index, signature),
-            None => return Err(fail("missing proven receiver override or default body")),
-        };
+        let (_, _, signature) = crate::normalized::interface_member(self.program, declaration, member, args.len())
+            .ok_or_else(|| fail("missing or ambiguous interface signature"))?;
+        let actual = crate::normalized::selected_interface_method(self.program, class, signature)
+            .ok_or_else(|| fail("missing proven receiver override or default body"))?;
         self.java_call_on(&actual, args, path, Some(Value::Term(Ty::Ref, receiver)))
     }
 

@@ -125,9 +125,8 @@ fn scalar(t: &JavaType) -> bool {
 pub(crate) fn plain_source_interface(class: &simulator_parser::JavaClass) -> bool {
     class.is_interface()
         && class.fields().is_empty()
-        && class.interfaces().is_empty()
-        && !class.methods().is_empty()
-        && class.methods().iter().all(|method| !method.is_static()
+        && (!class.methods().is_empty() || !class.interfaces().is_empty())
+        && class.methods().iter().all(|method| !method.is_static() && !method.is_private()
             && method.body().is_some() == method.is_default() && method.throws().is_empty()
             && method.annotations().is_empty() && method.type_parameters().is_empty()
             && scalar(method.return_type()) && method.params().iter().all(|(ty, _)| scalar(ty)))
@@ -189,13 +188,104 @@ fn source_record_local(program: &JavaProgram, method: &JavaMethod, local: &str, 
     source_record_accessor(class, member, arity).is_some()
 }
 
-fn unambiguous_interface_defaults(program: &JavaProgram, class: &JavaClass) -> bool {
-    let defaults = class.interfaces().iter().filter_map(|name| program.find_class(name))
-        .flat_map(|interface| interface.methods().iter()).filter(|member| member.is_default())
-        .filter(|member| !class.methods().iter().any(|method| override_matches(member, method)))
-        .collect::<Vec<_>>();
-    defaults.iter().enumerate().all(|(index, method)| !defaults[..index].iter()
-        .any(|other| other.name() == method.name() && same_parameters(other, method)))
+type InterfaceMember<'a> = (&'a JavaClass, usize, &'a JavaMethod);
+
+fn extends_interface(program: &JavaProgram, child: &JavaClass, ancestor: &str) -> bool {
+    let mut remaining: Vec<_> = child.interfaces().iter().map(String::as_str).collect();
+    let mut seen = BTreeSet::new();
+    while let Some(name) = remaining.pop() {
+        if name == ancestor { return true; }
+        if seen.insert(name) {
+            if let Some(class) = program.find_class(name).filter(|class| class.is_interface()) {
+                remaining.extend(class.interfaces().iter().map(String::as_str));
+            }
+        }
+    }
+    false
+}
+
+// Collect effective declarations by signature, not by declaration order.
+// A more-specific abstract declaration shadows a default just as a more-
+// specific default does. Unrelated maximal declarations are not discarded.
+fn effective_interface_members<'a>(
+    program: &'a JavaProgram, roots: impl IntoIterator<Item = &'a JavaClass>,
+) -> Option<Vec<InterfaceMember<'a>>> {
+    fn visit<'a>(
+        program: &'a JavaProgram, interface: &'a JavaClass, seen: &mut BTreeSet<String>,
+        active: &mut BTreeSet<String>, out: &mut Vec<InterfaceMember<'a>>,
+    ) -> Option<()> {
+        if !plain_source_interface(interface) || interface.supertype().is_some() { return None; }
+        let name = interface.full_name();
+        if active.contains(&name) { return None; }
+        if !seen.insert(name.clone()) { return Some(()); }
+        active.insert(name.clone());
+        if !interface.interfaces().is_empty() && !interface.type_parameters().is_empty() { return None; }
+        for parent in interface.interfaces() {
+            let declaration = program.find_class(parent)?;
+            if !interface.interface_arguments(parent).is_empty() || !declaration.type_parameters().is_empty() {
+                return None;
+            }
+            visit(program, declaration, seen, active, out)?;
+        }
+        out.extend(interface.methods().iter().enumerate().map(|(i, m)| (interface, i, m)));
+        active.remove(&name);
+        Some(())
+    }
+    let mut declarations = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut active = BTreeSet::new();
+    for root in roots { visit(program, root, &mut seen, &mut active, &mut declarations)?; }
+    let mut maximal = Vec::new();
+    for &(owner, i, method) in &declarations {
+        let mut shadowed = false;
+        for &(other, _, candidate) in &declarations {
+            if method.name() != candidate.name() || !same_parameters(method, candidate) { continue; }
+            // This closed scalar subset has no covariant-return proof.
+            if method.return_type() != candidate.return_type() { return None; }
+            if extends_interface(program, other, &owner.full_name()) {
+                shadowed = true;
+            }
+        }
+        if !shadowed { maximal.push((owner, i, method)); }
+    }
+    Some(maximal)
+}
+
+fn conflicting_default(members: &[InterfaceMember<'_>], method: &JavaMethod) -> bool {
+    let mut matches = members.iter().filter(|(_, _, other)|
+        method.name() == other.name() && same_parameters(method, other));
+    matches.next().is_some() && matches.next().is_some()
+        && members.iter().any(|(_, _, other)| other.is_default()
+            && method.name() == other.name() && same_parameters(method, other))
+}
+
+pub(crate) fn interface_member<'a>(
+    program: &'a JavaProgram, interface: &'a JavaClass, member: &str, arity: usize,
+) -> Option<InterfaceMember<'a>> {
+    let members = effective_interface_members(program, [interface])?;
+    let mut methods = members.iter().copied().filter(|(_, _, m)| m.name() == member && m.arity() == arity);
+    let selected = methods.next()?;
+    if conflicting_default(&members, selected.2)
+        || methods.any(|(_, _, m)| !same_parameters(selected.2, m)) { return None; }
+    Some(selected)
+}
+
+pub(crate) fn selected_interface_method(
+    program: &JavaProgram, class: &JavaClass, signature: &JavaMethod,
+) -> Option<String> {
+    if let Some((index, method)) = class.methods().iter().enumerate()
+        .find(|(_, method)| override_matches(signature, method)) {
+        return Some(method_key(class, index, method));
+    }
+    // The runtime class can implement a more-specific interface than
+    // the static receiver type. Do not select the static type's body.
+    let roots = class.interfaces().iter().filter_map(|name| program.find_class(name))
+        .filter(|interface| plain_source_interface(interface));
+    let members = effective_interface_members(program, roots)?;
+    if conflicting_default(&members, signature) { return None; }
+    let (owner, index, method) = members.into_iter().find(|(_, _, candidate)|
+        candidate.is_default() && candidate.name() == signature.name() && same_parameters(signature, candidate))?;
+    Some(method_key(owner, index, method))
 }
 
 pub(crate) fn specialized_interface<'a>(program: &'a JavaProgram, ty: &JavaType) -> Option<&'a JavaClass> {
@@ -204,7 +294,9 @@ pub(crate) fn specialized_interface<'a>(program: &'a JavaProgram, ty: &JavaType)
         JavaType::Generic(name, args) => (name, args.as_slice()),
         _ => return None,
     };
-    let class = program.find_class(name).filter(|class| plain_source_interface(class))?;
+    let class = program.find_class(name)?;
+    let members = effective_interface_members(program, [class])?;
+    if members.iter().any(|(_, _, method)| conflicting_default(&members, method)) { return None; }
     (class.type_parameters().len() == args.len() && args.iter().all(|arg|
         matches!(arg, JavaType::Class(name) if program.find_class(name).is_some()
             || matches!(name.as_str(), "String" | "java.lang.String" | "Object" | "java.lang.Object"
@@ -212,13 +304,16 @@ pub(crate) fn specialized_interface<'a>(program: &'a JavaProgram, ty: &JavaType)
         .then_some(class)
 }
 
-pub(crate) fn implements_specialization(class: &JavaClass, ty: &JavaType) -> bool {
+pub(crate) fn implements_specialization(program: &JavaProgram, class: &JavaClass, ty: &JavaType) -> bool {
     let (name, args) = match ty {
         JavaType::Class(name) => (name, &[][..]),
         JavaType::Generic(name, args) => (name, args.as_slice()),
         _ => return false,
     };
     class.interfaces().contains(name) && class.interface_arguments(name) == args
+        || args.is_empty() && program.find_class(name).is_some_and(|interface|
+            interface.is_interface() && interface.type_parameters().is_empty())
+            && extends_interface(program, class, name)
 }
 
 fn local_interface_receiver<'a>(
@@ -297,7 +392,7 @@ pub(crate) fn source_layouts(
         if admitted_exception_fields(program, class).is_some() || generic_product::prove(class).is_some() { continue; }
         if class.fields().is_empty() {
             if class.supertype().is_none()
-                && (!class.is_interface() || plain_source_interface(class)) {
+                && (!class.is_interface() || effective_interface_members(program, [class]).is_some()) {
                 layouts.insert(class.full_name(), BTreeMap::new());
             }
             continue;
@@ -697,8 +792,13 @@ pub(crate) fn interface_super_method<'a>(
         program.find_class(name).is_some_and(|direct| direct.full_name() == interface.full_name())) {
         return None;
     }
-    named_method_for_arity(interface, member, arity)
-        .filter(|(_, method)| method.is_default() && method.body().is_some())
+    if caller.interfaces().iter().filter_map(|name| program.find_class(name))
+        .any(|other| other.full_name() != interface.full_name()
+            && extends_interface(program, other, &interface.full_name())) {
+        return None;
+    }
+    let (owner, index, method) = interface_member(program, interface, member, arity)?;
+    (method.is_default() && method.body().is_some()).then(|| (method_key(owner, index, method), method))
 }
 
 pub(crate) fn assembled_instance_method<'a>(
@@ -763,23 +863,32 @@ pub(crate) fn validate_with_receiver(
     let mut nullable_entry_parameters = BTreeSet::new();
     for c in program.classes() {
         let name = c.full_name();
-        if c.interfaces().iter().any(|interface| {
-            if builtin_resource_interface(program, interface) {
-                return closed_resource_close(program, c).is_none();
-            }
-            let args = c.interface_arguments(interface);
-            let ty = if args.is_empty() { JavaType::Class(interface.clone()) }
-                else { JavaType::Generic(interface.clone(), args.to_vec()) };
-            specialized_interface(program, &ty).is_none_or(|declaration| {
-                // specialized_interface already certifies the interface shape.
-                declaration.methods().iter().any(|required| {
-                    let count = c.methods().iter().filter(|method| override_matches(required, method)).count();
-                    count != 1 && (!required.is_default() || count != 0
-                        || c.methods().iter().any(|m| m.name() == required.name() && same_parameters(m, required)))
-                })
-            })
-        })
-            || !unambiguous_interface_defaults(program, c)
+        let valid_interfaces = if c.is_interface() {
+            !plain_source_interface(c) && c.interfaces().is_empty()
+                || effective_interface_members(program, [c]).is_some_and(|members|
+                    !members.iter().any(|(_, _, method)| conflicting_default(&members, method)))
+        } else {
+            let ordinary = c.interfaces().iter().filter(|interface| !builtin_resource_interface(program, interface))
+                .map(|interface| {
+                    let args = c.interface_arguments(interface);
+                    let ty = if args.is_empty() { JavaType::Class(interface.clone()) }
+                        else { JavaType::Generic(interface.clone(), args.to_vec()) };
+                    specialized_interface(program, &ty)
+                }).collect::<Option<Vec<_>>>();
+            (!c.interfaces().iter().any(|name| builtin_resource_interface(program, name))
+                || closed_resource_close(program, c).is_some())
+                && ordinary.and_then(|roots| effective_interface_members(program, roots))
+                    .is_some_and(|members| members.iter().all(|(_, _, required)| {
+                        let matching = c.methods().iter().filter(|method| method.name() == required.name()
+                            && same_parameters(method, required)).collect::<Vec<_>>();
+                        match matching.as_slice() {
+                            [actual] => override_matches(required, actual),
+                            [] => required.is_default() && !conflicting_default(&members, required),
+                            _ => false,
+                        }
+                    }))
+        };
+        if !valid_interfaces
             || (!c.is_interface() && !c.type_parameters().is_empty()
                 && !(c.fields().is_empty() && c.methods().is_empty())
                 && generic_product::prove(c).is_none())
@@ -865,6 +974,15 @@ pub(crate) fn validate_with_receiver(
                     continue;
                 }
                 SourceCall::Method { owner, member } => (owner, member),
+                SourceCall::Implicit { member } => {
+                    if owner.is_interface() && !m.is_static() {
+                        interface_member(program, owner, &member, arity)
+                            .ok_or_else(|| error("NORM-UNBOUND-CALL", &format!("{id} -> {member}/{arity}")))?;
+                        continue;
+                    }
+                    (owner.full_name(), member)
+                }
+
                 SourceCall::InterfaceSuper { qualifier, member } => {
                     let target = (!m.is_static()).then(|| interface_super_method(program, owner, &qualifier, &member, arity))
                         .flatten().map(|(key, _)| key).filter(|key| methods.contains_key(key))
@@ -919,8 +1037,10 @@ pub(crate) fn validate_with_receiver(
                 None => (target_owner.as_str(), Cow::Borrowed(target_member.as_str())),
             };
             if source_record_local(program, m, local, member.as_ref(), arity) { continue; }
-            if let Some(interface) = local_interface_receiver(program, m, local) {
-                if interface.methods().iter().filter(|method| method.name() == member.as_ref() && method.arity() == arity).count() != 1 {
+            if let Some(interface) = local_interface_receiver(program, m, local)
+                .or_else(|| (owner.is_interface() && !m.is_static() && local == "this").then_some(owner))
+            {
+                if interface_member(program, interface, member.as_ref(), arity).is_none() {
                     return Err(error("NORM-UNBOUND-CALL", &format!("{id} -> {target}/{arity}")));
                 }
                 // Dynamic edges are not the set of all implementations
@@ -999,6 +1119,7 @@ enum SourceCall {
     Method { owner: String, member: String },
     InterfaceSuper { qualifier: String, member: String },
     StaticReceiver { owner: String, field: String, member: String },
+    Implicit { member: String },
     Constructor(String),
 }
 
@@ -1377,7 +1498,7 @@ fn expr(e: &E, at: &str, calls: &mut Vec<(SourceCall, usize)>) -> Result<(), Str
                         member: method.clone(),
                     },
                 },
-                None => SourceCall::Method { owner: at.rsplit_once('.').unwrap().0.into(), member: method.clone() },
+                None => SourceCall::Implicit { member: method.clone() },
             };
             calls.push((call, args.len()));
             for a in args {

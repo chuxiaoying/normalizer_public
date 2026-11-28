@@ -305,7 +305,7 @@ fn allocated_dependency<'a>(program: &'a JavaProgram, declared: &JavaType, arg: 
     let class = program.find_class(name)?;
     (class.fields().is_empty() && assembly_allocation(program, actual, arg)
         && (declared == actual || crate::normalized::specialized_interface(program, declared).is_some()
-            && crate::normalized::implements_specialization(class, declared))).then_some(class)
+            && crate::normalized::implements_specialization(program, class, declared))).then_some(class)
 }
 
 pub(crate) fn assembly_allocation(program: &JavaProgram, ty: &JavaType, arg: &JavaExpr) -> bool {

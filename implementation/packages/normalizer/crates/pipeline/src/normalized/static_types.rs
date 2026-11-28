@@ -218,6 +218,9 @@ impl Admission<'_> {
                 }
             }
         };
+        if owner.is_interface() {
+            return super::interface_member(self.program, owner, method, arity).map(|(_, _, member)| member);
+        }
         super::named_method_for_arity(owner, method, arity).map(|(_, member)| member)
     }
 

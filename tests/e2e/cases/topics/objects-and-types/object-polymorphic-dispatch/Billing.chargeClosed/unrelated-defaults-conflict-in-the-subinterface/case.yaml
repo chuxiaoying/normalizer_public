@@ -1,0 +1,5 @@
+entry: src/Billing.java#Billing.chargeClosed
+reject:
+  fragments:
+    - "[NORM-CLASS-SHAPE]"
+    - Child

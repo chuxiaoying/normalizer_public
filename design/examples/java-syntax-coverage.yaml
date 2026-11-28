@@ -140,22 +140,33 @@ families:
           - [Billing.chargeClosed, qualified-super-selects-one-of-two-defaults, pers]
           - [Billing.chargeClosed, qualified-super-cannot-select-an-unimplemented-interface, reject]
           - [Billing.chargeClosed, qualified-super-cannot-run-from-a-static-method, reject]
+          - [Billing.chargeClosed, qualified-super-can-select-an-inherited-default, pers]
+          - [Billing.chargeClosed, qualified-super-cannot-bypass-a-more-specific-direct-parent, reject]
       inherited-through-subinterface:
         focus: 子接口未覆盖时继承父接口的默认本体
         seed: object-polymorphic-dispatch
-        gap: implementation
+        evidence:
+          - [Billing.chargeClosed, subinterface-inherits-parent-default, pers]
+          - [Billing.chargeClosed, diamond-sharing-one-default-is-unambiguous, pers]
       more-specific-interface-default:
         focus: 较具体子接口重新定义默认本体时选择子接口实现
         seed: object-polymorphic-dispatch
-        gap: implementation
+        evidence:
+          - [Billing.chargeClosed, subinterface-overrides-parent-default, pers]
+          - [Billing.chargeClosed, parent-typed-call-still-selects-subinterface-override, pers]
+          - [Billing.chargeClosed, unrelated-defaults-conflict-in-the-subinterface, reject]
       abstract-redeclaration-of-default:
         focus: 子接口把继承的默认方法重新声明为抽象方法；实现类须提供实现
         seed: object-polymorphic-dispatch
-        gap: implementation
+        evidence:
+          - [Billing.chargeClosed, abstract-redeclaration-requires-concrete-implementation, pers]
+          - [Billing.chargeClosed, abstract-redeclaration-cannot-fall-back-to-parent-default, reject]
       dispatch-inside-default-body:
         focus: 默认方法中的普通接收者调用仍应动态分派
         seed: object-polymorphic-dispatch
-        gap: implementation
+        evidence:
+          - [Billing.chargeClosed, default-body-dispatches-a-peer-on-the-original-receiver, pers]
+          - [Billing.chargeClosed, default-body-this-keeps-the-virtual-receiver, pers]
   lexical-literals:
     title: 词法与字面量
     leaves:

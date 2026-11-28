@@ -107,3 +107,5 @@ class Billing {
 ```
 
 三个入口分别返回 1、2、3。若只移除 `Concrete.read`，整个源码工程应在执行前拒绝：`Required.read` 已撤回父接口的默认实现，不能回退到 `Parent.read`。依据 [JLS §9.4.1](https://docs.oracle.com/javase/specs/jls/se25/html/jls-9.html#jls-9.4.1)。
+
+即使变量声明为 `Parent`，只要实际对象实现 `Specific`，普通调用仍选择 `Specific.read`。默认本体内写普通调用或 `this` 调用，仍通过同一接收者虚分派；它不会变成静态地调用默认声明的接口。菱形路径若继承的是同一个声明，只算一个默认实现。
