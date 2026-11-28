@@ -32,7 +32,7 @@ node --test --test-name-pattern='^control-early-return / Early\.choose / origina
 | `entry` | 分析工程相对路径和精确调用定位。以 [CLI 的入口格式](../usage/cli.md)为准。 |
 | `expected` 或 `reject` | 二选一：独立推导的完整 PERS，或 `reject.fragments` 精确核对诊断。拒绝首项必须是期望的主诊断码，后续项匹配该诊断的内容；`reject.kind` 核对诊断类别；`reject.location` 独立核对诊断中的源码位置，不依赖是否登记类别。 |
 
-每个用例目录的 `src/` 保存真实源码与完整路径，不放框架原件；`case.yaml` 只登记上表中的入口和断言，不进入 CLI 输入。用例不保存相对原例的补丁；同一语言和场景下，入口与分析源码均相同的用例不可重复登记。执行器把 `src/` 原样复制到独立临时工程，用[正式 CLI](../usage/cli.md)运行，不从种子 Markdown 拼接源码、不重放预处理补丁，也不调用 AI。成功时先验证结构，再逐字段比较完整 PERS；拒绝时核对非零退出、空 stdout 和具体诊断。
+测试包清单准入的变体可在用例根目录放置 `package.json` 或 `pom.xml`，执行器将它与源码一起复制到分析工程。每个用例目录的 `src/` 保存真实源码与完整路径，不放框架原件；`case.yaml` 只登记上表中的入口和断言，不进入 CLI 输入。用例不保存相对原例的补丁；同一语言和场景下，入口、分析源码及包清单均相同的用例不可重复登记。执行器把 `src/` 原样复制到独立临时工程，用[正式 CLI](../usage/cli.md)运行，不从种子 Markdown 拼接源码、不重放预处理补丁，也不调用 AI。成功时先验证结构，再逐字段比较完整 PERS；拒绝时核对非零退出、空 stdout 和具体诊断。
 
 ## Java 原生语法覆盖
 

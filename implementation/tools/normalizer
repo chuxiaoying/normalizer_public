@@ -14,6 +14,7 @@ Usage:
   implementation/tools/normalizer scenario SCENE PROJECT_ROOT --entry ENTRY_FILE#FUNCTION
   implementation/tools/normalizer test business-examples
 
+Analysis input must declare zero package dependencies (package.json / pom.xml).
 source, module and scenario write final business PERS to stdout.
 EOF
 }
@@ -75,14 +76,16 @@ case "$command" in
     ;;
   module)
     require_args 4 "$#"
-    ensure_frontend_dependencies
     ensure_kernel
+    "$KERNEL" --check-input-manifests "$2"
+    ensure_frontend_dependencies
     exec node "$ROOT/tools/frontend/standalone.mjs" "$KERNEL" "$2" "$3" "$4"
     ;;
   scenario)
     require_args 5 "$#"
-    ensure_frontend_dependencies
     ensure_kernel
+    "$KERNEL" --check-input-manifests "$3"
+    ensure_frontend_dependencies
     exec node "$ROOT/tools/scenarios/runner.mjs" "$KERNEL" "${@:2}"
     ;;
   test)

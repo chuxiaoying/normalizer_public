@@ -1,0 +1,6 @@
+entry: src/total.ts#total
+reject:
+  fragments:
+    - "[NORM-INPUT-MANIFEST]"
+    - "package.json"
+    - "devDependencies.unused-helper"

@@ -22,6 +22,7 @@ for (const { seedId, entry, scene, language, cases } of entries) {
       const project = mkdtempSync(join(tmpdir(), 'normalizer-example-'));
       t.after(() => rmSync(project, { recursive: true, force: true }));
       cpSync(join(root, fixture.directory, 'src'), join(project, 'src'), { recursive: true });
+      for (const name of fixture.manifests) cpSync(join(root, fixture.directory, name), join(project, name));
       const locator = fixture.entry;
       const args = scene ? ['scenario', scene, project, '--entry', locator]
         : language === 'typescript' ? ['module', project, '--entry', locator]

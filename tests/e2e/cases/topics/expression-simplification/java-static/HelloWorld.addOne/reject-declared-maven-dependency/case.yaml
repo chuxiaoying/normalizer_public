@@ -1,0 +1,6 @@
+entry: src/HelloWorld.java#HelloWorld.addOne
+reject:
+  fragments:
+    - "[NORM-INPUT-MANIFEST]"
+    - "pom.xml"
+    - "example:unused"

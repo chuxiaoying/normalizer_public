@@ -1,0 +1,16 @@
+entry: src/ArrearsPage.ts#caption
+expected:
+  schema: normalizer.pers/1
+  entry:
+    function: src/ArrearsPage.ts#caption
+    returns: text
+  P:
+    parameters: {}
+  E:
+    arrears:
+      kind: state
+      source: src/ArrearsPage.ts#arrears
+      fields:
+        status:
+          loading: bool
+  R: CASE WHEN arrears.status.loading THEN "加载中" ELSE "应付金额" END

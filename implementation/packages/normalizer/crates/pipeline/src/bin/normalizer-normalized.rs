@@ -1,4 +1,7 @@
 //! Closed normalized Java/project entry. Does not load semantic plugins.
+#[path = "input/manifests.rs"]
+mod manifests;
+
 use math::domains::decimal::DecimalResourceLimit;
 use pipeline::parse_source_directory;
 
@@ -19,6 +22,7 @@ fn run() -> Result<(), String> {
         return pipeline::kernel_input::standalone_closure::validate(&input);
     }
     match args.as_slice() {
+        [mode, root] if mode == "--check-input-manifests" => manifests::check(std::path::Path::new(root))?,
         [mode, path, entry] if mode == "--project" => {
             print!("{}", pipeline::kernel_input::Loaded::project_pers(std::path::Path::new(path), entry)?);
         }
@@ -27,6 +31,7 @@ fn run() -> Result<(), String> {
             if !path.is_dir() {
                 return Err("[NORM-SOURCE] expected existing directory".into());
             }
+            manifests::check(path)?;
             let program = parse_source_directory(path).map_err(|e| source_request(e.to_string(), entry))?;
             let loaded = pipeline::kernel_input::Loaded::from_linked_source(program, path, entry)
                 .map_err(|e| source_request(e, entry))?;

@@ -25,9 +25,11 @@ function readSources(root, directory, relative = 'src') {
 function loadFixture(root, directory, language, entry, scene, inputs, caseId) {
   const file = directory + '/case.yaml';
   const children = readdirSync(join(root, directory), { withFileTypes: true });
-  assert.ok(children.length === 2 && children.some(item => item.name === 'case.yaml' && item.isFile()) &&
+  const manifests = children.filter(item => item.isFile() && ['package.json', 'pom.xml'].includes(item.name))
+    .map(item => item.name).sort();
+  assert.ok(children.length === 2 + manifests.length && children.some(item => item.name === 'case.yaml' && item.isFile()) &&
     children.some(item => item.name === 'src' && item.isDirectory()),
-    directory + ': expected exactly case.yaml and a src directory');
+    directory + ': expected case.yaml, src and optional input manifests');
   const fixture = YAML.parse(readFileSync(join(root, file), 'utf8'));
   const { entry: locator, expected, reject } = fixture;
   assert.notEqual(Object.hasOwn(fixture, 'expected'), Object.hasOwn(fixture, 'reject'),
@@ -73,10 +75,11 @@ function loadFixture(root, directory, language, entry, scene, inputs, caseId) {
     assert.equal(expected?.entry?.function, locator, file + ': the complete PERS must name this entry');
   }
 
-  const key = JSON.stringify([language, scene ?? null, locator, sources]);
+  const manifestFiles = manifests.map(name => [name, readFileSync(join(root, directory, name), 'utf8')]);
+  const key = JSON.stringify([language, scene ?? null, locator, sources, manifestFiles]);
   assert.ok(!inputs.has(key), 'Duplicate CLI input: ' + inputs.get(key) + ' and ' + file);
   inputs.set(key, file);
-  return { file, directory, input, ...fixture };
+  return { file, directory, input, manifests, ...fixture };
 }
 
 export function* loadFixtureEntries(root, seeds) {
