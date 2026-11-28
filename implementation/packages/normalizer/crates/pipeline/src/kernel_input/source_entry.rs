@@ -1,7 +1,7 @@
 //! Resolve public source entry identity before the execution key is selected.
 use super::Result;
 use simulator_parser::{JavaClass, JavaExpr, JavaField, JavaLit, JavaProgram, JavaStatement, JavaType};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug)]
@@ -14,10 +14,21 @@ pub(super) struct SourceEntry {
 }
 
 #[derive(Debug)]
-pub(super) struct SourceReceiver {
-    pub(super) owner: String,
-    pub(super) field: String,
-    pub(super) assembly_fields: BTreeSet<String>,
+pub(crate) struct SourceReceiver {
+    pub(crate) owner: String,
+    pub(crate) field: String,
+    pub(crate) assembly_fields: BTreeSet<String>,
+    // The key is the real static receiver field and its injected member,
+    // not the service class name (two roots may have the same class).
+    links: BTreeMap<String, BTreeMap<String, AssemblyLink>>,
+    pub(crate) startup_setters: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AssemblyLink {
+    pub(crate) receiver_class: String,
+    pub(crate) target_root: String,
+    pub(crate) target_class: String,
 }
 
 /// The implicit constructor of an ordinary class has no parameters. A
@@ -28,6 +39,60 @@ fn has_zero_argument_implicit_constructor(class: &JavaClass) -> bool {
 }
 
 impl SourceReceiver {
+    pub(crate) fn dependency(&self, owner: &str, member: &str) -> Option<&AssemblyLink> {
+        self.links.get(&self.field)?.get(member)
+            .filter(|link| link.receiver_class == owner)
+    }
+
+    pub(crate) fn target_class(&self, owner: &str, member: &str) -> Option<&str> {
+        self.links.values().filter_map(|members| members.get(member)).find(|link| link.receiver_class == owner)
+            .map(|link| link.target_class.as_str())
+    }
+
+    fn certify_setter(
+        &mut self, program: &JavaProgram, root: &JavaClass,
+        initialized: &BTreeMap<&str, &JavaType>, receiver: &JavaExpr, method: &str, args: &[JavaExpr],
+    ) -> Result<()> {
+        let (JavaExpr::Ident(receiver), [JavaExpr::Ident(operand)]) = (receiver, args) else {
+            return Err("static assembly setter needs two previously assembled named objects".into());
+        };
+        let Some(JavaType::Class(owner)) = initialized.get(receiver.as_str()).copied() else {
+            return Err("static assembly setter receiver used before its declaration".into());
+        };
+        let Some(JavaType::Class(target)) = initialized.get(operand.as_str()).copied() else {
+            return Err("static assembly setter dependency used before its declaration".into());
+        };
+        let holder = program.find_class(owner).ok_or("missing static assembly setter owner")?;
+        let dependency = program.find_class(target).ok_or("missing statically assembled dependency")?;
+        let (key, setter) = crate::normalized::named_method_for_arity(holder, method, 1)
+            .filter(|(_, setter)| !setter.is_static() && !setter.is_private()
+                && (root.package() == holder.package() || setter.is_public())
+                && setter.throws().is_empty() && setter.annotations().is_empty()
+                && crate::normalized::plain_source_data_method(holder, setter))
+            .ok_or("static assembly setter must resolve to one visible direct field assignment")?;
+        let Some([JavaStatement::Assign { target: field, .. }]) = setter.body() else {
+            return Err("static assembly setter is not a direct field assignment".into());
+        };
+        let name = match field {
+            JavaExpr::Ident(name) => name,
+            JavaExpr::FieldAccess { field, .. } => field,
+            _ => return Err("static assembly setter does not set a source field".into()),
+        };
+        let assigned = holder.fields().iter().find(|field| !field.is_static() && !field.is_final()
+            && field.annotations().is_empty() && field.name() == name)
+            .ok_or("static assembly setter needs a plain internal object field")?;
+        if initialized.get(operand.as_str()).copied() != Some(assigned.java_type())
+            || !dependency.fields().is_empty()
+        {
+            return Err("static assembly setter needs an exact stateless source dependency".into());
+        }
+        self.links.entry(receiver.clone()).or_default().insert(name.clone(), AssemblyLink {
+            receiver_class: holder.full_name(), target_root: operand.clone(), target_class: dependency.full_name(),
+        });
+        self.startup_setters.insert(key);
+        Ok(())
+    }
+
     /// Establish the identity of a pre-existing receiver, not a fresh Java
     /// allocation in the analyzed invocation. Only straight-line, non-throwing
     /// assembly is admitted by this route.
@@ -107,6 +172,10 @@ impl SourceReceiver {
             }
             next = *fields_before;
             for stmt in block {
+                if let JavaStatement::ExprStmt(JavaExpr::MethodCall { target: Some(target), method, args }) = stmt {
+                    self.certify_setter(program, root, &initialized, target, method, args)?;
+                    continue;
+                }
                 let JavaStatement::Assign { target: JavaExpr::FieldAccess { target, field }, value, is_compound: false } = stmt
                 else { return Err("static assembly only supports direct field assignments".into()); };
                 let JavaExpr::Ident(receiver) = target.as_ref() else {
@@ -265,6 +334,7 @@ impl SourceEntry {
             }
             let mut receiver = SourceReceiver {
                 owner: root_name.clone(), field: field.name().into(), assembly_fields: BTreeSet::new(),
+                links: BTreeMap::new(), startup_setters: BTreeSet::new(),
             };
             SourceReceiver::certify(program, declaration, args).map_err(|detail| fail(&detail))?;
             receiver.certify_static_assembly(program, class).map_err(|detail| fail(&detail))?;

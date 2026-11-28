@@ -1,0 +1,6 @@
+entry: src/Beans.java#Beans.PRICE.quote
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Beans.java#Beans.PRICE.quote, returns: number}
+  P: {parameters: {units: {position: 0, type: number}}}
+  R: units * 2

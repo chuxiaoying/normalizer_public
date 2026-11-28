@@ -1,0 +1,8 @@
+entry: src/Beans.java#Beans.QUOTE_CONTROLLER.quote
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/Beans.java#Beans.QUOTE_CONTROLLER.quote, returns: number}
+  P: {parameters: {units: {position: 0, type: number}}}
+  E:
+    $a_0: {kind: acquisition, operation: normalizer.intrinsics.N.currentTimeMillis, type: number}
+  R: units + $a_0

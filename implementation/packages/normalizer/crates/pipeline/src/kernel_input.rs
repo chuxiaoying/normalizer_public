@@ -519,8 +519,7 @@ impl Loaded {
     }
 
     fn admit_source(program: JavaProgram, entry: &str, source_entry: source_entry::SourceEntry) -> Result<Self> {
-        let receiver = source_entry.receiver.as_ref()
-            .map(|receiver| (receiver.owner.as_str(), &receiver.assembly_fields));
+        let receiver = source_entry.receiver.as_ref();
         let crate::normalized::SourceEvidence {
             layouts: source_layouts,
             exception_parents: source_exception_parents,
@@ -666,6 +665,7 @@ impl Loaded {
             selected_entry,
             public_source_entry: self.source_entry.as_ref().map(|source| source.locator.as_str()),
             source_root: self.source_entry.as_ref().map(|source| source.project_root.as_path()),
+            source_assembly: self.source_entry.as_ref().and_then(|source| source.receiver.as_ref()),
             active_static_receiver: None,
             entry_context: self.project.entry_contexts.get(selected_entry.id),
             state_roots: BTreeMap::new(),
@@ -912,7 +912,7 @@ mod member_choice;
 mod temporal_graph;
 mod business_entry;
 mod source_entry;
-pub(crate) use source_entry::{assembly_allocation as inert_data_allocation, inert_singleton, inert_instance_method};
+pub(crate) use source_entry::{assembly_allocation as inert_data_allocation, inert_singleton, inert_instance_method, SourceReceiver};
 mod business_event;
 pub(crate) mod business_relation;
 mod source_control;

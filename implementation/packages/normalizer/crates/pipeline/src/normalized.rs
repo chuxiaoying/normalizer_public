@@ -675,6 +675,15 @@ pub(crate) fn named_method_for_arity<'a>(
     matches.next().is_none().then(|| (method_key(class, index, method), method))
 }
 
+pub(crate) fn assembled_instance_method<'a>(
+    caller: &JavaClass, class: &'a JavaClass, member: &str, arity: usize,
+) -> Option<(String, &'a JavaMethod)> {
+    named_method_for_arity(class, member, arity).filter(|(_, method)| {
+        !method.is_static() && !method.is_private() && method.body().is_some()
+            && (caller.package() == class.package() || method.is_public() && class.is_public_top_level())
+    })
+}
+
 pub(crate) fn constructor_for_arity(class: &JavaClass, arity: usize) -> Option<(String, &JavaMethod)> {
     let mut matches = class.methods().iter().enumerate()
         .filter(|(_, method)| method.is_constructor() && method.arity() == arity);
@@ -688,7 +697,7 @@ fn same_parameters(left: &JavaMethod, right: &JavaMethod) -> bool {
 
 /// Validate every supplied method, including unused helpers.
 pub(crate) fn validate_with_receiver(
-    program: &JavaProgram, entry: &str, receiver: Option<(&str, &BTreeSet<String>)>, locator: Option<&str>,
+    program: &JavaProgram, entry: &str, receiver: Option<&crate::kernel_input::SourceReceiver>, locator: Option<&str>,
 ) -> Result<SourceEvidence, String> {
     validate_official_namespace(program)?;
     // Refuse duplicate declarations before constructing class-keyed layout,
@@ -702,7 +711,7 @@ pub(crate) fn validate_with_receiver(
         }
     }
     let exceptions = source_exceptions(program)?;
-    let layouts = source_layouts(program, receiver)?;
+    let layouts = source_layouts(program, receiver.map(|r| (r.owner.as_str(), &r.assembly_fields)))?;
     let ports = source_ports::declarations(program, &exceptions)?;
     if receiver.is_some() {
         external_polling::validate_entry(program, entry, locator.unwrap_or(entry), &ports)?;
@@ -810,7 +819,7 @@ pub(crate) fn validate_with_receiver(
         statements(body, id, &mut calls, &mut catches)?;
         let entry_owner = entry.rsplit_once('.').map(|(owner, _)| owner);
         let closed_receiver = receiver.is_some() && entry_owner == Some(owner.full_name().as_str());
-        static_types::validate(program, owner, m, id, body, &layouts, closed_receiver)?;
+        static_types::validate(program, owner, m, id, body, &layouts, closed_receiver, receiver)?;
         let mut targets = Vec::new();
         for (call, arity) in calls {
             let (target_owner, target_member) = match call {
@@ -879,6 +888,13 @@ pub(crate) fn validate_with_receiver(
                 continue;
             }
             if !m.params().iter().any(|(_, parameter)| parameter == &target_owner) {
+                if let Some((key, _)) = receiver.and_then(|r| r.target_class(&owner.full_name(), &target_owner))
+                    .and_then(|name| program.find_class(name))
+                    .and_then(|class| assembled_instance_method(owner, class, &target_member, arity))
+                {
+                    targets.push(key);
+                    continue;
+                }
                 if let Some((_, _, key)) = crate::kernel_input::inert_instance_method(program, owner, &target_owner, &target_member, arity) {
                     targets.push(key);
                     continue;

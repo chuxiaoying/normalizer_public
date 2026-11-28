@@ -222,6 +222,7 @@ impl JavaMethod {
         self.is_static
     }
     pub fn is_public(&self) -> bool { self.is_public }
+    pub fn is_private(&self) -> bool { self.is_private }
 
     pub fn is_constructor(&self) -> bool {
         self.is_constructor

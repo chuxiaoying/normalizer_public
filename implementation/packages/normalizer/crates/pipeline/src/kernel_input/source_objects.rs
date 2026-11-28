@@ -8,6 +8,9 @@ enum Origin {
     Parameter { path: String, nullable: bool },
     State { binding: u64, path: Vec<String>, nullable: bool },
     Allocation,
+    // An object acquired before the invocation is never presumed fresh
+    // with respect to a borrowed input.
+    Assembly,
     EntryReceiver,
 }
 
@@ -29,6 +32,7 @@ pub(super) struct SourceObjects {
     objects: BTreeMap<i64, (String, Origin)>,
     states: BTreeMap<(String, String), Expr>,
     entry_receiver: Option<i64>,
+    assembly_roots: BTreeMap<String, i64>,
     generic_products: BTreeMap<i64, BTreeMap<String, Value>>,
     borrowed_fields: BTreeMap<(i64, String), i64>,
     pub(super) state_bindings: BTreeMap<u64, String>,
@@ -39,6 +43,11 @@ impl SourceObjects {
     pub(super) fn allocation_owner(&self, reference: &Expr) -> Option<&str> {
         let (owner, origin) = self.objects.get(&reference.as_heap_ref()?)?;
         matches!(origin, Origin::Allocation).then_some(owner.as_str())
+    }
+
+    pub(super) fn dispatch_owner(&self, reference: &Expr) -> Option<&str> {
+        let (owner, origin) = self.objects.get(&reference.as_heap_ref()?)?;
+        matches!(origin, Origin::Allocation | Origin::Assembly).then_some(owner.as_str())
     }
 
     pub(super) fn borrowed_parameter(&self, reference: &Expr) -> Option<(&str, &str)> {
@@ -55,8 +64,8 @@ impl SourceObjects {
             value.as_heap_ref().and_then(|id| self.objects.get(&id)).map(|(_, origin)| origin)
         };
         matches!((origin(left), origin(right)),
-            (Some(Origin::Allocation), Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::EntryReceiver))
-            | (Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::EntryReceiver), Some(Origin::Allocation)))
+            (Some(Origin::Allocation), Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::Assembly | Origin::EntryReceiver))
+            | (Some(Origin::Parameter { .. } | Origin::State { .. } | Origin::Assembly | Origin::EntryReceiver), Some(Origin::Allocation)))
     }
 
     pub(super) fn heap_binding_keys(&self) -> BTreeMap<i64, math::HeapBindingIdentity> {
@@ -75,7 +84,7 @@ impl SourceObjects {
                     fields.extend(path.iter().cloned());
                     math::HeapBindingIdentity::EntrySnapshot(fields)
                 }
-                Origin::Allocation | Origin::EntryReceiver => return None,
+                Origin::Allocation | Origin::Assembly | Origin::EntryReceiver => return None,
             };
             Some((id, identity))
         }));
@@ -150,6 +159,19 @@ impl Engine<'_> {
             id
         };
         Value::Term(Ty::Ref, b::heap_ref(id))
+    }
+
+    pub(super) fn assembled_dependency(&mut self, owner: &str, name: &str) -> Option<Value> {
+        let link = self.source_assembly?.dependency(owner, name)?;
+        let id = if let Some(id) = self.source_objects.assembly_roots.get(&link.target_root) {
+            *id
+        } else {
+            let id = self.heap.new_path_object().id();
+            self.source_objects.objects.insert(id, (link.target_class.clone(), Origin::Assembly));
+            self.source_objects.assembly_roots.insert(link.target_root.clone(), id);
+            id
+        };
+        Some(Value::Term(Ty::Ref, b::heap_ref(id)))
     }
 
     pub(super) fn is_entry_state(&self, owner: &str, name: &str) -> bool {
@@ -324,7 +346,9 @@ impl Engine<'_> {
             return fields.get(name).cloned().ok_or_else(|| fail("undeclared generic product field"));
         }
         if matches!(origin, Origin::EntryReceiver) {
-            return self.read_entry_state(&owner.clone(), name, path);
+            let owner = owner.clone();
+            if let Some(value) = self.assembled_dependency(&owner, name) { return Ok(value); }
+            return self.read_entry_state(&owner, name, path);
         }
         let Some((class, field, child_owner)) = self.program.find_class(owner)
             .and_then(|class| class.fields().iter().find(|field| field.name() == name)
@@ -333,6 +357,7 @@ impl Engine<'_> {
         let nullable = crate::normalized::source_nullable_field(class, field);
         let child = match origin {
             Origin::Allocation => return self.read_source_field_on_path(reference, name, path),
+            Origin::Assembly => return Err(fail("statically assembled dependency is stateless")),
             Origin::EntryReceiver => unreachable!("live receiver dispatched to entry state"),
             Origin::Parameter { path: root, .. } => Origin::Parameter {
                 path: format!("{root}.{name}"),
@@ -462,6 +487,7 @@ impl Engine<'_> {
             else { scalar_origin_type(&ty) }
         };
         let expr = match origin {
+            Origin::Assembly => return Err(fail("statically assembled dependency is stateless")),
             Origin::EntryReceiver => return Err(fail("live receiver must acquire declared state")),
             Origin::Allocation => self
                 .realtime_store
@@ -537,6 +563,7 @@ impl Engine<'_> {
             Origin::Parameter { path, .. } => {
                 Some(FieldWriteTarget::Parameter(format!("{path}.{field}")))
             }
+            Origin::Assembly => return Err(fail("statically assembled dependency is not a writable state root")),
             Origin::EntryReceiver => unreachable!("entry receiver dispatched to declared state"),
         };
         let declaration = self

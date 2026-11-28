@@ -77,6 +77,7 @@ pub(super) struct Engine<'a> {
     pub(super) selected_entry: SelectedEntry<'a>,
     pub(super) public_source_entry: Option<&'a str>,
     pub(super) source_root: Option<&'a Path>,
+    pub(super) source_assembly: Option<&'a super::SourceReceiver>,
     pub(super) active_static_receiver: Option<(String, String)>,
     pub(super) entry_context: Option<&'a business_entry::EntryContext>,
     pub(super) state_roots: BTreeMap<String, i64>,
@@ -1097,8 +1098,11 @@ impl<'a> Engine<'a> {
                 {
                     return Ok(self.source_entry_receiver_value(owner));
                 }
-                if !self.methods[id].syntax.is_static() && !env.contains_key("this") && self.is_entry_state(owner, n) {
-                    return self.read_entry_state(owner, n, &path);
+                if !self.methods[id].syntax.is_static() && !env.contains_key("this") {
+                    if self.active_static_receiver.is_none() {
+                        if let Some(value) = self.assembled_dependency(owner, n) { return Ok(value); }
+                    }
+                    if self.is_entry_state(owner, n) { return self.read_entry_state(owner, n, &path); }
                 }
                 if let Some(receiver) = env.get("this") {
                     if self.program.find_class(owner).is_some_and(|class| class.fields().iter()
@@ -1203,7 +1207,11 @@ impl<'a> Engine<'a> {
                 if matches!(target.as_ref(), J::Ident(name) if name == "this")
                     && !env.contains_key("this")
                 {
-                    return self.read_entry_state(id.rsplit_once('.').unwrap().0, field, &path);
+                    let owner = id.rsplit_once('.').unwrap().0;
+                    if self.active_static_receiver.is_none() {
+                        if let Some(value) = self.assembled_dependency(owner, field) { return Ok(value); }
+                    }
+                    return self.read_entry_state(owner, field, &path);
                 }
                 let reference = self.java_expr(target, id, env, path.clone())?;
                 let path = self.normal_path(path);
@@ -1235,6 +1243,31 @@ impl<'a> Engine<'a> {
                 method,
                 args,
             } => {
+                if !self.methods[id].syntax.is_static() && !env.contains_key("this")
+                    && self.active_static_receiver.is_none()
+                {
+                    if let Some(field) = target.as_deref().and_then(crate::normalized::source_ports::receiver)
+                        .filter(|field| matches!(target.as_deref(), Some(J::FieldAccess { .. })) || !env.contains_key(*field))
+                    {
+                        let owner = id.rsplit_once('.').unwrap().0;
+                        if let Some(receiver) = self.assembled_dependency(owner, field) {
+                            let reference = receiver.scalar()?;
+                            let (member, declaration) = self.source_objects.dispatch_owner(&reference)
+                                .and_then(|class| self.program.find_class(class))
+                                .zip(self.program.find_class(owner))
+                                .and_then(|(dependency, caller)|
+                                    crate::normalized::assembled_instance_method(caller, dependency, method, args.len()))
+                                .ok_or_else(|| fail("assembled receiver has no visible instance method"))?;
+                            for ((expected, _), actual) in declaration.params().iter().zip(args) {
+                                self.source_reference_assignment(expected, actual, id)?;
+                            }
+                            let Some((values, path)) = self.source_arguments(args, id, env, path)? else {
+                                return Ok(Value::Term(self.methods[&member].returns.clone(), b::lit_null()));
+                            };
+                            return self.java_call_on(&member, values, path, Some(receiver));
+                        }
+                    }
+                }
                 if self.project.direct_source && self.source_root.is_some() {
                     let caller = id.rsplit_once('.').unwrap().0;
                     let candidate = match target.as_deref() {
@@ -1304,7 +1337,7 @@ impl<'a> Engine<'a> {
                                 .filter(|(_, declaration)| !declaration.is_static() && declaration.body().is_some())
                             {
                                 if let Ok(reference) = receiver.scalar() {
-                                    if self.source_objects.allocation_owner(&reference) == Some(interface.as_str()) {
+                                    if self.source_objects.dispatch_owner(&reference) == Some(interface.as_str()) {
                                         let receiver = receiver.clone();
                                         for ((expected, _), actual) in declaration.params().iter().zip(args) {
                                             self.source_reference_assignment(expected, actual, id)?;
@@ -1940,6 +1973,9 @@ impl Engine<'_> {
         receiver: Option<Value>, implicit_receiver: bool,
     ) -> Result<Value> {
         self.budget()?;
+        if implicit_receiver && self.source_assembly.is_some_and(|r| r.startup_setters.contains(id)) {
+            return Err(fail("initial assembly setter is not a live receiver mutation contract"));
+        }
         self.java_calls += 1;
         let parent_completion = (!self.active.is_empty()).then(|| self.realtime_completion.clone());
         need(

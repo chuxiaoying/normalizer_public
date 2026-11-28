@@ -130,6 +130,7 @@ struct Admission<'a> {
     id: &'a str,
     layouts: &'a BTreeMap<String, BTreeMap<String, String>>,
     closed_receiver: bool,
+    assembly: Option<&'a crate::kernel_input::SourceReceiver>,
 }
 
 impl Admission<'_> {
@@ -144,6 +145,7 @@ impl Admission<'_> {
         self.closed_receiver && !self.method.is_static() && !self.method.is_constructor()
             && !field.is_static()
             && !super::entry_state(self.class, field) && !super::source_ports::marked(self.class, field)
+            && !self.assembly.is_some_and(|r| r.dependency(&self.class.full_name(), field.name()).is_some())
     }
 
     fn check_receiver_use(&self, name: &str) -> Result<(), String> {
@@ -631,6 +633,18 @@ impl Admission<'_> {
     }
 
     fn check_writable(&self, target: &E, scope: &Scope) -> Result<(), String> {
+        if self.closed_receiver && !self.method.is_constructor() && !self.method.is_static() {
+            if let Some(assembly) = self.assembly.filter(|r| !r.startup_setters.contains(self.id)) {
+                if let Some(field) = super::source_ports::receiver(target)
+                    .filter(|field| !matches!(target, E::Ident(_)) || !scope.contains_key(*field))
+                {
+                    if assembly.dependency(&self.class.full_name(), field).is_some() {
+                        return Err(self.diagnostic("NORM-ENTRY-ASSEMBLY",
+                            "a live receiver write requires a state contract, not its startup binding"));
+                    }
+                }
+            }
+        }
         if let E::FieldAccess { target: value, field } = target {
             if field == "length" && self.declared_type(value, scope).is_some_and(|ty| matches!(ty, JavaType::Array(_))) {
                 return Err(self.diagnostic("NORM-SOURCE-TYPE", "cannot update final array length"));
@@ -932,7 +946,7 @@ impl Admission<'_> {
     }
 }
 
-pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S], layouts: &BTreeMap<String, BTreeMap<String, String>>, closed_receiver: bool) -> Result<(), String> {
+pub(super) fn validate(program: &JavaProgram, class: &JavaClass, method: &JavaMethod, id: &str, body: &[S], layouts: &BTreeMap<String, BTreeMap<String, String>>, closed_receiver: bool, assembly: Option<&crate::kernel_input::SourceReceiver>) -> Result<(), String> {
     let mut scope = method.params().iter().map(|(ty, name)| (name.clone(), Binding::plain(ty.clone()))).collect();
-    Admission { program, class, method, id, layouts, closed_receiver }.block(body, &mut scope)
+    Admission { program, class, method, id, layouts, closed_receiver, assembly }.block(body, &mut scope)
 }
