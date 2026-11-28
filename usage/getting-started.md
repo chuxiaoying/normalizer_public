@@ -24,7 +24,7 @@ npm --version
 
 ## 1. Java：从源码直接得到 PERS
 
-这个例子没有隐藏依赖，可以原样交付。下面的目录是输入工程，不是 Normalizer 仓库。
+为示例创建一个临时输入工程，命令在 Normalizer 仓库根目录执行。
 
 ```sh
 java_project=$(mktemp -d)
@@ -53,9 +53,9 @@ implementation/tools/normalizer module "$ts_project" --entry 'src/total.ts#total
 
 ## 3. 前端 VO：运行生产入口与消费入口
 
-从两个已准备的用例分别复制纯净 TypeScript 分析源码。生产命令选择 `onLoad`，消费命令选择 `caption`。各自传入对应的分析目录。
+从两个已准备的用例分别复制 TypeScript 源码。生产命令选择 `onLoad`，消费命令选择 `caption`。各自传入对应的分析目录。
 
-这里各跑一个已准备入口。对真实页面，先[选定生产或消费以及入口范围](skills/normalizer-preprocess/SKILL.md#前端整页归一化)，再逐入口运行。
+要分析自己的页面，可从[整页归一化的问法](skills/normalizer-preprocess/SKILL.md#前端整页归一化)开始。
 
 **生产：查询数据并写入页面状态。**
 

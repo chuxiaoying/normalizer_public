@@ -20,21 +20,21 @@
 
 - **TypeScript 导入。** 独立模块按固定严格选项检查源码，可用受支持的项目相对导入，包括 `import name from "./helper.js"` 和 `import { default as name } from "./helper.js"`。原工程的 `tsconfig.json` 和宿主模块初始化不会执行。循环依赖、副作用导入、越界路径不受支持。跨文件帮助函数目前限可静态定位的同步纯标量计算。
 - **TypeScript 入口。** 独立模块可选有函数体的导出函数（默认导出写 `#default`），或同文件导出的只读字面量对象方法，如 `src/main.ts#controller.read`。动态装配、脱离对象的方法和导出的箭头函数变量不受支持。
-- **已接入的操作。** 独立模块可从官方 `@normalizer/stdlib` 命名空间使用 `trim` 和 `defaultIfBlank`。时钟操作当前可用于 Java，TypeScript 适配器尚未接入。同表写后重读的支持范围见[关系快照](../design/chapters/05-关系代数.md#ra-08-取得后的化简不搬动读写)。
+- **已接入的操作。** 独立模块可从官方 `@normalizer/stdlib` 命名空间使用 `trim` 和 `defaultIfBlank`。时钟操作当前可用于 Java，TypeScript 适配器尚未接入。
 
 ## 前端 VO 场景
 
 `--entry` 指向分析工程内的 TypeScript 导出函数。原始 `.vue`、`.axml` 和组件配置留在原工程。
 
-| 场景名 | 选择时机 | 例证 |
-|---|---|---|
-| `frontend-vo-production` | 看宿主回调（如 `onLoad`）触发了什么业务行为，例如发出请求或写入页面状态 | [事件入口](../design/examples/topics/language-entries/frontend-vo-production-vue.md) |
-| `frontend-vo-consumption` | 运行单个展示或交互属性的同步、无参导出函数 | [属性出口](../design/examples/topics/language-entries/frontend-vo-consumption-vue.md) |
+| 第九章选定的场景 | CLI 场景名 |
+|---|---|
+| [前端生产](../design/chapters/09-场景归一.md#前端生产允许改什么) | `frontend-vo-production` |
+| [前端消费](../design/chapters/09-场景归一.md#前端消费允许改什么) | `frontend-vo-consumption` |
 
-每次命令只交付所选入口的结果。页面范围见[整页意图撮合](skills/normalizer-preprocess/SKILL.md#前端整页归一化)，定位输入文件和导出函数见[输入手册](kernel-input.md#按页面查找和交付入口)。
+每次命令只输出所选入口的结果。[分析工程目录与入口写法](kernel-input.md)
 
-- **生产适配器**接收具名导出入口：同步 `void` 入口可以读写已声明的 VO；`async` 入口可以直接等待已声明的外部端口。保留原入口的完成方式，不为了运行场景命令把同步回调改成 `async`。遇到当前适配器无法接收的入口，记录入口和诊断，按[生产场景设计](../design/chapters/09-场景归一.md#前端生产允许改什么)核对输入。
-- **消费适配器**可处理标量常量、已有状态字段和受支持的条件选择。复合挂载条件可能被拒绝，例如 `ready && (status === "open" || status === "pending")`。保留原条件和诊断，标明哪些属性已取得结果。
+- **生产适配器**接收具名导出入口：同步 `void` 入口可以读写已声明的 VO；`async` 入口可以直接等待已声明的外部端口。
+- **消费适配器**可处理标量常量、已有状态字段和受支持的条件选择。复合挂载条件可能被拒绝，例如 `ready && (status === "open" || status === "pending")`。
 
 直接可运行的两条完整命令见[新手入门](getting-started.md#3-前端-vo运行生产入口与消费入口)。
 
