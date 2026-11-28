@@ -163,6 +163,8 @@ pub struct JavaField {
     pub(crate) java_type: JavaType,
     pub(crate) is_static: bool,
     pub(crate) is_final: bool,
+    pub(crate) is_public: bool,
+    pub(crate) is_private: bool,
     pub(crate) annotations: Vec<AnnotationRef>,
     pub(crate) initializer: Option<JavaExpr>,
 }
@@ -179,6 +181,12 @@ impl JavaField {
     }
     pub fn is_final(&self) -> bool {
         self.is_final
+    }
+    pub fn is_public(&self) -> bool {
+        self.is_public
+    }
+    pub fn is_private(&self) -> bool {
+        self.is_private
     }
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations

@@ -684,10 +684,14 @@ pub(crate) fn assembled_instance_method<'a>(
 }
 
 pub(crate) fn instance_member_visible(caller: &JavaClass, class: &JavaClass, method: &JavaMethod) -> bool {
+    source_member_visible(caller, class, method.is_public(), method.is_private())
+}
+
+pub(crate) fn source_member_visible(caller: &JavaClass, class: &JavaClass, public: bool, private: bool) -> bool {
     if caller.package() != class.package() {
-        return class.is_public_top_level() && method.is_public() && !method.is_private();
+        return class.is_public_top_level() && public && !private;
     }
-    !method.is_private()
+    !private
         || caller.simple_name().split('.').next() == class.simple_name().split('.').next()
 }
 

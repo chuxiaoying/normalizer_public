@@ -1,0 +1,12 @@
+entry: src/app/Beans.java#app.Beans.ENTRY.read
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/app/Beans.java#app.Beans.ENTRY.read, returns: number}
+  P:
+    parameters: {}
+  E:
+    units:
+      kind: state
+      source: src/app/Beans.java#app.Beans.ENTRY.units
+      type: number
+  R: units

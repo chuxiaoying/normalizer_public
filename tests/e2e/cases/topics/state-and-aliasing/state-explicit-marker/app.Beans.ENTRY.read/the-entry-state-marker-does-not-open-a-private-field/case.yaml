@@ -1,0 +1,6 @@
+entry: src/app/Beans.java#app.Beans.ENTRY.read
+reject:
+  kind: PREPROCESS_REQUIRED
+  fragments:
+    - "[NORM-ENTRY]"
+    - 'static assembly cannot write a field that is not visible from the assembly class'

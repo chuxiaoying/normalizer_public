@@ -501,6 +501,8 @@ impl<'a> Parser<'a> {
                 java_type: ty,
                 is_static: false,
                 is_final: true,
+                is_public: false,
+                is_private: true,
                 annotations: Vec::new(),
                 initializer: None,
             });
@@ -906,9 +908,7 @@ fn parse_class_body(
                 return Err(p.err_at(member_at, "[JAVA-RESERVED-FIELD-NAME] reserved keyword used as a Java field name"));
             }
             p.skip_ws();
-            // Java 语义：interface 字段隐式 public static final。
-            // Parser 不建 public flag，但 static/final 必须在 AST 中体现，否则 class init
-            // 看不到 `interface Result { int CODE = 100; }` 这种真实常量字段。
+            // Interface fields are implicitly public static final.
             let field_is_static = is_static || class.is_interface;
             let field_is_final = is_final || class.is_interface;
 
@@ -926,6 +926,8 @@ fn parse_class_body(
                 java_type,
                 is_static: field_is_static,
                 is_final: field_is_final,
+                is_public: is_public || class.is_interface,
+                is_private,
                 annotations,
                 initializer,
             });

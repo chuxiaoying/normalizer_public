@@ -291,6 +291,7 @@ seeds:
       - Beans.ENTRY.read
       - Beans.ENTRY.readPair
       - Beans.ENTRY.incrementIfRequested
+      - app.Beans.ENTRY.read
   state-multi-write-read-order:
     source:
       - Beans.ENTRY.delta

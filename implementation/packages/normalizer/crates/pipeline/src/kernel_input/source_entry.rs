@@ -185,11 +185,11 @@ impl SourceReceiver {
                     return Err("static assembly receiver used before its declaration".into());
                 };
                 let declaration = program.find_class(owner).ok_or("missing static assembly receiver type")?;
-                if declaration.package() != root.package() {
-                    return Err("cross-package assembly requires a visible source setter, not a direct field assignment".into());
-                }
                 let member = declaration.fields().iter().find(|f| !f.is_static() && !f.is_final() && f.name() == field)
                     .ok_or("invalid static assembly field assignment")?;
+                if !crate::normalized::source_member_visible(root, declaration, member.is_public(), member.is_private()) {
+                    return Err("static assembly cannot write a field that is not visible from the assembly class".into());
+                }
                 if receiver == &self.field && !crate::normalized::entry_state(declaration, member) {
                     return Err("static assembly may only write declared state on the entry receiver".into());
                 }
