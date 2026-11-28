@@ -1,0 +1,6 @@
+entry: src/OrderPage.ts#addOne
+reject:
+  fragments:
+    - "SCENARIO_MODULE_INPUT:"
+    - "[NORM-IMPORT]"
+    - "platform binding Date"

@@ -6,6 +6,21 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
+// The two admitted platform value carriers do not grant their Java methods.
+const PLATFORM_CARRIERS: &[&str] = &["java.math.BigDecimal", "java.time.LocalDate"];
+
+fn host_package(raw: &str) -> bool {
+    ["java.", "javax.", "jdk.", "sun.", "com.sun."].iter().any(|prefix| raw.starts_with(prefix))
+}
+
+fn implicit_java_type(raw: &str) -> bool {
+    matches!(raw.strip_prefix("java.lang."), Some(
+        "String" | "Object" | "AutoCloseable" | "Throwable" | "Exception" | "RuntimeException"
+        | "NullPointerException" | "ArithmeticException" | "IllegalArgumentException"
+        | "IndexOutOfBoundsException" | "ArrayIndexOutOfBoundsException" | "NegativeArraySizeException"
+    ))
+}
+
 impl JavaProgram {
     /// Bind the closed source tree after its compilation units are known.
     /// Adapters that only parse a signature carrier do not use this linker.
@@ -21,6 +36,32 @@ impl JavaProgram {
             .iter()
             .map(|class| (class.full_name(), class.package.clone()))
             .collect::<BTreeMap<_, _>>();
+        let visible = self
+            .classes
+            .iter()
+            .map(|class| (class.full_name(), class.is_public_top_level()))
+            .collect::<BTreeMap<_, _>>();
+        for unit in &self.import_units {
+            if let Some(name) = unit.unbound.first() {
+                return Err(format!(
+                    "{}: [NORM-IMPORT] import {name} is outside the explicit source allowlist",
+                    unit.source_file
+                ));
+            }
+            for name in &unit.explicit {
+                let allowed = name == NORMALIZER_INTRINSICS_IMPORT
+                    || PLATFORM_CARRIERS.contains(&name.as_str())
+                    || visible.get(name).is_some_and(|public| {
+                        *public || packages.get(name).is_some_and(|package| package == &unit.package)
+                    });
+                if !allowed {
+                    return Err(format!(
+                        "{}: [NORM-IMPORT] import {name} does not resolve to an approved binding",
+                        unit.source_file
+                    ));
+                }
+            }
+        }
         // A direct qualifier and a unique name/arity can prove a private
         // selection only when there are no inherited overload candidates.
         let private_statics = self
@@ -353,12 +394,21 @@ impl Names<'_> {
     }
 
     fn bind_name(&self, name: &mut String, type_parameters: &BTreeSet<String>) {
-        if !self.qualify_names || type_parameters.contains(name) {
+        if type_parameters.contains(name) {
             return;
         }
         if let Some(bound) = self.declared_name(name) {
-            self.require_member_access(&bound, None);
-            *name = bound;
+            if self.qualify_names {
+                self.require_member_access(&bound, None);
+                *name = bound;
+            }
+        } else if host_package(name) && !PLATFORM_CARRIERS.contains(&name.as_str())
+            && !implicit_java_type(name) {
+            self.issue.borrow_mut().get_or_insert_with(|| {
+                format!("[NORM-IMPORT] platform type {name} is outside the source allowlist")
+            });
+        } else if !self.qualify_names {
+            return;
         } else if matches!(name.as_str(), "Object" | "String")
             && self
                 .imports
@@ -416,6 +466,18 @@ impl Names<'_> {
                     if self.qualify_names {
                         *value = JavaExpr::Ident(bound);
                     }
+                    return;
+                }
+                let imported_platform = self.imports.get(first).is_some_and(|path|
+                    PLATFORM_CARRIERS.contains(&path.as_str()));
+                let implicit_platform = matches!(first, "System" | "Math" | "StrictMath" | "Class"
+                    | "Thread" | "Runtime" | "String" | "Object" | "Integer" | "Long" | "Double"
+                    | "Float" | "Boolean" | "Character" | "Byte" | "Short" | "Void");
+                if host_package(&raw) || imported_platform || implicit_platform {
+                    self.issue.borrow_mut().get_or_insert_with(|| {
+                        let member = call.map_or_else(|| raw.clone(), |(name, _)| format!("{raw}.{name}"));
+                        format!("[NORM-IMPORT] platform member {member} has no admitted source contract")
+                    });
                     return;
                 }
                 if !self.package.is_empty()

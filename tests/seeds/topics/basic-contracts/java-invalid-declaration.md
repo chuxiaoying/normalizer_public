@@ -68,7 +68,7 @@ R: value + 1
 
 ## 构造表达式的类型参数不能被丢弃
 
-`new java.util.ArrayList<String>()` 和 `new java.util.ArrayList<>()` 都有完整的类型语法；`<>` 是构造调用的类型推断写法，不是声明类型的一部分（[JLS 15.9](https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.9)）。这不表示直接源码入口已经支持通用集合构造。如果所选入口确实依赖该宿主库，就应按关系操作的业务含义交付，而非让内核执行 JDK 集合实现。
+`new java.util.ArrayList<String>()` 和 `new java.util.ArrayList<>()` 都有完整的类型语法；`<>` 是构造调用的类型推断写法，不是声明类型的一部分（[JLS 15.9](https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.9)）。这不表示直接源码入口已经支持通用集合构造。 两个宿主集合的全限定名不在[准入白名单](../../../../design/chapters/04-AI救赎.md#ai-01-可达类型要闭合)内；即使只出现在未调用的合法 helper 中，也要在源码入口拒绝。如果所选入口确实依赖该宿主库，就应按关系操作的业务含义交付，而非让内核执行 JDK 集合实现。
 
 `new java.util.ArrayList<String()` 缺少 `>`，`new java.util.ArrayList<String,>()` 缺少逗号后的类型。两者必须在源码解析阶段拒绝，即使声明不在所选入口的调用路径上；不能吞掉残缺类型再报“构造操作不支持”。 同一块中，无条件 return 后还有语句，同样在源码入口拒绝，包括未调用方法中的代码。只退出一个 if 分支不代表整个外层块退出，其他路径照常执行。解析 `new int[n]` 时，`[n]` 仍由数组构造消费，不当作声明类型的 `[]`。
 
@@ -101,3 +101,9 @@ R: value + 1
 标准十进制数和日历日期也按已声明的类型绑定。工程里的同名类不能伪装成 `java.math.BigDecimal` 或 `java.time.LocalDate`，也不能覆盖对应的显式导入；没有该导入且名字不占用标准库的全限定名时，未调用的同名应用类不应改变正常入口。
 
 显式导入按编译单元解释。入口编译单元导入 `java.math.BigDecimal` 或 `java.time.LocalDate` 时，另一个包的同名工程类不会冒充该标准类型；入口分别保留 `number`、`date` 载体。反例是同一编译单元又声明同名的顶层类，输入必须拒绝，不因这个类未使用而跳过。
+
+## 未使用的导入也要通过白名单
+
+给合法的 `readValid` 编译单元加上 `import java.util.*;`、`import static java.lang.Math.abs;` 或 `import java.time.Clock;`，即使没有使用，入口也应报告该引用不在白名单，不生成 PERS。在限定名的组成部分之间插入注释不改变它实际绑定的类型。
+
+不写 import 也不能绕过：一个未调用的 helper 使用 `System.currentTimeMillis()` 或 `java.lang.System.currentTimeMillis()`，应同样拒绝。导入已登记的值载体 `LocalDate` 可以，但不授予调用 `LocalDate.now()` 的能力。此处测准入，不应修改入口的业务源码或模拟实际时钟。

@@ -1,0 +1,6 @@
+entry: src/Caption.java#Caption.select
+reject:
+  fragments:
+    - "[SOURCE-LINK-FAILED]"
+    - "[NORM-IMPORT]"
+    - java.util.HashMap

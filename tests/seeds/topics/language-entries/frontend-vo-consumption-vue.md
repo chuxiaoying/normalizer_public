@@ -131,3 +131,5 @@ R: |-
 数值域的共性见[基础案例](../expression-simplification/java-static.md)，业务类型默认非空的共性见[对象案例](../objects-and-types/java-static-object.md)，状态身份的共性见[参数与状态同名案例](../basic-contracts/java-name-collision.md)。
 
 [第七章的对应原例](../../../../design/chapters/07-PERS登场.md)：第七章的属性入口直接验收原例：无参数、无写入，只读取该次求值开始前的页面状态。
+
+场景输入同样遵守[引用白名单](../../../../design/chapters/04-AI救赎.md#ai-01-可达类型要闭合)：给一个合法入口旁的未调用函数加入 `Date.now()`，也应在准入时拒绝，不因为没有写 import 而执行入口。

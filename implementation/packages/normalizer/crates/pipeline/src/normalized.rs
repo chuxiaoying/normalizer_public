@@ -870,16 +870,6 @@ pub(crate) fn nullable_text_return(
         && official_marker(class, method.annotations(), NULLABLE)
 }
 
-fn supported_source_imports(program: &JavaProgram, class: &JavaClass) -> bool {
-    class.imports().iter().all(|name| {
-        program.find_class(name).is_some_and(|target| {
-            target.package() == class.package() || target.is_public_top_level()
-        }) || matches!(
-            name.as_str(),
-            N_IMPORT | "java.util.List" | "java.math.BigDecimal" | "java.time.LocalDate"
-        )
-    })
-}
 fn declared_reference(t: &JavaType, layouts: &BTreeMap<String, BTreeMap<String, String>>) -> bool {
     matches!(t, JavaType::Class(name) if layouts.keys().any(|owner| owner == name || owner.rsplit('.').next() == Some(name.as_str())))
 }
@@ -1375,8 +1365,6 @@ pub(crate) fn validate_with_receiver(
                 && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || !c.annotations().is_empty()
-            || !supported_source_imports(program, c)
-            || c.has_unknown_import_origins()
         {
             return Err(error("NORM-CLASS-SHAPE", &name));
         }

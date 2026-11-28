@@ -91,8 +91,7 @@ pub(crate) struct Parser<'a> {
     pub(crate) file: String,
     /// 显式 import 的 FQN 列表（`import x.y.Z;`）——parser 只收集，不做 FQN 化
     pub(crate) imports: Vec<String>,
-    pub(crate) has_unbound_imports: bool,
-    pub(crate) has_unknown_import_origins: bool,
+    pub(crate) unbound_imports: Vec<String>,
     pub(crate) static_context: bool,
     pub(crate) official_n: bool,
 }
@@ -106,8 +105,7 @@ impl<'a> Parser<'a> {
             lexical_error: None,
             file: file_hint.to_string(),
             imports: Vec::new(),
-            has_unbound_imports: false,
-            has_unknown_import_origins: false,
+            unbound_imports: Vec::new(),
             static_context: false,
             official_n: false,
         }
@@ -498,8 +496,8 @@ impl<'a> Parser<'a> {
             String::new()
         };
 
-        // Keep the exact ordinary imports. The closed input profile only
-        // needs the presence, not the strings, of static or wildcard imports.
+        // Parse all forms before source admission decides whether they
+        // can be bound in the closed analysis project.
         while self.eat_keyword("import") {
             let is_static = self.eat_keyword("static");
             let name = self
@@ -516,35 +514,9 @@ impl<'a> Parser<'a> {
             }
             self.require_delimiter(b';', "[JAVA-IMPORT] expected semicolon")?;
             if is_static || wildcard {
-                self.has_unbound_imports = true;
-                // The JDK origin is known for these imports, but none of
-                // their members are resolved by spelling into executable IR.
-                let inert_jdk = match (is_static, wildcard) {
-                    (false, true) => name == "java.util",
-                    (true, true) => name == "java.lang.Math",
-                    (true, false) => name.strip_prefix("java.lang.Math.").is_some_and(|member| {
-                        matches!(
-                            member,
-                            "E" | "PI"
-                                | "abs"
-                                | "min"
-                                | "max"
-                                | "ceil"
-                                | "floor"
-                                | "round"
-                                | "sqrt"
-                                | "pow"
-                                | "sin"
-                                | "cos"
-                                | "tan"
-                                | "exp"
-                                | "log"
-                                | "random"
-                        )
-                    }),
-                    _ => false,
-                };
-                self.has_unknown_import_origins |= !inert_jdk;
+                let prefix = if is_static { "static " } else { "" };
+                let suffix = if wildcard { ".*" } else { "" };
+                self.unbound_imports.push(format!("{prefix}{name}{suffix}"));
             } else {
                 self.imports.push(name);
             }
@@ -560,7 +532,13 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(JavaProgram { classes })
+        let imports = SourceImports {
+            source_file: self.file.to_owned(),
+            package,
+            explicit: std::mem::take(&mut self.imports),
+            unbound: std::mem::take(&mut self.unbound_imports),
+        };
+        Ok(JavaProgram { classes, import_units: vec![imports] })
     }
 
     fn take_class_kind(&mut self) -> Result<Option<bool>, ParseError> {
@@ -698,8 +676,7 @@ impl<'a> Parser<'a> {
             package: package.to_owned(),
             is_public: seen.contains("public"),
             imports: self.imports.clone(),
-            has_unbound_imports: self.has_unbound_imports,
-            has_unknown_import_origins: self.has_unknown_import_origins,
+            has_unbound_imports: !self.unbound_imports.is_empty(),
             simple_name,
             type_parameters,
             annotations,
@@ -927,7 +904,6 @@ fn parse_class_body(
                 is_public,
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
-                has_unknown_import_origins: class.has_unknown_import_origins,
                 simple_name: format!("{}.{}", class.simple_name, nested_simple),
                 type_parameters,
                 annotations: annotations.clone(),

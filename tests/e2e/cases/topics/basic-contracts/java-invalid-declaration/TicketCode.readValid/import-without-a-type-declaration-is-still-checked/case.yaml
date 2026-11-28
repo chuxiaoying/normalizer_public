@@ -1,0 +1,7 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[SOURCE-LINK-FAILED]"
+    - "[NORM-IMPORT]"
+    - src/ImportOnly.java
+    - java.time.Clock

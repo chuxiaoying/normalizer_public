@@ -16,6 +16,8 @@
 - `source` 读取分析工程目录下的 Java 源文件。只提交选定入口所需的工程文件，使用 UTF-8。目录软链接会被拒绝，文件软链接只能指向工程内部。
 - `module` 和前端 `scenario` 接收可执行的严格 `.ts` 文件。适配器拒绝 `.js`、`.mjs`、`.d.ts`、`any` 和压制检查的注释。
 
+- Java 和 TypeScript 适用同一套[合法引用白名单](../design/chapters/04-AI救赎.md#合法引用白名单)。查到 `[NORM-IMPORT]` 时按诊断位置核对实际绑定；全限定名、别名和宿主全局不会让引用获准。
+
 ### 当前实现限制
 
 - **TypeScript 导入。** 独立模块按固定严格选项检查源码，可用受支持的项目相对导入，包括 `import name from "./helper.js"` 和 `import { default as name } from "./helper.js"`。原工程的 `tsconfig.json` 和宿主模块初始化不会执行。循环依赖、副作用导入、越界路径不受支持。跨文件帮助函数目前限可静态定位的同步纯标量计算。

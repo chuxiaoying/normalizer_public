@@ -82,9 +82,7 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
                 "修正源码或按 Skill 将不支持的语法改写为当前规范 Java 子集；不得跳过该文件。",
             ))
         })?;
-        for class in parsed.classes() {
-            program.push_class(class.clone());
-        }
+        program.extend_source(parsed);
     }
     program.bind_source_names().map_err(|error| {
         PipelineError::Resolve(crate::preprocess::required(

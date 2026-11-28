@@ -81,4 +81,4 @@ R: CASE WHEN cleared THEN null ELSE fallback END
 
 不能仅凭载体类名判定映射语义。未给出关系声明的载体、非文本键或非文本值都不能直接沿用此局部扩展。
 
-使用第五章示例中的 `java.util.HashMap<String,String>` 作为局部映射载体时，同样按已声明的关系指令区分缺键和已存的 null，不静默补值。
+若把工程内声明的 `CaptionMap` 换成宿主的 `java.util.HashMap<String,String>`，即使仍保留关系指令，也因不符合[引用白名单](../../../../design/chapters/04-AI救赎.md#ai-01-可达类型要闭合)在入口拒绝。缺键和已存 null 的对照仍以工程内载体为准。

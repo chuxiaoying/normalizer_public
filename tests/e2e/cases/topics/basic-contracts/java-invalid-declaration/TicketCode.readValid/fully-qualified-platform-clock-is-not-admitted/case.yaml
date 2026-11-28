@@ -1,0 +1,6 @@
+entry: src/TicketCode.java#TicketCode.readValid
+reject:
+  fragments:
+    - "[SOURCE-LINK-FAILED]"
+    - "[NORM-IMPORT]"
+    - "java.lang.System.currentTimeMillis"

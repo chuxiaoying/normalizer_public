@@ -13,6 +13,15 @@ pub const NORMALIZER_INTRINSICS_IMPORT: &str = "normalizer.intrinsics.N";
 #[derive(Debug, Clone)]
 pub struct JavaProgram {
     pub(crate) classes: Vec<JavaClass>,
+    pub(crate) import_units: Vec<SourceImports>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SourceImports {
+    pub(crate) source_file: String,
+    pub(crate) package: String,
+    pub(crate) explicit: Vec<String>,
+    pub(crate) unbound: Vec<String>,
 }
 
 impl JavaProgram {
@@ -20,6 +29,7 @@ impl JavaProgram {
     pub fn new() -> Self {
         Self {
             classes: Vec::new(),
+            import_units: Vec::new(),
         }
     }
 
@@ -31,10 +41,10 @@ impl JavaProgram {
         self.classes.iter().find(|c| c.full_name() == full_name)
     }
 
-    /// 追加一个类。pipeline 层多文件合并时使用。
-    /// 不做重复检测——同名 class 会同时存在，由调用方负责语义去重。
-    pub fn push_class(&mut self, class: JavaClass) {
-        self.classes.push(class);
+    /// Merge a parsed compilation unit, including imports in files without classes.
+    pub fn extend_source(&mut self, parsed: Self) {
+        self.classes.extend(parsed.classes);
+        self.import_units.extend(parsed.import_units);
     }
 }
 
@@ -51,7 +61,6 @@ pub struct JavaClass {
     /// Static and wildcard imports are syntactically valid, but unresolved
     /// bindings cannot be admitted to the closed source contract.
     pub(crate) has_unbound_imports: bool,
-    pub(crate) has_unknown_import_origins: bool,
     pub(crate) simple_name: String,
     pub(crate) type_parameters: Vec<String>,
     pub(crate) annotations: Vec<AnnotationRef>,
@@ -93,12 +102,8 @@ impl JavaClass {
                 .is_some_and(|name| name == NORMALIZER_INTRINSICS_IMPORT)
             && candidates.all(|name| name == NORMALIZER_INTRINSICS_IMPORT)
     }
-    pub fn has_unknown_import_origins(&self) -> bool {
-        self.has_unknown_import_origins
-    }
-
     pub fn has_unbound_imports(&self) -> bool {
-        self.has_unbound_imports
+        !!self.has_unbound_imports
     }
     pub fn simple_name(&self) -> &str {
         &self.simple_name

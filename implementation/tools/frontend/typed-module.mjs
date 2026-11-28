@@ -34,7 +34,7 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
   let hasImport = false, hasOfficial = false;
   const inspect = node => {
     if (node.kind === ts.SyntaxKind.AnyKeyword) fail('explicit any is not an admitted analysis type');
-    if (isOfficialModuleImport(node) && !isOfficialNamespaceImport(node)) fail(invalidOfficialImport);
+    if (isOfficialModuleImport(node) && !isOfficialNamespaceImport(node)) fail('[NORM-IMPORT] ' + invalidOfficialImport);
     if (allowOfficial && isOfficialNamespaceImport(node)) {
       hasOfficial = true;
       return;
@@ -43,7 +43,7 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
     ts.forEachChild(node, inspect);
   };
   inspect(sf);
-  if (hasImport) fail('typed module cannot import outside declarations');
+  if (hasImport) fail('[NORM-IMPORT] typed module cannot import outside declarations');
   const options = {strict: true, noEmit: true, noResolve: true, types: [], target: ts.ScriptTarget.ES2022};
   const host = ts.createCompilerHost(options);
   const readBuiltin = host.getSourceFile.bind(host);
@@ -64,6 +64,60 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
 export function assertTypeScript(sf, checker, errors, fail = failTypedModule) {
   if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
   assertNoResolvedAny(sf, checker, fail);
+  assertClosedPlatformReferences(sf, checker, fail);
+}
+
+// The compiler loads library declarations for typing, not for implicit
+// access to browser, Node or standard-library operations. Check the binding,
+// so a project variable named fetch does not become a host reference.
+const nativeTypes = new Set([
+  'Array', 'ReadonlyArray', 'Map', 'ReadonlyMap', 'Promise', 'Record', 'Partial',
+  'Readonly', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable',
+  'ReturnType', 'Parameters', 'Awaited', 'Error', 'TypeError',
+]);
+const nativeValues = new Set(['Map', 'Error', 'TypeError', 'String', 'Boolean', 'undefined']);
+
+function assertClosedPlatformReferences(sf, checker, fail) {
+  const failAt = (node, detail) => {
+    const {line, character} = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    fail(`[NORM-IMPORT] ${sf.fileName}:${line + 1}:${character + 1}: ${detail}`);
+  };
+  const isLibraryGlobal = declaration => {
+    const source = declaration.getSourceFile();
+    if (!source.isDeclarationFile || !/^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(source.fileName))) return false;
+    const statement = ts.isVariableDeclaration(declaration) ? declaration.parent.parent : declaration;
+    return ts.isSourceFile(statement.parent);
+  };
+  const visit = node => {
+    if (ts.isImportTypeNode(node) || (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)) {
+      failAt(node, 'only explicit project-relative and official namespace imports are admitted');
+    }
+    if (ts.isIdentifier(node)) {
+      const parent = node.parent;
+      if (!(ts.isPropertyAccessExpression(parent) && parent.name === node)
+          && !(ts.isQualifiedName(parent) && parent.right === node)) {
+        let symbol = checker.getSymbolAtLocation(node);
+        if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+        const name = symbol?.getName();
+        const global = symbol?.declarations?.some(isLibraryGlobal)
+          || (name === 'globalThis' && !symbol?.declarations?.length);
+        if (global) {
+          const typeOnly = ts.isPartOfTypeNode(node) && !ts.isTypeQueryNode(parent);
+          if (!(typeOnly ? nativeTypes : nativeValues).has(name)) {
+            failAt(node, 'platform binding ' + name + ' is outside the source allowlist');
+          }
+          // Admitting built-in constructors/value conversions does not admit
+          // arbitrary namespace members or aliases to host prototype methods.
+          if (!typeOnly && (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent))
+              && parent.expression === node) {
+            failAt(parent, 'platform member ' + parent.getText(sf) + ' has no admitted source contract');
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
 }
 
 // strict/noImplicitAny alone permits dynamic types originating in the

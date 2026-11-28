@@ -52,26 +52,26 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
       if (!ordinaryDeclaration(st) && !(rootReceiver && input.declared === entry.declared && ts.isVariableStatement(st))) diagnostic(record, st, 'linked modules require closed declarations without executable initialization');
       if (!ts.isImportDeclaration(st)) continue;
       const specifier = ts.isStringLiteral(st.moduleSpecifier) && st.moduleSpecifier.text;
-      if (isOfficialModuleImport(st) && !isOfficialNamespaceImport(st)) diagnostic(record, st, invalidOfficialImport);
+      if (isOfficialModuleImport(st) && !isOfficialNamespaceImport(st)) diagnostic(record, st, "[NORM-IMPORT] " + invalidOfficialImport);
       if (isOfficialNamespaceImport(st)) {
         record.dependencies.set(specifier, officialModulePath);
         hasOfficial = true;
         continue;
       }
       if (!specifier || !relative(specifier) || /[\\:%?#\0]/.test(specifier)) {
-        diagnostic(record, st, 'linked module import must name an executable relative project source');
+        diagnostic(record, st, '[NORM-IMPORT] linked module import must name an executable relative project source');
       }
       const clause = st.importClause;
       const named = clause?.namedBindings;
       if (!clause || (named && !ts.isNamedImports(named))
           || (!clause.name && (!named || !named.elements.length))) {
-        diagnostic(record, st, 'linked modules require explicit named or default bindings, not side-effect imports');
+        diagnostic(record, st, '[NORM-IMPORT] linked modules require explicit named or default bindings, not side-effect imports');
       }
       const sourcePath = posix.normalize(posix.join(posix.dirname(input.name), specifier));
-      if (sourcePath === '..' || sourcePath.startsWith('../')) diagnostic(record, st, 'relative import escapes the project root');
+      if (sourcePath === '..' || sourcePath.startsWith('../')) diagnostic(record, st, '[NORM-IMPORT] relative import escapes the project root');
       const targetPath = sourcePath.replace(/\.js$/, '.ts');
       if (!targetPath.endsWith('.ts') || targetPath.endsWith('.d.ts')) {
-        diagnostic(record, st, 'relative import must resolve to an executable .ts source');
+        diagnostic(record, st, '[NORM-IMPORT] relative import must resolve to an executable .ts source');
       }
       let dependency;
       try { dependency = projectSource(targetPath); }
@@ -80,7 +80,7 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
           : 'relative source ' + specifier + ': ' + error.message);
       }
       if (!dependency.path.endsWith('.ts') || dependency.path.endsWith('.d.ts')) {
-        diagnostic(record, st, 'relative import must resolve to an executable .ts source');
+        diagnostic(record, st, '[NORM-IMPORT] relative import must resolve to an executable .ts source');
       }
       record.dependencies.set(specifier, dependency.declared);
       add(dependency);
