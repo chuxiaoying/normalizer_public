@@ -1,0 +1,11 @@
+entry: src/main.ts#run
+expected:
+  schema: normalizer.pers/1
+  types:
+    KeyboardEvent:
+      fields: {key: text}
+  entry: {function: src/main.ts#run, returns: bool}
+  P:
+    parameters:
+      event: {position: 0, type: KeyboardEvent}
+  R: '"Enter" == event.key'

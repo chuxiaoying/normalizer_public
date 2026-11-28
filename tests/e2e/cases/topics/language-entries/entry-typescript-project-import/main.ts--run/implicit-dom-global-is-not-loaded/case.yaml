@@ -1,0 +1,5 @@
+entry: src/main.ts#run
+reject:
+  fragments:
+    - "[NORM-TS-MODULE]"
+    - "Cannot find name 'document'. Host libraries are not loaded"

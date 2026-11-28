@@ -23,6 +23,12 @@ export function isCompilerLibrary(file, directory) {
   return dirname(file) === directory && /^lib(?:[.][a-z0-9-]+)*[.]d[.]ts$/.test(basename(file));
 }
 
+// ECMAScript declarations supply language types, not runtime implementations.
+// Do not let the compiler inject browser/worker declarations by default.
+export const analysisCompilerOptions = {
+  strict: true, noEmit: true, types: [], target: ts.ScriptTarget.ES2022, lib: ['lib.es2022.d.ts'],
+};
+
 export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {allowOfficial = false} = {}) {
   if (sf.checkJsDirective?.enabled === false || sf.commentDirectives?.length) {
     fail('TypeScript checking directives cannot disable or suppress the strict preflight');
@@ -44,7 +50,7 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
   };
   inspect(sf);
   if (hasImport) fail('[NORM-IMPORT] typed module cannot import outside declarations');
-  const options = {strict: true, noEmit: true, noResolve: true, types: [], target: ts.ScriptTarget.ES2022};
+  const options = {...analysisCompilerOptions, noResolve: true};
   const host = ts.createCompilerHost(options);
   const readBuiltin = host.getSourceFile.bind(host);
   const library = dirname(host.getDefaultLibFileName(options));
@@ -61,8 +67,17 @@ export function typeScriptProgram(physicalPath, sf, fail = failTypedModule, {all
   return { checker: checked.getTypeChecker(), errors };
 }
 
+export function analysisTypeScriptDiagnostic(error) {
+  // TS2584 recommends adding DOM to lib, which is not a valid remediation here.
+  if (error.code === 2584 && error.file && error.start !== undefined && error.length) {
+    const name = error.file.text.slice(error.start, error.start + error.length);
+    return `Cannot find name '${name}'. Host libraries are not loaded; preprocess host references before admission.`;
+  }
+  return ts.flattenDiagnosticMessageText(error.messageText, '\n');
+}
+
 export function assertTypeScript(sf, checker, errors, fail = failTypedModule) {
-  if (errors.length) fail(ts.flattenDiagnosticMessageText(errors[0].messageText, '\n'));
+  if (errors.length) fail(analysisTypeScriptDiagnostic(errors[0]));
   assertNoResolvedAny(sf, checker, fail);
   assertClosedImports(sf, fail);
 }

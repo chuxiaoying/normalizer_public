@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, posix } from 'node:path';
 import ts from 'typescript';
 import { isLocalExportList, parseSourceModule } from './ir.mjs';
-import { assertTypeScript, isCompilerLibrary } from './typed-module.mjs';
+import { analysisCompilerOptions, analysisTypeScriptDiagnostic, assertTypeScript, isCompilerLibrary } from './typed-module.mjs';
 import { localDirectives } from './local-directives.mjs';
 import {isOfficialModuleImport, isOfficialNamespaceImport, invalidOfficialImport, officialModulePath, officialDeclaration} from './standard-library.mjs';
 
@@ -89,7 +89,7 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
   }
 
   add(entry);
-  const options = {strict: true, noEmit: true, types: [], target: ts.ScriptTarget.ES2022,
+  const options = {...analysisCompilerOptions,
     module: ts.ModuleKind.ESNext, allowImportingTsExtensions: true, allowSyntheticDefaultImports: false};
   const host = ts.createCompilerHost(options);
   const builtinSource = host.getSourceFile.bind(host);
@@ -111,7 +111,7 @@ export function checkedProjectModules(entry, projectSource, fail, {rootReceiver 
   const errors = [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()];
   if (errors.length) {
     const [error] = errors;
-    const details = ts.flattenDiagnosticMessageText(error.messageText, '\n');
+    const details = analysisTypeScriptDiagnostic(error);
     const record = error.file && modules.get(error.file.fileName);
     if (!record || error.start === undefined) fail(details);
     const {line, character} = record.ast.getLineAndCharacterOfPosition(error.start);
