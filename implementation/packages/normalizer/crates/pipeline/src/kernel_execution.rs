@@ -212,7 +212,7 @@ impl<'a> Engine<'a> {
                     need(value.ty() == Ty::Text, "readonly Map entry requires an acquired nullable text parameter")?;
                     Ok((entry.key.clone(), value.scalar()?))
                 }).collect::<Result<Vec<_>>>()?;
-                let map = math::domains::composite::lifted_ordered_text_map(&acquired).map_err(fail)?;
+                let map = math::domains::composite::lifted_ordered_text_map(&acquired)?;
                 Ok(Value::Term(Ty::OrderedTextMap, map))
             }
             Node::TrimText { value } => {

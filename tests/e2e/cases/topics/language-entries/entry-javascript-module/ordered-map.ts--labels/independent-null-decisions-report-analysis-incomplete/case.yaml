@@ -1,0 +1,5 @@
+entry: src/ordered-map.ts#labels
+reject:
+  fragments:
+    - "[NORM-ANALYSIS-INCOMPLETE]"
+    - readonly Map CASE lift exceeds its expansion budget
