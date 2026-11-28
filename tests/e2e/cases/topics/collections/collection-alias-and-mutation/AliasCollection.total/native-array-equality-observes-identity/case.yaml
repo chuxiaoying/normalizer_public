@@ -1,0 +1,9 @@
+entry: src/DistinctArrays.java#DistinctArrays.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/DistinctArrays.java#DistinctArrays.run, returns: bool}
+  P:
+    parameters:
+      a: {position: 0, type: 'number[]'}
+      b: {position: 1, type: 'number[]'}
+  R: a == b

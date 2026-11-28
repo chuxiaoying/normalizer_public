@@ -106,7 +106,7 @@ impl Position<'_, '_> {
             && (subscript == row || subscript == reverse);
         need(b::path_implies(&nonempty, &math::normalize(b::not(null.clone()))),
             "index projection cannot prove a non-null sequence")?;
-        need(!self.engine.source_array_may_have_writes(name),
+        need(!self.engine.source_array_may_have_writes(name, &nonempty),
             "index projection requires an unchanged acquired sequence")?;
         need((direct_or_reversed_from_zero && upper_bounded_by(self.upper, &length, self.path))
             || b::path_implies(&nonempty, &math::normalize(b::ge(low, b::lit_int(0))))

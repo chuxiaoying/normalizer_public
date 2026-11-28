@@ -200,8 +200,23 @@ impl Engine<'_> {
         ty(left).is_some_and(|left| ty(right) == Some(left))
     }
 
-    pub(super) fn source_array_may_have_writes(&self, root: &str) -> bool {
-        self.source_array_writes.keys().any(|other| self.array_roots_may_alias(root, other))
+    pub(super) fn source_array_may_have_writes(&self, root: &str, path: &Expr) -> bool {
+        let identity = |name| self.state_roots.get(&format!("array:{name}")).copied().map(b::heap_ref);
+        self.source_array_writes.keys().any(|other| {
+            if !self.array_roots_may_alias(root, other) { return false; }
+            if root == other { return path.as_bool() != Some(false); }
+            let (first, second) = if root <= other { (root, other.as_str()) } else { (other.as_str(), root) };
+            // Only trust a distinctness fact on the currently read domain.
+            // Without both acquired identities a same-typed root may alias.
+            identity(first).zip(identity(second)).is_none_or(|(a, z)| {
+                !b::path_implies(path, &b::not(b::eq(a, z)))
+            })
+        })
+    }
+
+    pub(super) fn borrowed_array_identity_eq(&mut self, left: &str, right: &str) -> Result<Expr> {
+        self.array_alias_guard(left, right)
+            .ok_or_else(|| fail("array comparison requires compatible acquired array identities"))
     }
 
     // Input arrays with the same Java element type may denote the same

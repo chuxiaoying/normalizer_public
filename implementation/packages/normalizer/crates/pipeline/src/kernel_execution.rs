@@ -1585,8 +1585,15 @@ impl<'a> Engine<'a> {
                         return Ok(Value::Term(Ty::Bool, b::lit_bool(value)));
                     }
                 }
-                if let (Value::LocalIntArray(left), Value::LocalIntArray(right)) = (&l, &r) {
-                    let same = self.local_array_identity_eq(left, right)?;
+                let identity = match (&l, &r) {
+                    (Value::LocalIntArray(left), Value::LocalIntArray(right)) =>
+                        Some(self.local_array_identity_eq(left, right)?),
+                    (Value::Sequence { item: Ty::Integer, name: left, .. },
+                        Value::Sequence { item: Ty::Integer, name: right, .. }) =>
+                        Some(self.borrowed_array_identity_eq(left, right)?),
+                    _ => None,
+                };
+                if let Some(same) = identity {
                     let value = if op == BinOpKind::Ne { self.normalize_execution_value(b::not(same)) } else { same };
                     return Ok(Value::Term(Ty::Bool, value));
                 }

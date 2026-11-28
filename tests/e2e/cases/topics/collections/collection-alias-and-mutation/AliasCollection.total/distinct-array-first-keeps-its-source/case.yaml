@@ -1,0 +1,21 @@
+entry: src/DistinctArrays.java#DistinctArrays.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/DistinctArrays.java#DistinctArrays.run, returns: number}
+  P:
+    parameters:
+      a: {position: 0, type: 'number[]'}
+      b: {position: 1, type: 'number[]'}
+  R: |-
+    CASE
+      WHEN a == b THEN 0
+      ELSE CASE WHEN 0 == LENGTH(a) THEN 0 ELSE FIRST(value FROM a) END
+    END
+  S:
+    - write:
+        target: b[0]
+        value: '12'
+        when: a != b AND 0 < LENGTH(b)
+  throws:
+    - type: java.lang.ArrayIndexOutOfBoundsException
+      when: a != b AND 0 == LENGTH(b)

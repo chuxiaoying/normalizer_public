@@ -431,9 +431,9 @@ impl<'a> Engine<'a> {
         guard: &Expr,
     ) -> Result<()> {
         if let Some(Value::Sequence { name, null, .. }) = env.get(&query.source) {
-            need(b::path_implies(guard, &b::not(null.clone())),
+            need(b::path_implies(guard, &math::normalize(b::not(null.clone()))),
                 "local relation needs an acquired non-null source array")?;
-            need(!self.source_array_may_have_writes(name),
+            need(!self.source_array_may_have_writes(name, guard),
                 "use a supported source post-write traversal; local query cannot read a mutated array yet")?;
         }
         if let Operation::OnRows(RowOperation::EagerPath { link, leaf }) = &query.operation {
