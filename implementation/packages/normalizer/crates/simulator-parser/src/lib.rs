@@ -25,6 +25,7 @@
 pub mod ast;
 pub mod java_unicode;
 mod parser;
+mod source_link;
 
 pub use ast::{
     AnnotationRef, CatchClause, JavaBinOp, JavaClass, JavaExpr, JavaField, JavaLit, JavaMethod,

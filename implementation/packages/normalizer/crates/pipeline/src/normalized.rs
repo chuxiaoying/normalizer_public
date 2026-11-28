@@ -350,8 +350,9 @@ pub(crate) fn source_layouts(
     }
     // Lexical short names are accepted only with one actual declared owner.
     let mut aliases = BTreeSet::new();
-    for owner in layouts.keys() {
-        let short = owner.rsplit('.').next().unwrap();
+    for class in program.classes().iter().filter(|class| class.package().is_empty()) {
+        if !layouts.contains_key(&class.full_name()) { continue; }
+        let short = class.simple_name().rsplit('.').next().unwrap();
         if !aliases.insert(short.to_string()) {
             return Err(error("NORM-AMBIGUOUS-OWNER", short));
         }
@@ -365,9 +366,14 @@ use simulator_parser::NORMALIZER_INTRINSICS_IMPORT as N_IMPORT;
 /// Refuse counterfeit official definitions and ambiguous local bindings.
 fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
     let counterfeit_namespace = program.classes().iter().any(|class| {
-        let name = class.simple_name();
+        let name = class.full_name();
         name == N_IMPORT || name.strip_prefix(N_IMPORT).is_some_and(|tail| tail.starts_with('.'))
     });
+    if let Some(class) = program.classes().iter().find(|class|
+        class.package() == "java" || class.package().starts_with("java."))
+    {
+        return Err(error("NORM-INTRINSIC-SHADOW", &class.full_name()));
+    }
     if counterfeit_namespace || program.classes().iter().any(|class|
         class.imports_normalizer_intrinsics()
             && crate::normalized_text::namespace_declared_in_unit(program, class))
@@ -375,7 +381,7 @@ fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
         return Err(error("NORM-INTRINSIC-SHADOW", N_IMPORT));
     }
     for (qualified, alias) in [("java.math.BigDecimal", "BigDecimal"), ("java.time.LocalDate", "LocalDate")] {
-        if program.classes().iter().any(|class| class.simple_name() == qualified)
+        if program.classes().iter().any(|class| class.full_name() == qualified)
             || (program.classes().iter().any(|class| class.simple_name().rsplit('.').next() == Some(alias))
                 && program.classes().iter().any(|class| class.imports().iter().any(|name| name == qualified)))
         {
@@ -449,9 +455,9 @@ pub(crate) fn nullable_text_return(class: &simulator_parser::JavaClass, method: 
         && official_marker(class, method.annotations(), NULLABLE)
 }
 
-pub(crate) fn supported_source_imports(class: &simulator_parser::JavaClass) -> bool {
+fn supported_source_imports(program: &JavaProgram, class: &JavaClass) -> bool {
     class.imports().iter().all(|name| {
-        matches!(
+        program.find_class(name).is_some_and(|target| target.package() == class.package()) || matches!(
             name.as_str(),
             N_IMPORT | "java.util.List" | "java.math.BigDecimal" | "java.time.LocalDate"
         )
@@ -520,7 +526,11 @@ pub(crate) fn source_exceptions(program: &JavaProgram) -> Result<BTreeMap<String
     for class in program.classes() {
         // The tiny builtin hierarchy is authoritative only when source cannot
         // shadow one of its names. Reject rather than guess lexical rebinding.
-        if builtin_exception_name(class.simple_name().rsplit('.').next().unwrap()).is_some() {
+        let identity = class.full_name();
+        let shadow_name = if class.package().is_empty() {
+            class.simple_name().rsplit('.').next().unwrap_or(class.simple_name())
+        } else { &identity };
+        if builtin_exception_name(shadow_name).is_some() {
             return Err(error("NORM-EXCEPTION-SHADOW", &class.full_name()));
         }
         if let Some(parent) = class.supertype() {
@@ -714,7 +724,7 @@ pub(crate) fn validate_with_receiver(
             || (c.is_interface() && !plain_source_interface(c)
                 && (!is_port_interface(&name) || !c.fields().is_empty()))
             || !c.annotations().is_empty()
-            || !supported_source_imports(c)
+            || !supported_source_imports(program, c)
             || c.has_unknown_import_origins()
         {
             return Err(error("NORM-CLASS-SHAPE", &name));

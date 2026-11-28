@@ -416,10 +416,13 @@ impl<'a> Parser<'a> {
         let mut classes = Vec::new();
 
         self.skip_ws();
-        let package_at = self.pos;
-        if self.eat_keyword("package") {
-            return Err(self.err_at(package_at, "[JAVA-PACKAGE] package declarations require explicit preprocessing"));
-        }
+        let package = if self.eat_keyword("package") {
+            let name = self.read_qualified_ident()
+                .filter(|name| !name.split('.').any(is_reserved_identifier))
+                .ok_or_else(|| self.err("[JAVA-PACKAGE] expected a qualified package name"))?;
+            self.require_delimiter(b';', "[JAVA-PACKAGE] expected semicolon")?;
+            name
+        } else { String::new() };
 
         // Keep the exact ordinary imports. The closed input profile only
         // needs the presence, not the strings, of static or wildcard imports.
@@ -460,7 +463,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             if !self.eat_char(b';') {
-                classes.push(self.parse_class()?);
+                classes.push(self.parse_class(&package)?);
             }
         }
 
@@ -523,7 +526,7 @@ impl<'a> Parser<'a> {
         Ok(name)
     }
 
-    fn parse_class(&mut self) -> Result<JavaClass, ParseError> {
+    fn parse_class(&mut self, package: &str) -> Result<JavaClass, ParseError> {
         let annotations = self.read_annotations()?;
         let modifiers = [
             "public", "private", "protected", "static", "final", "abstract", "sealed", "strictfp",
@@ -555,6 +558,7 @@ impl<'a> Parser<'a> {
 
         let mut class = JavaClass {
             source_file: self.file.clone(),
+            package: package.to_owned(),
             imports: self.imports.clone(),
             has_unbound_imports: self.has_unbound_imports,
             has_unknown_import_origins: self.has_unknown_import_origins,
@@ -704,6 +708,7 @@ fn parse_class_body(
             let nested_body = p.skip_balanced_braces()?;
             let mut nested_class = JavaClass {
                 source_file: file.to_owned(),
+                package: class.package.clone(),
                 imports: class.imports.clone(),
                 has_unbound_imports: class.has_unbound_imports,
                 has_unknown_import_origins: class.has_unknown_import_origins,

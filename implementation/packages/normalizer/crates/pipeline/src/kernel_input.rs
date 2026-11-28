@@ -166,6 +166,8 @@ pub struct Project {
     #[serde(skip)]
     source_layouts: BTreeMap<String, BTreeMap<String, String>>,
     #[serde(skip)]
+    source_names_are_linked: bool,
+    #[serde(skip)]
     source_ports: BTreeMap<String, crate::normalized::source_ports::SourcePort>,
     #[serde(skip)]
     source_exception_parents: BTreeMap<String, String>,
@@ -475,6 +477,7 @@ impl Project {
         if let Some((owner, _)) = self.source_layouts.get_key_value(name) {
             return Some(owner.as_str());
         }
+        if self.source_names_are_linked { return None; }
         let mut candidates = self.source_layouts.keys()
             .filter(|owner| owner.rsplit('.').next() == Some(name.as_str()));
         let owner = candidates.next()?;
@@ -539,6 +542,7 @@ impl Loaded {
             .collect();
         let project = Project {
             direct_source: true,
+            source_names_are_linked: program.classes().iter().any(|class| !class.package().is_empty()),
             entry_contexts: BTreeMap::new(),
             source_layouts,
             source_ports,

@@ -1,0 +1,5 @@
+entry: src/example/backup/Add.java#example.billing.Add.run
+reject:
+  fragments:
+    - "[NORM-ENTRY]"
+    - file does not declare the invocation root class

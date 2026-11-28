@@ -1,0 +1,8 @@
+entry: src/example/billing/Add.java#example.billing.Add.run
+expected:
+  schema: normalizer.pers/1
+  entry: {function: src/example/billing/Add.java#example.billing.Add.run, returns: number}
+  P:
+    parameters:
+      units: {position: 0, type: number}
+  R: units + 1

@@ -71,5 +71,9 @@ pub fn parse_source_directory(root: &Path) -> Result<JavaProgram, PipelineError>
             program.push_class(class.clone());
         }
     }
+    program.bind_source_names().map_err(|error| PipelineError::Resolve(crate::preprocess::required(
+        "SOURCE-LINK-FAILED", &root.display().to_string(), &error,
+        "使用源码所属的包或明确的导入来定位工程类型。",
+    )))?;
     Ok(program)
 }

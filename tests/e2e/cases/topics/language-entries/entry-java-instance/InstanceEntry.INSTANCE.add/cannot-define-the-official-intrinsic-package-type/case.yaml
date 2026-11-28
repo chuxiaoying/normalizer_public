@@ -1,0 +1,5 @@
+entry: src/demo/Entry.java#demo.Entry.run
+reject:
+  fragments:
+    - "[NORM-INTRINSIC-SHADOW]"
+    - location=normalizer.intrinsics.N

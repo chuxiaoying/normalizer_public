@@ -42,6 +42,7 @@ impl JavaProgram {
 #[derive(Debug, Clone)]
 pub struct JavaClass {
     pub(crate) source_file: String,
+    pub(crate) package: String,
     /// 显式 import 的完整限定名列表（`import x.y.Z;`）
     ///
     /// parser 原始输出，不做 FQN 化决策——FQN 化由 resolver 在类型推断收口点完成。
@@ -93,8 +94,13 @@ impl JavaClass {
     pub fn simple_name(&self) -> &str {
         &self.simple_name
     }
+    pub fn package(&self) -> &str {
+        &self.package
+    }
+
     pub fn full_name(&self) -> String {
-        self.simple_name.clone()
+        if self.package.is_empty() { self.simple_name.clone() }
+        else { format!("{}.{}", self.package, self.simple_name) }
     }
     pub fn annotations(&self) -> &[AnnotationRef] {
         &self.annotations
