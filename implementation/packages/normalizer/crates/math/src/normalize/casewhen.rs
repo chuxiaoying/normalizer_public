@@ -338,6 +338,10 @@ fn simplify_impl(
         return collapsed;
     }
 
+    if let Some(reordered) = canonical_disjoint_text_arms(&filtered, ctx) {
+        return reordered;
+    }
+
     // 4. 如果 flatten / dedup / canonicalize / 过滤 / 截断 / 剥守卫 导致变化，返回新 CaseWhen
     if flatten_changed
         || guard_changed
@@ -357,6 +361,40 @@ fn simplify_impl(
         return Expr::new(ExprKind::CaseWhen { branches: filtered });
     }
     expr.clone()
+}
+
+/// Distinct text equalities against one total, bound text parameter cannot
+/// overlap. The selector is already acquired; matching it and returning a
+/// literal adds no observations. Only the published value is reordered.
+fn canonical_disjoint_text_arms(
+    branches: &[(Expr, Expr)], ctx: &dyn crate::sort_context::SortContext,
+) -> Option<Expr> {
+    use crate::{BinOpKind::Eq, SymVarOrigin};
+    let ((fallback_guard, fallback), arms) = branches.split_last()?;
+    if arms.len() < 2 || fallback_guard.as_bool() != Some(true) || fallback.as_lit().is_none() {
+        return None;
+    }
+    let mut selector: Option<&Expr> = None;
+    let mut labels = HashSet::new();
+    for (guard, result) in arms {
+        result.as_lit()?;
+        let (Eq, left, right) = guard.as_binop()? else { return None; };
+        let (subject, units) = if let Some(units) = right.as_lit().and_then(Lit::text_units) {
+            (left, units)
+        } else {
+            (right, left.as_lit().and_then(Lit::text_units)?)
+        };
+        if !matches!(subject.as_sym_var(), Some(SymVarOrigin::Parameter { primitive_type, .. })
+            if primitive_type == "text")
+            || selector.is_some_and(|previous| previous != subject)
+            || !labels.insert(units) {
+            return None;
+        }
+        selector = Some(subject);
+    }
+    let mut sorted = arms.to_vec();
+    sorted.sort_by(|(a, _), (b, _)| crate::canonical_order_compare(a, b, ctx));
+    (sorted != arms).then(|| crate::builder::case_when(sorted, fallback.clone()))
 }
 
 /// On the remaining domain, the last two strict tests of exactly the
