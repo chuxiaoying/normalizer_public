@@ -382,8 +382,9 @@ fn validate_official_namespace(program: &JavaProgram) -> Result<(), String> {
     }
     for (qualified, alias) in [("java.math.BigDecimal", "BigDecimal"), ("java.time.LocalDate", "LocalDate")] {
         if program.classes().iter().any(|class| class.full_name() == qualified)
-            || (program.classes().iter().any(|class| class.simple_name().rsplit('.').next() == Some(alias))
-                && program.classes().iter().any(|class| class.imports().iter().any(|name| name == qualified)))
+            || program.classes().iter().any(|class| class.simple_name() == alias
+                && program.classes().iter().any(|consumer| consumer.source_file() == class.source_file()
+                    && consumer.imports().iter().any(|name| name == qualified)))
         {
             return Err(error("NORM-INTRINSIC-SHADOW", qualified));
         }

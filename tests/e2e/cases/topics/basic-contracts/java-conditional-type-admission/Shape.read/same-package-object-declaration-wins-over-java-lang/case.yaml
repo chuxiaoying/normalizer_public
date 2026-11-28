@@ -1,0 +1,6 @@
+entry: src/demo/Shape.java#demo.Shape.read
+reject:
+  fragments:
+    - "[NORM-SOURCE-TYPE]"
+    - location=demo.Shape.unused
+    - "branch result type mismatch: then=number else=bool"

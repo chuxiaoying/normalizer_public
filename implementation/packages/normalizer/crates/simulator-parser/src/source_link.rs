@@ -166,6 +166,11 @@ impl Names<'_> {
         if let Some(bound) = self.declared_name(name) {
             self.require_member_access(&bound, None);
             *name = bound;
+        } else if name == "Object" && self.imports.get(name).is_none_or(|path| path == "java.lang.Object") {
+            // The implicit java.lang import is considered only after lexical
+            // and explicit application bindings. Another package's short
+            // name cannot shadow it.
+            *name = "java.lang.Object".into();
         } else if !self.package.is_empty() && self.declared.contains(name) && !name.contains('.') {
             // Named packages cannot refer to the unnamed package.
             *name = format!("{}.{name}", self.package);
