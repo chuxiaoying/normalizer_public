@@ -1,0 +1,67 @@
+tests/e2e/harness/fixtures.mjs
+  s_47ae65fe8e6220::t_faca8be088e804 28-30,32,78-79,82
+tests/e2e/business_examples.test.mjs
+  s_47ae65fe8e6220::t_faca8be088e804 25
+design/chapters/04-AI救赎.md
+  s_47ae65fe8e6220::t_faca8be088e804 9-10,969-978
+tests/README.md
+  s_47ae65fe8e6220::t_faca8be088e804 35
+tests/e2e/cases/topics/expression-simplification/java-static/HelloWorld.addOne/reject-declared-maven-dependency/case.yaml
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-6
+tests/e2e/cases/topics/language-entries/entry-javascript-module/total.ts--total/reject-declared-dev-dependency/package.json
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-3
+tests/e2e/cases/topics/expression-simplification/java-static/HelloWorld.addOne/reject-declared-maven-dependency/pom.xml
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-7
+tests/e2e/cases/topics/language-entries/frontend-vo-production-vue/frontend-vo-production--addOne/reject-declared-framework-dependency/case.yaml
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-6
+implementation/packages/normalizer/crates/pipeline/src/bin/input/manifests.rs
+  s_47ae65fe8e6220::t_170b7312d9dfdd 4-8,11-12,62-63,84-98,104-106,128-129,153
+  s_47ae65fe8e6220::t_bf29f1647d5960 47,68,134,137
+  s_47ae65fe8e6220::t_072b10b6f3153d 1-3,9-10,13-46,48-61,64-67,69-83,99-103,107-127,130-133,135-136,138-152,154-170
+usage/cli.md
+  s_47ae65fe8e6220::t_faca8be088e804 48
+implementation/packages/normalizer/crates/pipeline/Cargo.toml
+  s_47ae65fe8e6220::t_f6ec99de6b5be0 13
+implementation/tools/normalizer
+  s_47ae65fe8e6220::t_072b10b6f3153d 17,80-81,87-88
+tests/e2e/cases/topics/language-entries/frontend-vo-consumption-vue/frontend-vo-consumption--caption/accept-empty-package-manifest/package.json
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-4
+tests/e2e/cases/topics/language-entries/frontend-vo-production-vue/frontend-vo-production--addOne/reject-declared-framework-dependency/package.json
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-3
+usage/README.md
+  s_47ae65fe8e6220::t_170b7312d9dfdd 10
+usage/kernel-input.md
+  s_47ae65fe8e6220::t_faca8be088e804 5-6
+implementation/packages/normalizer/crates/pipeline/src/bin/normalizer-normalized.rs
+  s_47ae65fe8e6220::t_072b10b6f3153d 2-4,25,34
+tests/e2e/cases/topics/language-entries/entry-javascript-module/total.ts--total/reject-declared-dev-dependency/case.yaml
+  s_47ae65fe8e6220::t_bf29f1647d5960 1-6
+implementation/packages/normalizer/Cargo.lock
+  s_47ae65fe8e6220::t_2ce128b43a8f5f 94,119-127
+tests/e2e/cases/topics/expression-simplification/java-static/HelloWorld.addOne/reject-declared-maven-dependency/src/HelloWorld.java
+  s_47ae65fe8e6220::t_a79701a1ff49e0 1-5
+tests/e2e/cases/topics/language-entries/entry-javascript-module/total.ts--total/reject-declared-dev-dependency/src/total.ts
+  s_47ae65fe8e6220::t_0b59584b682c69 1
+tests/e2e/cases/topics/language-entries/frontend-vo-consumption-vue/frontend-vo-consumption--caption/accept-empty-package-manifest/case.yaml
+  s_47ae65fe8e6220::t_d4348ef3b09d84 1-16
+tests/e2e/cases/topics/language-entries/frontend-vo-consumption-vue/frontend-vo-consumption--caption/accept-empty-package-manifest/src/ArrearsPage.ts
+  s_47ae65fe8e6220::t_d53016d8b4469f 1-15
+tests/e2e/cases/topics/language-entries/frontend-vo-production-vue/frontend-vo-production--addOne/reject-declared-framework-dependency/src/OrderPage.ts
+  s_47ae65fe8e6220::t_7a5228dc920c28 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f8ecf7a2ba2a5f9bc5428be8c31459388161f282",
+  "prompts": {},
+  "sessions": {
+    "s_47ae65fe8e6220": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a202e0-9fcd-78a0-b37e-096698fd0da0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "zhanghan <chuxiaoying@antgroup.com>"
+    }
+  }
+}
